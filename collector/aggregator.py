@@ -159,13 +159,16 @@ class Collector:
         async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}) as http:
             results = await asyncio.gather(*(s.collect(http, self.assets) for s in sources))
 
-        # Upsert das tabelas de coleta
+        # Upsert das tabelas de coleta (isolado por tabela: uma falha não aborta o ciclo)
         written = 0
         for r in results:
             if not r.ok:
                 continue
             for output in r.outputs:
-                written += upsert(output.table, output.rows, output.on_conflict)
+                try:
+                    written += upsert(output.table, output.rows, output.on_conflict)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("falha no upsert de %s (%d linhas): %s", output.table, len(output.rows), exc)
 
         # Macro (CoinGecko) roda a cada 15 min; nos demais ciclos carregamos o
         # último valor do banco para o card não "piscar" no snapshot.
@@ -173,9 +176,13 @@ class Collector:
         if not any(o.table == "macro" for r in results if r.ok for o in r.outputs):
             macro_fallback = self._latest_macro()
 
-        # Recalcular e gravar o snapshot consolidado
-        snapshots = build_snapshots(results, self.assets, ts, macro_fallback)
-        upsert("market_snapshot", snapshots, "asset,ts")
+        # Recalcular e gravar o snapshot consolidado (isolado: nunca derruba o ciclo)
+        snapshots: list[dict] = []
+        try:
+            snapshots = build_snapshots(results, self.assets, ts, macro_fallback)
+            upsert("market_snapshot", snapshots, "asset,ts")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha ao montar/gravar market_snapshot: %s", exc)
 
         ok = sum(1 for r in results if r.ok)
         log.info("── ciclo concluído: %d/%d fontes OK · %d linhas · %d snapshot(s)",
@@ -195,7 +202,10 @@ async def _main_async(once: bool) -> None:
                       max_instances=1, coalesce=True)
     scheduler.start()
     log.info("scheduler iniciado · ciclo a cada %d min · Ctrl+C para sair", interval)
-    await collector.run_cycle()  # primeiro ciclo imediato
+    try:
+        await collector.run_cycle()  # primeiro ciclo imediato (nunca pode derrubar o worker)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("primeiro ciclo falhou (worker segue rodando): %s", exc)
     try:
         await asyncio.Event().wait()
     except (KeyboardInterrupt, SystemExit):
