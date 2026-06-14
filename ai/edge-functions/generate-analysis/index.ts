@@ -1,10 +1,7 @@
 // Edge Function: generate-analysis (PRD §6 — provedor: Google Gemini)
 // Gera a análise narrativa de um ativo: valida plano + cota, lê o market_snapshot
-// mais recente, monta o prompt e chama a Gemini API com o modelo do plano.
-//
-// Robustez: modelos 2.5 são "thinking models" (com maxOutputTokens baixo o texto
-// volta vazio → usamos 4096 + thinkingBudget 0 nos flash). Se o modelo do plano
-// falhar (ex.: 429 do free tier no 2.5-pro), faz fallback para gemini-2.5-flash.
+// mais recente + a camada institucional (OI delta, paredes do book, macro &
+// correlações), monta o prompt e chama a Gemini API com o modelo do plano.
 //
 // Deploy: supabase functions deploy generate-analysis · Secret: GEMINI_API_KEY
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -19,11 +16,11 @@ const FALLBACK_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = [
   "Você é o copiloto de IA do Crypto Monitor, um cockpit de decisões para traders de cripto.",
-  "Idioma: português brasileiro claro com acentuação correta; ao usar termo técnico (funding, OI, GEX, gamma, CVD, max pain), explique em poucas palavras.",
-  "Estrutura obrigatória: 1) Contexto macro; 2) Fluxo (varejo via perps/CVD vs. instituição via spot); 3) Níveis de liquidez e opções (Call/Put Wall, Zero Gamma, Max Pain) citando os preços; 4) Sentimento (Fear & Greed); 5) Síntese.",
+  "Idioma: português brasileiro claro com acentuação correta; ao usar termo técnico (funding, OI, GEX, gamma, CVD, max pain, skew, Put/Call), explique em poucas palavras.",
+  "Estrutura obrigatória: 1) Contexto macro (inclua DXY/S&P/ouro e a correlação 30d quando houver — vento a favor/contra); 2) Fluxo (varejo via perps/CVD vs. instituição via spot/divergência; use o DELTA DE OI vs. preço para ler novas posições); 3) Níveis de liquidez e opções (Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO ORDER BOOK como ímãs/suporte-resistência, citando os preços); 4) Sentimento (Fear & Greed + sentimento de opções: Put/Call, IV e skew); 5) Síntese.",
   "Proibido: recomendar compra/venda, prever preço-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
-  "Obrigatório: usar apenas os dados do snapshot; se uma métrica vier ausente, diga 'indisponível neste ciclo' e nunca invente números.",
-  "Encerre sempre com um aviso de que a análise é informativa/educacional, não constitui recomendação de compra/venda nem aconselhamento financeiro, e a decisão é sempre do usuário.",
+  "Obrigatório: usar apenas os dados fornecidos; se uma métrica vier ausente, diga que está indisponível neste ciclo e nunca invente números.",
+  "Encerre sempre com um aviso de que a análise é informativa e educacional, não constitui recomendação de compra/venda nem aconselhamento financeiro, e a decisão é sempre do usuário.",
 ].join("\n");
 
 function json(status: number, body: unknown) {
@@ -31,6 +28,18 @@ function json(status: number, body: unknown) {
     status,
     headers: { ...CORS, "Content-Type": "application/json" },
   });
+}
+
+function dedupeBy<T extends Record<string, unknown>>(rows: T[], key: string): T[] {
+  const seen = new Set<unknown>();
+  const out: T[] = [];
+  for (const r of rows) {
+    if (!seen.has(r[key])) {
+      seen.add(r[key]);
+      out.push(r);
+    }
+  }
+  return out;
 }
 
 async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
@@ -101,6 +110,25 @@ Deno.serve(async (req) => {
     return json(503, { error: "Sem dados de mercado para este ativo ainda. Aguarde o próximo ciclo." });
   }
 
+  // ── Camada institucional (Fase 6) — só para planos avançados ──────────────
+  const advanced = (plan.advanced_metrics as boolean) ?? false;
+  const since15 = new Date(Date.now() - 15 * 60000).toISOString();
+  const institutional: Record<string, unknown> = {};
+  if (advanced) {
+    const [{ data: oi }, { data: walls }, { data: macroAssets }, { data: macroCorr }] = await Promise.all([
+      admin.from("v_oi_delta").select("oi_delta_4h, oi_delta_24h, price_delta_4h").eq("asset", ativo).maybeSingle(),
+      admin.from("orderbook_walls").select("exchange, side, price, notional_usd").eq("asset", ativo)
+        .gte("ts", since15).order("notional_usd", { ascending: false }).limit(8),
+      admin.from("macro_assets").select("symbol, name, price, change_24h, change_7d").order("ts", { ascending: false }).limit(16),
+      admin.from("macro_correlations").select("macro_symbol, corr_30d").eq("asset", ativo).order("ts", { ascending: false }).limit(12),
+    ]);
+    institutional.oi_delta = oi ?? null;
+    institutional.order_book_walls = walls ?? [];
+    institutional.macro = dedupeBy((macroAssets as Record<string, unknown>[]) ?? [], "symbol");
+    institutional.macro_correlations = dedupeBy((macroCorr as Record<string, unknown>[]) ?? [], "macro_symbol");
+  }
+
+  // ── Notícias recentes ─────────────────────────────────────────────────────
   const { data: news } = await admin
     .from("news_feed").select("title, source").contains("assets", [ativo])
     .order("published_at", { ascending: false }).limit(5);
@@ -109,17 +137,19 @@ Deno.serve(async (req) => {
     : "Nenhuma notícia recente disponível.";
 
   const userMsg = [
-    `Analise o momento de mercado do ativo ${ativo} com base no snapshot abaixo.`,
+    `Analise o momento de mercado do ativo ${ativo} com base nos dados abaixo.`,
     `Siga a estrutura: macro → fluxo → níveis de liquidez/opções → sentimento → síntese.`,
     "",
-    "Snapshot (JSON):",
+    "Snapshot consolidado (JSON):",
     JSON.stringify(snap.payload),
+    "",
+    "Camada institucional adicional (OI delta, paredes do book, macro & correlações):",
+    JSON.stringify(institutional),
     "",
     "Notícias recentes:",
     newsText,
   ].join("\n");
 
-  // Modelo do plano, com fallback para flash se falhar (ex.: 429 no 2.5-pro)
   let usedModel = (plan.ai_model as string) ?? FALLBACK_MODEL;
   let aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
   if (!aiResp.ok && usedModel !== FALLBACK_MODEL) {
