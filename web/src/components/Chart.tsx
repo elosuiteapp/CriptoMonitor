@@ -30,7 +30,6 @@ export interface ActiveLayers {
   orderbookWalls: boolean; // paredes do book (Binance + Coinbase)
   funding: boolean; // faixa de funding (renderizada abaixo do gráfico)
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
-  liquidations: boolean; // bolsões de liquidez (requer heatmap — pós-MVP)
 }
 
 interface ChartProps {

@@ -57,7 +57,6 @@ export default function Dashboard() {
     orderbookWalls: false,
     funding: false,
     cvd: false,
-    liquidations: false,
   });
 
   // Garante que o ativo selecionado pertence ao plano

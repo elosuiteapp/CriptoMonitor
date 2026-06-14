@@ -10,7 +10,6 @@ interface Item {
   key: keyof ActiveLayers;
   label: string;
   color: string;
-  comingSoon?: boolean;
 }
 
 const ITEMS: Item[] = [
@@ -21,7 +20,6 @@ const ITEMS: Item[] = [
   { key: "orderbookWalls", label: "Paredes do book", color: "bg-amber-500" },
   { key: "funding", label: "Funding", color: "bg-sky-500" },
   { key: "cvd", label: "CVD", color: "bg-emerald-500" },
-  { key: "liquidations", label: "Liquidações", color: "bg-rose-500", comingSoon: true },
 ];
 
 export default function LayerToggles({ layers, onToggle, locked }: Props) {
@@ -29,16 +27,14 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="text-slate-500">Camadas:</span>
       {ITEMS.map((item) => {
-        const disabled = locked || item.comingSoon;
-        const active = !disabled && layers[item.key];
+        const active = !locked && layers[item.key];
         return (
           <button
             key={item.key}
-            disabled={disabled}
-            title={item.comingSoon ? "Requer heatmap de liquidações (CoinGlass) — pós-MVP" : undefined}
+            disabled={locked}
             onClick={() => onToggle(item.key)}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition ${
-              disabled
+              locked
                 ? "cursor-not-allowed border-ink-500 text-slate-600"
                 : active
                   ? "border-accent/60 bg-accent/10 text-slate-100"
@@ -47,8 +43,7 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
           >
             <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-slate-600"}`} />
             {item.label}
-            {locked && !item.comingSoon && <span aria-hidden>🔒</span>}
-            {item.comingSoon && <span className="text-[10px] text-slate-600">em breve</span>}
+            {locked && <span aria-hidden>🔒</span>}
           </button>
         );
       })}
