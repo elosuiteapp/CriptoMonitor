@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ColorType, LineStyle, createChart, type IChartApi } from "lightweight-charts";
+import { ColorType, LineStyle, LineType, createChart, type IChartApi } from "lightweight-charts";
 
 import { supabase } from "../lib/supabase";
 
@@ -10,18 +10,19 @@ interface Row {
   call_wall: number | null;
   put_wall: number | null;
   max_pain: number | null;
-  avg_call_strike: number | null;
-  avg_put_strike: number | null;
 }
 
-const LINES: { key: keyof Row; color: string; title: string; dashed?: boolean }[] = [
-  { key: "spot_price", color: "#e5e7eb", title: "Spot" },
-  { key: "zero_gamma_level", color: "#a855f7", title: "Zero Gamma" },
-  { key: "call_wall", color: "#22c55e", title: "Call Wall" },
-  { key: "put_wall", color: "#ef4444", title: "Put Wall" },
-  { key: "max_pain", color: "#eab308", title: "Max Pain", dashed: true },
-  { key: "avg_call_strike", color: "#16a34a", title: "Média calls", dashed: true },
-  { key: "avg_put_strike", color: "#dc2626", title: "Média puts", dashed: true },
+// Médias de strike (call/put) foram removidas do gráfico: a média ponderada por
+// OI é dominada por strikes far-OTM (ex: calls a 100k+), virava outlier e achatava
+// o cluster de níveis relevantes (spot/zero gamma/max pain/walls).
+// Destaque: Spot + Call/Put Wall em linha grossa; Zero Gamma e Max Pain como
+// referências finas/tracejadas.
+const LINES: { key: keyof Row; color: string; title: string; width: number; dashed?: boolean }[] = [
+  { key: "spot_price", color: "#f8fafc", title: "Spot", width: 3 },
+  { key: "call_wall", color: "#22c55e", title: "Call Wall", width: 3 },
+  { key: "put_wall", color: "#ef4444", title: "Put Wall", width: 3 },
+  { key: "zero_gamma_level", color: "#a855f7", title: "Zero Gamma", width: 1, dashed: true },
+  { key: "max_pain", color: "#eab308", title: "Max Pain", width: 1, dashed: true },
 ];
 
 /** Níveis de gamma ao longo do tempo (PRD3, estilo SpotGamma key levels).
@@ -36,7 +37,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
     (async () => {
       const { data } = await supabase
         .from("gamma_profile")
-        .select("ts, spot_price, zero_gamma_level, call_wall, put_wall, max_pain, avg_call_strike, avg_put_strike")
+        .select("ts, spot_price, zero_gamma_level, call_wall, put_wall, max_pain")
         .eq("asset", asset)
         .order("ts", { ascending: true })
         .limit(500);
@@ -62,7 +63,8 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
       for (const l of LINES) {
         const series = chart.addLineSeries({
           color: l.color,
-          lineWidth: 2,
+          lineWidth: l.width as 1 | 2 | 3,
+          lineType: LineType.Curved, // traçado suave estilo média móvel
           lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid,
           priceLineVisible: false,
           lastValueVisible: true,
