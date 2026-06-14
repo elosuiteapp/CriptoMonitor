@@ -30,6 +30,21 @@ export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Pr
   }));
 }
 
+/** Variação percentual de 24h (ticker da Binance). null se indisponível. */
+export async function fetch24hChange(asset: string): Promise<number | null> {
+  const symbol = SYMBOL[asset];
+  if (!symbol) return null;
+  try {
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const pct = Number(data.priceChangePercent);
+    return Number.isFinite(pct) ? pct : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Assina o stream de kline e chama `onBar` a cada atualização. Devolve o cleanup.
  *  O candle em formação é um plus: se o WebSocket falhar, o gráfico continua com
  *  os candles do REST. Fechamos o socket com cuidado para não gerar o aviso

@@ -115,6 +115,50 @@ export function readGammaRegime(regime: "positive" | "negative" | null | undefin
   };
 }
 
+/** Divergência Spot (Coinbase, institucional) vs. Perps (Binance, varejo) — §8.6.3. */
+export function readDivergence(
+  spotVol: number | null | undefined,
+  perpsVol: number | null | undefined,
+): Reading {
+  if (!spotVol || !perpsVol) {
+    return { label: "Divergência indisponível", detail: "—", level: "neutral" };
+  }
+  const ratio = spotVol / perpsVol;
+  const detail = `Spot (Coinbase) ${fmtUsd(spotVol)} · Perps (Binance) ${fmtUsd(perpsVol)} · razão ${ratio.toFixed(2)}`;
+  if (ratio >= 0.25)
+    return { label: "Volume à vista relevante — instituição presente, divergência saudável", detail, level: "green" };
+  if (ratio < 0.1)
+    return { label: "Varejo alavancado domina o volume — euforia, sinal de cautela", detail, level: "yellow" };
+  return { label: "Equilíbrio entre volume à vista e alavancado", detail, level: "neutral" };
+}
+
+/** Saúde DeFi: TVL + fluxo de stablecoins 24h (DefiLlama, ETH/SOL) — §8.6.3. */
+export function readTvl(
+  tvl: number | null | undefined,
+  flow: number | null | undefined,
+): Reading {
+  if (tvl == null) return { label: "TVL indisponível", detail: "—", level: "neutral" };
+  const detail = `TVL ${fmtUsd(tvl)}${flow != null ? ` · Stablecoins 24h ${fmtUsd(flow)}` : ""}`;
+  if (flow != null && flow > 0)
+    return { label: `Rede com ${fmtUsd(tvl)} em TVL — stablecoins entrando, capital novo`, detail, level: "green" };
+  if (flow != null && flow < 0)
+    return { label: `Rede com ${fmtUsd(tvl)} em TVL — stablecoins saindo, capital recuando`, detail, level: "yellow" };
+  return { label: `Rede com ${fmtUsd(tvl)} em TVL`, detail, level: "neutral" };
+}
+
+/** Tempo relativo curto em PT-BR ("há 2h", "há 30min"). */
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diffMs / 60000);
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min}min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.round(h / 24);
+  return `há ${d}d`;
+}
+
 // ─── Utilidades de UI ────────────────────────────────────────────────────────
 export const LEVEL_DOT: Record<Level, string> = {
   green: "bg-signal-green",

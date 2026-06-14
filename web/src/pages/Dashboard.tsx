@@ -12,6 +12,7 @@ import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LockedCard from "../components/LockedCard";
 import MetricCard from "../components/MetricCard";
+import NewsBlock from "../components/NewsBlock";
 import PriceHeader from "../components/PriceHeader";
 import { useAuth } from "../hooks/useAuth";
 import { usePlan } from "../hooks/usePlan";
@@ -21,10 +22,12 @@ import {
   fmtPct,
   fmtUsd,
   readCvd,
+  readDivergence,
   readFng,
   readFunding,
   readLiquidations,
   readLongShort,
+  readTvl,
   type Reading,
 } from "../lib/format";
 import type { ChartType, Timeframe } from "../lib/marketData";
@@ -72,6 +75,7 @@ export default function Dashboard() {
   const macro = payload?.macro;
   const dex = payload?.dex_liquidity;
   const onchain = payload?.onchain_perps;
+  const defi = payload?.defi_health;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -131,24 +135,29 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Cards de métricas */}
+        {/* Cards de métricas — inventário §8.6.3 */}
         <section>
           <h2 className="mb-3 text-sm font-semibold text-slate-300">Fluxo, liquidez e sentimento</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Sentimento — disponível em todos os planos */}
-            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" />
+            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} />
 
             {advanced ? (
               <>
-                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" />
-                <MetricCard title="CVD do varejo" reading={readCvd(payload?.price?.binance?.cvd ?? d?.cvd)} source="Binance" />
-                <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" />
-                <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" />
+                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} />
+                <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} />
+                <MetricCard title="CVD do varejo" reading={readCvd(payload?.price?.binance?.cvd ?? d?.cvd)} source="Binance" timestamp={updatedAt} />
+                <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} />
+                <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard
-                  title="Funding onchain"
-                  reading={readFunding(onchain?.funding_rate)}
-                  source="Hyperliquid"
+                  title="Divergência Spot × Perps"
+                  reading={readDivergence(payload?.price?.coinbase?.volume_spot, payload?.price?.binance?.volume_perps)}
+                  source="Coinbase × Binance"
+                  timestamp={updatedAt}
                 />
+                {defi && (
+                  <MetricCard title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} />
+                )}
                 {dex && (
                   <MetricCard
                     title="Liquidez DEX"
@@ -158,30 +167,37 @@ export default function Dashboard() {
                       level: "neutral",
                     }}
                     source="DexScreener"
+                    timestamp={updatedAt}
                   />
                 )}
                 {macro && (
                   <MetricCard
-                    title="Macro"
+                    title="Macro do mercado"
                     reading={{
-                      label: `Dominância BTC ${fmtPct(macro.btc_dominance, 1)}`,
-                      detail: `Market cap total ${fmtUsd(macro.total_mcap)}`,
+                      label: `Dominância BTC ${fmtPct(macro.btc_dominance, 1)} · mcap ${fmtUsd(macro.total_mcap)}`,
+                      detail: `Dominância BTC ${fmtPct(macro.btc_dominance, 2)} · Market cap total ${fmtUsd(macro.total_mcap)}`,
                       level: "neutral",
                     }}
                     source="CoinGecko"
+                    timestamp={updatedAt}
                   />
                 )}
               </>
             ) : (
               <>
-                <LockedCard title="Liquidações — alvos de liquidez" />
                 <LockedCard title="Funding & GEX" />
+                <LockedCard title="CVD do varejo" />
                 <LockedCard title="Long / Short ratio" />
-                <LockedCard title="Liquidez DEX" />
+                <LockedCard title="Liquidações — alvos de liquidez" />
+                <LockedCard title="Divergência Spot × Perps" />
+                <LockedCard title="Macro do mercado" />
               </>
             )}
           </div>
         </section>
+
+        {/* Bloco de notícias — §8.6.4 (todos os planos) */}
+        <NewsBlock asset={asset} plan={plan} />
       </main>
 
       <Disclaimer />

@@ -1,18 +1,21 @@
 import { useState } from "react";
 
-import { LEVEL_DOT } from "../lib/format";
+import { LEVEL_DOT, relativeTime } from "../lib/format";
 import type { Reading } from "../lib/format";
 
 interface Props {
   title: string;
   reading: Reading;
-  /** Conteúdo extra exibido no estado expandido (mini-gráfico, fonte etc). */
+  /** Conteúdo extra exibido no estado expandido (mini-gráfico etc). */
   expanded?: React.ReactNode;
   source?: string;
+  /** Timestamp do snapshot que originou a leitura (§8.6.5). */
+  timestamp?: string | null;
 }
 
-/** Card com semáforo + tradução; expande para mostrar o número bruto (PRD §8.3). */
-export default function MetricCard({ title, reading, expanded, source }: Props) {
+/** Card com semáforo + tradução; expande para o número bruto. Rodapé sempre
+ *  mostra a fonte e o horário do dado (PRD §8.3 e §8.6.5). */
+export default function MetricCard({ title, reading, expanded, source, timestamp }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
@@ -24,11 +27,18 @@ export default function MetricCard({ title, reading, expanded, source }: Props) 
         </span>
         <span className="text-xs text-slate-600">{open ? "−" : "+"}</span>
       </button>
+
       {open && (
         <div className="mt-3 border-t border-ink-600 pt-3 text-xs text-slate-400">
           <div className="font-mono text-slate-300">{reading.detail}</div>
           {expanded}
-          {source && <div className="mt-2 text-slate-600">Fonte: {source}</div>}
+        </div>
+      )}
+
+      {(source || timestamp) && (
+        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600">
+          <span>{source ? `Fonte: ${source}` : ""}</span>
+          <span>{relativeTime(timestamp)}</span>
         </div>
       )}
     </div>
