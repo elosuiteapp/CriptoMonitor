@@ -186,6 +186,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [days, setDays] = useState(30);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -200,14 +201,14 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Histórico reamostrado de 30 dias (RPC adaptativa) — padrão de visualização.
-      const { data } = await supabase.rpc("gamma_levels_history", { p_asset: asset, p_days: 30 });
+      // Histórico reamostrado (RPC adaptativa) na janela selecionada.
+      const { data } = await supabase.rpc("gamma_levels_history", { p_asset: asset, p_days: days });
       if (!cancelled) setRows((data as Row[]) ?? []);
     })();
     return () => {
       cancelled = true;
     };
-  }, [asset]);
+  }, [asset, days]);
 
   // Dedupe por timestamp (segundos), mantendo a última leitura.
   const data = (() => {
@@ -219,9 +220,25 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
 
   return (
     <div ref={wrapRef} className="w-full">
+      <div className="mb-2 flex justify-end">
+        <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
+                days === d ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
       {data == null || data.length < 2 ? (
         <div className="grid h-[300px] place-items-center text-xs text-slate-500">
-          Acumulando histórico de níveis (a cada 5 min).
+          Acumulando histórico de níveis (a cada 5 min) — janela de {days} dias.
         </div>
       ) : (
         <div className="space-y-2">
