@@ -12,9 +12,17 @@ import {
 } from "../lib/format";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
+import GammaProfileLine from "./GammaProfileLine";
 import OptionsFlowChart from "./OptionsFlowChart";
 
-type ProfileView = "bars" | "levels";
+type ProfileView = "bars" | "line" | "levels";
+
+const VIEW_LABEL: Record<ProfileView, string> = { bars: "Barras", line: "Linha", levels: "Níveis" };
+const VIEW_TITLE: Record<ProfileView, string> = {
+  bars: "Perfil de gamma por strike",
+  line: "Perfil de gamma (linha)",
+  levels: "Níveis de gamma no tempo",
+};
 
 interface Props {
   gamma: GammaData | null;
@@ -114,9 +122,9 @@ export default function GammaPanel({ gamma, asset }: Props) {
       <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-3">
-            <span>{view === "bars" ? "Perfil de gamma por strike" : "Níveis de gamma no tempo"}</span>
+            <span>{VIEW_TITLE[view]}</span>
             <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
-              {(["bars", "levels"] as ProfileView[]).map((v) => (
+              {(["bars", "line", "levels"] as ProfileView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
@@ -124,7 +132,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
                     view === v ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  {v === "bars" ? "Barras" : "Níveis"}
+                  {VIEW_LABEL[v]}
                 </button>
               ))}
             </div>
@@ -134,6 +142,8 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
         {view === "levels" ? (
           <GammaLevelsChart asset={asset} />
+        ) : view === "line" ? (
+          <GammaProfileLine gamma={gamma} />
         ) : bars.length === 0 ? (
           <div className="text-xs text-slate-500">Sem dados de perfil.</div>
         ) : (
