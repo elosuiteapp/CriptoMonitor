@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./hooks/useAuth";
+import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -20,6 +21,7 @@ export default function App() {
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
       <Route path="/analysis" element={session ? <Analysis /> : <Navigate to="/login" replace />} />
+      <Route path="/alerts" element={session ? <Alerts /> : <Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

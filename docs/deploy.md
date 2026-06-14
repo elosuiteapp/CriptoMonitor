@@ -19,9 +19,21 @@ Confirme em **Authentication → Providers**:
 
 ---
 
-## 2. Coletor (Python)
+## 2. Coletor (Python) — Railway ou Render
 
-Processo contínuo. Sobe em VPS, Railway ou Fly.io.
+Processo contínuo (worker). O repo já traz `collector/Dockerfile`, `railway.json`
+e `render.yaml`.
+
+**Railway:** New Project → Deploy from GitHub repo → seleciona este repo. O
+`railway.json` usa `collector/Dockerfile`. Em **Variables**, adicione:
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `COINALYZE_API_KEY`,
+`COINGECKO_API_KEY`, `ASSETS=BTC,ETH,SOL`, `COLLECT_INTERVAL_MINUTES=5`,
+`MACRO_INTERVAL_MINUTES=15`, `LOG_LEVEL=INFO`. Deploy.
+
+**Render:** New → Blueprint → aponta para o repo (lê `render.yaml`) → preenche os
+valores `sync:false` em Environment → Apply.
+
+### Rodar localmente (teste)
 
 ```bash
 cd collector
@@ -57,6 +69,7 @@ supabase functions deploy alerts-dispatch                 # invocada por cron
 | Função | Secrets |
 |---|---|
 | `claude-analysis` | `ANTHROPIC_API_KEY` |
+| `create-checkout` | `MERCADOPAGO_ACCESS_TOKEN`, `APP_URL` (URL pública do frontend) |
 | `payment-webhook` | `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` |
 | `alerts-dispatch` | `RESEND_API_KEY`, `ALERTS_FROM_EMAIL`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`, `ALERTS_DRY_RUN` |
 

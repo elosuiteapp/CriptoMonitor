@@ -1,0 +1,29 @@
+# Render Blueprint — coletor Crypto Monitor (worker contínuo).
+# Render → New → Blueprint → aponte para este repo. Depois preencha os valores
+# marcados com sync:false em Environment.
+services:
+  - type: worker
+    name: crypto-monitor-collector
+    runtime: docker
+    dockerfilePath: collector/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: COINALYZE_API_KEY
+        sync: false
+      - key: COINGECKO_API_KEY
+        sync: false
+      - key: ASSETS
+        value: BTC,ETH,SOL
+      - key: COLLECT_INTERVAL_MINUTES
+        value: "5"
+      - key: MACRO_INTERVAL_MINUTES
+        value: "15"
+      - key: LOG_LEVEL
+        value: INFO

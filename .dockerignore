@@ -1,0 +1,17 @@
+# Contexto de build do coletor = raiz do repo; exclua tudo que não é o coletor.
+web/
+ai/
+docs/
+sql/
+files/
+files.zip
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+.git
+.github
+*.md
+.env
+.env.*
+!collector/**

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import AIAnalysisButton from "../components/AIAnalysisButton";
 import AssetSelector from "../components/AssetSelector";
@@ -85,6 +86,9 @@ export default function Dashboard() {
             Plano {plan.name}
           </span>
           <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
+          <Link to="/alerts" className="text-xs text-slate-400 hover:text-slate-200">
+            Alertas
+          </Link>
           <button onClick={() => signOut()} className="text-xs text-slate-500 hover:text-slate-300">
             Sair
           </button>

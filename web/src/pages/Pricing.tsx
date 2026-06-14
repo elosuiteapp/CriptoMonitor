@@ -1,6 +1,11 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
 
 interface PlanCol {
+  slug: "free" | "pro" | "expert";
   name: string;
   price: string;
   highlight?: boolean;
@@ -9,6 +14,7 @@ interface PlanCol {
 
 const PLANS: PlanCol[] = [
   {
+    slug: "free",
     name: "Free",
     price: "R$ 0",
     features: [
@@ -19,6 +25,7 @@ const PLANS: PlanCol[] = [
     ],
   },
   {
+    slug: "pro",
     name: "Pro",
     price: "R$ 59/mês",
     highlight: true,
@@ -31,6 +38,7 @@ const PLANS: PlanCol[] = [
     ],
   },
   {
+    slug: "expert",
     name: "Expert",
     price: "R$ 149/mês",
     features: [
@@ -44,6 +52,32 @@ const PLANS: PlanCol[] = [
 ];
 
 export default function Pricing() {
+  const { session } = useAuth();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function subscribe(slug: "pro" | "expert") {
+    if (!session) {
+      navigate("/login");
+      return;
+    }
+    setError(null);
+    setBusy(slug);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { plan_slug: slug },
+      });
+      if (error) throw error;
+      if (data?.init_point) window.location.href = data.init_point;
+      else throw new Error("checkout indisponível");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao iniciar checkout");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
       <div className="mb-8 text-center">
@@ -72,18 +106,28 @@ export default function Pricing() {
                 </li>
               ))}
             </ul>
-            <button
-              disabled
-              className="mt-6 w-full cursor-not-allowed rounded-lg border border-ink-500 py-2 text-sm font-semibold text-slate-500"
-              title="Checkout disponível na Fase 5"
-            >
-              {p.name === "Free" ? "Plano atual" : "Em breve"}
-            </button>
+            {p.slug === "free" ? (
+              <button
+                disabled
+                className="mt-6 w-full cursor-not-allowed rounded-lg border border-ink-500 py-2 text-sm font-semibold text-slate-500"
+              >
+                Plano gratuito
+              </button>
+            ) : (
+              <button
+                onClick={() => subscribe(p.slug as "pro" | "expert")}
+                disabled={busy !== null}
+                className="mt-6 w-full rounded-lg bg-accent py-2 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
+              >
+                {busy === p.slug ? "Redirecionando…" : "Assinar"}
+              </button>
+            )}
           </div>
         ))}
       </div>
+      {error && <p className="mt-4 text-center text-sm text-signal-red">{error}</p>}
       <p className="mt-6 text-center text-xs text-slate-600">
-        Pagamento via PIX e cartão (Mercado Pago) — integração na Fase 5.
+        Pagamento via PIX e cartão (Mercado Pago).
       </p>
     </div>
   );
