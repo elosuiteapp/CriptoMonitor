@@ -29,7 +29,13 @@ const S: Record<string, Serie> = {
 };
 
 const fmtK = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(s % 1000 < 50 ? 0 : 1)}k` : `${Math.round(s)}`);
-const hhmm = (ts: string) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+// Eixo de tempo adaptativo: data (DD/MM) em janelas longas, hora (HH:MM) em curtas.
+const fmtAxis = (ts: string, spanMs: number) => {
+  const d = new Date(ts);
+  return spanMs > 2 * 864e5
+    ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+    : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+};
 
 /** Média móvel causal (janela `win`) preservando nulos. */
 function smooth(vals: (number | null)[], win: number): (number | null)[] {
@@ -105,7 +111,9 @@ function LevelPanel({
     if (labels[i].y - labels[i - 1].y < gap) labels[i].y = labels[i - 1].y + gap;
 
   const gridYs = [yMax - pad / 2, (yMin + yMax) / 2, yMin + pad / 2];
-  const tickIdx = [0, Math.floor((data.length - 1) / 2), data.length - 1];
+  const spanMs = tMax - tMin;
+  const nTicks = Math.min(5, data.length);
+  const tickIdx = Array.from({ length: nTicks }, (_, i) => Math.round((i * (data.length - 1)) / (nTicks - 1 || 1)));
 
   return (
     <div>
@@ -130,7 +138,7 @@ function LevelPanel({
               fill="#64748b"
               textAnchor={i === 0 ? "start" : i === tickIdx.length - 1 ? "end" : "middle"}
             >
-              {hhmm(data[idx].ts)}
+              {fmtAxis(data[idx].ts, spanMs)}
             </text>
           ))}
 
@@ -192,12 +200,8 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("gamma_profile")
-        .select("ts, spot_price, zero_gamma_level, call_wall, put_wall, max_pain")
-        .eq("asset", asset)
-        .order("ts", { ascending: true })
-        .limit(500);
+      // Histórico reamostrado de 30 dias (RPC adaptativa) — padrão de visualização.
+      const { data } = await supabase.rpc("gamma_levels_history", { p_asset: asset, p_days: 30 });
       if (!cancelled) setRows((data as Row[]) ?? []);
     })();
     return () => {
