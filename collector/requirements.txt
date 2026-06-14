@@ -1,0 +1,10 @@
+# Crypto Monitor — coletor (Python 3.12)
+ccxt>=4.3.0            # acesso unificado a exchanges (Binance, Coinbase)
+httpx>=0.27.0          # cliente HTTP assíncrono para as fontes REST
+APScheduler>=3.10.0    # agendamento do ciclo de coleta (5 min)
+numpy>=1.26.0          # cálculo vetorizado do módulo Gamma
+python-dotenv>=1.0.0   # carregar variáveis do .env
+supabase>=2.5.0        # cliente Supabase (upsert via service_role)
+
+# Desenvolvimento / testes
+pytest>=8.0.0
