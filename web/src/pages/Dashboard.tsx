@@ -47,6 +47,7 @@ export default function Dashboard() {
     gex: true,
     zeroGamma: true,
     maxPain: false,
+    volumeProfile: false,
     funding: false,
     cvd: false,
     liquidations: false,

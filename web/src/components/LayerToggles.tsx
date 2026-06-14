@@ -17,6 +17,7 @@ const ITEMS: Item[] = [
   { key: "gex", label: "Opções (Call/Put Wall)", color: "bg-signal-green" },
   { key: "zeroGamma", label: "Zero Gamma", color: "bg-purple-500" },
   { key: "maxPain", label: "Max Pain", color: "bg-signal-yellow" },
+  { key: "volumeProfile", label: "Volume Profile (POC)", color: "bg-sky-400" },
   { key: "funding", label: "Funding", color: "bg-sky-500" },
   { key: "cvd", label: "CVD", color: "bg-emerald-500" },
   { key: "liquidations", label: "Liquidações", color: "bg-rose-500", comingSoon: true },

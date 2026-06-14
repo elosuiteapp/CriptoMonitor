@@ -10,6 +10,47 @@ export interface Candle {
   high: number;
   low: number;
   close: number;
+  volume: number;
+}
+
+export interface VolumeProfile {
+  poc: number; // Point of Control — preço com mais volume
+  vah: number; // Value Area High
+  val: number; // Value Area Low
+}
+
+/** Volume Profile / POC a partir dos candles (PRD3 §8.8.5). Distribui o volume
+ *  de cada candle no bin do preço típico e acha o nível de maior volume. */
+export function computeVolumeProfile(candles: Candle[], bins = 50): VolumeProfile | null {
+  if (candles.length < 2) return null;
+  const hi = Math.max(...candles.map((c) => c.high));
+  const lo = Math.min(...candles.map((c) => c.low));
+  if (hi <= lo) return null;
+  const width = (hi - lo) / bins;
+  const vol = new Array(bins).fill(0);
+  for (const c of candles) {
+    const typical = (c.high + c.low + c.close) / 3;
+    let idx = Math.floor((typical - lo) / width);
+    idx = Math.max(0, Math.min(bins - 1, idx));
+    vol[idx] += c.volume;
+  }
+  let maxI = 0;
+  for (let i = 1; i < bins; i++) if (vol[i] > vol[maxI]) maxI = i;
+  const total = vol.reduce((a, b) => a + b, 0);
+  let loI = maxI;
+  let hiI = maxI;
+  let acc = vol[maxI];
+  while (acc < total * 0.7 && (loI > 0 || hiI < bins - 1)) {
+    const below = loI > 0 ? vol[loI - 1] : -1;
+    const above = hiI < bins - 1 ? vol[hiI + 1] : -1;
+    if (above >= below) acc += vol[++hiI];
+    else acc += vol[--loI];
+  }
+  return {
+    poc: lo + (maxI + 0.5) * width,
+    vah: lo + (hiI + 1) * width,
+    val: lo + loI * width,
+  };
 }
 
 const SYMBOL: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT" };
@@ -27,6 +68,7 @@ export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Pr
     high: Number(k[2]),
     low: Number(k[3]),
     close: Number(k[4]),
+    volume: Number(k[5]),
   }));
 }
 
@@ -63,6 +105,7 @@ export function subscribeKline(asset: string, tf: Timeframe, onBar: (c: Candle) 
         high: Number(k.h),
         low: Number(k.l),
         close: Number(k.c),
+        volume: Number(k.v),
       });
     } catch {
       /* ignora frames malformados */

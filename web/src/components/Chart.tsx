@@ -10,13 +10,22 @@ import {
 } from "lightweight-charts";
 
 import { gammaLevels } from "../lib/gammaLevels";
-import { fetchKlines, subscribeKline, type Candle, type ChartType, type Timeframe } from "../lib/marketData";
+import {
+  computeVolumeProfile,
+  fetchKlines,
+  subscribeKline,
+  type Candle,
+  type ChartType,
+  type Timeframe,
+  type VolumeProfile,
+} from "../lib/marketData";
 import type { GammaData } from "../lib/types";
 
 export interface ActiveLayers {
   gex: boolean; // Call Wall + Put Wall
   zeroGamma: boolean;
   maxPain: boolean;
+  volumeProfile: boolean; // POC + value area (calculado dos candles)
   funding: boolean; // faixa de funding (renderizada abaixo do gráfico)
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
   liquidations: boolean; // bolsões de liquidez (requer heatmap — pós-MVP)
@@ -40,6 +49,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [vp, setVp] = useState<VolumeProfile | null>(null);
 
   // ─── Cria o chart uma vez ──────────────────────────────────────────────────
   useEffect(() => {
@@ -104,6 +114,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         if (cancelled) return;
         series.setData(toSeriesData(candles) as never);
         chart.timeScale().fitContent();
+        setVp(computeVolumeProfile(candles));
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
           if (chartType === "line" || chartType === "area") {
@@ -152,7 +163,12 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     }
     if (layers.zeroGamma) add(levels.zeroGamma, "#a855f7", "Zero Gamma");
     if (layers.maxPain) add(levels.maxPain, "#eab308", "Max Pain");
-  }, [gamma, layers, canUseLayers, chartType]);
+    if (layers.volumeProfile && vp) {
+      add(vp.poc, "#38bdf8", "POC");
+      add(vp.vah, "rgba(56,189,248,0.45)", "VA High");
+      add(vp.val, "rgba(56,189,248,0.45)", "VA Low");
+    }
+  }, [gamma, layers, canUseLayers, chartType, vp]);
 
   return (
     <div className="relative h-[360px] w-full">
