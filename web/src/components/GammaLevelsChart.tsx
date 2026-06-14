@@ -72,7 +72,7 @@ function LevelPanel({
 }) {
   const padT = 14;
   const padB = showTime ? 22 : 8;
-  const padL = 8;
+  const padL = 40; // calha do eixo de preço (grade à esquerda)
   const padR = 86;
   const plotW = Math.max(1, w - padL - padR);
   const plotH = height - padT - padB;
@@ -110,7 +110,9 @@ function LevelPanel({
   for (let i = 1; i < labels.length; i++)
     if (labels[i].y - labels[i - 1].y < gap) labels[i].y = labels[i - 1].y + gap;
 
-  const gridYs = [yMax - pad / 2, (yMin + yMax) / 2, yMin + pad / 2];
+  // Grade de preço: 5 níveis igualmente espaçados (eixo à esquerda)
+  const N_GRID = 5;
+  const gridYs = Array.from({ length: N_GRID }, (_, i) => yMin + ((yMax - yMin) * i) / (N_GRID - 1));
   const spanMs = tMax - tMin;
   const nTicks = Math.min(5, data.length);
   const tickIdx = Array.from({ length: nTicks }, (_, i) => Math.round((i * (data.length - 1)) / (nTicks - 1 || 1)));
@@ -121,8 +123,8 @@ function LevelPanel({
       <svg width={w} height={height} role="img" aria-label={title}>
         {gridYs.map((p, i) => (
           <g key={i}>
-            <line x1={padL} y1={yFor(p)} x2={w - padR} y2={yFor(p)} stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
-            <text x={padL + 2} y={yFor(p) - 2} fontSize="8.5" fill="#475569">
+            <line x1={padL} y1={yFor(p)} x2={w - padR} y2={yFor(p)} stroke="rgba(148,163,184,0.1)" strokeWidth="1" />
+            <text x={padL - 5} y={yFor(p) + 3} fontSize="9" fill="#64748b" textAnchor="end">
               {fmtK(p)}
             </text>
           </g>
@@ -242,8 +244,8 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <LevelPanel data={data} series={[S.call, S.spot, S.put]} w={w} height={150} title="Preço × Paredes (Call / Put Wall)" showTime={false} />
-          <LevelPanel data={data} series={[S.spot, S.zero, S.pain]} w={w} height={158} title="Spot × Zero Gamma × Max Pain (zoom no miolo)" showTime={true} />
+          <LevelPanel data={data} series={[S.call, S.spot, S.put]} w={w} height={150} title="Preço entre as paredes (visão ampla)" showTime={false} />
+          <LevelPanel data={data} series={[S.spot, S.zero, S.pain]} w={w} height={158} title="Mesmo preço — zoom no flip / Max Pain" showTime={true} />
         </div>
       )}
 
