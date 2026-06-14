@@ -59,6 +59,7 @@ export function useSnapshot(asset: string, plan: Plan | null) {
         asset,
         generated_at: new Date().toISOString(),
         price: Object.keys(byExchange).length ? byExchange : null,
+        spot_perps_divergence: null,
         derivatives: null,
         gamma: null,
         onchain_perps: null,

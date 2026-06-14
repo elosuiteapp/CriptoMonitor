@@ -95,10 +95,16 @@ def build_snapshots(
 
     snapshots: list[dict] = []
     for asset in assets:
+        price_map = {p["exchange"]: p for p in prices.get(asset, [])}
+        # Divergência Spot (Coinbase) × Perps (Binance) — §8.6.3
+        cb_spot = (price_map.get("coinbase") or {}).get("volume_spot")
+        bn_perps = (price_map.get("binance") or {}).get("volume_perps")
+        divergence = ((cb_spot - bn_perps) / bn_perps) if (cb_spot and bn_perps) else None
         payload: dict = {
             "asset": asset,
             "generated_at": ts,
-            "price": {p["exchange"]: p for p in prices.get(asset, [])} or None,
+            "price": price_map or None,
+            "spot_perps_divergence": divergence,
             "derivatives": derivatives.get(asset),
             "gamma": gamma.get(asset),
             "onchain_perps": onchain.get(asset),

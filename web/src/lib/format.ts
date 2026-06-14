@@ -115,21 +115,24 @@ export function readGammaRegime(regime: "positive" | "negative" | null | undefin
   };
 }
 
-/** Divergência Spot (Coinbase, institucional) vs. Perps (Binance, varejo) — §8.6.3. */
+/** Divergência Spot (Coinbase, institucional) vs. Perps (Binance, varejo) — §8.6.3.
+ *  `divergence` = (spot − perps)/perps. Em cripto o perp domina o spot, então a
+ *  divergência fica estruturalmente negativa; os limiares são calibrados para
+ *  essa realidade (spot anormalmente forte = saudável). */
 export function readDivergence(
-  spotVol: number | null | undefined,
-  perpsVol: number | null | undefined,
+  divergence: number | null | undefined,
+  spotVol?: number | null,
+  perpsVol?: number | null,
 ): Reading {
-  if (!spotVol || !perpsVol) {
+  if (divergence == null) {
     return { label: "Divergência indisponível", detail: "—", level: "neutral" };
   }
-  const ratio = spotVol / perpsVol;
-  const detail = `Spot (Coinbase) ${fmtUsd(spotVol)} · Perps (Binance) ${fmtUsd(perpsVol)} · razão ${ratio.toFixed(2)}`;
-  if (ratio >= 0.25)
-    return { label: "Volume à vista relevante — instituição presente, divergência saudável", detail, level: "green" };
-  if (ratio < 0.1)
-    return { label: "Varejo alavancado domina o volume — euforia, sinal de cautela", detail, level: "yellow" };
-  return { label: "Equilíbrio entre volume à vista e alavancado", detail, level: "neutral" };
+  const detail = `Spot (Coinbase) ${fmtUsd(spotVol)} · Perps (Binance) ${fmtUsd(perpsVol)} · divergência ${fmtPct(divergence * 100, 1)}`;
+  if (divergence >= -0.8)
+    return { label: "Volume à vista forte vs. perps — instituições presentes, divergência saudável", detail, level: "green" };
+  if (divergence < -0.92)
+    return { label: "Perps esmagam o spot — varejo eufórico, instituições paradas, cautela", detail, level: "red" };
+  return { label: "Spot e perps em proporção típica do mercado", detail, level: "yellow" };
 }
 
 /** Saúde DeFi: TVL + fluxo de stablecoins 24h (DefiLlama, ETH/SOL) — §8.6.3. */

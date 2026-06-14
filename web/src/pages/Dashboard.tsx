@@ -151,7 +151,11 @@ export default function Dashboard() {
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard
                   title="Divergência Spot × Perps"
-                  reading={readDivergence(payload?.price?.coinbase?.volume_spot, payload?.price?.binance?.volume_perps)}
+                  reading={readDivergence(
+                    payload?.spot_perps_divergence,
+                    payload?.price?.coinbase?.volume_spot,
+                    payload?.price?.binance?.volume_perps,
+                  )}
                   source="Coinbase × Binance"
                   timestamp={updatedAt}
                 />
