@@ -19,6 +19,7 @@ dist-ssr/
 .vite/
 *.local
 coverage/
+*.tsbuildinfo
 
 # ─── Ambiente / segredos ──────────────────────────────────
 .env
