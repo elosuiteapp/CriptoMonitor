@@ -19,6 +19,7 @@ import OIDeltaCard from "../components/OIDeltaCard";
 import PriceHeader from "../components/PriceHeader";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
+import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
@@ -165,6 +166,13 @@ export default function Dashboard() {
             ) : (
               <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
             )}
+          </section>
+        )}
+
+        {/* Painel de Volatilidade (BTC/ETH, Pro+) — DVOL, IVP, IV-RV, term structure */}
+        {isOptionAsset && advanced && (
+          <section>
+            <VolatilityPanel asset={asset} />
           </section>
         )}
 

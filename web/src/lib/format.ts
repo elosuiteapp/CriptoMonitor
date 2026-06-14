@@ -244,6 +244,35 @@ export function readSkew(skew: number | null | undefined): { label: string; leve
   return { label: "Skew neutro entre puts e calls", level: "yellow" };
 }
 
+/** IV Percentile 90d (0-100): onde a IV atual está na faixa dos últimos 90 dias. */
+export function readIvp(ivp: number | null | undefined): { label: string; level: Level } {
+  if (ivp == null) return { label: "indisponível", level: "neutral" };
+  if (ivp >= 70) return { label: "Volatilidade implícita em zona alta — opções caras, vendedores favorecidos", level: "red" };
+  if (ivp <= 30) return { label: "Volatilidade implícita em zona baixa — opções baratas, compradores favorecidos", level: "green" };
+  return { label: "Volatilidade implícita em zona neutra", level: "yellow" };
+}
+
+/** IV-RV spread: prêmio de risco (implícita − realizada). Normaliza por |RV|. */
+export function readIvRvSpread(
+  spread: number | null | undefined,
+  rv: number | null | undefined,
+): { label: string; level: Level } {
+  if (spread == null || rv == null || rv === 0) return { label: "indisponível", level: "neutral" };
+  const pct = (spread / Math.abs(rv)) * 100;
+  if (pct > 10) return { label: "Opções precificando muito mais volatilidade que a realizada — prêmio de risco elevado", level: "red" };
+  if (pct < -10) return { label: "Opções subprecificadas vs. volatilidade realizada — possível oportunidade compradora de vol", level: "green" };
+  return { label: "Implícita e realizada alinhadas", level: "yellow" };
+}
+
+/** Term structure: compara o curto (7d) com o médio (90d). */
+export function readTermStructure(term: Record<string, number> | null | undefined): { label: string; level: Level } {
+  const short = term?.["7d"];
+  const back = term?.["90d"];
+  if (short == null || back == null) return { label: "indisponível", level: "neutral" };
+  if (short > back) return { label: "Backwardation — mercado pricing evento de curto prazo", level: "yellow" };
+  return { label: "Estrutura normal — mercado tranquilo", level: "green" };
+}
+
 // ─── Utilidades de UI ────────────────────────────────────────────────────────
 export const LEVEL_DOT: Record<Level, string> = {
   green: "bg-signal-green",
