@@ -189,6 +189,15 @@ export function readMacro(
   };
 }
 
+/** Fluxo líquido de exchanges (§8.8.2). netflow > 0 = entrando (venda), < 0 = saindo (acumulação). */
+export function readExchangeFlow(netflow: number | null | undefined, asset: string): Reading {
+  if (netflow == null) return { label: "Fluxo de exchanges indisponível", detail: "—", level: "neutral" };
+  const detail = `Netflow 24h: ${netflow > 0 ? "+" : ""}${netflow.toLocaleString("pt-BR")} ${asset}`;
+  if (netflow < 0) return { label: `Saída líquida das exchanges — sinal de acumulação`, detail, level: "green" };
+  if (netflow > 0) return { label: `Entrada líquida nas exchanges — possível pressão vendedora`, detail, level: "red" };
+  return { label: "Fluxo de exchanges equilibrado", detail, level: "yellow" };
+}
+
 /** Tempo relativo curto em PT-BR ("há 2h", "há 30min"). */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "";
