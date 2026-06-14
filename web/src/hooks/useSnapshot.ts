@@ -59,7 +59,10 @@ export function useSnapshot(asset: string, plan: Plan | null) {
         asset,
         generated_at: new Date().toISOString(),
         price: Object.keys(byExchange).length ? byExchange : null,
-        spot_perps_divergence: null,
+        coinbase_premium:
+          byExchange.coinbase?.price != null && byExchange.binance?.price
+            ? (byExchange.coinbase.price - byExchange.binance.price) / byExchange.binance.price
+            : null,
         derivatives: null,
         gamma: null,
         onchain_perps: null,

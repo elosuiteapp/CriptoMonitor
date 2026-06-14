@@ -96,15 +96,16 @@ def build_snapshots(
     snapshots: list[dict] = []
     for asset in assets:
         price_map = {p["exchange"]: p for p in prices.get(asset, [])}
-        # Divergência Spot (Coinbase) × Perps (Binance) — §8.6.3
-        cb_spot = (price_map.get("coinbase") or {}).get("volume_spot")
-        bn_perps = (price_map.get("binance") or {}).get("volume_perps")
-        divergence = ((cb_spot - bn_perps) / bn_perps) if (cb_spot and bn_perps) else None
+        # Prêmio Coinbase: demanda institucional (Coinbase/US) × varejo/global
+        # (Binance) — §8.6.3. >0 instituições comprando; <0 varejo pressiona.
+        cb_price = (price_map.get("coinbase") or {}).get("price")
+        bn_price = (price_map.get("binance") or {}).get("price")
+        coinbase_premium = ((cb_price - bn_price) / bn_price) if (cb_price and bn_price) else None
         payload: dict = {
             "asset": asset,
             "generated_at": ts,
             "price": price_map or None,
-            "spot_perps_divergence": divergence,
+            "coinbase_premium": coinbase_premium,
             "derivatives": derivatives.get(asset),
             "gamma": gamma.get(asset),
             "onchain_perps": onchain.get(asset),

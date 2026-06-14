@@ -115,24 +115,32 @@ export function readGammaRegime(regime: "positive" | "negative" | null | undefin
   };
 }
 
-/** Divergência Spot (Coinbase, institucional) vs. Perps (Binance, varejo) — §8.6.3.
- *  `divergence` = (spot − perps)/perps. Em cripto o perp domina o spot, então a
- *  divergência fica estruturalmente negativa; os limiares são calibrados para
- *  essa realidade (spot anormalmente forte = saudável). */
-export function readDivergence(
-  divergence: number | null | undefined,
-  spotVol?: number | null,
-  perpsVol?: number | null,
+/** Prêmio Coinbase: (preço Coinbase − preço Binance)/Binance — §8.6.3.
+ *  Proxy de demanda institucional (Coinbase, US) × varejo/global (Binance).
+ *  Positivo = instituições comprando agressivo no spot; negativo = desconto na
+ *  Coinbase, varejo/global pressionando e instituições contidas. */
+export function readCoinbasePremium(
+  premium: number | null | undefined,
+  cbVol?: number | null,
+  bnVol?: number | null,
 ): Reading {
-  if (divergence == null) {
-    return { label: "Divergência indisponível", detail: "—", level: "neutral" };
+  if (premium == null) {
+    return { label: "Prêmio Coinbase indisponível", detail: "—", level: "neutral" };
   }
-  const detail = `Spot (Coinbase) ${fmtUsd(spotVol)} · Perps (Binance) ${fmtUsd(perpsVol)} · divergência ${fmtPct(divergence * 100, 1)}`;
-  if (divergence >= -0.8)
-    return { label: "Volume à vista forte vs. perps — instituições presentes, divergência saudável", detail, level: "green" };
-  if (divergence < -0.92)
-    return { label: "Perps esmagam o spot — varejo eufórico, instituições paradas, cautela", detail, level: "red" };
-  return { label: "Spot e perps em proporção típica do mercado", detail, level: "yellow" };
+  const volTxt =
+    cbVol != null && bnVol != null
+      ? ` · vol Coinbase ${fmtUsd(cbVol)} vs Binance ${fmtUsd(bnVol)}`
+      : "";
+  const detail = `Prêmio ${fmtPct(premium * 100, 3)}${volTxt}`;
+  if (premium >= 0.0015)
+    return { label: "Prêmio forte na Coinbase — instituições comprando agressivo", detail, level: "green" };
+  if (premium >= 0.0003)
+    return { label: "Leve prêmio na Coinbase — bid institucional presente", detail, level: "green" };
+  if (premium <= -0.0015)
+    return { label: "Desconto forte na Coinbase — venda institucional, varejo dominando", detail, level: "red" };
+  if (premium <= -0.0003)
+    return { label: "Leve desconto na Coinbase — varejo pressiona, instituições contidas", detail, level: "yellow" };
+  return { label: "Sem prêmio relevante — institucional e varejo equilibrados", detail, level: "yellow" };
 }
 
 /** Saúde DeFi: TVL + fluxo de stablecoins 24h (DefiLlama, ETH/SOL) — §8.6.3. */

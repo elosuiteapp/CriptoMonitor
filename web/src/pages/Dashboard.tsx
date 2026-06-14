@@ -28,7 +28,7 @@ import {
   fmtPct,
   fmtUsd,
   readCvd,
-  readDivergence,
+  readCoinbasePremium,
   readFng,
   readFunding,
   readLiquidations,
@@ -179,13 +179,13 @@ export default function Dashboard() {
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
                 <MetricCard
-                  title="Divergência Spot × Perps"
-                  reading={readDivergence(
-                    payload?.spot_perps_divergence,
+                  title="Prêmio Coinbase (Institucional × Varejo)"
+                  reading={readCoinbasePremium(
+                    payload?.coinbase_premium,
                     payload?.price?.coinbase?.volume_spot,
-                    payload?.price?.binance?.volume_perps,
+                    payload?.price?.binance?.volume_spot,
                   )}
-                  source="Coinbase × Binance"
+                  source="Coinbase × Binance (spot)"
                   timestamp={updatedAt}
                 />
                 {defi && (
@@ -222,7 +222,7 @@ export default function Dashboard() {
                 <LockedCard title="CVD do varejo" />
                 <LockedCard title="Long / Short ratio" />
                 <LockedCard title="Liquidações — alvos de liquidez" />
-                <LockedCard title="Divergência Spot × Perps" />
+                <LockedCard title="Prêmio Coinbase (Institucional × Varejo)" />
                 <LockedCard title="Macro do mercado" />
               </>
             )}

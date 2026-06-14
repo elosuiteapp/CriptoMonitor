@@ -97,7 +97,7 @@ export interface SnapshotPayload {
   asset: string;
   generated_at: string;
   price: Record<string, PriceRow> | null;
-  spot_perps_divergence: number | null;
+  coinbase_premium: number | null;
   derivatives: DerivativesData | null;
   gamma: GammaData | null;
   onchain_perps: OnchainPerpsData | null;
