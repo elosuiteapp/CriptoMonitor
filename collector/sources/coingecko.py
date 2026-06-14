@@ -24,7 +24,9 @@ class CoinGeckoSource(BaseSource):
         ts = to_iso(now_utc())
         headers = {}
         key = os.getenv("COINGECKO_API_KEY")
-        if key:
+        # Só envia o header se a chave for real (ignora vazio/placeholder).
+        # Sem chave o endpoint público funciona para a cadência de 15 min.
+        if key and not key.upper().startswith("COLE"):
             headers["x-cg-demo-api-key"] = key
 
         resp = await http.get(_URL, headers=headers, timeout=20.0)

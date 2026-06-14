@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.logger import get_logger          # noqa: E402
-from lib.supabase_client import upsert      # noqa: E402
+from lib.supabase_client import get_supabase, upsert  # noqa: E402
 from lib.timeutil import now_utc, to_iso    # noqa: E402
 from sources import SourceResult, build_sources  # noqa: E402
 
@@ -70,7 +70,9 @@ def _rows_of(results: list[SourceResult], table: str) -> list[dict]:
     ]
 
 
-def build_snapshots(results: list[SourceResult], assets: list[str], ts: str) -> list[dict]:
+def build_snapshots(
+    results: list[SourceResult], assets: list[str], ts: str, macro_fallback: dict | None = None
+) -> list[dict]:
     """Consolida a visão por ativo num único JSONB por ativo."""
     prices: dict[str, list[dict]] = {}
     for row in _rows_of(results, "prices_cex"):
@@ -88,7 +90,7 @@ def build_snapshots(results: list[SourceResult], assets: list[str], ts: str) -> 
     sentiment_rows = _rows_of(results, "sentiment")
     sentiment = sentiment_rows[0] if sentiment_rows else None
     macro_rows = _rows_of(results, "macro")
-    macro = macro_rows[0] if macro_rows else None
+    macro = macro_rows[0] if macro_rows else macro_fallback
     news = _rows_of(results, "news_feed")
 
     snapshots: list[dict] = []
@@ -127,6 +129,19 @@ class Collector:
             active.append(s)
         return active
 
+    def _latest_macro(self) -> dict | None:
+        """Último macro gravado (carry-forward entre coletas do CoinGecko)."""
+        try:
+            res = (
+                get_supabase().table("macro")
+                .select("btc_dominance, total_mcap, ts")
+                .order("ts", desc=True).limit(1).execute()
+            )
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha ao carregar macro anterior: %s", exc)
+            return None
+
     async def run_cycle(self) -> list[SourceResult]:
         now = now_utc()
         ts = to_iso(now.replace(second=0, microsecond=0))
@@ -144,8 +159,14 @@ class Collector:
             for output in r.outputs:
                 written += upsert(output.table, output.rows, output.on_conflict)
 
+        # Macro (CoinGecko) roda a cada 15 min; nos demais ciclos carregamos o
+        # último valor do banco para o card não "piscar" no snapshot.
+        macro_fallback = None
+        if not any(o.table == "macro" for r in results if r.ok for o in r.outputs):
+            macro_fallback = self._latest_macro()
+
         # Recalcular e gravar o snapshot consolidado
-        snapshots = build_snapshots(results, self.assets, ts)
+        snapshots = build_snapshots(results, self.assets, ts, macro_fallback)
         upsert("market_snapshot", snapshots, "asset,ts")
 
         ok = sum(1 for r in results if r.ok)
