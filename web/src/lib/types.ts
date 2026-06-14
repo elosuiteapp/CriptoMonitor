@@ -74,6 +74,13 @@ export interface MacroData {
   total_mcap: number | null;
 }
 
+export interface OrderbookWall {
+  exchange: string;
+  side: "bid" | "ask";
+  price: number;
+  notional_usd: number;
+}
+
 export interface NewsItem {
   title: string;
   source: string | null;

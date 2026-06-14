@@ -9,6 +9,7 @@ import {
   type IPriceLine,
 } from "lightweight-charts";
 
+import { fmtUsd } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import {
   computeVolumeProfile,
@@ -19,13 +20,14 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
-import type { GammaData } from "../lib/types";
+import type { GammaData, OrderbookWall } from "../lib/types";
 
 export interface ActiveLayers {
   gex: boolean; // Call Wall + Put Wall
   zeroGamma: boolean;
   maxPain: boolean;
   volumeProfile: boolean; // POC + value area (calculado dos candles)
+  orderbookWalls: boolean; // paredes do book (Binance + Coinbase)
   funding: boolean; // faixa de funding (renderizada abaixo do gráfico)
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
   liquidations: boolean; // bolsões de liquidez (requer heatmap — pós-MVP)
@@ -38,12 +40,13 @@ interface ChartProps {
   gamma: GammaData | null;
   layers: ActiveLayers;
   canUseLayers: boolean;
+  walls?: OrderbookWall[];
 }
 
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls }: ChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
@@ -168,7 +171,17 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       add(vp.vah, "rgba(56,189,248,0.45)", "VA High");
       add(vp.val, "rgba(56,189,248,0.45)", "VA Low");
     }
-  }, [gamma, layers, canUseLayers, chartType, vp]);
+    if (layers.orderbookWalls && walls?.length) {
+      const top = [...walls].sort((a, b) => b.notional_usd - a.notional_usd).slice(0, 6);
+      for (const w of top) {
+        add(
+          w.price,
+          w.side === "bid" ? "#16a34a" : "#dc2626",
+          `Parede ${w.side === "bid" ? "compra" : "venda"} ${fmtUsd(w.notional_usd)}`,
+        );
+      }
+    }
+  }, [gamma, layers, canUseLayers, chartType, vp, walls]);
 
   return (
     <div className="relative h-[360px] w-full">
