@@ -21,6 +21,9 @@ __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
 
 
 def build_sources() -> list[BaseSource]:
+    # CryptocurrencyCvSource está parada no MVP (decisão do produto: notícias
+    # ficam para depois, pendente do endpoint real). O código permanece pronto
+    # em cryptocurrency_cv.py — basta reincluí-la aqui quando a URL for definida.
     return [
         BinanceSource(),
         CoinbaseSource(),
@@ -31,5 +34,4 @@ def build_sources() -> list[BaseSource]:
         HyperliquidSource(),
         CoinGeckoSource(),
         DexScreenerSource(),
-        CryptocurrencyCvSource(),
     ]
