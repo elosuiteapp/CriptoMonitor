@@ -21,11 +21,15 @@ class BinanceSource(BaseSource):
     async def fetch(self, http: httpx.AsyncClient, assets: list[str]) -> list[TableRows]:
         ts = to_iso(now_utc())
         rows: list[dict] = []
-        spot = ccxt.binance({"enableRateLimit": True, "timeout": 15000})
-        # api.binance.com devolve 451 em regiões de nuvem bloqueadas (ex: Railway);
-        # o domínio público de dados de mercado (spot) não tem geo-bloqueio.
-        # Perps (fapi) seguem geo-bloqueados e volume_perps é sinal de baixa
-        # relevância → não consultamos (o cliente perps derrubava a fonte inteira).
+        # Geo-bloqueio 451 (ex: Railway US West): (1) dados públicos de spot via
+        # data-api.binance.vision (sem geo-bloqueio); (2) fetchMarkets=['spot'] —
+        # o cliente unificado, sem isso, carrega fapi/dapi (futuros) no load_markets
+        # e essas chamadas dão 451 e derrubam a fonte inteira. volume_perps fica null.
+        spot = ccxt.binance({
+            "enableRateLimit": True,
+            "timeout": 15000,
+            "options": {"defaultType": "spot", "fetchMarkets": ["spot"]},
+        })
         try:
             spot.urls["api"]["public"] = "https://data-api.binance.vision/api/v3"
         except Exception:  # noqa: BLE001 — se a estrutura do ccxt mudar, segue no padrão
