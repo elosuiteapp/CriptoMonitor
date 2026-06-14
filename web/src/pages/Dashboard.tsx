@@ -11,10 +11,14 @@ import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LockedCard from "../components/LockedCard";
+import LockedTab from "../components/LockedTab";
+import MacroTab from "../components/MacroTab";
 import MetricCard from "../components/MetricCard";
 import NewsBlock from "../components/NewsBlock";
 import OIDeltaCard from "../components/OIDeltaCard";
 import PriceHeader from "../components/PriceHeader";
+import SmartMoneyTab from "../components/SmartMoneyTab";
+import TabBar, { type TabId } from "../components/TabBar";
 import { useAuth } from "../hooks/useAuth";
 import { usePlan } from "../hooks/usePlan";
 import { useSeries } from "../hooks/useSeries";
@@ -43,6 +47,7 @@ export default function Dashboard() {
   const [asset, setAsset] = useState("BTC");
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [chartType, setChartType] = useState<ChartType>("candles");
+  const [tab, setTab] = useState<TabId>("cockpit");
   const [layers, setLayers] = useState<ActiveLayers>({
     gex: true,
     zeroGamma: true,
@@ -61,6 +66,7 @@ export default function Dashboard() {
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
+  const isExpert = plan?.slug === "expert";
   const canUseLayers = plan?.chart_layers ?? false;
   const isOptionAsset = OPTION_ASSETS.includes(asset);
 
@@ -104,6 +110,23 @@ export default function Dashboard() {
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} />
 
+        <TabBar tab={tab} onTab={setTab} advanced={advanced} isExpert={isExpert} />
+
+        {tab === "macro" &&
+          (advanced ? (
+            <MacroTab asset={asset} />
+          ) : (
+            <LockedTab title="Macro & Correlações" plan="Pro" />
+          ))}
+        {tab === "smart" &&
+          (isExpert ? (
+            <SmartMoneyTab asset={asset} />
+          ) : (
+            <LockedTab title="Smart Money & On-chain" plan="Expert" />
+          ))}
+
+        {tab === "cockpit" && (
+          <>
         {/* Gráfico com camadas */}
         <section className="space-y-3 rounded-2xl border border-ink-600 bg-ink-800/40 p-4">
           <ChartTypeSelector
@@ -205,6 +228,8 @@ export default function Dashboard() {
 
         {/* Bloco de notícias — §8.6.4 (todos os planos) */}
         <NewsBlock asset={asset} plan={plan} />
+          </>
+        )}
       </main>
 
       <Disclaimer />

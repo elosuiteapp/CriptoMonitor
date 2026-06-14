@@ -166,6 +166,29 @@ export function readOiDelta(
   return { label: "Long capitulando — desalavancagem", detail, level: "yellow" };
 }
 
+/** Ativo macro (DXY, S&P, ouro, 10Y) + correlação 30d com o cripto (§8.8.3). */
+export function readMacro(
+  name: string,
+  change7d: number | null,
+  corr: number | null,
+  asset: string,
+): Reading {
+  const chg = change7d != null ? fmtPct(change7d * 100, 1) : "—";
+  const corrTxt = corr != null ? corr.toFixed(2) : "—";
+  const detail = `${name} · 7d ${chg} · correlação 30d com ${asset}: ${corrTxt}`;
+  if (corr == null) {
+    return { label: `${name}: ${chg} em 7d`, detail, level: "neutral" };
+  }
+  const abs = Math.abs(corr);
+  const strength = abs >= 0.5 ? "forte" : abs >= 0.3 ? "moderada" : "fraca";
+  const dir = corr < 0 ? "inversa" : "direta";
+  return {
+    label: `${name} ${chg} em 7d · correlação ${dir} ${strength} (${corrTxt}) com ${asset}`,
+    detail,
+    level: abs >= 0.5 ? "yellow" : "neutral",
+  };
+}
+
 /** Tempo relativo curto em PT-BR ("há 2h", "há 30min"). */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "";
