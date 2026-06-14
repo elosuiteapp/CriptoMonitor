@@ -4,7 +4,9 @@ import AIAnalysisButton from "../components/AIAnalysisButton";
 import AssetSelector from "../components/AssetSelector";
 import Chart, { type ActiveLayers } from "../components/Chart";
 import ChartTypeSelector from "../components/ChartTypeSelector";
+import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
+import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LockedCard from "../components/LockedCard";
@@ -12,6 +14,7 @@ import MetricCard from "../components/MetricCard";
 import PriceHeader from "../components/PriceHeader";
 import { useAuth } from "../hooks/useAuth";
 import { usePlan } from "../hooks/usePlan";
+import { useSeries } from "../hooks/useSeries";
 import { useSnapshot } from "../hooks/useSnapshot";
 import {
   fmtPct,
@@ -35,7 +38,14 @@ export default function Dashboard() {
   const [asset, setAsset] = useState("BTC");
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [chartType, setChartType] = useState<ChartType>("candles");
-  const [layers, setLayers] = useState<ActiveLayers>({ gex: true, zeroGamma: true, maxPain: false });
+  const [layers, setLayers] = useState<ActiveLayers>({
+    gex: true,
+    zeroGamma: true,
+    maxPain: false,
+    funding: false,
+    cvd: false,
+    liquidations: false,
+  });
 
   // Garante que o ativo selecionado pertence ao plano
   useEffect(() => {
@@ -43,6 +53,7 @@ export default function Dashboard() {
   }, [plan, asset]);
 
   const { payload, updatedAt } = useSnapshot(asset, plan);
+  const series = useSeries(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
   const canUseLayers = plan?.chart_layers ?? false;
   const isOptionAsset = OPTION_ASSETS.includes(asset);
@@ -100,6 +111,8 @@ export default function Dashboard() {
             canUseLayers={canUseLayers}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
+          {canUseLayers && layers.cvd && <CvdSubchart data={series.cvd} />}
+          {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
         </section>
 
         {/* Painel Gamma (BTC/ETH, Pro+) */}
