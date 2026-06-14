@@ -30,11 +30,14 @@ export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Pr
   }));
 }
 
-/** Assina o stream de kline e chama `onBar` a cada atualização. Devolve o cleanup. */
+/** Assina o stream de kline e chama `onBar` a cada atualização. Devolve o cleanup.
+ *  O candle em formação é um plus: se o WebSocket falhar, o gráfico continua com
+ *  os candles do REST. Fechamos o socket com cuidado para não gerar o aviso
+ *  "closed before the connection is established" quando ainda está conectando. */
 export function subscribeKline(asset: string, tf: Timeframe, onBar: (c: Candle) => void): () => void {
   const symbol = SYMBOL[asset]?.toLowerCase();
   if (!symbol) return () => {};
-  let ws: WebSocket | null = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol}@kline_${tf}`);
+  const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol}@kline_${tf}`);
   ws.onmessage = (ev) => {
     try {
       const k = JSON.parse(ev.data).k;
@@ -50,8 +53,13 @@ export function subscribeKline(asset: string, tf: Timeframe, onBar: (c: Candle) 
       /* ignora frames malformados */
     }
   };
+  ws.onerror = () => {
+    /* silencioso: o REST já alimenta o gráfico */
+  };
   return () => {
-    ws?.close();
-    ws = null;
+    if (ws.readyState === WebSocket.OPEN) ws.close();
+    else if (ws.readyState === WebSocket.CONNECTING) {
+      ws.addEventListener("open", () => ws.close());
+    }
   };
 }
