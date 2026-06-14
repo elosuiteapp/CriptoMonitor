@@ -149,6 +149,23 @@ export function readTvl(
   return { label: `Rede com ${fmtUsd(tvl)} em TVL`, detail, level: "neutral" };
 }
 
+/** Delta de Open Interest × movimento de preço (4h) — leitura de fluxo (§8.8.4). */
+export function readOiDelta(
+  oiDelta: number | null | undefined,
+  priceDelta: number | null | undefined,
+): Reading {
+  if (oiDelta == null || priceDelta == null) {
+    return { label: "Delta de OI — acumulando histórico (4h)", detail: "—", level: "neutral" };
+  }
+  const detail = `OI ${fmtPct(oiDelta * 100, 1)} · preço ${fmtPct(priceDelta * 100, 1)} (4h)`;
+  const oiUp = oiDelta >= 0;
+  const priceUp = priceDelta >= 0;
+  if (oiUp && priceUp) return { label: "Novas compras alavancadas — momentum de alta", detail, level: "green" };
+  if (oiUp && !priceUp) return { label: "Novas vendas alavancadas — atenção a squeeze", detail, level: "red" };
+  if (!oiUp && priceUp) return { label: "Short cobrindo — squeeze em andamento", detail, level: "yellow" };
+  return { label: "Long capitulando — desalavancagem", detail, level: "yellow" };
+}
+
 /** Tempo relativo curto em PT-BR ("há 2h", "há 30min"). */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "";

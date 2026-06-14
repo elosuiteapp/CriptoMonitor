@@ -13,6 +13,7 @@ import LayerToggles from "../components/LayerToggles";
 import LockedCard from "../components/LockedCard";
 import MetricCard from "../components/MetricCard";
 import NewsBlock from "../components/NewsBlock";
+import OIDeltaCard from "../components/OIDeltaCard";
 import PriceHeader from "../components/PriceHeader";
 import { useAuth } from "../hooks/useAuth";
 import { usePlan } from "../hooks/usePlan";
@@ -149,6 +150,7 @@ export default function Dashboard() {
                 <MetricCard title="CVD do varejo" reading={readCvd(payload?.price?.binance?.cvd ?? d?.cvd)} source="Binance" timestamp={updatedAt} />
                 <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
+                <OIDeltaCard asset={asset} timestamp={updatedAt} />
                 <MetricCard
                   title="Divergência Spot × Perps"
                   reading={readDivergence(
