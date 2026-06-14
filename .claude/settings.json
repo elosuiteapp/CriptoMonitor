@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init *)",
+      "Bash(git -c user.name=Marcos -c user.email=contato@backhub.com.br commit -q -m 'chore: fase 0 — setup do projeto *)"
+    ]
+  }
+}

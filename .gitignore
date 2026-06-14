@@ -1,0 +1,44 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node / Vite ──────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+
+# ─── Ambiente / segredos ──────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ─── Supabase ─────────────────────────────────────────────
+.supabase/
+supabase/.temp/
+
+# ─── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── IDE / OS ─────────────────────────────────────────────
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Arquivos de bootstrap (não versionar) ────────────────
+files.zip
