@@ -16,6 +16,7 @@ from .defillama import DefiLlamaSource
 from .deribit import DeribitSource
 from .dexscreener import DexScreenerSource
 from .hyperliquid import HyperliquidSource
+from .macro_markets import MacroMarketsSource
 
 __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
 
@@ -32,4 +33,5 @@ def build_sources() -> list[BaseSource]:
         CoinGeckoSource(),
         DexScreenerSource(),
         CryptocurrencyCvSource(),
+        MacroMarketsSource(),
     ]

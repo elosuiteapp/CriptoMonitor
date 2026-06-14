@@ -132,6 +132,8 @@ class Collector:
         for s in self.sources:
             if s.name == "coingecko" and (minute % self.macro_interval) != 0:
                 continue
+            if s.name == "macro_markets" and (minute % 30) != 0:  # macro/correlações: 30 min
+                continue
             active.append(s)
         return active
 
