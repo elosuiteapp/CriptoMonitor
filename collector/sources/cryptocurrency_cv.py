@@ -9,6 +9,7 @@ sistema ganhar seletor de idioma, basta trocar a lista de feeds por idioma
 from __future__ import annotations
 
 import os
+import re
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
@@ -29,10 +30,11 @@ _DEFAULT_FEEDS = [
     "https://livecoins.com.br/feed/",
 ]
 
-_ASSET_TERMS = {
-    "BTC": ("btc", "bitcoin"),
-    "ETH": ("eth", "ethereum", "ether"),
-    "SOL": ("sol", "solana"),
+# Limites de palavra (\b) evitam falsos positivos (ex: "sol" em "solução").
+_ASSET_PATTERNS = {
+    "BTC": re.compile(r"\b(btc|bitcoin)\b"),
+    "ETH": re.compile(r"\b(eth|ether|ethereum)\b"),
+    "SOL": re.compile(r"\b(sol|solana)\b"),
 }
 
 
@@ -45,7 +47,7 @@ def _feeds() -> list[str]:
 
 def _detect_assets(text: str) -> list[str]:
     low = text.lower()
-    return [sym for sym, terms in _ASSET_TERMS.items() if any(t in low for t in terms)]
+    return [sym for sym, pat in _ASSET_PATTERNS.items() if pat.search(low)]
 
 
 class CryptocurrencyCvSource(BaseSource):
@@ -80,11 +82,12 @@ class CryptocurrencyCvSource(BaseSource):
                             pass
 
                     categories = " ".join(c.text or "" for c in item.findall("category"))
+                    description = item.findtext("description") or ""
                     by_url[link] = {
                         "title": title[:500],
                         "source": source_name,
                         "url": link,
-                        "assets": _detect_assets(f"{title} {categories}"),
+                        "assets": _detect_assets(f"{title} {categories} {description}"),
                         "published_at": published_at,
                     }
             except Exception as exc:  # noqa: BLE001 — um feed fora não derruba os demais

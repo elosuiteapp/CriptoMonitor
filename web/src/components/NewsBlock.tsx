@@ -11,27 +11,53 @@ interface NewsRow {
   published_at: string;
 }
 
-/** Bloco de notícias filtradas por ativo (PRD §8.6.4). Free vê 3, Pro+ vê 8. */
+const COLS = "title, source, url, published_at";
+
+/** Bloco de notícias (PRD §8.6.4). Mostra notícias do ativo nos últimos 7 dias;
+ *  se não houver nenhuma específica, cai para notícias gerais recentes do mercado.
+ *  Free vê 3, Pro+ vê 8. */
 export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan | null }) {
   const [items, setItems] = useState<NewsRow[]>([]);
+  const [general, setGeneral] = useState(false);
   const [loading, setLoading] = useState(true);
   const limit = plan?.advanced_metrics ? 8 : 3;
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    supabase
-      .from("news_feed")
-      .select("title, source, url, published_at")
-      .contains("assets", [asset])
-      .order("published_at", { ascending: false })
-      .limit(limit)
-      .then(({ data }) => {
-        if (active) {
-          setItems((data as NewsRow[]) ?? []);
-          setLoading(false);
-        }
-      });
+    const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+
+    (async () => {
+      // 1. Notícias específicas do ativo nos últimos 7 dias
+      const { data: specific } = await supabase
+        .from("news_feed")
+        .select(COLS)
+        .contains("assets", [asset])
+        .gte("published_at", since)
+        .order("published_at", { ascending: false })
+        .limit(limit);
+      if (!active) return;
+
+      if (specific && specific.length) {
+        setItems(specific as NewsRow[]);
+        setGeneral(false);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback: notícias gerais recentes (sem filtro de ativo)
+      const { data: gen } = await supabase
+        .from("news_feed")
+        .select(COLS)
+        .gte("published_at", since)
+        .order("published_at", { ascending: false })
+        .limit(limit);
+      if (!active) return;
+      setItems((gen as NewsRow[]) ?? []);
+      setGeneral(true);
+      setLoading(false);
+    })();
+
     return () => {
       active = false;
     };
@@ -39,11 +65,13 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
 
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">Notícias · {asset}</h2>
+      <h2 className="mb-3 text-sm font-semibold text-slate-300">
+        {general ? "Notícias gerais do mercado" : `Notícias · ${asset}`}
+      </h2>
       <div className="space-y-2">
         {loading && <p className="text-sm text-slate-500">Carregando…</p>}
         {!loading && items.length === 0 && (
-          <p className="text-sm text-slate-500">Sem notícias recentes para {asset}.</p>
+          <p className="text-sm text-slate-500">Sem notícias recentes.</p>
         )}
         {items.map((n, i) => (
           <a
