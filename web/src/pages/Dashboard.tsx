@@ -147,7 +147,12 @@ export default function Dashboard() {
             walls={walls}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
-          {canUseLayers && layers.cvd && <CvdSubchart data={series.cvd} />}
+          {canUseLayers && layers.cvd && (
+            <>
+              <CvdSubchart data={series.cvd} title="CVD do varejo (Binance)" />
+              <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase)" />
+            </>
+          )}
           {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
         </section>
 

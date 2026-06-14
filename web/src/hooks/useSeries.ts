@@ -9,7 +9,8 @@ export interface SeriesPoint {
 }
 
 export interface Series {
-  cvd: SeriesPoint[];
+  cvd: SeriesPoint[]; // varejo (Binance)
+  cvdInst: SeriesPoint[]; // institucional (Coinbase)
   funding: SeriesPoint[];
 }
 
@@ -18,22 +19,29 @@ export interface Series {
  * Só carrega para planos avançados (Pro+); o RLS já protege as tabelas.
  */
 export function useSeries(asset: string, plan: Plan | null): Series {
-  const [series, setSeries] = useState<Series>({ cvd: [], funding: [] });
+  const [series, setSeries] = useState<Series>({ cvd: [], cvdInst: [], funding: [] });
   const advanced = plan?.advanced_metrics ?? false;
 
   useEffect(() => {
     if (!advanced) {
-      setSeries({ cvd: [], funding: [] });
+      setSeries({ cvd: [], cvdInst: [], funding: [] });
       return;
     }
     let active = true;
     (async () => {
-      const [{ data: prices }, { data: deriv }] = await Promise.all([
+      const [{ data: prices }, { data: pricesCb }, { data: deriv }] = await Promise.all([
         supabase
           .from("prices_cex")
           .select("cvd, ts")
           .eq("asset", asset)
           .eq("exchange", "binance")
+          .order("ts", { ascending: true })
+          .limit(300),
+        supabase
+          .from("prices_cex")
+          .select("cvd, ts")
+          .eq("asset", asset)
+          .eq("exchange", "coinbase")
           .order("ts", { ascending: true })
           .limit(300),
         supabase
@@ -53,7 +61,11 @@ export function useSeries(asset: string, plan: Plan | null): Series {
             value: Number(r[key]),
           }));
 
-      setSeries({ cvd: toPoints(prices, "cvd"), funding: toPoints(deriv, "funding_rate") });
+      setSeries({
+        cvd: toPoints(prices, "cvd"),
+        cvdInst: toPoints(pricesCb, "cvd"),
+        funding: toPoints(deriv, "funding_rate"),
+      });
     })();
     return () => {
       active = false;

@@ -1,12 +1,13 @@
 import type { SeriesPoint } from "../hooks/useSeries";
 import { fmtUsd } from "../lib/format";
 
-/** Sub-gráfico do CVD do varejo (delta de volume agressor) — PRD §8.4. */
-export default function CvdSubchart({ data }: { data: SeriesPoint[] }) {
+/** Sub-gráfico de CVD (delta de volume agressor) — PRD §8.4.
+ *  `title` distingue a fonte: CVD do varejo (Binance) × institucional (Coinbase). */
+export default function CvdSubchart({ data, title = "CVD do varejo" }: { data: SeriesPoint[]; title?: string }) {
   if (!data.length) {
     return (
       <div className="rounded-lg border border-ink-600 bg-ink-800/40 px-3 py-2 text-xs text-slate-500">
-        CVD — aguardando coleta
+        {title} — aguardando coleta
       </div>
     );
   }
@@ -19,7 +20,7 @@ export default function CvdSubchart({ data }: { data: SeriesPoint[] }) {
   return (
     <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
-        <span>CVD do varejo</span>
+        <span>{title}</span>
         <span className={last >= 0 ? "text-signal-green" : "text-signal-red"}>{fmtUsd(last)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-12 w-full">
