@@ -27,6 +27,11 @@ from .base import BaseSource, TableRows
 
 _BASE = "https://api.coinalyze.net/v1"
 
+# O free tier cobra a cota por nº de símbolos no request. Agregamos apenas as
+# exchanges mais líquidas e limitamos por ativo para manter as chamadas leves.
+_MAJOR_EXCHANGES = ("binance", "bybit", "okx", "bitget", "gate", "deribit", "htx", "kraken")
+_MAX_SYMBOLS_PER_ASSET = 3
+
 
 class CoinalyzeSource(BaseSource):
     name = "coinalyze"
@@ -36,10 +41,18 @@ class CoinalyzeSource(BaseSource):
         key = os.getenv("COINALYZE_API_KEY")
         if not key:
             raise RuntimeError("COINALYZE_API_KEY ausente no .env")
-        headers = {"api_key": key}
+        headers = {"api-key": key}
         ts = to_iso(now_utc())
 
-        # 1. Descobrir símbolos perpétuos por ativo
+        # 1. Códigos das exchanges principais (para filtrar e aliviar a cota)
+        ex_resp = await http.get(f"{_BASE}/exchanges", headers=headers, timeout=20.0)
+        ex_resp.raise_for_status()
+        major_codes = {
+            e["code"] for e in ex_resp.json()
+            if any(maj in (e.get("name", "").lower()) for maj in _MAJOR_EXCHANGES)
+        }
+
+        # 2. Descobrir símbolos perpétuos por ativo (só exchanges principais, com teto)
         resp = await http.get(f"{_BASE}/future-markets", headers=headers, timeout=20.0)
         resp.raise_for_status()
         by_asset: dict[str, list[str]] = {a: [] for a in assets}
@@ -47,8 +60,9 @@ class CoinalyzeSource(BaseSource):
             if not m.get("is_perpetual"):
                 continue
             base = m.get("base_asset")
-            if base in by_asset:
-                by_asset[base].append(m["symbol"])
+            if base in by_asset and m.get("exchange") in major_codes:
+                if len(by_asset[base]) < _MAX_SYMBOLS_PER_ASSET:
+                    by_asset[base].append(m["symbol"])
 
         all_symbols = [s for a in assets for s in by_asset.get(a, [])]
         if not all_symbols:
