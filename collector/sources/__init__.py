@@ -17,6 +17,7 @@ from .deribit import DeribitSource
 from .dexscreener import DexScreenerSource
 from .hyperliquid import HyperliquidSource
 from .macro_markets import MacroMarketsSource
+from .options_flow import OptionsFlowSource
 from .orderbook_walls import OrderbookWallsSource
 
 __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
@@ -36,4 +37,5 @@ def build_sources() -> list[BaseSource]:
         CryptocurrencyCvSource(),
         MacroMarketsSource(),
         OrderbookWallsSource(),
+        OptionsFlowSource(),
     ]

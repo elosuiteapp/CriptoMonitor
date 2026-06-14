@@ -12,6 +12,7 @@ import {
 } from "../lib/format";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
+import OptionsFlowChart from "./OptionsFlowChart";
 
 type ProfileView = "bars" | "levels";
 
@@ -164,6 +165,14 @@ export default function GammaPanel({ gamma, asset }: Props) {
             <span>Calls (resistência) ▶</span>
           </div>
         )}
+      </div>
+
+      {/* Fluxo de opções (proxy HIRO) — resolução 5 min */}
+      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+        <div className="mb-2 text-xs text-slate-500">
+          Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min
+        </div>
+        <OptionsFlowChart asset={asset} />
       </div>
     </div>
   );
