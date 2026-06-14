@@ -22,9 +22,10 @@ class BinanceSource(BaseSource):
         ts = to_iso(now_utc())
         rows: list[dict] = []
         spot = ccxt.binance({"enableRateLimit": True, "timeout": 15000})
-        perp = ccxt.binanceusdm({"enableRateLimit": True, "timeout": 15000})
-        # api.binance.com devolve 451 em regiões de nuvem bloqueadas (ex: Railway).
-        # O domínio público de dados de mercado (spot) não tem geo-bloqueio.
+        # api.binance.com devolve 451 em regiões de nuvem bloqueadas (ex: Railway);
+        # o domínio público de dados de mercado (spot) não tem geo-bloqueio.
+        # Perps (fapi) seguem geo-bloqueados e volume_perps é sinal de baixa
+        # relevância → não consultamos (o cliente perps derrubava a fonte inteira).
         try:
             spot.urls["api"]["public"] = "https://data-api.binance.vision/api/v3"
         except Exception:  # noqa: BLE001 — se a estrutura do ccxt mudar, segue no padrão
@@ -48,23 +49,15 @@ class BinanceSource(BaseSource):
                 except Exception:  # noqa: BLE001 — CVD é best-effort
                     cvd = None
 
-                volume_perps = None
-                try:
-                    pt = await perp.fetch_ticker(symbol)
-                    volume_perps = pt.get("quoteVolume")
-                except Exception:  # noqa: BLE001 — par perp pode não existir
-                    volume_perps = None
-
                 rows.append({
                     "asset": asset,
                     "exchange": "binance",
                     "price": price,
                     "volume_spot": volume_spot,
-                    "volume_perps": volume_perps,
+                    "volume_perps": None,  # fapi geo-bloqueado; sinal de baixa relevância
                     "cvd": cvd,
                     "ts": ts,
                 })
         finally:
             await spot.close()
-            await perp.close()
         return [TableRows("prices_cex", rows, "asset,exchange,ts")]
