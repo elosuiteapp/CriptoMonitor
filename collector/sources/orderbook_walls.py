@@ -15,7 +15,9 @@ from .base import BaseSource, TableRows
 
 log = get_logger("orderbook")
 
-_BINANCE = "https://api.binance.com/api/v3/depth"
+# data-api.binance.vision: dados públicos de mercado da Binance SEM geo-bloqueio
+# (api.binance.com devolve 451 em algumas regiões de nuvem, ex: Railway).
+_BINANCE = "https://data-api.binance.vision/api/v3/depth"
 _COINBASE = "https://api.exchange.coinbase.com/products/{p}/book?level=2"
 _BINANCE_SYM = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT"}
 _COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}

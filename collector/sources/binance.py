@@ -23,6 +23,12 @@ class BinanceSource(BaseSource):
         rows: list[dict] = []
         spot = ccxt.binance({"enableRateLimit": True, "timeout": 15000})
         perp = ccxt.binanceusdm({"enableRateLimit": True, "timeout": 15000})
+        # api.binance.com devolve 451 em regiões de nuvem bloqueadas (ex: Railway).
+        # O domínio público de dados de mercado (spot) não tem geo-bloqueio.
+        try:
+            spot.urls["api"]["public"] = "https://data-api.binance.vision/api/v3"
+        except Exception:  # noqa: BLE001 — se a estrutura do ccxt mudar, segue no padrão
+            pass
         try:
             for asset in assets:
                 symbol = _SPOT_SYMBOL.get(asset)
