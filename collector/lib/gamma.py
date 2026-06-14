@@ -179,6 +179,10 @@ class GammaResult:
     put_call_ratio: float | None       # OI(puts) / OI(calls)
     avg_iv: float | None               # IV média ponderada por OI (%)
     iv_skew: float | None              # IV(puts) − IV(calls), ponderada por OI (%)
+    call_wall: float | None            # strike de maior GEX líquido positivo
+    put_wall: float | None             # strike de GEX líquido mais negativo
+    avg_call_strike: float | None      # strike médio das calls (ponderado por OI)
+    avg_put_strike: float | None       # strike médio das puts (ponderado por OI)
 
 
 def _filter(options: list[OptionInput], now: datetime) -> tuple[list[OptionInput], np.ndarray]:
@@ -250,6 +254,12 @@ def compute(options: list[OptionInput], spot: float, now: datetime | None = None
     call_iv = float((ivs[call_mask] * oi[call_mask]).sum() / call_oi) if call_oi > 0 else None
     iv_skew = round(put_iv - call_iv, 2) if (put_iv is not None and call_iv is not None) else None
 
+    # Paredes (strike de maior/menor GEX líquido) e strike médio por lado
+    call_wall = float(max(profile, key=lambda k: profile[k])) if profile else None
+    put_wall = float(min(profile, key=lambda k: profile[k])) if profile else None
+    avg_call_strike = round(float((strikes[call_mask] * oi[call_mask]).sum() / call_oi), 2) if call_oi > 0 else None
+    avg_put_strike = round(float((strikes[put_mask] * oi[put_mask]).sum() / put_oi), 2) if put_oi > 0 else None
+
     return GammaResult(
         spot_price=float(spot),
         regime=regime,
@@ -264,4 +274,8 @@ def compute(options: list[OptionInput], spot: float, now: datetime | None = None
         put_call_ratio=put_call_ratio,
         avg_iv=avg_iv,
         iv_skew=iv_skew,
+        call_wall=call_wall,
+        put_wall=put_wall,
+        avg_call_strike=avg_call_strike,
+        avg_put_strike=avg_put_strike,
     )

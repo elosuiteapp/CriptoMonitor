@@ -156,7 +156,7 @@ export default function Dashboard() {
           <section>
             <h2 className="mb-3 text-sm font-semibold text-slate-300">Módulo Gamma (estilo SpotGamma)</h2>
             {advanced ? (
-              <GammaPanel gamma={payload?.gamma ?? null} />
+              <GammaPanel gamma={payload?.gamma ?? null} asset={asset} />
             ) : (
               <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
             )}

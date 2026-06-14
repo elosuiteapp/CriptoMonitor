@@ -94,6 +94,10 @@ class DeribitSource(BaseSource):
                 "put_call_ratio": res.put_call_ratio,
                 "avg_iv": res.avg_iv,
                 "iv_skew": res.iv_skew,
+                "call_wall": res.call_wall,
+                "put_wall": res.put_wall,
+                "avg_call_strike": res.avg_call_strike,
+                "avg_put_strike": res.avg_put_strike,
                 "ts": ts,
             })
 
