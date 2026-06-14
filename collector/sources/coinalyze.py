@@ -74,9 +74,10 @@ class CoinalyzeSource(BaseSource):
                                      params={"convert_to_usd": "true"})
         fr_map = await self._current(http, headers, "funding-rate", symbols)
 
-        # 4-5. Liquidações (1h) e long/short ratio (último ponto)
+        # 4-5. Liquidações (24h — esporádicas; janela curta vinha quase sempre
+        # vazia) e long/short ratio (último ponto)
         now_s = int(time.time())
-        liq_long, liq_short = await self._liquidations(http, headers, symbols, now_s - 3600, now_s)
+        liq_long, liq_short = await self._liquidations(http, headers, symbols, now_s - 86400, now_s)
         lsr_map = await self._latest_history(http, headers, "long-short-ratio-history",
                                              symbols, now_s - 1800, now_s, field="r")
 
@@ -93,8 +94,9 @@ class CoinalyzeSource(BaseSource):
                 "open_interest": oi_sum,
                 "funding_rate": (sum(fr_vals) / len(fr_vals)) if fr_vals else None,
                 "long_short_ratio": (sum(lsr_vals) / len(lsr_vals)) if lsr_vals else None,
-                "liq_long_usd": sum(liq_long.get(s, 0.0) for s in syms) or None,
-                "liq_short_usd": sum(liq_short.get(s, 0.0) for s in syms) or None,
+                # 0 é zero real (sem liquidações na janela); None só se a API falhou
+                "liq_long_usd": None if liq_long is None else sum(liq_long.get(s, 0.0) for s in syms),
+                "liq_short_usd": None if liq_short is None else sum(liq_short.get(s, 0.0) for s in syms),
                 "cvd": None,  # CVD próprio vem da Binance
                 "ts": ts,
             })
@@ -121,7 +123,9 @@ class CoinalyzeSource(BaseSource):
         except Exception:  # noqa: BLE001 — best-effort
             return {}
 
-    async def _liquidations(self, http, headers, symbols, frm, to) -> tuple[dict, dict]:
+    async def _liquidations(self, http, headers, symbols, frm, to) -> tuple[dict | None, dict | None]:
+        """Soma de liquidações long/short por símbolo na janela. (None, None) se a
+        API falhar — para distinguir 'sem liquidações' (0) de 'indisponível'."""
         longs: dict[str, float] = {}
         shorts: dict[str, float] = {}
         try:
@@ -134,5 +138,5 @@ class CoinalyzeSource(BaseSource):
                 longs[sym] = sum(float(h.get("l") or 0.0) for h in entry.get("history", []))
                 shorts[sym] = sum(float(h.get("s") or 0.0) for h in entry.get("history", []))
         except Exception:  # noqa: BLE001 — best-effort
-            pass
+            return None, None
         return longs, shorts
