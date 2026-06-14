@@ -1,4 +1,4 @@
-export type TabId = "cockpit" | "macro" | "smart";
+export type TabId = "cockpit" | "macro" | "smart" | "reports";
 
 interface Props {
   tab: TabId;
@@ -11,6 +11,7 @@ const TABS: { id: TabId; label: string; need: "free" | "pro" | "expert" }[] = [
   { id: "cockpit", label: "Cockpit Principal", need: "free" },
   { id: "macro", label: "Macro & Correlações", need: "pro" },
   { id: "smart", label: "Smart Money & On-chain", need: "expert" },
+  { id: "reports", label: "Relatórios", need: "free" }, // conteúdo gated por RLS/plano
 ];
 
 /** Abas da página do ativo (PRD §8.7) — escada de profundidade e de planos. */

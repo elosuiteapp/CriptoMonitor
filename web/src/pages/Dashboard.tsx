@@ -17,6 +17,7 @@ import MetricCard from "../components/MetricCard";
 import NewsBlock from "../components/NewsBlock";
 import OIDeltaCard from "../components/OIDeltaCard";
 import PriceHeader from "../components/PriceHeader";
+import ReportsTab from "../components/ReportsTab";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import VolatilityPanel from "../components/VolatilityPanel";
@@ -127,6 +128,7 @@ export default function Dashboard() {
           ) : (
             <LockedTab title="Smart Money & On-chain" plan="Expert" />
           ))}
+        {tab === "reports" && <ReportsTab asset={asset} plan={plan} isExpert={isExpert} />}
 
         {tab === "cockpit" && (
           <>
