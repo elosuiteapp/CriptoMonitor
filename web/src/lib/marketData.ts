@@ -1,7 +1,7 @@
 // Dados de candle: REST de klines da Binance (timeframes exatos) + WebSocket
 // para atualizar o candle em formação (PRD §8.4). Sem chave, com CORS público.
 
-export type Timeframe = "15m" | "1h" | "4h" | "1d";
+export type Timeframe = "15m" | "1h" | "4h" | "1d" | "1w" | "1M";
 export type ChartType = "candles" | "bars" | "line" | "area";
 
 export interface Candle {

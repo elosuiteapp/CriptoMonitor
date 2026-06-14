@@ -7,7 +7,14 @@ const TYPES: { id: ChartType; label: string }[] = [
   { id: "area", label: "Área" },
 ];
 
-const TIMEFRAMES: Timeframe[] = ["15m", "1h", "4h", "1d"];
+const TIMEFRAMES: { id: Timeframe; label: string }[] = [
+  { id: "15m", label: "15M" },
+  { id: "1h", label: "1H" },
+  { id: "4h", label: "4H" },
+  { id: "1d", label: "1D" },
+  { id: "1w", label: "1S" },
+  { id: "1M", label: "1Mês" },
+];
 
 interface Props {
   chartType: ChartType;
@@ -22,13 +29,13 @@ export default function ChartTypeSelector({ chartType, onChartType, timeframe, o
       <div className="flex gap-1 rounded-lg bg-ink-700 p-1">
         {TIMEFRAMES.map((tf) => (
           <button
-            key={tf}
-            onClick={() => onTimeframe(tf)}
+            key={tf.id}
+            onClick={() => onTimeframe(tf.id)}
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-              timeframe === tf ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+              timeframe === tf.id ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            {tf.toUpperCase()}
+            {tf.label}
           </button>
         ))}
       </div>
