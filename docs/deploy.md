@@ -59,7 +59,8 @@ e `market_snapshot` populando.
 Deploy (CLI) ou via painel. JWT conforme a função:
 
 ```bash
-supabase functions deploy claude-analysis                 # verify_jwt = true
+supabase functions deploy generate-analysis               # verify_jwt = true (IA: Gemini)
+supabase functions deploy create-checkout                 # verify_jwt = true
 supabase functions deploy payment-webhook --no-verify-jwt # valida por assinatura HMAC
 supabase functions deploy alerts-dispatch                 # invocada por cron
 ```
@@ -68,7 +69,7 @@ supabase functions deploy alerts-dispatch                 # invocada por cron
 
 | Função | Secrets |
 |---|---|
-| `claude-analysis` | `ANTHROPIC_API_KEY` |
+| `generate-analysis` | `GEMINI_API_KEY` (provedor de IA: Google Gemini) |
 | `create-checkout` | `MERCADOPAGO_ACCESS_TOKEN`, `APP_URL` (URL pública do frontend) |
 | `payment-webhook` | `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` |
 | `alerts-dispatch` | `RESEND_API_KEY`, `ALERTS_FROM_EMAIL`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`, `ALERTS_DRY_RUN` |
@@ -122,7 +123,7 @@ Variáveis de ambiente do host: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` (coletor + functions)
 - [ ] `COINALYZE_API_KEY` (9ª fonte de dados)
 - [ ] `COINGECKO_API_KEY` (evita rate limit do macro)
-- [ ] `ANTHROPIC_API_KEY` (análise de IA)
+- [ ] `GEMINI_API_KEY` (análise de IA — Google Gemini; secret da função `generate-analysis`)
 - [ ] `MERCADOPAGO_ACCESS_TOKEN` + `MERCADOPAGO_WEBHOOK_SECRET` (pagamentos)
 - [ ] `RESEND_API_KEY` + `ALERTS_FROM_EMAIL` (alertas por e-mail)
 - [ ] `EVOLUTION_API_URL` + `EVOLUTION_API_KEY` + `EVOLUTION_INSTANCE` (WhatsApp)

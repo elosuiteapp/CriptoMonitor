@@ -48,7 +48,7 @@ crypto-monitor/
 |---|---|
 | Coleta | Python 3.12 · CCXT · httpx · APScheduler · NumPy · supabase-py |
 | Banco/Auth | Supabase (PostgreSQL) — Auth, RLS, Realtime, Edge Functions |
-| IA | Anthropic SDK — `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-fable-5` |
+| IA | Google Gemini — `gemini-2.5-flash` (Free/Pro) / `gemini-2.5-pro` (Expert) |
 | Frontend | Vite · React · TypeScript · Tailwind · Lightweight Charts |
 | Pagamentos | Mercado Pago (PIX + cartão) |
 | Alertas | Resend (e-mail) · Evolution API (WhatsApp) |

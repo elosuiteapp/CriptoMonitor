@@ -1,9 +1,9 @@
-// Edge Function: claude-analysis (PRD §6)
+// Edge Function: generate-analysis (PRD §6 — provedor: Google Gemini)
 // Gera a análise narrativa de um ativo: valida plano + cota, lê o market_snapshot
-// mais recente, monta o prompt e chama a Claude API com o modelo do plano.
+// mais recente, monta o prompt e chama a Gemini API com o modelo do plano.
 //
-// Deploy: supabase functions deploy claude-analysis
-// Secret necessário: ANTHROPIC_API_KEY (SUPABASE_URL / SERVICE_ROLE são injetados).
+// Deploy: supabase functions deploy generate-analysis
+// Secret necessário: GEMINI_API_KEY (SUPABASE_URL / SERVICE_ROLE são injetados).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -32,8 +32,8 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!ANTHROPIC_KEY) return json(500, { error: "ANTHROPIC_API_KEY não configurada" });
+  const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
+  if (!GEMINI_KEY) return json(500, { error: "GEMINI_API_KEY não configurada" });
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
   }
   if (!plan) return json(500, { error: "plano não encontrado" });
 
-  // 4. Ativo permitido pelo plano
+  // 4. Ativo permitido
   const assets = (plan.assets as string[]) ?? ["BTC"];
   if (!assets.includes(ativo)) {
     return json(403, { error: `O ativo ${ativo} não está disponível no seu plano.` });
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
   // 7. Notícias recentes (até 5)
   const { data: news } = await admin
     .from("news_feed")
-    .select("title, source, published_at")
+    .select("title, source")
     .contains("assets", [ativo])
     .order("published_at", { ascending: false })
     .limit(5);
@@ -119,29 +119,39 @@ Deno.serve(async (req) => {
     newsText,
   ].join("\n");
 
-  // 9. Claude API
-  const model = (plan.ai_model as string) ?? "claude-haiku-4-5";
-  const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
+  // 9. Gemini API
+  // Modelos 2.5 são "thinking models": com maxOutputTokens baixo o raciocínio
+  // consome todo o orçamento e o texto volta vazio. Damos folga e desligamos o
+  // thinking nos modelos flash (resposta direta, rápida e barata).
+  const model = (plan.ai_model as string) ?? "gemini-2.5-flash";
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: 4096,
+    temperature: 0.7,
+  };
+  if (model.includes("flash")) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+  const aiResp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: userMsg }] }],
+        generationConfig,
+      }),
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMsg }],
-    }),
-  });
+  );
 
   if (!aiResp.ok) {
     const detail = await aiResp.text();
     return json(502, { error: "Falha ao gerar análise", detail: detail.slice(0, 300) });
   }
   const aiData = await aiResp.json();
-  const content = (aiData.content?.[0]?.text as string) ?? "";
+  const parts = aiData.candidates?.[0]?.content?.parts ?? [];
+  const content = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+  if (!content) return json(502, { error: "Resposta vazia do modelo" });
 
   // 10. Persistência + incremento de cota
   await admin.from("ai_analysis").insert({
@@ -158,10 +168,5 @@ Deno.serve(async (req) => {
       { onConflict: "user_id,action,day" },
     );
 
-  return json(200, {
-    content,
-    model_used: model,
-    used: used + 1,
-    limit,
-  });
+  return json(200, { content, model_used: model, used: used + 1, limit });
 });

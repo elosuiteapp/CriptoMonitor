@@ -45,7 +45,7 @@ export default function Analysis() {
     setGenerating(true);
     setError(null);
     try {
-      const { data, error } = await supabase.functions.invoke("claude-analysis", {
+      const { data, error } = await supabase.functions.invoke("generate-analysis", {
         body: { asset },
       });
       if (error) {
