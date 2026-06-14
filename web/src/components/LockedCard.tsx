@@ -1,9 +1,13 @@
 import { Link } from "react-router-dom";
 
 /** Vitrine de upgrade: card avançado aparece bloqueado no Free (PRD §7.2, §8.3). */
-export default function LockedCard({ title }: { title: string }) {
+export default function LockedCard({ title, institutional }: { title: string; institutional?: boolean }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+    <div
+      className={`relative overflow-hidden rounded-xl bg-ink-800/60 p-4 ${
+        institutional ? "border-2 border-accent/70 ring-1 ring-accent/15" : "border border-ink-600"
+      }`}
+    >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-400">{title}</h3>
         <span aria-hidden className="text-lg">🔒</span>

@@ -163,13 +163,17 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Cards de métricas — inventário §8.6.3 */}
+        {/* Cards de métricas — separados por audiência: varejo × institucional (§8.6.3) */}
         <section>
           <h2 className="mb-3 text-sm font-semibold text-slate-300">Fluxo, liquidez e sentimento</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Sentimento — disponível em todos os planos */}
-            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} />
 
+          {/* ── Varejo e alavancagem (perps, fluxo e posicionamento do varejo) ── */}
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <span>🛒 Varejo e alavancagem</span>
+            <span className="h-px flex-1 bg-ink-600" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} />
             {advanced ? (
               <>
                 <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} />
@@ -178,7 +182,27 @@ export default function Dashboard() {
                 <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
+              </>
+            ) : (
+              <>
+                <LockedCard title="Funding & GEX" />
+                <LockedCard title="CVD do varejo" />
+                <LockedCard title="Long / Short ratio" />
+                <LockedCard title="Liquidações — alvos de liquidez" />
+              </>
+            )}
+          </div>
+
+          {/* ── Institucional e estrutural (spot/smart money, capital estrutural) ── */}
+          <div className="mb-2 mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-accent">
+            <span>🏦 Institucional e estrutural</span>
+            <span className="h-px flex-1 bg-accent/30" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {advanced ? (
+              <>
                 <MetricCard
+                  institutional
                   title="Prêmio Coinbase (Institucional × Varejo)"
                   reading={readCoinbasePremium(
                     payload?.coinbase_premium,
@@ -189,10 +213,11 @@ export default function Dashboard() {
                   timestamp={updatedAt}
                 />
                 {defi && (
-                  <MetricCard title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} />
+                  <MetricCard institutional title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} />
                 )}
                 {dex && (
                   <MetricCard
+                    institutional
                     title="Liquidez DEX"
                     reading={{
                       label: `${dex.pair}: ${fmtUsd(dex.liquidity_usd)} de liquidez`,
@@ -205,6 +230,7 @@ export default function Dashboard() {
                 )}
                 {macro && (
                   <MetricCard
+                    institutional
                     title="Macro do mercado"
                     reading={{
                       label: `Dominância BTC ${fmtPct(macro.btc_dominance, 1)} · mcap ${fmtUsd(macro.total_mcap)}`,
@@ -218,12 +244,8 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <LockedCard title="Funding & GEX" />
-                <LockedCard title="CVD do varejo" />
-                <LockedCard title="Long / Short ratio" />
-                <LockedCard title="Liquidações — alvos de liquidez" />
-                <LockedCard title="Prêmio Coinbase (Institucional × Varejo)" />
-                <LockedCard title="Macro do mercado" />
+                <LockedCard institutional title="Prêmio Coinbase (Institucional × Varejo)" />
+                <LockedCard institutional title="Macro do mercado" />
               </>
             )}
           </div>
