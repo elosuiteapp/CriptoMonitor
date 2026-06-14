@@ -2,8 +2,11 @@
 // Gera a análise narrativa de um ativo: valida plano + cota, lê o market_snapshot
 // mais recente, monta o prompt e chama a Gemini API com o modelo do plano.
 //
-// Deploy: supabase functions deploy generate-analysis
-// Secret necessário: GEMINI_API_KEY (SUPABASE_URL / SERVICE_ROLE são injetados).
+// Robustez: modelos 2.5 são "thinking models" (com maxOutputTokens baixo o texto
+// volta vazio → usamos 4096 + thinkingBudget 0 nos flash). Se o modelo do plano
+// falhar (ex.: 429 do free tier no 2.5-pro), faz fallback para gemini-2.5-flash.
+//
+// Deploy: supabase functions deploy generate-analysis · Secret: GEMINI_API_KEY
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -12,18 +15,39 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SYSTEM_PROMPT = `Você é o copiloto de IA do Crypto Monitor, um cockpit de decisões para traders de cripto.
-Idioma: português brasileiro claro; ao usar termo técnico (funding, OI, GEX, gamma, CVD, max pain), explique em poucas palavras.
-Estrutura obrigatória, nesta ordem: 1) Contexto macro; 2) Fluxo (varejo via perps/CVD vs. instituição via spot); 3) Níveis de liquidez e opções (Call/Put Wall, Zero Gamma, Max Pain) citando os preços; 4) Sentimento (Fear & Greed); 5) Síntese.
-Proibido: recomendar compra/venda, prever preço-alvo, usar linguagem de certeza (prefira "tende a", "historicamente", "sugere").
-Obrigatório: usar apenas os dados do snapshot; se uma métrica vier ausente, dizer "indisponível neste ciclo" e nunca inventar números.
-Encerre sempre com: "Esta análise é informativa e educacional. Não constitui recomendação de compra/venda nem aconselhamento financeiro. A decisão é sempre sua."`;
+const FALLBACK_MODEL = "gemini-2.5-flash";
+
+const SYSTEM_PROMPT = [
+  "Você é o copiloto de IA do Crypto Monitor, um cockpit de decisões para traders de cripto.",
+  "Idioma: português brasileiro claro com acentuação correta; ao usar termo técnico (funding, OI, GEX, gamma, CVD, max pain), explique em poucas palavras.",
+  "Estrutura obrigatória: 1) Contexto macro; 2) Fluxo (varejo via perps/CVD vs. instituição via spot); 3) Níveis de liquidez e opções (Call/Put Wall, Zero Gamma, Max Pain) citando os preços; 4) Sentimento (Fear & Greed); 5) Síntese.",
+  "Proibido: recomendar compra/venda, prever preço-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
+  "Obrigatório: usar apenas os dados do snapshot; se uma métrica vier ausente, diga 'indisponível neste ciclo' e nunca invente números.",
+  "Encerre sempre com um aviso de que a análise é informativa/educacional, não constitui recomendação de compra/venda nem aconselhamento financeiro, e a decisão é sempre do usuário.",
+].join("\n");
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...CORS, "Content-Type": "application/json" },
   });
+}
+
+async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
+  const generationConfig: Record<string, unknown> = { maxOutputTokens: 4096, temperature: 0.7 };
+  if (model.includes("flash")) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  return await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig,
+      }),
+    },
+  );
 }
 
 Deno.serve(async (req) => {
@@ -37,23 +61,17 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  // 1. Autenticação
   const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
   const { data: userData } = await admin.auth.getUser(token);
   const user = userData?.user;
   if (!user) return json(401, { error: "não autenticado" });
 
-  // 2. Corpo
   const { asset } = await req.json().catch(() => ({ asset: "BTC" }));
   const ativo = String(asset || "BTC").toUpperCase();
 
-  // 3. Plano (assinatura ativa → senão Free)
   const { data: sub } = await admin
-    .from("subscriptions")
-    .select("plan:plans(*)")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
+    .from("subscriptions").select("plan:plans(*)")
+    .eq("user_id", user.id).eq("status", "active").maybeSingle();
   let plan = (sub?.plan as Record<string, unknown> | undefined) ?? undefined;
   if (!plan) {
     const { data: free } = await admin.from("plans").select("*").eq("slug", "free").single();
@@ -61,112 +79,73 @@ Deno.serve(async (req) => {
   }
   if (!plan) return json(500, { error: "plano não encontrado" });
 
-  // 4. Ativo permitido
   const assets = (plan.assets as string[]) ?? ["BTC"];
   if (!assets.includes(ativo)) {
     return json(403, { error: `O ativo ${ativo} não está disponível no seu plano.` });
   }
 
-  // 5. Cota diária
   const today = new Date().toISOString().slice(0, 10);
   const { data: usage } = await admin
-    .from("usage_log")
-    .select("count")
-    .eq("user_id", user.id)
-    .eq("action", "ai_analysis")
-    .eq("day", today)
-    .maybeSingle();
+    .from("usage_log").select("count")
+    .eq("user_id", user.id).eq("action", "ai_analysis").eq("day", today).maybeSingle();
   const used = (usage?.count as number) ?? 0;
   const limit = plan.ai_daily_limit as number | null;
   if (limit !== null && used >= limit) {
     return json(429, { error: `Cota diária atingida (${limit} análises). Volte amanhã ou faça upgrade.` });
   }
 
-  // 6. Snapshot mais recente
   const { data: snap } = await admin
-    .from("market_snapshot")
-    .select("id, payload, ts")
-    .eq("asset", ativo)
-    .order("ts", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .from("market_snapshot").select("id, payload, ts")
+    .eq("asset", ativo).order("ts", { ascending: false }).limit(1).maybeSingle();
   if (!snap) {
     return json(503, { error: "Sem dados de mercado para este ativo ainda. Aguarde o próximo ciclo." });
   }
 
-  // 7. Notícias recentes (até 5)
   const { data: news } = await admin
-    .from("news_feed")
-    .select("title, source")
-    .contains("assets", [ativo])
-    .order("published_at", { ascending: false })
-    .limit(5);
+    .from("news_feed").select("title, source").contains("assets", [ativo])
+    .order("published_at", { ascending: false }).limit(5);
   const newsText = (news && news.length)
     ? news.map((n) => `- ${n.title} (${n.source ?? "?"})`).join("\n")
     : "Nenhuma notícia recente disponível.";
 
-  // 8. Prompt
   const userMsg = [
     `Analise o momento de mercado do ativo ${ativo} com base no snapshot abaixo.`,
     `Siga a estrutura: macro → fluxo → níveis de liquidez/opções → sentimento → síntese.`,
-    ``,
-    `Snapshot (JSON):`,
-    "```json",
-    JSON.stringify(snap.payload, null, 2),
-    "```",
-    ``,
-    `Notícias recentes:`,
+    "",
+    "Snapshot (JSON):",
+    JSON.stringify(snap.payload),
+    "",
+    "Notícias recentes:",
     newsText,
   ].join("\n");
 
-  // 9. Gemini API
-  // Modelos 2.5 são "thinking models": com maxOutputTokens baixo o raciocínio
-  // consome todo o orçamento e o texto volta vazio. Damos folga e desligamos o
-  // thinking nos modelos flash (resposta direta, rápida e barata).
-  const model = (plan.ai_model as string) ?? "gemini-2.5-flash";
-  const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: 4096,
-    temperature: 0.7,
-  };
-  if (model.includes("flash")) {
-    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  // Modelo do plano, com fallback para flash se falhar (ex.: 429 no 2.5-pro)
+  let usedModel = (plan.ai_model as string) ?? FALLBACK_MODEL;
+  let aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
+  if (!aiResp.ok && usedModel !== FALLBACK_MODEL) {
+    const detail = await aiResp.text();
+    console.error(`modelo ${usedModel} falhou (${aiResp.status}): ${detail.slice(0, 200)} — fallback ${FALLBACK_MODEL}`);
+    usedModel = FALLBACK_MODEL;
+    aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
   }
-  const aiResp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text: userMsg }] }],
-        generationConfig,
-      }),
-    },
-  );
-
   if (!aiResp.ok) {
     const detail = await aiResp.text();
+    console.error(`Gemini falhou (${aiResp.status}): ${detail.slice(0, 300)}`);
     return json(502, { error: "Falha ao gerar análise", detail: detail.slice(0, 300) });
   }
+
   const aiData = await aiResp.json();
   const parts = aiData.candidates?.[0]?.content?.parts ?? [];
   const content = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
   if (!content) return json(502, { error: "Resposta vazia do modelo" });
 
-  // 10. Persistência + incremento de cota
   await admin.from("ai_analysis").insert({
-    user_id: user.id,
-    asset: ativo,
-    model_used: model,
-    content,
-    snapshot_ref: snap.id,
+    user_id: user.id, asset: ativo, model_used: usedModel, content, snapshot_ref: snap.id,
   });
-  await admin
-    .from("usage_log")
-    .upsert(
-      { user_id: user.id, action: "ai_analysis", day: today, count: used + 1 },
-      { onConflict: "user_id,action,day" },
-    );
+  await admin.from("usage_log").upsert(
+    { user_id: user.id, action: "ai_analysis", day: today, count: used + 1 },
+    { onConflict: "user_id,action,day" },
+  );
 
-  return json(200, { content, model_used: model, used: used + 1, limit });
+  return json(200, { content, model_used: usedModel, used: used + 1, limit });
 });
