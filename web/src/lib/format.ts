@@ -211,6 +211,31 @@ export function relativeTime(iso: string | null | undefined): string {
   return `há ${d}d`;
 }
 
+/** Put/Call ratio por OI (Deribit). >1 = mais puts (defensivo); <0,7 = mais calls (otimista). */
+export function readPutCall(ratio: number | null | undefined): { label: string; level: Level } {
+  if (ratio == null) return { label: "indisponível", level: "neutral" };
+  if (ratio >= 1.2) return { label: "Mais puts que calls — proteção / viés defensivo", level: "red" };
+  if (ratio >= 0.9) return { label: "Equilíbrio com leve viés defensivo", level: "yellow" };
+  if (ratio <= 0.6) return { label: "Predomínio de calls — viés otimista", level: "green" };
+  return { label: "Mais calls que puts — viés levemente otimista", level: "yellow" };
+}
+
+/** IV média ponderada (%). Nível de volatilidade implícita esperada. */
+export function readIvLevel(iv: number | null | undefined): { label: string; level: Level } {
+  if (iv == null) return { label: "indisponível", level: "neutral" };
+  if (iv >= 80) return { label: "Volatilidade implícita alta — mercado esperando grandes movimentos", level: "red" };
+  if (iv >= 50) return { label: "Volatilidade implícita moderada", level: "yellow" };
+  return { label: "Volatilidade implícita baixa — mercado calmo", level: "green" };
+}
+
+/** Skew de IV (puts − calls, %). Positivo = medo de queda; negativo = demanda de alta. */
+export function readSkew(skew: number | null | undefined): { label: string; level: Level } {
+  if (skew == null) return { label: "indisponível", level: "neutral" };
+  if (skew >= 3) return { label: "Puts mais caros — proteção contra queda em alta", level: "red" };
+  if (skew <= -3) return { label: "Calls mais caros — demanda por alta", level: "green" };
+  return { label: "Skew neutro entre puts e calls", level: "yellow" };
+}
+
 // ─── Utilidades de UI ────────────────────────────────────────────────────────
 export const LEVEL_DOT: Record<Level, string> = {
   green: "bg-signal-green",

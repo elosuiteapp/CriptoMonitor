@@ -91,6 +91,9 @@ class DeribitSource(BaseSource):
                 "net_gex_spot": res.net_gex_spot,
                 "spot_price": res.spot_price,
                 "profile_jsonb": res.profile,
+                "put_call_ratio": res.put_call_ratio,
+                "avg_iv": res.avg_iv,
+                "iv_skew": res.iv_skew,
                 "ts": ts,
             })
 

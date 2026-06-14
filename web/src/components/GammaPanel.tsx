@@ -1,4 +1,13 @@
-import { fmtPrice, fmtUsd, readGammaRegime, LEVEL_DOT } from "../lib/format";
+import {
+  fmtPct,
+  fmtPrice,
+  fmtUsd,
+  readGammaRegime,
+  readIvLevel,
+  readPutCall,
+  readSkew,
+  LEVEL_DOT,
+} from "../lib/format";
 import type { GammaData } from "../lib/types";
 
 interface Props {
@@ -44,6 +53,9 @@ export default function GammaPanel({ gamma }: Props) {
   }
 
   const regime = readGammaRegime(gamma.regime);
+  const pc = readPutCall(gamma.put_call_ratio);
+  const iv = readIvLevel(gamma.avg_iv);
+  const skew = readSkew(gamma.iv_skew);
   const bars = profileBars(gamma);
   const maxAbs = Math.max(1, ...bars.map((b) => Math.abs(b.gex)));
   const spot = gamma.spot_price ?? null;
@@ -63,6 +75,28 @@ export default function GammaPanel({ gamma }: Props) {
           level="neutral"
           value={fmtPrice(gamma.max_pain)}
           label={gamma.max_pain_expiry ? `Ímã do vencimento de ${new Date(gamma.max_pain_expiry).toLocaleDateString("pt-BR")}` : "Vencimento mais próximo"}
+        />
+      </div>
+
+      {/* Sentimento de opções (Deribit) — Put/Call, IV e skew */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <GammaCard
+          title="Put/Call (OI)"
+          level={pc.level}
+          value={gamma.put_call_ratio != null ? gamma.put_call_ratio.toFixed(2) : "—"}
+          label={pc.label}
+        />
+        <GammaCard
+          title="Volatilidade implícita"
+          level={iv.level}
+          value={gamma.avg_iv != null ? `${gamma.avg_iv.toFixed(1)}%` : "—"}
+          label={iv.label}
+        />
+        <GammaCard
+          title="Skew (puts − calls)"
+          level={skew.level}
+          value={gamma.iv_skew != null ? fmtPct(gamma.iv_skew, 1) : "—"}
+          label={skew.label}
         />
       </div>
 

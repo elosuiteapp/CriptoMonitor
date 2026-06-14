@@ -44,6 +44,9 @@ export interface GammaData {
   net_gex_spot: number | null;
   spot_price: number | null;
   profile_jsonb: Record<string, number> | null;
+  put_call_ratio: number | null;
+  avg_iv: number | null;
+  iv_skew: number | null;
 }
 
 export interface OnchainPerpsData {

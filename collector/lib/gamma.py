@@ -176,6 +176,9 @@ class GammaResult:
     per_option_gex: list[float]        # alinhado a `options` (pós-filtro)
     per_option_gamma: list[float]
     options: list[OptionInput]         # opções que passaram nos filtros
+    put_call_ratio: float | None       # OI(puts) / OI(calls)
+    avg_iv: float | None               # IV média ponderada por OI (%)
+    iv_skew: float | None              # IV(puts) − IV(calls), ponderada por OI (%)
 
 
 def _filter(options: list[OptionInput], now: datetime) -> tuple[list[OptionInput], np.ndarray]:
@@ -234,6 +237,19 @@ def compute(options: list[OptionInput], spot: float, now: datetime | None = None
     mp_mask = np.array([o.expiry == nearest_expiry for o in kept])
     max_pain = compute_max_pain(strikes[mp_mask], types[mp_mask], oi[mp_mask])
 
+    # Sentimento de opções: Put/Call ratio, IV média (ponderada por OI) e skew
+    ivs = np.array([o.iv for o in kept], dtype=float)  # mark_iv em %
+    put_mask = types == "put"
+    call_mask = ~put_mask
+    put_oi = float(oi[put_mask].sum())
+    call_oi = float(oi[call_mask].sum())
+    total_oi = float(oi.sum())
+    put_call_ratio = round(put_oi / call_oi, 4) if call_oi > 0 else None
+    avg_iv = round(float((ivs * oi).sum() / total_oi), 2) if total_oi > 0 else None
+    put_iv = float((ivs[put_mask] * oi[put_mask]).sum() / put_oi) if put_oi > 0 else None
+    call_iv = float((ivs[call_mask] * oi[call_mask]).sum() / call_oi) if call_oi > 0 else None
+    iv_skew = round(put_iv - call_iv, 2) if (put_iv is not None and call_iv is not None) else None
+
     return GammaResult(
         spot_price=float(spot),
         regime=regime,
@@ -245,4 +261,7 @@ def compute(options: list[OptionInput], spot: float, now: datetime | None = None
         per_option_gex=[float(x) for x in gex_spot],
         per_option_gamma=[float(x) for x in g_spot],
         options=kept,
+        put_call_ratio=put_call_ratio,
+        avg_iv=avg_iv,
+        iv_skew=iv_skew,
     )
