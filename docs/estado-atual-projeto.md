@@ -30,6 +30,24 @@ Supabase Realtime.
 
 ---
 
+## 1.1 Atualização (14/06, Fase 6.2 — parcial)
+
+Adicionado após este relatório inicial:
+- **Volatility Dashboard** (migration **015** `volatility_index`, Pro+): coletor (`deribit.py`)
+  grava **DVOL** (Deribit), **RV 30d** (klines diários da vision), **term structure**
+  (book ao vivo) e **IVP 90d** (histórico de `gamma_profile.avg_iv`) para BTC/ETH. Frontend
+  `VolatilityPanel` (4 cards) abaixo do Módulo Gamma, com aviso de "histórico parcial".
+- **Cockpit Report — miolo** (migration **016**): coluna `report_type`/`auto_generated` em
+  `ai_analysis` + policy RLS pro relatório broadcast (`user_id=NULL`). Edge Function
+  **`cockpit-report`** (Gemini pro→flash) gera relatório diário por ativo. Nova aba
+  **"Relatórios"** (4ª aba) com gating por RLS (Pro+ vê 14, Free vitrine) e botão "Gerar
+  relatório agora" (Expert). **Sem cron/e-mail/WhatsApp** (etapa futura, quando Resend/
+  Evolution forem configurados).
+- **CVD institucional**: Coinbase agora também calcula CVD → o toggle CVD mostra Varejo
+  (Binance) × Institucional (Coinbase).
+- **Migrations agora vão até 016.** Backlog registrado: opções de SOL via Bybit (tem
+  liquidez; ressalva geo do Railway US).
+
 ## 2. Coletor (≈13 fontes)
 
 Worker contínuo (`collector/aggregator.py`), ciclo a cada **5 min** (APScheduler cron
