@@ -72,6 +72,10 @@ Adicionado após este relatório inicial:
   completo): `LiquidationsStrip` (SVG, dado REAL da tabela `liquidations` via `useSeries`) —
   shorts liquidados ↑ verde (pressão compradora) × longs ↓ vermelho (pressão vendedora). O
   mesmo toggle "Liquidações" liga heatmap (estimado, em cima) + barras (realizado, embaixo).
+- **Viés Institucional × Varejo** (síntese única): `readInstitutionalBias` soma Prêmio Coinbase
+  + CVD institucional×varejo + Participação Institucional num score → uma leitura só
+  ("Institucional comprando/distribuindo/equilibrado"). Substituiu os 2 cards separados
+  (Prêmio + Participação) no grupo 🏦 do Cockpit — menos poluição, leitura mais direta.
 - **Migrations agora vão até 017.**
 
 ## 2. Coletor (≈13 fontes)

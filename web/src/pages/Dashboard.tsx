@@ -31,8 +31,7 @@ import {
   fmtPct,
   fmtUsd,
   readCvd,
-  readCoinbasePremium,
-  readInstitutionalShare,
+  readInstitutionalBias,
   readFng,
   readFunding,
   readLiquidations,
@@ -224,25 +223,17 @@ export default function Dashboard() {
               <>
                 <MetricCard
                   institutional
-                  title="Prêmio Coinbase (Institucional × Varejo)"
-                  reading={readCoinbasePremium(
+                  title="Viés Institucional × Varejo"
+                  reading={readInstitutionalBias(
                     payload?.coinbase_premium,
-                    payload?.price?.coinbase?.volume_spot,
-                    payload?.price?.binance?.volume_spot,
-                  )}
-                  source="Coinbase × Binance (spot)"
-                  timestamp={updatedAt}
-                />
-                <MetricCard
-                  institutional
-                  title="Participação Institucional (spot)"
-                  reading={readInstitutionalShare(
                     payload?.price?.coinbase?.volume_spot,
                     [payload?.price?.binance?.volume_spot, payload?.price?.okx?.volume_spot]
                       .filter((v): v is number => v != null)
                       .reduce((a, b) => a + b, 0) || null,
+                    payload?.price?.coinbase?.cvd,
+                    payload?.price?.binance?.cvd,
                   )}
-                  source="Coinbase × Binance+OKX (spot)"
+                  source="Prêmio + Participação + CVD (Coinbase × Binance+OKX)"
                   timestamp={updatedAt}
                 />
                 {defi && (
@@ -277,7 +268,7 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <LockedCard institutional title="Prêmio Coinbase (Institucional × Varejo)" />
+                <LockedCard institutional title="Viés Institucional × Varejo" />
                 <LockedCard institutional title="Macro do mercado" />
               </>
             )}

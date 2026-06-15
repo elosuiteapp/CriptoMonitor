@@ -263,6 +263,67 @@ export function readInstitutionalShare(
   return { label: `Institucional em ${share.toFixed(0)}% do volume spot — proporção típica`, detail, level: "neutral" };
 }
 
+/**
+ * Viés Institucional × Varejo — síntese única de 3 sinais (§8.6.3): Prêmio Coinbase
+ * (preço), Participação Institucional (volume) e CVD agressor institucional×varejo.
+ * Resume "quem está no comando" numa leitura só, com os números no detalhe.
+ */
+export function readInstitutionalBias(
+  premium: number | null | undefined,
+  instVol: number | null | undefined,
+  retailVol: number | null | undefined,
+  instCvd: number | null | undefined,
+  retailCvd: number | null | undefined,
+): Reading {
+  let score = 0;
+  let signals = 0;
+
+  // 1) Prêmio Coinbase — sinal direcional principal (instituições pagando mais/menos)
+  if (premium != null) {
+    signals++;
+    if (premium >= 0.0015) score += 2;
+    else if (premium >= 0.0003) score += 1;
+    else if (premium <= -0.0015) score -= 2;
+    else if (premium <= -0.0003) score -= 1;
+  }
+
+  // 2) CVD institucional vs varejo — divergência de fluxo agressor (smart money)
+  if (instCvd != null) {
+    signals++;
+    if (instCvd > 0) score += retailCvd != null && retailCvd < 0 ? 1.5 : 0.5;
+    else if (instCvd < 0) score += retailCvd != null && retailCvd > 0 ? -1.5 : -0.5;
+  }
+
+  // 3) Participação institucional — modula o contexto (confiança), não a direção
+  let share: number | null = null;
+  if (instVol != null && retailVol != null && instVol + retailVol > 0) {
+    share = (instVol / (instVol + retailVol)) * 100;
+  }
+
+  if (!signals) {
+    return { label: "Viés institucional indisponível", detail: "—", level: "neutral" };
+  }
+
+  const parts: string[] = [];
+  if (premium != null) parts.push(`Prêmio ${fmtPct(premium * 100, 3)}`);
+  if (share != null) parts.push(`Institucional ${share.toFixed(0)}% do spot`);
+  if (instCvd != null) parts.push(`CVD inst. ${fmtUsd(instCvd)}`);
+  if (retailCvd != null) parts.push(`CVD varejo ${fmtUsd(retailCvd)}`);
+  const detail = parts.join(" · ");
+
+  const ctx = share == null ? "" : share >= 25 ? " · instituições muito ativas" : share <= 12 ? " · varejo dominando o volume" : "";
+
+  if (score >= 2.5)
+    return { label: `Institucional comprando com convicção — fluxo e prêmio a favor${ctx}`, detail, level: "green" };
+  if (score >= 1)
+    return { label: `Viés institucional comprador — smart money mais firme que o varejo${ctx}`, detail, level: "green" };
+  if (score <= -2.5)
+    return { label: `Institucional distribuindo — smart money vendendo, varejo segurando${ctx}`, detail, level: "red" };
+  if (score <= -1)
+    return { label: `Viés institucional vendedor — instituições reduzindo exposição${ctx}`, detail, level: "yellow" };
+  return { label: `Institucional e varejo equilibrados — sem comando claro${ctx}`, detail, level: "yellow" };
+}
+
 /** IV Percentile 90d (0-100): onde a IV atual está na faixa dos últimos 90 dias. */
 export function readIvp(ivp: number | null | undefined): { label: string; level: Level } {
   if (ivp == null) return { label: "indisponível", level: "neutral" };
