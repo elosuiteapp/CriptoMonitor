@@ -7,11 +7,12 @@ import {
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
+  type Logical,
 } from "lightweight-charts";
 
-import type { LiqProfile } from "../hooks/useLiquidationProfile";
 import { fmtUsd } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
+import { buildLiquidationGrid, liqColor } from "../lib/liquidationModel";
 import {
   computeVolumeProfile,
   fetchKlines,
@@ -31,7 +32,7 @@ export interface ActiveLayers {
   orderbookWalls: boolean; // paredes do book (Binance + Coinbase)
   funding: boolean; // faixa de funding (renderizada abaixo do gráfico)
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
-  liquidations: boolean; // tira de liquidações 5min (renderizada abaixo do gráfico)
+  liquidations: boolean; // heatmap de liquidações (estimado) sobre o gráfico
 }
 
 interface ChartProps {
@@ -42,19 +43,21 @@ interface ChartProps {
   layers: ActiveLayers;
   canUseLayers: boolean;
   walls?: OrderbookWall[];
-  liqProfile?: LiqProfile | null;
 }
 
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, liqProfile }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls }: ChartProps) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [vp, setVp] = useState<VolumeProfile | null>(null);
+  const [candles, setCandles] = useState<Candle[]>([]);
 
   // ─── Cria o chart uma vez ──────────────────────────────────────────────────
   useEffect(() => {
@@ -120,6 +123,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         series.setData(toSeriesData(candles) as never);
         chart.timeScale().fitContent();
         setVp(computeVolumeProfile(candles));
+        setCandles(candles);
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
           if (chartType === "line" || chartType === "area") {
@@ -183,38 +187,123 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         );
       }
     }
-    // Liquidações por nível de preço (realizado): linhas de calor — intensidade
-    // ∝ USD liquidado na faixa; verde = shorts (squeeze), vermelho = longs (flush).
-    // Os 3 maiores clusters ganham rótulo no eixo (estilo Call Wall).
-    if (layers.liquidations && liqProfile?.levels.length) {
-      const { levels, max } = liqProfile;
-      const topPrices = new Set(
-        [...levels].sort((a, b) => b.total - a.total).slice(0, 3).map((l) => l.price),
-      );
-      for (const lv of levels) {
-        const intensity = lv.total / max;
-        if (intensity < 0.06) continue; // corta ruído
-        const rgb = lv.short >= lv.long ? "34,197,94" : "239,68,68";
-        const alpha = (0.15 + 0.8 * intensity).toFixed(2);
-        const isTop = topPrices.has(lv.price);
-        const line = series.createPriceLine({
-          price: lv.price,
-          color: `rgba(${rgb},${alpha})`,
-          lineWidth: Math.min(4, 1 + Math.round(3 * intensity)) as 1 | 2 | 3 | 4,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: isTop,
-          title: isTop ? `Liq ${fmtUsd(lv.total)}` : "",
-        });
-        priceLinesRef.current.push(line);
+  }, [gamma, layers, canUseLayers, chartType, vp, walls]);
+
+  // ─── Heatmap de liquidações (estimativa: modelo de alavancagem) ──────────────
+  // Desenha numa <canvas> ATRÁS das velas (o fundo do chart é transparente, então
+  // o heat aparece e as velas ficam por cima). A grade é em espaço de dados; só o
+  // mapeamento p/ pixels muda no pan/zoom → recalcula a grade quando os candles
+  // mudam e apenas repinta (drawImage) quando a escala muda.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const canvas = heatCanvasRef.current;
+    const wrap = wrapRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!chart || !series || !canvas || !wrap || !ctx) return;
+
+    const clear = () => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    if (!canUseLayers || !layers.liquidations || candles.length < 10) {
+      clear();
+      return;
+    }
+
+    const grid = buildLiquidationGrid(candles);
+    if (!grid) {
+      clear();
+      return;
+    }
+
+    // canvas offscreen (nCols×nBins) com a paleta já aplicada → drawImage suaviza
+    const off = document.createElement("canvas");
+    off.width = grid.nCols;
+    off.height = grid.nBins;
+    const octx = off.getContext("2d");
+    if (!octx) {
+      clear();
+      return;
+    }
+    const img = octx.createImageData(grid.nCols, grid.nBins);
+    for (let col = 0; col < grid.nCols; col++) {
+      for (let bin = 0; bin < grid.nBins; bin++) {
+        const v = grid.values[col * grid.nBins + bin];
+        const px = (bin * grid.nCols + col) * 4;
+        if (v <= 0) {
+          img.data[px + 3] = 0;
+          continue;
+        }
+        const [r, g, b] = liqColor(Math.sqrt(v / grid.max));
+        img.data[px] = r;
+        img.data[px + 1] = g;
+        img.data[px + 2] = b;
+        img.data[px + 3] = 255;
       }
     }
-  }, [gamma, layers, canUseLayers, chartType, vp, walls, liqProfile]);
+    octx.putImageData(img, 0, 0);
+
+    const tscale = chart.timeScale();
+    let lastSig = "";
+    let raf = 0;
+
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const W = wrap.clientWidth;
+      const H = wrap.clientHeight;
+      const x0 = tscale.logicalToCoordinate(0 as Logical);
+      const xN = tscale.logicalToCoordinate((grid.nCols - 1) as Logical);
+      // mapeia a partir de dois preços in-range (high/low dos candles) e extrapola
+      // até o topo/fundo da grade — robusto à auto-escala do eixo de preço
+      const yHi = series.priceToCoordinate(grid.refHigh);
+      const yLo = series.priceToCoordinate(grid.refLow);
+      if (x0 == null || xN == null || yHi == null || yLo == null) return;
+      const slope = (yLo - yHi) / (grid.refLow - grid.refHigh); // px por unidade de preço
+      const yTop = yHi + (grid.priceTop - grid.refHigh) * slope;
+      const yBot = yHi + (grid.priceBottom - grid.refHigh) * slope;
+
+      const sig = `${W}x${H}|${x0}|${xN}|${yTop}|${yBot}`;
+      if (sig === lastSig) return;
+      lastSig = sig;
+
+      if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        canvas.style.width = `${W}px`;
+        canvas.style.height = `${H}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const cellW = (xN - x0) / Math.max(1, grid.nCols - 1);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(off, 0, 0, grid.nCols, grid.nBins, x0 - cellW / 2, yTop, xN - x0 + cellW, yBot - yTop);
+    };
+
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clear();
+    };
+  }, [candles, layers.liquidations, canUseLayers, chartType]);
 
   return (
-    <div className="relative h-[360px] w-full">
-      <div ref={containerRef} className="h-full w-full" />
+    <div ref={wrapRef} className="relative h-[360px] w-full">
+      <canvas ref={heatCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
+      <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
+      {canUseLayers && layers.liquidations && (
+        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-ink-900/70 px-2 py-0.5 text-[10px] text-slate-400">
+          Heatmap de liquidações · estimativa (modelo de alavancagem)
+        </div>
+      )}
       {error && (
-        <div className="absolute inset-0 grid place-items-center text-sm text-slate-500">
+        <div className="absolute inset-0 z-20 grid place-items-center text-sm text-slate-500">
           Gráfico indisponível ({error})
         </div>
       )}

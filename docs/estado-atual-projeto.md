@@ -56,16 +56,17 @@ Adicionado após este relatório inicial:
   institucional×varejo).
 - **Fase 6.4 — Liquidações (heatmap temporal)** (migration **017** `liquidations`, Pro+):
   a `coinalyze.py` passou a emitir uma 2ª tabela com os **buckets de 5 min** do
-  `/liquidation-history` (long/short USD por bucket, somados entre as exchanges; janela
-  rolante de 6h, +1 call/ciclo). Frontend: **camada "Liquidações (5min)"** nos toggles
-  "Camadas" que desenha um **mapa de calor por NÍVEL DE PREÇO no próprio gráfico
-  principal** (hook `useLiquidationProfile` mapeia cada bucket pelo **spot daquele
-  instante** e acumula USD por faixa de preço; `Chart.tsx` desenha linhas de calor via
-  `createPriceLine` com intensidade ∝ magnitude — verde=shorts/squeeze, vermelho=longs/
-  flush — e rotula os 3 maiores clusters, estilo Call Wall). É dado **real**, cobre só a
-  janela coletada (~12h hoje → faixas perto do preço atual, espalham com o tempo). O card
-  "Liquidações" (agregado 24h em `derivatives`) continua. **Heatmap PREDITIVO por nível de
-  preço (CoinGlass magnet zones, estimado via OI×alavancagem) segue fora.**
+  `/liquidation-history` (long/short USD por bucket; janela rolante 6h; alimenta o card 24h
+  e fica disponível p/ uso futuro). Frontend: **camada "Liquidações (heatmap)"** desenha um
+  **heatmap estilo CoinGlass (preço×tempo) SOBRE o gráfico principal** — é **ESTIMATIVA
+  (modelo de alavancagem)**, não dado realizado: `lib/liquidationModel.ts` projeta, por
+  candle×alavancagem (10/25/50/100x, ponderado pelo volume real), os níveis de liquidação
+  de longs (close×(1−1/L)) e shorts (close×(1+1/L)) numa grade preço×tempo, "consumindo" o
+  nível quando o preço passa por ele (bandas nascem/somem no tempo). `Chart.tsx` pinta num
+  `<canvas>` ATRÁS das velas (fundo do chart é transparente) via offscreen+`drawImage`
+  (paleta escuro→teal→amarelo), realinhado por `logicalToCoordinate`/`priceToCoordinate`
+  em loop rAF. Badge "estimativa (modelo de alavancagem)" no canto. Insumos reais (preço+
+  volume dos candles), modelagem transparente — o "pendente real" não existe nem no CoinGlass.
 - **Migrations agora vão até 017.**
 
 ## 2. Coletor (≈13 fontes)
