@@ -68,12 +68,14 @@ class BybitOptionsSource(BaseSource):
         for asset in assets:
             if asset not in BYBIT_OPTION_ASSETS:
                 continue
-            # O egress das Edge Functions varia: alguns nós a Bybit bloqueia (502),
-            # outros não. Cada chamada é uma invocação nova → retry pega um nó bom.
+            # Edge Functions executam no no mais proximo de QUEM CHAMA. O coletor esta
+            # nos EUA (egress que a Bybit bloqueia). x-region=sa-east-1 forca a execucao
+            # em Sao Paulo (egress que a Bybit aceita). Retry cobre transientes.
+            headers = {"x-region": "sa-east-1"}
             items: list[dict] = []
             for attempt in range(1, 6):
                 try:
-                    resp = await http.get(relay, params={"coin": asset}, timeout=25.0)
+                    resp = await http.get(relay, params={"coin": asset}, headers=headers, timeout=25.0)
                     body = resp.json()
                     if resp.status_code == 200 and body.get("list"):
                         items = body["list"]
