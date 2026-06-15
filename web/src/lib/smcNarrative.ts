@@ -10,7 +10,7 @@ export type Tone = "good" | "bad" | "warn" | "neutral";
 
 export interface KeyLevel {
   label: string;
-  category: "liquidity" | "orderblock" | "equal" | "zone" | "extreme";
+  category: "liquidity" | "orderblock" | "fvg" | "equal" | "zone" | "extreme";
   price: number;
   bias: "bullish" | "bearish" | "neutral";
   note?: string;
@@ -44,6 +44,15 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
       price: ob.mid,
       bias: ob.bias,
       note: `${ob.bottom.toFixed(0)}–${ob.top.toFixed(0)}`,
+    });
+  }
+  for (const g of smc.fvgs) {
+    add({
+      label: `Imbalance/FVG de ${g.bias === "bullish" ? "alta" : "baixa"} (gap)`,
+      category: "fvg",
+      price: g.mid,
+      bias: g.bias,
+      note: `${g.bottom.toFixed(0)}–${g.top.toFixed(0)}`,
     });
   }
   for (const eq of smc.equals) {
@@ -113,6 +122,16 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
   }
   if (below) {
     lines.push({ title: "Alvo de liquidez abaixo", text: `Pool de liquidez em ${below.price.toFixed(0)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, tone: "neutral" });
+  }
+
+  // 5) Suporte/resistência por order block (acima e abaixo)
+  const obAbove = smc.orderBlocks.filter((o) => o.mid > price).sort((a, b) => a.mid - b.mid)[0];
+  const obBelow = smc.orderBlocks.filter((o) => o.mid <= price).sort((a, b) => b.mid - a.mid)[0];
+  if (obAbove) {
+    lines.push({ title: "Resistência (order block)", text: `Order block de ${biasWord(obAbove.bias)} em ${obAbove.mid.toFixed(0)} acima — possível resistência${confTxt(obAbove.mid)}.`, tone: "neutral" });
+  }
+  if (obBelow) {
+    lines.push({ title: "Suporte (order block)", text: `Order block de ${biasWord(obBelow.bias)} em ${obBelow.mid.toFixed(0)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, tone: "neutral" });
   }
 
   return lines;

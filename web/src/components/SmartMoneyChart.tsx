@@ -218,10 +218,11 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
         ctx.fillText("FVG", xOf(g.time, right) + 2, yOf(g.mid, H));
       }
 
-      // 4) Order blocks — 3 mais próximos do preço, caixas arredondadas
-      [...smc.orderBlocks]
-        .sort((a, b) => Math.abs(a.mid - smc.price) - Math.abs(b.mid - smc.price))
-        .slice(0, 3)
+      // 4) Order blocks — sempre os mais próximos ACIMA e ABAIXO do preço
+      //    (resistência/oferta em cima, suporte/demanda embaixo), caixas arredondadas
+      const obAbove = smc.orderBlocks.filter((o) => o.mid > smc.price).sort((a, b) => a.mid - b.mid).slice(0, 2);
+      const obBelow = smc.orderBlocks.filter((o) => o.mid <= smc.price).sort((a, b) => b.mid - a.mid).slice(0, 2);
+      [...obAbove, ...obBelow]
         .forEach((ob) => {
           const bull = ob.bias === "bullish";
           const x1 = xOf(ob.time, right);
