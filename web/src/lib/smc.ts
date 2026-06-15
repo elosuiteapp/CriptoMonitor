@@ -156,15 +156,6 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
   const atr200 = atrArray(candles, 200);
   const atr10 = atrArray(candles, 10);
 
-  // Valores "parsed" para order blocks: em barras muito voláteis usa o corpo.
-  const parsedHigh: number[] = [];
-  const parsedLow: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const highVol = candles[i].high - candles[i].low >= 2 * atr200[i];
-    parsedHigh.push(highVol ? candles[i].low : candles[i].high);
-    parsedLow.push(highVol ? candles[i].high : candles[i].low);
-  }
-
   const swingHigh = newPivot();
   const swingLow = newPivot();
   const internalHigh = newPivot();
@@ -190,16 +181,18 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
   const legEqual = makeLegUpdater(candles, equalLen);
 
   const captureOB = (pivotIndex: number, i: number, bias: Bias, internal: boolean) => {
+    // OB = vela extrema no intervalo da estrutura (a vela de demanda/oferta).
+    // Usa o range real da vela (high/low) — top sempre > bottom.
     let bestIdx = pivotIndex;
     if (bias === "bullish") {
       let min = Infinity;
-      for (let k = pivotIndex; k <= i; k++) if (parsedLow[k] < min) (min = parsedLow[k]), (bestIdx = k);
+      for (let k = pivotIndex; k <= i; k++) if (candles[k].low < min) (min = candles[k].low), (bestIdx = k);
     } else {
       let max = -Infinity;
-      for (let k = pivotIndex; k <= i; k++) if (parsedHigh[k] > max) (max = parsedHigh[k]), (bestIdx = k);
+      for (let k = pivotIndex; k <= i; k++) if (candles[k].high > max) (max = candles[k].high), (bestIdx = k);
     }
-    const top = parsedHigh[bestIdx];
-    const bottom = parsedLow[bestIdx];
+    const top = candles[bestIdx].high;
+    const bottom = candles[bestIdx].low;
     orderBlocksRaw.push({ top, bottom, mid: (top + bottom) / 2, time: candles[bestIdx].time, bias, internal });
   };
 
@@ -322,16 +315,17 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
   const lastTime = candles[n - 1].time;
   const orderBlocks = orderBlocksRaw
     .filter((ob) => {
-      // mitigado quando o preço fecha através do bloco depois de formado
+      // mitigado quando uma vela FECHA através do bloco (não por pavio) — mantém a
+      // zona de demanda/oferta válida enquanto o preço não confirma o rompimento
       for (let k = 0; k < n; k++) {
         if (candles[k].time <= ob.time) continue;
-        if (ob.bias === "bullish" && candles[k].low < ob.bottom) return false;
-        if (ob.bias === "bearish" && candles[k].high > ob.top) return false;
+        if (ob.bias === "bullish" && candles[k].close < ob.bottom) return false;
+        if (ob.bias === "bearish" && candles[k].close > ob.top) return false;
       }
       return true;
     })
     .filter((ob) => ob.time < lastTime)
-    .slice(-obCount * 2);
+    .slice(-obCount * 3);
 
   // ─── Fair value gaps (3 velas), só os não preenchidos ───
   const fvgs: FVG[] = [];

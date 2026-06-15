@@ -16,19 +16,36 @@ const DOWN = "#ef4444";
 const AMBER = "#f59e0b";
 const INK = "#0a0e17";
 
+export interface SmcLayers {
+  orderBlocks: boolean;
+  fvg: boolean;
+  liquidity: boolean;
+  zones: boolean; // premium/discount/equilibrium + topo/fundo
+  equal: boolean; // EQH/EQL
+  structure: boolean; // marcadores BOS/CHoCH
+}
+
+export const DEFAULT_LAYERS: SmcLayers = {
+  orderBlocks: true,
+  fvg: true,
+  liquidity: true,
+  zones: true,
+  equal: true,
+  structure: true,
+};
+
 interface Props {
   candles: Candle[];
   smc: SmcResult | null;
+  layers?: SmcLayers;
 }
 
 const kfmt = (v: number) =>
   Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : `${Math.round(v)}`;
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
- *  (order blocks, imbalances/FVG, premium/discount/equilibrium, liquidez, EQH/EQL)
- *  num <canvas> sincronizado com pan/zoom — mesma técnica do heatmap (Chart.tsx).
- *  Rico em informação, mas com cores suaves e etiquetas sem sobreposição. */
-export default function SmartMoneyChart({ candles, smc }: Props) {
+ *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
+export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -81,7 +98,7 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) return;
-    if (!smc) {
+    if (!smc || !layers.structure) {
       series.setMarkers([]);
       return;
     }
@@ -93,7 +110,7 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       text: s.type,
     }));
     series.setMarkers(markers as never);
-  }, [smc]);
+  }, [smc, layers.structure]);
 
   // ─── Zonas preenchidas (canvas overlay) ──────────────────────────────────────
   useEffect(() => {
@@ -122,7 +139,7 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
     const xRaw = (time: number): number | null => tscale.timeToCoordinate(time as Time);
     const xOf = (time: number, right: number): number => {
       const x = xRaw(time);
-      if (x == null) return 0; // fora da vista à esquerda → estende do começo
+      if (x == null) return 0;
       return Math.max(0, Math.min(x, right));
     };
     const rr = (x: number, y: number, w: number, h: number, r: number) => {
@@ -167,12 +184,12 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
         ctx.fillStyle = fill;
         ctx.fillRect(0, Math.min(yt, yb), right, Math.abs(yb - yt));
       };
-      const faintLabel = (price: number, text: string, color: string, align: "left" | "center" = "left") => {
+      const faintLabel = (price: number, text: string, color: string) => {
         ctx.font = "500 10px system-ui, sans-serif";
         ctx.fillStyle = color;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        ctx.fillText(text, align === "left" ? 8 : right / 2 - 28, yOf(price, H));
+        ctx.fillText(text, 8, yOf(price, H));
       };
       const dashed = (price: number, color: string, dash: number[] = [2, 4]) => {
         const y = yOf(price, H);
@@ -186,44 +203,46 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
         ctx.setLineDash([]);
       };
 
-      // 1) Faixas premium / equilibrium / discount (fundo)
-      softBand(smc.premium.top, smc.premium.bottom, "rgba(239,68,68,0.05)");
-      softBand(smc.equilibrium.top, smc.equilibrium.bottom, "rgba(148,163,184,0.05)");
-      softBand(smc.discount.top, smc.discount.bottom, "rgba(34,197,94,0.05)");
-      faintLabel(smc.premium.bottom, "Premium", "rgba(239,68,68,0.7)");
-      faintLabel(smc.equilibrium.top, "Equilibrium", "rgba(148,163,184,0.6)");
-      faintLabel(smc.discount.top, "Discount", "rgba(34,197,94,0.7)");
-
-      // 2) Extremos do range
-      dashed(smc.trailingTop, "rgba(148,163,184,0.3)");
-      dashed(smc.trailingBottom, "rgba(148,163,184,0.3)");
-
-      // 3) Imbalances / FVG — caixinhas violeta no local do gap (estende poucos candles)
-      smc.fvgs.forEach((g) => {
-        const x1 = xOf(g.time, right);
-        const x2 = Math.min(x1 + barPx * 5, right);
-        if (x2 - x1 < 2) return;
-        const yt = yOf(g.top, H);
-        const yb = yOf(g.bottom, H);
-        rr(x1, Math.min(yt, yb), x2 - x1, Math.max(Math.abs(yb - yt), 2), 2);
-        ctx.fillStyle = "rgba(192,132,252,0.16)";
-        ctx.fill();
-      });
-      if (smc.fvgs.length) {
-        const g = smc.fvgs[smc.fvgs.length - 1];
-        ctx.font = "500 9px system-ui, sans-serif";
-        ctx.fillStyle = "rgba(192,132,252,0.85)";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        ctx.fillText("FVG", xOf(g.time, right) + 2, yOf(g.mid, H));
+      // 1) Faixas premium / equilibrium / discount
+      if (layers.zones) {
+        softBand(smc.premium.top, smc.premium.bottom, "rgba(239,68,68,0.05)");
+        softBand(smc.equilibrium.top, smc.equilibrium.bottom, "rgba(148,163,184,0.05)");
+        softBand(smc.discount.top, smc.discount.bottom, "rgba(34,197,94,0.05)");
+        faintLabel(smc.premium.bottom, "Premium", "rgba(239,68,68,0.7)");
+        faintLabel(smc.equilibrium.top, "Equilibrium", "rgba(148,163,184,0.6)");
+        faintLabel(smc.discount.top, "Discount", "rgba(34,197,94,0.7)");
+        dashed(smc.trailingTop, "rgba(148,163,184,0.3)");
+        dashed(smc.trailingBottom, "rgba(148,163,184,0.3)");
       }
 
-      // 4) Order blocks — sempre os mais próximos ACIMA e ABAIXO do preço
-      //    (resistência/oferta em cima, suporte/demanda embaixo), caixas arredondadas
-      const obAbove = smc.orderBlocks.filter((o) => o.mid > smc.price).sort((a, b) => a.mid - b.mid).slice(0, 2);
-      const obBelow = smc.orderBlocks.filter((o) => o.mid <= smc.price).sort((a, b) => b.mid - a.mid).slice(0, 2);
-      [...obAbove, ...obBelow]
-        .forEach((ob) => {
+      // 2) Imbalances / FVG
+      if (layers.fvg) {
+        smc.fvgs.forEach((g) => {
+          const x1 = xOf(g.time, right);
+          const x2 = Math.min(x1 + barPx * 5, right);
+          if (x2 - x1 < 2) return;
+          const yt = yOf(g.top, H);
+          const yb = yOf(g.bottom, H);
+          rr(x1, Math.min(yt, yb), x2 - x1, Math.max(Math.abs(yb - yt), 2), 2);
+          ctx.fillStyle = "rgba(192,132,252,0.16)";
+          ctx.fill();
+        });
+        if (smc.fvgs.length) {
+          const g = smc.fvgs[smc.fvgs.length - 1];
+          ctx.font = "500 9px system-ui, sans-serif";
+          ctx.fillStyle = "rgba(192,132,252,0.85)";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText("FVG", xOf(g.time, right) + 2, yOf(g.mid, H));
+        }
+      }
+
+      // 3) Order blocks — os 3 mais próximos do preço de CADA viés (cor garantida)
+      if (layers.orderBlocks) {
+        const byDist = (a: { mid: number }, b: { mid: number }) => Math.abs(a.mid - smc.price) - Math.abs(b.mid - smc.price);
+        const bears = smc.orderBlocks.filter((o) => o.bias === "bearish").sort(byDist).slice(0, 3);
+        const bulls = smc.orderBlocks.filter((o) => o.bias === "bullish").sort(byDist).slice(0, 3);
+        [...bears, ...bulls].forEach((ob) => {
           const bull = ob.bias === "bullish";
           const x1 = xOf(ob.time, right);
           const yt = yOf(ob.top, H);
@@ -238,36 +257,41 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
           ctx.stroke();
           queueTag(ob.mid, `OB ${bull ? "alta" : "baixa"} ${kfmt(ob.mid)}`, bull ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)", bull ? INK : "#fff");
         });
+      }
 
-      // 5) EQH / EQL — segmento curto pontilhado no nível + rótulo no pivô
-      smc.equals.forEach((eq) => {
-        const x1 = xOf(eq.time, right);
-        const x2 = Math.min(x1 + barPx * 6, right);
-        const y = yOf(eq.price, H);
-        ctx.strokeStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([1, 3]);
-        ctx.beginPath();
-        ctx.moveTo(x1, y);
-        ctx.lineTo(x2, y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.font = "500 9px system-ui, sans-serif";
-        ctx.fillStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.8)" : "rgba(34,197,94,0.8)";
-        ctx.textBaseline = eq.kind === "EQH" ? "bottom" : "top";
-        ctx.textAlign = "left";
-        ctx.fillText(eq.kind, x1, eq.kind === "EQH" ? y - 2 : y + 2);
-      });
+      // 4) EQH / EQL
+      if (layers.equal) {
+        smc.equals.forEach((eq) => {
+          const x1 = xOf(eq.time, right);
+          const x2 = Math.min(x1 + barPx * 6, right);
+          const y = yOf(eq.price, H);
+          ctx.strokeStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([1, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x1, y);
+          ctx.lineTo(x2, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = "500 9px system-ui, sans-serif";
+          ctx.fillStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.8)" : "rgba(34,197,94,0.8)";
+          ctx.textBaseline = eq.kind === "EQH" ? "bottom" : "top";
+          ctx.textAlign = "left";
+          ctx.fillText(eq.kind, x1, eq.kind === "EQH" ? y - 2 : y + 2);
+        });
+      }
 
-      // 6) Liquidez — até 2 acima e 2 abaixo (não varridas), âmbar pontilhada
-      const above = smc.liquidity.filter((l) => !l.swept && l.price > smc.price).sort((a, b) => a.price - b.price).slice(0, 2);
-      const below = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price).slice(0, 2);
-      [...above, ...below].forEach((l) => {
-        dashed(l.price, "rgba(245,158,11,0.7)");
-        queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER, INK);
-      });
+      // 5) Liquidez — até 2 acima e 2 abaixo (não varridas)
+      if (layers.liquidity) {
+        const above = smc.liquidity.filter((l) => !l.swept && l.price > smc.price).sort((a, b) => a.price - b.price).slice(0, 2);
+        const below = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price).slice(0, 2);
+        [...above, ...below].forEach((l) => {
+          dashed(l.price, "rgba(245,158,11,0.7)");
+          queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER, INK);
+        });
+      }
 
-      // 7) Etiquetas à direita, descolididas verticalmente
+      // 6) Etiquetas à direita, descolididas
       tags.sort((a, b) => a.y - b.y);
       const GAP = 15;
       for (let i = 1; i < tags.length; i++) {
@@ -301,7 +325,7 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [smc, candles]);
+  }, [smc, candles, layers]);
 
   return (
     <div ref={wrapRef} className="relative h-[380px] w-full">

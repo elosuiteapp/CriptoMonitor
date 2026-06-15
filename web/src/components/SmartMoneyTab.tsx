@@ -6,7 +6,7 @@ import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
 import { supabase } from "../lib/supabase";
-import SmartMoneyChart from "./SmartMoneyChart";
+import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
 
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "4h", label: "4h" },
@@ -30,6 +30,15 @@ const BIAS_TONE: Record<string, string> = {
 const biasDot = (b: "bullish" | "bearish" | "neutral") =>
   b === "bullish" ? "bg-signal-green" : b === "bearish" ? "bg-signal-red" : "bg-slate-500";
 
+const LAYER_LABELS: { key: keyof SmcLayers; label: string }[] = [
+  { key: "orderBlocks", label: "Order Blocks" },
+  { key: "fvg", label: "Imbalance" },
+  { key: "liquidity", label: "Liquidez" },
+  { key: "zones", label: "Zonas" },
+  { key: "equal", label: "EQH/EQL" },
+  { key: "structure", label: "BOS/CHoCH" },
+];
+
 export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [tf, setTf] = useState<Timeframe>("1d");
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -37,6 +46,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [sources, setSources] = useState<ConfluenceSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [layers, setLayers] = useState<SmcLayers>(DEFAULT_LAYERS);
+  const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
 
   useEffect(() => {
     let active = true;
@@ -135,10 +146,26 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Gráfico SMC */}
       <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
+        {/* Toggles de camadas */}
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {LAYER_LABELS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => toggleLayer(key)}
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                layers[key]
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-ink-500 text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-slate-500">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} />
         )}
         <p className="mt-2 px-1 text-[11px] text-slate-500">
           Zonas: <span className="text-signal-green">verde</span> = demanda/discount ·{" "}
@@ -172,7 +199,10 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                     lvl.swept ? "opacity-50" : ""
                   }`}
                 >
-                  <td className="px-4 py-2.5">
+                  <td
+                    className="border-l-2 px-4 py-2.5"
+                    style={{ borderLeftColor: lvl.bias === "bullish" ? "#22c55e" : lvl.bias === "bearish" ? "#ef4444" : "#475569" }}
+                  >
                     <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 shrink-0 rounded-full ${biasDot(lvl.bias)}`} />
                       <span className="text-slate-200">{lvl.label}</span>
