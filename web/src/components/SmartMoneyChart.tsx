@@ -38,6 +38,7 @@ interface Props {
   candles: Candle[];
   smc: SmcResult | null;
   layers?: SmcLayers;
+  viewKey?: string; // muda só na troca de ativo/timeframe → re-enquadra; refresh silencioso preserva o zoom
 }
 
 const kfmt = (v: number) =>
@@ -45,12 +46,13 @@ const kfmt = (v: number) =>
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
-export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS }: Props) {
+export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lastViewKey = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -91,12 +93,15 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS 
     const series = seriesRef.current;
     if (!chart || !series || candles.length === 0) return;
     series.setData(candles as never);
-    // Reenquadra a cada troca de ativo/timeframe: vertical (autoScale do preço) +
-    // horizontal (fitContent). Sem isso o eixo de preço fica preso na faixa do
-    // ativo anterior e o novo (ex.: ETH ~1.800 na escala do BTC ~66.000) achata.
-    chart.priceScale("right").applyOptions({ autoScale: true });
-    chart.timeScale().fitContent();
-  }, [candles]);
+    // Re-enquadra só quando muda ativo/timeframe (viewKey). No refresh silencioso o
+    // viewKey não muda → preserva o zoom/pan do usuário. Sem o re-enquadre, o eixo de
+    // preço ficaria preso na faixa do ativo anterior (ex.: ETH ~1.800 na escala do BTC).
+    if (viewKey !== lastViewKey.current) {
+      lastViewKey.current = viewKey;
+      chart.priceScale("right").applyOptions({ autoScale: true });
+      chart.timeScale().fitContent();
+    }
+  }, [candles, viewKey]);
 
   // ─── Marcadores BOS/CHoCH ────────────────────────────────────────────────────
   useEffect(() => {

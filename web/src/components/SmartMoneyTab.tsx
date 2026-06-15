@@ -92,16 +92,18 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError(null);
 
-    (async () => {
+    // silent = refresh automático (não pisca o "carregando" nem reenquadra o gráfico)
+    const run = async (silent: boolean) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const klines = await fetchKlines(asset, tf, 320);
         if (!active) return;
-        const result = computeSmc(klines);
         setCandles(klines);
-        setSmc(result);
+        setSmc(computeSmc(klines));
 
         // Confluência: gamma (opções) + paredes do book — dados que a plataforma já coleta
         const [gammaRes, wallsRes] = await Promise.all([
@@ -126,14 +128,26 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         const walls = wallRows.filter((w) => w.ts === latestTs);
         setSources(buildConfluenceSources(gamma, walls, (v) => fmtUsd(v)));
       } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : "Falha ao carregar dados de mercado");
+        if (active && !silent) setError(e instanceof Error ? e.message : "Falha ao carregar dados de mercado");
       } finally {
-        if (active) setLoading(false);
+        if (active && !silent) setLoading(false);
       }
-    })();
+    };
+
+    run(false);
+    // Atualização automática a cada 60s (só com a aba visível) + ao voltar pra aba
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") run(true);
+    }, 60000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") run(true);
+    };
+    document.addEventListener("visibilitychange", onVis);
 
     return () => {
       active = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [asset, tf]);
 
@@ -215,6 +229,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           <span className={`rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>
             Viés: {bias === "bullish" ? "alta" : bias === "bearish" ? "baixa" : "indefinido"}
           </span>
+          <span className="flex items-center gap-1 text-[11px] text-slate-500" title="Atualiza automaticamente a cada 60s">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-green" /> ao vivo
+          </span>
         </div>
         <div className="flex gap-1 rounded-lg border border-ink-600 bg-ink-800/60 p-0.5">
           {TFS.map((t) => (
@@ -288,7 +305,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-slate-500">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} />
         )}
         <p className="mt-2 px-1 text-[11px] text-slate-500">
           Zonas: <span className="text-signal-green">verde</span> = demanda/discount ·{" "}
