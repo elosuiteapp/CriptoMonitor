@@ -143,7 +143,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         <p className="mt-2 px-1 text-[11px] text-slate-500">
           Zonas: <span className="text-signal-green">verde</span> = demanda/discount ·{" "}
           <span className="text-signal-red">vermelho</span> = oferta/premium ·{" "}
-          <span className="text-amber-500">âmbar</span> = liquidez (stops) · setas = BOS/CHoCH. Tudo calculado dos candles.
+          <span className="text-amber-500">âmbar</span> = liquidez · <span className="text-purple-400">violeta</span> = imbalance (FVG) ·
+          EQH/EQL = topos/fundos iguais · setas = BOS/CHoCH. Tudo calculado dos candles.
         </p>
       </div>
 

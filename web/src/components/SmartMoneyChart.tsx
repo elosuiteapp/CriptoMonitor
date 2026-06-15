@@ -21,10 +21,13 @@ interface Props {
   smc: SmcResult | null;
 }
 
-/** Gráfico da aba Smart Money, estilo TradingView mas discreto: candles + zonas
- *  preenchidas (order blocks, premium/discount, liquidez) num <canvas> sobre o
- *  gráfico, sincronizado com pan/zoom. Poucos elementos, cores suaves, etiquetas
- *  sem sobreposição — para não poluir. Marcadores de BOS/CHoCH ficam na série. */
+const kfmt = (v: number) =>
+  Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : `${Math.round(v)}`;
+
+/** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
+ *  (order blocks, imbalances/FVG, premium/discount/equilibrium, liquidez, EQH/EQL)
+ *  num <canvas> sincronizado com pan/zoom — mesma técnica do heatmap (Chart.tsx).
+ *  Rico em informação, mas com cores suaves e etiquetas sem sobreposição. */
 export default function SmartMoneyChart({ candles, smc }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -32,7 +35,6 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
-  // ─── Cria o chart uma vez ──────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -67,7 +69,6 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
     };
   }, []);
 
-  // ─── Dados ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
@@ -84,7 +85,7 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       series.setMarkers([]);
       return;
     }
-    const markers = smc.structures.slice(-8).map((s) => ({
+    const markers = smc.structures.slice(-12).map((s) => ({
       time: s.time as Time,
       position: (s.bias === "bullish" ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
       color: s.bias === "bullish" ? "rgba(34,197,94,0.9)" : "rgba(239,68,68,0.9)",
@@ -101,12 +102,15 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
     const canvas = overlayRef.current;
     const wrap = wrapRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!chart || !series || !canvas || !wrap || !ctx || !smc) {
+    if (!chart || !series || !canvas || !wrap || !ctx || !smc || candles.length < 2) {
       if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
     const tscale = chart.timeScale();
+    const firstT = candles[0].time;
+    const lastT = candles[candles.length - 1].time;
+    const prevT = candles[candles.length - 2].time;
     let raf = 0;
     let lastSig = "";
 
@@ -115,9 +119,10 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       if (y != null) return y;
       return price > smc.price ? 0 : H;
     };
+    const xRaw = (time: number): number | null => tscale.timeToCoordinate(time as Time);
     const xOf = (time: number, right: number): number => {
-      const x = tscale.timeToCoordinate(time as Time);
-      if (x == null) return 0;
+      const x = xRaw(time);
+      if (x == null) return 0; // fora da vista à esquerda → estende do começo
       return Math.max(0, Math.min(x, right));
     };
     const rr = (x: number, y: number, w: number, h: number, r: number) => {
@@ -136,8 +141,11 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       const W = wrap.clientWidth;
       const H = wrap.clientHeight;
       const right = tscale.width();
+      const xa = xRaw(lastT);
+      const xb = xRaw(prevT);
+      const barPx = xa != null && xb != null ? Math.max(Math.abs(xa - xb), 2) : 6;
 
-      const sig = `${W}x${H}|${right}|${yOf(smc.price, H).toFixed(1)}|${yOf(smc.trailingTop, H).toFixed(1)}|${yOf(smc.trailingBottom, H).toFixed(1)}`;
+      const sig = `${W}x${H}|${right}|${yOf(smc.price, H).toFixed(1)}|${yOf(smc.trailingTop, H).toFixed(1)}|${yOf(smc.trailingBottom, H).toFixed(1)}|${xRaw(firstT)}|${xa}|${barPx.toFixed(1)}`;
       if (sig === lastSig) return;
       lastSig = sig;
 
@@ -150,7 +158,6 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
 
-      // etiquetas da direita coletadas e depois descolididas (sem sobreposição)
       const tags: { y: number; text: string; bg: string; fg: string }[] = [];
       const queueTag = (price: number, text: string, bg: string, fg: string) => tags.push({ y: yOf(price, H), text, bg, fg });
 
@@ -160,18 +167,18 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
         ctx.fillStyle = fill;
         ctx.fillRect(0, Math.min(yt, yb), right, Math.abs(yb - yt));
       };
-      const faintLabel = (price: number, text: string, color: string) => {
+      const faintLabel = (price: number, text: string, color: string, align: "left" | "center" = "left") => {
         ctx.font = "500 10px system-ui, sans-serif";
         ctx.fillStyle = color;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        ctx.fillText(text, 8, yOf(price, H));
+        ctx.fillText(text, align === "left" ? 8 : right / 2 - 28, yOf(price, H));
       };
-      const dashed = (price: number, color: string) => {
+      const dashed = (price: number, color: string, dash: number[] = [2, 4]) => {
         const y = yOf(price, H);
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
-        ctx.setLineDash([2, 4]);
+        ctx.setLineDash(dash);
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(right, y);
@@ -179,20 +186,42 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
         ctx.setLineDash([]);
       };
 
-      // 1) Faixas premium / discount — bem suaves, ao fundo
+      // 1) Faixas premium / equilibrium / discount (fundo)
       softBand(smc.premium.top, smc.premium.bottom, "rgba(239,68,68,0.05)");
+      softBand(smc.equilibrium.top, smc.equilibrium.bottom, "rgba(148,163,184,0.05)");
       softBand(smc.discount.top, smc.discount.bottom, "rgba(34,197,94,0.05)");
       faintLabel(smc.premium.bottom, "Premium", "rgba(239,68,68,0.7)");
+      faintLabel(smc.equilibrium.top, "Equilibrium", "rgba(148,163,184,0.6)");
       faintLabel(smc.discount.top, "Discount", "rgba(34,197,94,0.7)");
 
-      // 2) Extremos do range — linha pontilhada quase imperceptível
+      // 2) Extremos do range
       dashed(smc.trailingTop, "rgba(148,163,184,0.3)");
       dashed(smc.trailingBottom, "rgba(148,163,184,0.3)");
 
-      // 3) Order blocks — só os 2 mais próximos do preço, caixa arredondada suave
+      // 3) Imbalances / FVG — caixinhas violeta no local do gap (estende poucos candles)
+      smc.fvgs.forEach((g) => {
+        const x1 = xOf(g.time, right);
+        const x2 = Math.min(x1 + barPx * 5, right);
+        if (x2 - x1 < 2) return;
+        const yt = yOf(g.top, H);
+        const yb = yOf(g.bottom, H);
+        rr(x1, Math.min(yt, yb), x2 - x1, Math.max(Math.abs(yb - yt), 2), 2);
+        ctx.fillStyle = "rgba(192,132,252,0.16)";
+        ctx.fill();
+      });
+      if (smc.fvgs.length) {
+        const g = smc.fvgs[smc.fvgs.length - 1];
+        ctx.font = "500 9px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(192,132,252,0.85)";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText("FVG", xOf(g.time, right) + 2, yOf(g.mid, H));
+      }
+
+      // 4) Order blocks — 3 mais próximos do preço, caixas arredondadas
       [...smc.orderBlocks]
         .sort((a, b) => Math.abs(a.mid - smc.price) - Math.abs(b.mid - smc.price))
-        .slice(0, 2)
+        .slice(0, 3)
         .forEach((ob) => {
           const bull = ob.bias === "bullish";
           const x1 = xOf(ob.time, right);
@@ -206,20 +235,40 @@ export default function SmartMoneyChart({ candles, smc }: Props) {
           ctx.strokeStyle = bull ? "rgba(34,197,94,0.40)" : "rgba(239,68,68,0.40)";
           ctx.lineWidth = 1;
           ctx.stroke();
-          queueTag(ob.mid, `OB ${bull ? "alta" : "baixa"}`, bull ? "rgba(34,197,94,0.9)" : "rgba(239,68,68,0.9)", bull ? INK : "#fff");
+          queueTag(ob.mid, `OB ${bull ? "alta" : "baixa"} ${kfmt(ob.mid)}`, bull ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)", bull ? INK : "#fff");
         });
 
-      // 4) Liquidez — só a mais próxima acima e abaixo do preço (não varridas)
-      const liqAbove = smc.liquidity.filter((l) => !l.swept && l.price > smc.price).sort((a, b) => a.price - b.price)[0];
-      const liqBelow = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price)[0];
-      [liqAbove, liqBelow].filter(Boolean).forEach((l) => {
-        dashed(l.price, "rgba(245,158,11,0.7)");
-        queueTag(l.price, l.side === "buy" ? "Liquidez" : "Liquidez", AMBER, INK);
+      // 5) EQH / EQL — segmento curto pontilhado no nível + rótulo no pivô
+      smc.equals.forEach((eq) => {
+        const x1 = xOf(eq.time, right);
+        const x2 = Math.min(x1 + barPx * 6, right);
+        const y = yOf(eq.price, H);
+        ctx.strokeStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([1, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = "500 9px system-ui, sans-serif";
+        ctx.fillStyle = eq.kind === "EQH" ? "rgba(239,68,68,0.8)" : "rgba(34,197,94,0.8)";
+        ctx.textBaseline = eq.kind === "EQH" ? "bottom" : "top";
+        ctx.textAlign = "left";
+        ctx.fillText(eq.kind, x1, eq.kind === "EQH" ? y - 2 : y + 2);
       });
 
-      // 5) Etiquetas à direita, descolididas verticalmente
+      // 6) Liquidez — até 2 acima e 2 abaixo (não varridas), âmbar pontilhada
+      const above = smc.liquidity.filter((l) => !l.swept && l.price > smc.price).sort((a, b) => a.price - b.price).slice(0, 2);
+      const below = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price).slice(0, 2);
+      [...above, ...below].forEach((l) => {
+        dashed(l.price, "rgba(245,158,11,0.7)");
+        queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER, INK);
+      });
+
+      // 7) Etiquetas à direita, descolididas verticalmente
       tags.sort((a, b) => a.y - b.y);
-      const GAP = 16;
+      const GAP = 15;
       for (let i = 1; i < tags.length; i++) {
         if (tags[i].y - tags[i - 1].y < GAP) tags[i].y = tags[i - 1].y + GAP;
       }
