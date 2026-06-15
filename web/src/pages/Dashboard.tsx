@@ -23,6 +23,7 @@ import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
+import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useOpenInterest } from "../hooks/useOpenInterest";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
@@ -48,6 +49,7 @@ const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DV
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { plan, loading: planLoading } = usePlan(user?.id);
+  const { isAdmin } = useIsAdmin(user?.id);
 
   const allowed = plan?.assets ?? ["BTC"];
   const [asset, setAsset] = useState("BTC");
@@ -111,6 +113,11 @@ export default function Dashboard() {
           <Link to="/alerts" className="text-xs text-slate-400 hover:text-slate-200">
             Alertas
           </Link>
+          {isAdmin && (
+            <Link to="/admin" className="text-xs font-semibold text-accent hover:text-accent/80">
+              Admin
+            </Link>
+          )}
           <button onClick={() => signOut()} className="text-xs text-slate-500 hover:text-slate-300">
             Sair
           </button>

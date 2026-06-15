@@ -6,6 +6,14 @@ import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Pricing from "./pages/Pricing";
+import AdminRoute from "./pages/admin/AdminRoute";
+import AdminAudit from "./pages/admin/Audit";
+import AdminOverview from "./pages/admin/Overview";
+import AdminPlans from "./pages/admin/Plans";
+import AdminSubscriptions from "./pages/admin/Subscriptions";
+import AdminSystem from "./pages/admin/System";
+import AdminUsage from "./pages/admin/Usage";
+import AdminUsers from "./pages/admin/Users";
 
 function Loading() {
   return <div className="grid h-full place-items-center text-slate-500">Carregando…</div>;
@@ -22,6 +30,18 @@ export default function App() {
       <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
       <Route path="/analysis" element={session ? <Analysis /> : <Navigate to="/login" replace />} />
       <Route path="/alerts" element={session ? <Alerts /> : <Navigate to="/login" replace />} />
+
+      {/* Painel de administrador — guardado por sessão + papel admin */}
+      <Route path="/admin" element={<AdminRoute />}>
+        <Route index element={<AdminOverview />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="subscriptions" element={<AdminSubscriptions />} />
+        <Route path="plans" element={<AdminPlans />} />
+        <Route path="usage" element={<AdminUsage />} />
+        <Route path="system" element={<AdminSystem />} />
+        <Route path="audit" element={<AdminAudit />} />
+      </Route>
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
