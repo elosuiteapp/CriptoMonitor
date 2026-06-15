@@ -10,7 +10,6 @@ import Disclaimer from "../components/Disclaimer";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
-import LiquidationsStrip from "../components/LiquidationsStrip";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
@@ -23,6 +22,7 @@ import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
+import { useLiquidationProfile } from "../hooks/useLiquidationProfile";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
 import { useSeries } from "../hooks/useSeries";
@@ -73,6 +73,7 @@ export default function Dashboard() {
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
   const walls = useOrderbookWalls(asset, plan);
+  const liqProfile = useLiquidationProfile(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
   const canUseLayers = plan?.chart_layers ?? false;
@@ -153,6 +154,7 @@ export default function Dashboard() {
             layers={layers}
             canUseLayers={canUseLayers}
             walls={walls}
+            liqProfile={liqProfile}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
           {canUseLayers && layers.cvd && (
@@ -162,7 +164,6 @@ export default function Dashboard() {
             </>
           )}
           {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
-          {canUseLayers && layers.liquidations && <LiquidationsStrip data={series.liquidations} />}
         </section>
 
         {/* Painel Gamma (BTC/ETH, Pro+) */}

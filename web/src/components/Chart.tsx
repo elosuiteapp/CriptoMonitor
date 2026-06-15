@@ -9,6 +9,7 @@ import {
   type IPriceLine,
 } from "lightweight-charts";
 
+import type { LiqProfile } from "../hooks/useLiquidationProfile";
 import { fmtUsd } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import {
@@ -41,12 +42,13 @@ interface ChartProps {
   layers: ActiveLayers;
   canUseLayers: boolean;
   walls?: OrderbookWall[];
+  liqProfile?: LiqProfile | null;
 }
 
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, liqProfile }: ChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
@@ -181,7 +183,32 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         );
       }
     }
-  }, [gamma, layers, canUseLayers, chartType, vp, walls]);
+    // Liquidações por nível de preço (realizado): linhas de calor — intensidade
+    // ∝ USD liquidado na faixa; verde = shorts (squeeze), vermelho = longs (flush).
+    // Os 3 maiores clusters ganham rótulo no eixo (estilo Call Wall).
+    if (layers.liquidations && liqProfile?.levels.length) {
+      const { levels, max } = liqProfile;
+      const topPrices = new Set(
+        [...levels].sort((a, b) => b.total - a.total).slice(0, 3).map((l) => l.price),
+      );
+      for (const lv of levels) {
+        const intensity = lv.total / max;
+        if (intensity < 0.06) continue; // corta ruído
+        const rgb = lv.short >= lv.long ? "34,197,94" : "239,68,68";
+        const alpha = (0.15 + 0.8 * intensity).toFixed(2);
+        const isTop = topPrices.has(lv.price);
+        const line = series.createPriceLine({
+          price: lv.price,
+          color: `rgba(${rgb},${alpha})`,
+          lineWidth: Math.min(4, 1 + Math.round(3 * intensity)) as 1 | 2 | 3 | 4,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: isTop,
+          title: isTop ? `Liq ${fmtUsd(lv.total)}` : "",
+        });
+        priceLinesRef.current.push(line);
+      }
+    }
+  }, [gamma, layers, canUseLayers, chartType, vp, walls, liqProfile]);
 
   return (
     <div className="relative h-[360px] w-full">
