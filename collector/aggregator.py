@@ -85,7 +85,7 @@ def build_snapshots(
 
     defi_rows = _rows_of(results, "defi_health")
     defi_by_chain = {r["chain"]: r for r in defi_rows}
-    chain_of = {"ETH": "ethereum", "SOL": "solana"}
+    chain_of = {"ETH": "ethereum", "SOL": "solana", "BNB": "bsc"}
 
     sentiment_rows = _rows_of(results, "sentiment")
     sentiment = sentiment_rows[0] if sentiment_rows else None

@@ -15,7 +15,7 @@ _CHAINS_URL = "https://api.llama.fi/v2/chains"
 _STABLE_URL = "https://stablecoins.llama.fi/stablecoincharts/{chain}"
 
 # Mapeia o ativo do MVP para o nome da chain no DefiLlama.
-_ASSET_CHAIN = {"ETH": "Ethereum", "SOL": "Solana"}
+_ASSET_CHAIN = {"ETH": "Ethereum", "SOL": "Solana", "BNB": "BSC"}
 
 
 def _total_circulating(point: dict) -> float | None:
