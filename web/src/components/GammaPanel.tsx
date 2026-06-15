@@ -177,13 +177,15 @@ export default function GammaPanel({ gamma, asset }: Props) {
         )}
       </div>
 
-      {/* Fluxo de opções (proxy HIRO) — resolução 5 min */}
-      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
-        <div className="mb-2 text-xs text-slate-500">
-          Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min
+      {/* Fluxo de opções (proxy HIRO) — só BTC/ETH (fonte options_flow é Deribit) */}
+      {asset !== "SOL" && (
+        <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+          <div className="mb-2 text-xs text-slate-500">
+            Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min
+          </div>
+          <OptionsFlowChart asset={asset} />
         </div>
-        <OptionsFlowChart asset={asset} />
-      </div>
+      )}
     </div>
   );
 }

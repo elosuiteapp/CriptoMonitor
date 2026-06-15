@@ -41,7 +41,8 @@ import {
 } from "../lib/format";
 import type { ChartType, Timeframe } from "../lib/marketData";
 
-const OPTION_ASSETS = ["BTC", "ETH"];
+const OPTION_ASSETS = ["BTC", "ETH", "SOL"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit via relay)
+const VOL_ASSETS = ["BTC", "ETH"]; // Volatility (DVOL): só onde há índice Deribit
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
@@ -74,6 +75,7 @@ export default function Dashboard() {
   const isExpert = plan?.slug === "expert";
   const canUseLayers = plan?.chart_layers ?? false;
   const isOptionAsset = OPTION_ASSETS.includes(asset);
+  const isVolAsset = VOL_ASSETS.includes(asset);
 
   const toggleLayer = (key: keyof ActiveLayers) =>
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -172,8 +174,8 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Painel de Volatilidade (BTC/ETH, Pro+) — DVOL, IVP, IV-RV, term structure */}
-        {isOptionAsset && advanced && (
+        {/* Painel de Volatilidade (só BTC/ETH — DVOL é índice Deribit; SOL não tem) */}
+        {isVolAsset && advanced && (
           <section>
             <VolatilityPanel asset={asset} />
           </section>
