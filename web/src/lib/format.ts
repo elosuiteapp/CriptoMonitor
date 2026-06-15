@@ -244,6 +244,25 @@ export function readSkew(skew: number | null | undefined): { label: string; leve
   return { label: "Skew neutro entre puts e calls", level: "yellow" };
 }
 
+/** Participação institucional no volume spot: Coinbase (institucional/US) vs varejo
+ *  agregado (Binance + OKX). Quanto maior a fatia da Coinbase, mais presença
+ *  institucional/US; fatia baixa = mercado dominado pelo varejo/global. */
+export function readInstitutionalShare(
+  instVol: number | null | undefined,
+  retailVol: number | null | undefined,
+): Reading {
+  if (instVol == null || retailVol == null || instVol + retailVol <= 0) {
+    return { label: "Participação institucional indisponível", detail: "—", level: "neutral" };
+  }
+  const share = (instVol / (instVol + retailVol)) * 100;
+  const detail = `Institucional (Coinbase) ${fmtUsd(instVol)} · Varejo (Binance+OKX) ${fmtUsd(retailVol)} · institucional ${share.toFixed(1)}% do spot`;
+  if (share >= 25)
+    return { label: `Institucional forte — ${share.toFixed(0)}% do volume spot na Coinbase`, detail, level: "green" };
+  if (share <= 12)
+    return { label: `Mercado dominado pelo varejo — institucional só ${share.toFixed(0)}% do spot`, detail, level: "yellow" };
+  return { label: `Institucional em ${share.toFixed(0)}% do volume spot — proporção típica`, detail, level: "neutral" };
+}
+
 /** IV Percentile 90d (0-100): onde a IV atual está na faixa dos últimos 90 dias. */
 export function readIvp(ivp: number | null | undefined): { label: string; level: Level } {
   if (ivp == null) return { label: "indisponível", level: "neutral" };

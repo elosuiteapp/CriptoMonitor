@@ -31,6 +31,7 @@ import {
   fmtUsd,
   readCvd,
   readCoinbasePremium,
+  readInstitutionalShare,
   readFng,
   readFunding,
   readLiquidations,
@@ -225,6 +226,18 @@ export default function Dashboard() {
                     payload?.price?.binance?.volume_spot,
                   )}
                   source="Coinbase × Binance (spot)"
+                  timestamp={updatedAt}
+                />
+                <MetricCard
+                  institutional
+                  title="Participação Institucional (spot)"
+                  reading={readInstitutionalShare(
+                    payload?.price?.coinbase?.volume_spot,
+                    [payload?.price?.binance?.volume_spot, payload?.price?.okx?.volume_spot]
+                      .filter((v): v is number => v != null)
+                      .reduce((a, b) => a + b, 0) || null,
+                  )}
+                  source="Coinbase × Binance+OKX (spot)"
                   timestamp={updatedAt}
                 />
                 {defi && (
