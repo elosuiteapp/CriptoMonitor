@@ -21,6 +21,7 @@ const SYSTEM_PROMPT = [
   "1) Contexto macro - DXY/S&P/ouro/10Y e a correlacao 30d quando houver (vento a favor/contra).",
   "2) Fluxo varejo x institucional - varejo via perps/funding/CVD da Binance; institucional via spot da Coinbase. Use o PREMIO COINBASE (preco Coinbase menos Binance), a PARTICIPACAO INSTITUCIONAL (volume da Coinbase vs Binance+OKX) e o CVD da Coinbase comparado ao da Binance. Use o DELTA DE OI vs preco para ler novas posicoes (long/short).",
   "3) Niveis de liquidez e opcoes - Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO BOOK como imas/suporte-resistencia, citando os precos.",
+  "3b) Estrutura de mercado (Smart Money Concepts) - quando a ESTRUTURA SMC for fornecida, use o vies por timeframe (1D e 4h), o ultimo evento (BOS = continuacao / CHoCH = possivel reversao), os order blocks de suporte/resistencia, os pools de liquidez (alvos magneticos) e a zona premium (caro) / discount (barato). DESTAQUE como ALTA CONFLUENCIA quando um order block ou pool de liquidez coincidir (preco proximo) com Call/Put Wall, Zero Gamma, Max Pain ou parede do book. Explique BOS/CHoCH/order block/liquidez em poucas palavras.",
   "4) Volatilidade e sentimento - Fear & Greed; opcoes: Put/Call, IV media e skew; e o painel de volatilidade quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se o curto 7d > 90d e backwardation, mercado pricing evento de curto prazo).",
   "5) Sintese - junte os sinais num quadro coerente.",
   "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
@@ -80,8 +81,9 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (!user) return json(401, { error: "nao autenticado" });
 
-  const { asset } = await req.json().catch(() => ({ asset: "BTC" }));
-  const ativo = String(asset || "BTC").toUpperCase();
+  const body = await req.json().catch(() => ({}));
+  const ativo = String(body.asset || "BTC").toUpperCase();
+  const smc = body.smc ?? null; // resumo Smart Money Concepts (1D+4h) enviado pelo cliente
 
   const { data: sub } = await admin
     .from("subscriptions").select("plan:plans(*)")
@@ -155,6 +157,9 @@ Deno.serve(async (req) => {
     "",
     "Camada institucional (OI delta, paredes do book, macro & correlacoes, volatilidade DVOL/IVP/IV-RV/term structure):",
     JSON.stringify(institutional),
+    "",
+    "Estrutura SMC (Smart Money Concepts, calculada dos candles 1D e 4h - vies, BOS/CHoCH, order blocks de suporte/resistencia, pools de liquidez, zona premium/discount, sweep recente):",
+    JSON.stringify(smc ?? {}),
     "",
     "Noticias recentes:",
     newsText,

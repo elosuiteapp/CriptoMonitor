@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import Disclaimer from "../components/Disclaimer";
+import { smcSummary } from "../lib/smcSummary";
 import { supabase } from "../lib/supabase";
 
 interface AnalysisRow {
@@ -45,8 +46,10 @@ export default function Analysis() {
     setGenerating(true);
     setError(null);
     try {
+      // Calcula a estrutura SMC (1D+4h) no cliente e envia pro copiloto considerar
+      const smc = await smcSummary(asset).catch(() => null);
       const { data, error } = await supabase.functions.invoke("generate-analysis", {
-        body: { asset },
+        body: { asset, smc },
       });
       if (error) {
         // Tenta extrair a mensagem amigável do corpo da resposta
