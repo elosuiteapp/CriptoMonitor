@@ -8,6 +8,7 @@ from __future__ import annotations
 from .alternative_me import AlternativeMeSource
 from .base import BaseSource, SourceResult, TableRows
 from .binance import BinanceSource
+from .bybit import BybitSource
 from .coinalyze import CoinalyzeSource
 from .coinbase import CoinbaseSource
 from .coingecko import CoinGeckoSource
@@ -17,6 +18,7 @@ from .deribit import DeribitSource
 from .dexscreener import DexScreenerSource
 from .hyperliquid import HyperliquidSource
 from .macro_markets import MacroMarketsSource
+from .okx import OkxSource
 from .options_flow import OptionsFlowSource
 from .orderbook_walls import OrderbookWallsSource
 
@@ -26,6 +28,8 @@ __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
 def build_sources() -> list[BaseSource]:
     return [
         BinanceSource(),
+        BybitSource(),
+        OkxSource(),
         CoinbaseSource(),
         CoinalyzeSource(),
         DeribitSource(),
