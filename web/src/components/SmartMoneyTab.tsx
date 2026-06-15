@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
+import { useAuth } from "../hooks/useAuth";
+import { usePlan } from "../hooks/usePlan";
 import { fmtPrice, fmtUsd } from "../lib/format";
 import { fetchKlines, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
@@ -42,6 +45,11 @@ const LAYER_LABELS: { key: keyof SmcLayers; label: string }[] = [
 ];
 
 export default function SmartMoneyTab({ asset }: { asset: string }) {
+  const { user } = useAuth();
+  const { plan } = usePlan(user?.id);
+  const channels = plan?.alert_channels ?? [];
+  const [alertedIdx, setAlertedIdx] = useState<number | null>(null);
+  const [alertError, setAlertError] = useState<string | null>(null);
   const [tf, setTf] = useState<Timeframe>("1d");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [smc, setSmc] = useState<SmcResult | null>(null);
@@ -126,6 +134,30 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, sources) : [];
   const narrative: ReadingLine[] = smc ? buildNarrative(smc, sources) : [];
+
+  // Cria um alerta de preço no nível SMC (reaproveita o módulo de Alertas).
+  async function createAlert(lvl: KeyLevel, idx: number) {
+    setAlertError(null);
+    if (!user || !smc) return;
+    if (channels.length === 0) {
+      setAlertError("Alertas disponíveis nos planos Pro/Expert.");
+      return;
+    }
+    const op = lvl.price >= smc.price ? ">" : "<";
+    const { error } = await supabase.from("alerts").insert({
+      user_id: user.id,
+      asset,
+      metric: "price",
+      condition: { op, value: Math.round(lvl.price) },
+      channel: channels[0],
+    });
+    if (error) {
+      setAlertError(error.message);
+      return;
+    }
+    setAlertedIdx(idx);
+    setTimeout(() => setAlertedIdx((cur) => (cur === idx ? null : cur)), 2500);
+  }
 
   return (
     <section className="space-y-4">
@@ -233,6 +265,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                 <th className="px-4 py-2 text-right font-medium">Preço</th>
                 <th className="px-4 py-2 text-right font-medium">Distância</th>
                 <th className="px-4 py-2 font-medium">Confluência</th>
+                <th className="px-4 py-2 text-right font-medium">Alerta</th>
               </tr>
             </thead>
             <tbody>
@@ -276,6 +309,18 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                       </div>
                     )}
                   </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={() => createAlert(lvl, i)}
+                      className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
+                        alertedIdx === i
+                          ? "border-signal-green/40 text-signal-green"
+                          : "border-ink-500 text-slate-400 hover:bg-ink-700 hover:text-slate-200"
+                      }`}
+                    >
+                      {alertedIdx === i ? "✓ criado" : "🔔 alerta"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -285,6 +330,14 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           <div className="grid place-items-center py-8 text-sm text-slate-500">Sem níveis suficientes neste timeframe.</div>
         )}
       </div>
+      {alertError ? (
+        <p className="text-xs text-signal-red">{alertError}</p>
+      ) : (
+        <p className="text-[11px] text-slate-500">
+          🔔 cria um alerta de preço no nível (toque acima → dispara na subida; abaixo → na descida). Gerencie em{" "}
+          <Link to="/alerts" className="text-accent hover:underline">Alertas</Link>.
+        </p>
+      )}
 
       {/* Nota on-chain (futuro) */}
       <p className="text-[11px] text-slate-600">
