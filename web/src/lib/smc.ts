@@ -51,6 +51,7 @@ export interface LiquidityPool {
   count: number;
   time: number;
   swept: boolean;
+  sweptRecently: boolean; // varrida nas últimas ~10 velas (possível stop hunt)
 }
 
 export interface EqualLevel {
@@ -380,12 +381,15 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
         members.forEach((m) => (used[m] = true));
         const price = members.reduce((s, m) => s + pivs[m].price, 0) / members.length;
         const lastIdx = Math.max(...members.map((m) => pivs[m].idx));
-        let swept = false;
+        let sweptIdx = -1;
         for (let k = lastIdx + 1; k < n; k++) {
-          if (side === "buy" && candles[k].high > price + tol) swept = true;
-          if (side === "sell" && candles[k].low < price - tol) swept = true;
+          if ((side === "buy" && candles[k].high > price + tol) || (side === "sell" && candles[k].low < price - tol)) {
+            sweptIdx = k;
+            break;
+          }
         }
-        pools.push({ price, side, count: members.length, time: candles[lastIdx].time, swept });
+        const swept = sweptIdx >= 0;
+        pools.push({ price, side, count: members.length, time: candles[lastIdx].time, swept, sweptRecently: swept && sweptIdx >= n - 10 });
       }
     }
     return pools;

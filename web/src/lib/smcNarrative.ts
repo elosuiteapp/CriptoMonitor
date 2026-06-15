@@ -134,5 +134,15 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
     lines.push({ title: "Suporte (order block)", text: `Order block de ${biasWord(obBelow.bias)} em ${obBelow.mid.toFixed(0)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, tone: "neutral" });
   }
 
+  // 6) Varredura de liquidez recente (stop hunt)
+  const sweep = smc.liquidity.filter((l) => l.sweptRecently).sort((a, b) => Math.abs(a.price - price) - Math.abs(b.price - price))[0];
+  if (sweep) {
+    lines.push({
+      title: "Varredura de liquidez",
+      text: `Liquidez ${sweep.side === "buy" ? "de compra" : "de venda"} em ${sweep.price.toFixed(0)} foi varrida há pouco — possível stop hunt; atenção a reversão se o preço rejeitar o nível.`,
+      tone: "warn",
+    });
+  }
+
   return lines;
 }

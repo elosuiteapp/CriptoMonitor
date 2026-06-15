@@ -14,6 +14,8 @@ const TFS: { id: Timeframe; label: string }[] = [
   { id: "1w", label: "1S" },
 ];
 
+const TF_LABEL: Record<string, string> = { "1d": "1D", "4h": "4h", "1h": "1h" };
+
 const TONE_DOT: Record<Tone, string> = {
   good: "bg-signal-green",
   bad: "bg-signal-red",
@@ -48,6 +50,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [error, setError] = useState<string | null>(null);
   const [layers, setLayers] = useState<SmcLayers>(DEFAULT_LAYERS);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -96,6 +99,30 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, [asset, tf]);
 
+  // Viés multi-timeframe (top-down): calcula a estrutura em 1D/4h/1h
+  useEffect(() => {
+    let active = true;
+    const tfs: Timeframe[] = ["1d", "4h", "1h"];
+    setMtf([]);
+    (async () => {
+      const out = await Promise.all(
+        tfs.map(async (t) => {
+          try {
+            const k = await fetchKlines(asset, t, 320);
+            const r = computeSmc(k);
+            return { tf: t, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral" };
+          } catch {
+            return { tf: t, bias: "neutral" as const };
+          }
+        }),
+      );
+      if (active) setMtf(out);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [asset]);
+
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, sources) : [];
   const narrative: ReadingLine[] = smc ? buildNarrative(smc, sources) : [];
@@ -123,6 +150,23 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Tendência multi-timeframe (top-down) + medidor de range */}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
+          <span className="text-xs text-slate-400">Tendência (top-down):</span>
+          {mtf.length === 0 ? (
+            <span className="text-xs text-slate-600">calculando…</span>
+          ) : (
+            mtf.map((m) => (
+              <span key={m.tf} className={`rounded-full border px-2 py-0.5 text-xs ${BIAS_TONE[m.bias]}`}>
+                {TF_LABEL[m.tf] ?? m.tf} · {m.bias === "bullish" ? "alta" : m.bias === "bearish" ? "baixa" : "neutro"}
+              </span>
+            ))
+          )}
+        </div>
+        {smc && <PremiumDiscountGauge smc={smc} />}
       </div>
 
       {error && (
@@ -247,5 +291,37 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         Em breve: camada on-chain (exchange netflow, whale alerts, MVRV, unlocks) quando houver fonte de dados dedicada.
       </p>
     </section>
+  );
+}
+
+/** Medidor da posição do preço dentro do range (0% = fundo/discount, 100% = topo/premium). */
+function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
+  const range = smc.trailingTop - smc.trailingBottom;
+  const pos = range > 0 ? Math.max(0, Math.min(1, (smc.price - smc.trailingBottom) / range)) : 0.5;
+  const zone = smc.price >= smc.premium.bottom ? "Premium" : smc.price <= smc.discount.top ? "Discount" : "Equilíbrio";
+  const zoneColor = zone === "Premium" ? "text-signal-red" : zone === "Discount" ? "text-signal-green" : "text-slate-400";
+  return (
+    <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-400">Posição no range</span>
+        <span className={zoneColor}>
+          {(pos * 100).toFixed(0)}% · {zone}
+        </span>
+      </div>
+      <div
+        className="relative mt-2 h-2 rounded-full"
+        style={{ background: "linear-gradient(to right, rgba(34,197,94,0.5), rgba(148,163,184,0.3), rgba(239,68,68,0.5))" }}
+      >
+        <div
+          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ink-900"
+          style={{ left: `${pos * 100}%` }}
+        />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+        <span>Discount</span>
+        <span>Equilíbrio</span>
+        <span>Premium</span>
+      </div>
+    </div>
   );
 }
