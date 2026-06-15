@@ -8,7 +8,6 @@ from __future__ import annotations
 from .alternative_me import AlternativeMeSource
 from .base import BaseSource, SourceResult, TableRows
 from .binance import BinanceSource
-from .bybit import BybitSource
 from .coinalyze import CoinalyzeSource
 from .coinbase import CoinbaseSource
 from .coingecko import CoinGeckoSource
@@ -28,8 +27,7 @@ __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
 def build_sources() -> list[BaseSource]:
     return [
         BinanceSource(),
-        BybitSource(),
-        OkxSource(),
+        OkxSource(),  # Bybit fica de fora: geo-bloqueada (403) na região do Railway
         CoinbaseSource(),
         CoinalyzeSource(),
         DeribitSource(),
