@@ -8,6 +8,7 @@ from __future__ import annotations
 from .alternative_me import AlternativeMeSource
 from .base import BaseSource, SourceResult, TableRows
 from .binance import BinanceSource
+from .bybit_options import BybitOptionsSource
 from .coinalyze import CoinalyzeSource
 from .coinbase import CoinbaseSource
 from .coingecko import CoinGeckoSource
@@ -31,6 +32,7 @@ def build_sources() -> list[BaseSource]:
         CoinbaseSource(),
         CoinalyzeSource(),
         DeribitSource(),
+        BybitOptionsSource(),  # gamma do SOL (via relay Supabase → Bybit)
         DefiLlamaSource(),
         AlternativeMeSource(),
         HyperliquidSource(),
