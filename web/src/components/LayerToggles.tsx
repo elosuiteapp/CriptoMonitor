@@ -20,7 +20,7 @@ const ITEMS: Item[] = [
   { key: "orderbookWalls", label: "Paredes do book", color: "bg-amber-500" },
   { key: "funding", label: "Funding", color: "bg-sky-500" },
   { key: "cvd", label: "CVD", color: "bg-emerald-500" },
-  { key: "liquidations", label: "Liquidações (heatmap)", color: "bg-rose-500" },
+  { key: "liquidations", label: "Liquidações (heatmap + barras)", color: "bg-rose-500" },
 ];
 
 export default function LayerToggles({ layers, onToggle, locked }: Props) {

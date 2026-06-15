@@ -65,8 +65,13 @@ Adicionado após este relatório inicial:
   nível quando o preço passa por ele (bandas nascem/somem no tempo). `Chart.tsx` pinta num
   `<canvas>` ATRÁS das velas (fundo do chart é transparente) via offscreen+`drawImage`
   (paleta escuro→teal→amarelo), realinhado por `logicalToCoordinate`/`priceToCoordinate`
-  em loop rAF. Badge "estimativa (modelo de alavancagem)" no canto. Insumos reais (preço+
-  volume dos candles), modelagem transparente — o "pendente real" não existe nem no CoinGlass.
+  em loop rAF. Despoluído com piso de intensidade (`HEAT_FLOOR=0.3`) + rampa de opacidade →
+  só as zonas-ímã relevantes. Badge "estimativa (modelo de alavancagem)" no canto. Insumos
+  reais (preço+volume dos candles), modelagem transparente — o "pendente real" não existe
+  nem no CoinGlass. **+ Barras de liquidação REALIZADA** abaixo do gráfico (layout CoinGlass
+  completo): `LiquidationsStrip` (SVG, dado REAL da tabela `liquidations` via `useSeries`) —
+  shorts liquidados ↑ verde (pressão compradora) × longs ↓ vermelho (pressão vendedora). O
+  mesmo toggle "Liquidações" liga heatmap (estimado, em cima) + barras (realizado, embaixo).
 - **Migrations agora vão até 017.**
 
 ## 2. Coletor (≈13 fontes)

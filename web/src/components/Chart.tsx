@@ -227,20 +227,25 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       clear();
       return;
     }
+    // Piso de intensidade: zonas fracas ficam transparentes (despolui — mostra só
+    // as "magnet zones" relevantes). A opacidade sobe com a intensidade → fraco
+    // translúcido, forte sólido. HEAT_FLOOR é o corte (% do máximo).
+    const HEAT_FLOOR = 0.3;
     const img = octx.createImageData(grid.nCols, grid.nBins);
     for (let col = 0; col < grid.nCols; col++) {
       for (let bin = 0; bin < grid.nBins; bin++) {
-        const v = grid.values[col * grid.nBins + bin];
+        const ratio = grid.values[col * grid.nBins + bin] / grid.max;
         const px = (bin * grid.nCols + col) * 4;
-        if (v <= 0) {
+        if (ratio < HEAT_FLOOR) {
           img.data[px + 3] = 0;
           continue;
         }
-        const [r, g, b] = liqColor(Math.sqrt(v / grid.max));
-        img.data[px] = r;
-        img.data[px + 1] = g;
-        img.data[px + 2] = b;
-        img.data[px + 3] = 255;
+        const r = (ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR); // reescala 0..1
+        const [cr, cg, cb] = liqColor(r);
+        img.data[px] = cr;
+        img.data[px + 1] = cg;
+        img.data[px + 2] = cb;
+        img.data[px + 3] = Math.round(120 + 135 * r); // 47% → 100% de opacidade
       }
     }
     octx.putImageData(img, 0, 0);

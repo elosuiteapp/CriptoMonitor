@@ -10,6 +10,7 @@ import Disclaimer from "../components/Disclaimer";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
+import LiquidationsStrip from "../components/LiquidationsStrip";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
@@ -161,6 +162,7 @@ export default function Dashboard() {
             </>
           )}
           {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
+          {canUseLayers && layers.liquidations && <LiquidationsStrip data={series.liquidations} />}
         </section>
 
         {/* Painel Gamma (BTC/ETH, Pro+) */}

@@ -8,10 +8,17 @@ export interface SeriesPoint {
   value: number;
 }
 
+export interface LiqPoint {
+  time: number; // epoch (s) — início do bucket de 5 min
+  long: number; // longs liquidados (USD) — preço caindo
+  short: number; // shorts liquidados (USD) — preço subindo
+}
+
 export interface Series {
   cvd: SeriesPoint[]; // varejo (Binance)
   cvdInst: SeriesPoint[]; // institucional (Coinbase)
   funding: SeriesPoint[];
+  liquidations: LiqPoint[]; // liquidações realizadas por bucket de 5 min (barras)
 }
 
 /**
@@ -19,17 +26,17 @@ export interface Series {
  * Só carrega para planos avançados (Pro+); o RLS já protege as tabelas.
  */
 export function useSeries(asset: string, plan: Plan | null): Series {
-  const [series, setSeries] = useState<Series>({ cvd: [], cvdInst: [], funding: [] });
+  const [series, setSeries] = useState<Series>({ cvd: [], cvdInst: [], funding: [], liquidations: [] });
   const advanced = plan?.advanced_metrics ?? false;
 
   useEffect(() => {
     if (!advanced) {
-      setSeries({ cvd: [], cvdInst: [], funding: [] });
+      setSeries({ cvd: [], cvdInst: [], funding: [], liquidations: [] });
       return;
     }
     let active = true;
     (async () => {
-      const [{ data: prices }, { data: pricesCb }, { data: deriv }] = await Promise.all([
+      const [{ data: prices }, { data: pricesCb }, { data: deriv }, { data: liq }] = await Promise.all([
         supabase
           .from("prices_cex")
           .select("cvd, ts")
@@ -50,6 +57,12 @@ export function useSeries(asset: string, plan: Plan | null): Series {
           .eq("asset", asset)
           .order("ts", { ascending: true })
           .limit(300),
+        supabase
+          .from("liquidations")
+          .select("long_usd, short_usd, ts")
+          .eq("asset", asset)
+          .order("ts", { ascending: false })
+          .limit(144),
       ]);
       if (!active) return;
 
@@ -61,10 +74,19 @@ export function useSeries(asset: string, plan: Plan | null): Series {
             value: Number(r[key]),
           }));
 
+      const liquidations: LiqPoint[] = ((liq as { long_usd: number | null; short_usd: number | null; ts: string }[]) ?? [])
+        .map((r) => ({
+          time: Math.floor(new Date(r.ts).getTime() / 1000),
+          long: Number(r.long_usd ?? 0),
+          short: Number(r.short_usd ?? 0),
+        }))
+        .reverse(); // veio desc → volta a crescente para o eixo do tempo
+
       setSeries({
         cvd: toPoints(prices, "cvd"),
         cvdInst: toPoints(pricesCb, "cvd"),
         funding: toPoints(deriv, "funding_rate"),
+        liquidations,
       });
     })();
     return () => {
