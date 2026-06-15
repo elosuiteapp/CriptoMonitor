@@ -3,7 +3,7 @@
 // coincide com Put Wall + parede de compra, por exemplo, é de alta confiança —
 // algo que NENHUM dos indicadores do TradingView consegue sozinho.
 
-export type ConfluenceKind = "gamma" | "wall";
+export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq";
 
 export interface ConfluenceSource {
   kind: ConfluenceKind;
@@ -11,21 +11,27 @@ export interface ConfluenceSource {
   price: number;
 }
 
-/** Tolerância de coincidência: ~0,35% do preço ou 0,4·ATR (o que for maior). */
+export interface ConfluenceHit {
+  source: ConfluenceSource;
+  strength: "exact" | "near"; // exata (no nível) ou próxima (~1%)
+  distancePct: number;
+}
+
+/** Tolerância de coincidência EXATA: ~0,35% do preço ou 0,4·ATR (o que for maior). */
 export function confluenceTolerance(price: number, atr: number): number {
   return Math.max(price * 0.0035, atr * 0.4);
 }
 
-/** Fontes externas próximas a um nível SMC (ordenadas pela distância). */
-export function confluenceFor(
-  level: number,
-  atr: number,
-  sources: ConfluenceSource[],
-): ConfluenceSource[] {
-  const tol = confluenceTolerance(level, atr);
+/** Fontes externas próximas a um nível SMC, com 2 níveis: exata e "próxima" (~1%). */
+export function confluenceFor(level: number, atr: number, sources: ConfluenceSource[]): ConfluenceHit[] {
+  const tolExact = confluenceTolerance(level, atr);
+  const tolNear = level * 0.01;
   return sources
-    .filter((s) => Number.isFinite(s.price) && Math.abs(s.price - level) <= tol)
-    .sort((a, b) => Math.abs(a.price - level) - Math.abs(b.price - level));
+    .filter((s) => Number.isFinite(s.price))
+    .map((s) => ({ source: s, d: Math.abs(s.price - level) }))
+    .filter((x) => x.d <= tolNear)
+    .map((x) => ({ source: x.source, strength: (x.d <= tolExact ? "exact" : "near") as "exact" | "near", distancePct: (x.d / level) * 100 }))
+    .sort((a, b) => a.distancePct - b.distancePct);
 }
 
 export interface GammaLevels {

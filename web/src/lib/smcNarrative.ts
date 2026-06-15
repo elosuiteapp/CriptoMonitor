@@ -2,7 +2,7 @@
 // níveis-chave para a tabela e (b) uma leitura automática em português — o
 // diferencial do produto: estrutura traduzida, não só caixas no gráfico.
 
-import type { ConfluenceSource } from "./smcConfluence";
+import type { ConfluenceHit, ConfluenceSource } from "./smcConfluence";
 import { confluenceFor } from "./smcConfluence";
 import type { SmcResult } from "./smc";
 
@@ -15,7 +15,7 @@ export interface KeyLevel {
   bias: "bullish" | "bearish" | "neutral";
   note?: string;
   swept?: boolean;
-  confluence: ConfluenceSource[];
+  confluence: ConfluenceHit[];
   distancePct: number;
 }
 
@@ -115,7 +115,10 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
   const below = smc.liquidity.filter((l) => l.price < price && !l.swept).sort((a, b) => b.price - a.price)[0];
   const confTxt = (p: number) => {
     const c = confluenceFor(p, smc.atr, sources);
-    return c.length ? ` — confluência com ${c.map((s) => s.label).join(", ")} (alvo de alta confiança)` : "";
+    const exact = c.filter((h) => h.strength === "exact");
+    if (exact.length) return ` — confluência com ${exact.map((h) => h.source.label).join(", ")} (alta confiança)`;
+    if (c.length) return ` — perto de ${c.map((h) => h.source.label).join(", ")}`;
+    return "";
   };
   if (above) {
     lines.push({ title: "Alvo de liquidez acima", text: `Pool de liquidez em ${above.price.toFixed(0)} (~${pct(above.price, price).toFixed(1)}%) — ímã provável${confTxt(above.price)}.`, tone: "neutral" });
