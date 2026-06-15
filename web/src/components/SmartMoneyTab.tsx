@@ -141,9 +141,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           <SmartMoneyChart candles={candles} smc={smc} />
         )}
         <p className="mt-2 px-1 text-[11px] text-slate-500">
-          Linhas: <span className="text-amber-500">âmbar</span> = liquidez (stops) ·{" "}
-          <span className="text-signal-green">verde</span>/<span className="text-signal-red">vermelho</span> = order blocks e
-          discount/premium · setas = BOS/CHoCH. Tudo calculado dos candles.
+          Zonas: <span className="text-signal-green">verde</span> = demanda/discount ·{" "}
+          <span className="text-signal-red">vermelho</span> = oferta/premium ·{" "}
+          <span className="text-amber-500">âmbar</span> = liquidez (stops) · setas = BOS/CHoCH. Tudo calculado dos candles.
         </p>
       </div>
 
