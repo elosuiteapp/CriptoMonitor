@@ -80,6 +80,14 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
   return (
     <div className="space-y-4">
+      {asset === "SOL" && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs leading-snug text-amber-200/80">
+          <span className="font-semibold text-amber-300">⚠ Liquidez reduzida.</span> As opções de SOL vêm da Bybit
+          (mercado bem menor que o de BTC/ETH na Deribit). Os níveis — Zero Gamma, Max Pain, Put/Call Wall — são{" "}
+          <span className="font-medium text-amber-200">menos confiáveis</span> e devem ser lidos como referência, não como muro firme.
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-3">
         <GammaCard title="Regime de gamma" level={regime.level} value={gamma.regime === "positive" ? "Positivo" : gamma.regime === "negative" ? "Negativo" : "—"} label={regime.label} />
         <GammaCard
