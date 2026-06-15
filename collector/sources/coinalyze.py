@@ -8,7 +8,8 @@ Fluxo:
   1. /future-markets  → descobre os símbolos perpétuos de cada ativo;
   2. /open-interest    (atual, convert_to_usd) → soma por ativo;
   3. /funding-rate     (atual)                 → média por ativo;
-  4. /liquidation-history (última hora)        → soma long/short por ativo;
+  4. /liquidation-history (24h, 1h)            → soma long/short por ativo (card);
+  4b. /liquidation-history (6h, 5min)          → buckets long/short → tabela `liquidations`;
   5. /long-short-ratio-history (último ponto)  → média por ativo.
 
 Obs.: a validação fina dos nomes de campo desta API deve ser feita com a chave
@@ -21,7 +22,7 @@ import time
 
 import httpx
 
-from lib.timeutil import now_utc, to_iso
+from lib.timeutil import now_utc, sec_to_iso, to_iso
 
 from .base import BaseSource, TableRows
 
@@ -78,6 +79,8 @@ class CoinalyzeSource(BaseSource):
         # vazia) e long/short ratio (último ponto)
         now_s = int(time.time())
         liq_long, liq_short = await self._liquidations(http, headers, symbols, now_s - 86400, now_s)
+        # Buckets de 5 min das últimas 6h (histórico por bucket, p/ o gráfico de barras)
+        liq_buckets = await self._liquidation_buckets(http, headers, symbols, now_s - 6 * 3600, now_s)
         lsr_map = await self._latest_history(http, headers, "long-short-ratio-history",
                                              symbols, now_s - 1800, now_s, field="r")
 
@@ -100,7 +103,28 @@ class CoinalyzeSource(BaseSource):
                 "cvd": None,  # CVD próprio vem da Binance
                 "ts": ts,
             })
-        return [TableRows("derivatives", rows, "asset,ts")]
+
+        # Buckets de 5 min agregados por ativo (soma dos símbolos por timestamp de bucket)
+        liq_rows: list[dict] = []
+        for asset in assets:
+            syms = by_asset.get(asset, [])
+            agg: dict[int, list[float]] = {}  # bucket epoch (s) → [long_usd, short_usd]
+            for s in syms:
+                for h in liq_buckets.get(s, []):
+                    t = h.get("t")
+                    if t is None:
+                        continue
+                    cur = agg.setdefault(int(t), [0.0, 0.0])
+                    cur[0] += float(h.get("l") or 0.0)
+                    cur[1] += float(h.get("s") or 0.0)
+            for t, (lo, sh) in agg.items():
+                liq_rows.append({"asset": asset, "ts": sec_to_iso(t),
+                                 "long_usd": lo, "short_usd": sh})
+
+        return [
+            TableRows("derivatives", rows, "asset,ts"),
+            TableRows("liquidations", liq_rows, "asset,ts"),
+        ]
 
     # ─── helpers ─────────────────────────────────────────────────────────────
     async def _current(self, http, headers, endpoint, symbols, params=None) -> dict[str, float]:
@@ -140,3 +164,15 @@ class CoinalyzeSource(BaseSource):
         except Exception:  # noqa: BLE001 — best-effort
             return None, None
         return longs, shorts
+
+    async def _liquidation_buckets(self, http, headers, symbols, frm, to) -> dict[str, list[dict]]:
+        """Histórico de liquidações por bucket de 5 min, por símbolo
+        (`{symbol: [{t, l, s}, ...]}`). {} se a API falhar (best-effort)."""
+        try:
+            p = {"symbols": symbols, "interval": "5min", "from": frm, "to": to,
+                 "convert_to_usd": "true"}
+            r = await http.get(f"{_BASE}/liquidation-history", headers=headers, params=p, timeout=20.0)
+            r.raise_for_status()
+            return {entry["symbol"]: (entry.get("history") or []) for entry in r.json()}
+        except Exception:  # noqa: BLE001 — best-effort
+            return {}

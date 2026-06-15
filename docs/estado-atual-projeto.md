@@ -48,6 +48,21 @@ Adicionado após este relatório inicial:
 - **Migrations agora vão até 016.** Backlog registrado: opções de SOL via Bybit (tem
   liquidez; ressalva geo do Railway US).
 
+## 1.2 Atualização (15/06, Fase 6.3 e 6.4)
+
+- **Fase 6.3**: multi-exchange spot (OKX somado ao varejo), **SOL gamma via Bybit** (relay
+  Edge Function + `x-region=sa-east-1`), card **Participação Institucional**, e **IA
+  enriquecida** (`generate-analysis` v7 + `cockpit-report` v2 lendo volatilidade e
+  institucional×varejo).
+- **Fase 6.4 — Liquidações (heatmap temporal)** (migration **017** `liquidations`, Pro+):
+  a `coinalyze.py` passou a emitir uma 2ª tabela com os **buckets de 5 min** do
+  `/liquidation-history` (long/short USD por bucket, somados entre as exchanges; janela
+  rolante de 6h, +1 call/ciclo). Frontend `LiquidationsChart` no Cockpit (barras
+  divergentes estilo CoinGlass: shorts liquidados ↑ verde, longs liquidados ↓ vermelho,
+  com **spot** sobreposto). O card "Liquidações" (agregado 24h em `derivatives`) continua.
+  **Heatmap por nível de preço segue fora** (requer dados proprietários de posições).
+- **Migrations agora vão até 017.**
+
 ## 2. Coletor (≈13 fontes)
 
 Worker contínuo (`collector/aggregator.py`), ciclo a cada **5 min** (APScheduler cron
@@ -189,7 +204,9 @@ snapshot é gravado (a cada ~5 min). Não é tick-a-tick.
 - **Exchange flows on-chain** (netflow de exchanges): sem fonte grátis confiável
   (Blockchair bloqueia). UI honesta de "pendente". Exigiria fonte paga (CryptoQuant/
   Glassnode) ou indexador próprio.
-- **Liquidações como heatmap por nível de preço** (estilo CoinGlass): fora.
+- **Liquidações realizadas no tempo** (5 min, long×short): **implementado** (Fase 6.4,
+  migration 017). O **heatmap por nível de preço** (estilo CoinGlass, prevendo onde as
+  posições serão liquidadas): segue **fora** (exige dados proprietários de posições alavancadas).
 - **Calendário econômico** (aba Macro): sem fonte grátis estável.
 - **`volume_perps` Binance**: indisponível (geo-bloqueio fapi).
 - **Histórico curto**: o coletor começou em 14/06/2026; métricas que exigem 30/90 dias

@@ -10,6 +10,7 @@ import Disclaimer from "../components/Disclaimer";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
+import LiquidationsChart from "../components/LiquidationsChart";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
@@ -280,6 +281,16 @@ export default function Dashboard() {
             )}
           </div>
         </section>
+
+        {/* Liquidações realizadas por bucket de 5 min — barras divergentes + spot (Pro+) */}
+        {advanced && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-slate-300">Liquidações (5 min) · {asset}</h2>
+            <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+              <LiquidationsChart asset={asset} />
+            </div>
+          </section>
+        )}
 
         {/* Bloco de notícias — §8.6.4 (todos os planos) */}
         <NewsBlock asset={asset} plan={plan} />
