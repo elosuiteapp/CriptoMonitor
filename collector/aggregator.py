@@ -40,10 +40,12 @@ _USER_AGENT = "CryptoMonitor/1.0 (+collector)"
 
 
 def _assets() -> list[str]:
-    # Default no código inclui BNB → não depende de env var no host (Railway/Render).
-    # Para restringir/expandir sem deploy, basta setar a env ASSETS no painel.
-    raw = os.getenv("ASSETS", "BTC,ETH,SOL,BNB")
-    return [a.strip().upper() for a in raw.split(",") if a.strip()]
+    # Conjunto-base SEMPRE coletado, definido no código (adicionar moeda = editar aqui
+    # + push). A env ASSETS pode ADICIONAR ativos extras, mas nunca remove os do base —
+    # assim o BNB (e o core) entram automaticamente, independente de config no host.
+    base = ["BTC", "ETH", "SOL", "BNB"]
+    extra = [a.strip().upper() for a in os.getenv("ASSETS", "").split(",") if a.strip()]
+    return list(dict.fromkeys(base + extra))
 
 
 # ─── Construção do market_snapshot ───────────────────────────────────────────
