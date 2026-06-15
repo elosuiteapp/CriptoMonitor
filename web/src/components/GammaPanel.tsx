@@ -64,7 +64,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
   if (!gamma) {
     return (
       <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-6 text-sm text-slate-500">
-        Módulo Gamma indisponível — aguardando coleta da Deribit.
+        Módulo Gamma indisponível — aguardando coleta de opções.
       </div>
     );
   }
