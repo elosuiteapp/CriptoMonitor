@@ -45,12 +45,13 @@ function profileBars(gamma: GammaData | null): Bar[] {
   return bars.slice(0, 24).sort((a, b) => b.strike - a.strike);
 }
 
-function GammaCard({ title, label, level, value }: { title: string; label: string; level: "green" | "yellow" | "red" | "neutral"; value: string }) {
+function GammaCard({ title, label, level, value, info }: { title: string; label: string; level: "green" | "yellow" | "red" | "neutral"; value: string; info?: string }) {
   return (
-    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4" title={info}>
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${LEVEL_DOT[level]}`} />
         <span className="text-xs uppercase tracking-wide text-slate-500">{title}</span>
+        {info && <span className="ml-auto cursor-help text-[11px] leading-none text-slate-600" title={info}>ⓘ</span>}
       </div>
       <div className="mt-2 text-lg font-semibold text-white">{value}</div>
       <div className="mt-1 text-xs leading-snug text-slate-400">{label}</div>
@@ -89,18 +90,26 @@ export default function GammaPanel({ gamma, asset }: Props) {
       )}
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <GammaCard title="Regime de gamma" level={regime.level} value={gamma.regime === "positive" ? "Positivo" : gamma.regime === "negative" ? "Negativo" : "—"} label={regime.label} />
+        <GammaCard
+          title="Regime de gamma"
+          level={regime.level}
+          value={gamma.regime === "positive" ? "Positivo" : gamma.regime === "negative" ? "Negativo" : "—"}
+          label={regime.label}
+          info="Sinal do gama líquido dos dealers no spot. Positivo: dealers compram fraqueza/vendem força (amortecem, mercado mais calmo). Negativo: amplificam os movimentos (mais volátil)."
+        />
         <GammaCard
           title="Zero Gamma (flip)"
           level={gamma.zero_gamma_level != null ? "yellow" : "neutral"}
           value={fmtPrice(gamma.zero_gamma_level)}
           label={gamma.zero_gamma_level != null ? "Nível onde o regime de volatilidade vira" : "Sem cruzamento na grade — regime estável"}
+          info="Preço onde o gama líquido dos dealers cruza de positivo para negativo — a fronteira entre regime calmo (acima) e volátil (abaixo)."
         />
         <GammaCard
           title="Max Pain"
           level="neutral"
           value={fmtPrice(gamma.max_pain)}
           label={gamma.max_pain_expiry ? `Ímã do vencimento de ${new Date(gamma.max_pain_expiry).toLocaleDateString("pt-BR")}` : "Vencimento mais próximo"}
+          info="Preço onde o maior volume de opções expira sem valor (compradores perdem mais). Perto do vencimento o preço tende a gravitar para cá."
         />
       </div>
 
@@ -111,18 +120,21 @@ export default function GammaPanel({ gamma, asset }: Props) {
           level={pc.level}
           value={gamma.put_call_ratio != null ? gamma.put_call_ratio.toFixed(2) : "—"}
           label={pc.label}
+          info="Razão entre o open interest de puts e calls. >1 = mais puts (proteção/viés de baixa); <1 = mais calls (viés de alta)."
         />
         <GammaCard
           title="Volatilidade implícita"
           level={iv.level}
           value={gamma.avg_iv != null ? `${gamma.avg_iv.toFixed(1)}%` : "—"}
           label={iv.label}
+          info="IV média das opções — a oscilação futura que o mercado precifica nos prêmios. Alta = mais medo/expectativa de movimento."
         />
         <GammaCard
           title="Skew (puts − calls)"
           level={skew.level}
           value={gamma.iv_skew != null ? fmtPct(gamma.iv_skew, 1) : "—"}
           label={skew.label}
+          info="Diferença de IV entre puts e calls. Positivo = puts mais caras (demanda por proteção/medo); negativo = calls mais caras (apetite por alta)."
         />
       </div>
 

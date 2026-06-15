@@ -8,6 +8,8 @@ import {
   type ISeriesApi,
   type IPriceLine,
   type Logical,
+  type MouseEventParams,
+  type Time,
 } from "lightweight-charts";
 
 import { fmtUsd } from "../lib/format";
@@ -52,6 +54,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const heatTipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
@@ -292,8 +295,35 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     };
     loop();
 
+    // Tooltip no hover: lê a intensidade estimada da célula sob o cursor.
+    const span = grid.priceTop - grid.priceBottom;
+    const onCrosshair = (param: MouseEventParams<Time>) => {
+      const tip = heatTipRef.current;
+      if (!tip) return;
+      const price = param.point ? series.coordinateToPrice(param.point.y) : null;
+      if (!param.point || param.logical == null || price == null) {
+        tip.style.display = "none";
+        return;
+      }
+      const bin = Math.floor(((grid.priceTop - price) / span) * grid.nBins);
+      const col = Math.max(0, Math.min(grid.nCols - 1, Math.round(param.logical)));
+      const ratio = bin >= 0 && bin < grid.nBins ? grid.values[col * grid.nBins + bin] / grid.max : 0;
+      if (ratio < 0.06) {
+        tip.style.display = "none";
+        return;
+      }
+      const word = ratio >= 0.66 ? "forte" : ratio >= 0.33 ? "média" : "fraca";
+      tip.textContent = `Liq. estimada · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
+      tip.style.display = "block";
+      tip.style.left = `${param.point.x + 12}px`;
+      tip.style.top = `${param.point.y + 12}px`;
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
+
     return () => {
       cancelAnimationFrame(raf);
+      chart.unsubscribeCrosshairMove(onCrosshair);
+      if (heatTipRef.current) heatTipRef.current.style.display = "none";
       clear();
     };
   }, [candles, layers.liquidations, canUseLayers, chartType]);
@@ -303,9 +333,25 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       <canvas ref={heatCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
       {canUseLayers && layers.liquidations && (
-        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-ink-900/70 px-2 py-0.5 text-[10px] text-slate-400">
-          Heatmap de liquidações · estimativa (modelo de alavancagem)
-        </div>
+        <>
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-ink-900/70 px-2 py-0.5 text-[10px] text-slate-400">
+            Heatmap de liquidações · estimativa (modelo de alavancagem)
+          </div>
+          {/* Legenda de intensidade (fraco → forte) */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-ink-900/60 px-1.5 py-0.5 text-[9px] text-slate-400">
+            <span>fraco</span>
+            <span
+              className="h-2 w-24 rounded"
+              style={{ background: "linear-gradient(to right, rgb(12,16,40), rgb(49,46,129), rgb(13,148,136), rgb(132,204,22), rgb(250,204,21))" }}
+            />
+            <span>forte</span>
+          </div>
+          <div
+            ref={heatTipRef}
+            className="pointer-events-none absolute z-20 rounded bg-ink-900/95 px-2 py-1 text-[10px] text-slate-200 shadow-lg ring-1 ring-ink-600"
+            style={{ display: "none" }}
+          />
+        </>
       )}
       {error && (
         <div className="absolute inset-0 z-20 grid place-items-center text-sm text-slate-500">
