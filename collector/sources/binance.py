@@ -12,7 +12,7 @@ from lib.timeutil import now_utc, to_iso
 
 from .base import BaseSource, TableRows
 
-_SPOT_SYMBOL = {"BTC": "BTC/USDT", "ETH": "ETH/USDT", "SOL": "SOL/USDT"}
+_SPOT_SYMBOL = {"BTC": "BTC/USDT", "ETH": "ETH/USDT", "SOL": "SOL/USDT", "BNB": "BNB/USDT"}
 
 
 class BinanceSource(BaseSource):

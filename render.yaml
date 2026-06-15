@@ -20,7 +20,7 @@ services:
       - key: COINGECKO_API_KEY
         sync: false
       - key: ASSETS
-        value: BTC,ETH,SOL
+        value: BTC,ETH,SOL,BNB
       - key: COLLECT_INTERVAL_MINUTES
         value: "5"
       - key: MACRO_INTERVAL_MINUTES

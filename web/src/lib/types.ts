@@ -1,6 +1,6 @@
 // Tipos compartilhados do frontend.
 
-export type Asset = "BTC" | "ETH" | "SOL";
+export type Asset = "BTC" | "ETH" | "SOL" | "BNB";
 export type Level = "green" | "yellow" | "red" | "neutral";
 
 /** Linha da tabela `plans` (limites parametrizados). */

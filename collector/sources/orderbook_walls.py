@@ -19,12 +19,12 @@ log = get_logger("orderbook")
 # (api.binance.com devolve 451 em algumas regiões de nuvem, ex: Railway).
 _BINANCE = "https://data-api.binance.vision/api/v3/depth"
 _COINBASE = "https://api.exchange.coinbase.com/products/{p}/book?level=2"
-_BINANCE_SYM = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT"}
-_COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}
+_BINANCE_SYM = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT"}
+_COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}  # BNB não existe na Coinbase
 
 # passo do bucket de preço e notional mínimo (USD) por ativo
-_STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5}
-_THRESHOLD = {"BTC": 1_000_000.0, "ETH": 500_000.0, "SOL": 100_000.0}
+_STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5, "BNB": 1.0}
+_THRESHOLD = {"BTC": 1_000_000.0, "ETH": 500_000.0, "SOL": 100_000.0, "BNB": 200_000.0}
 _NEAR = 0.02   # só faixas a ±2% do preço (relevantes ao gráfico)
 _TOP = 5       # máx. de paredes por lado/exchange
 

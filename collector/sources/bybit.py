@@ -19,7 +19,7 @@ from .base import BaseSource, TableRows
 
 log = get_logger("bybit")
 _URL = "https://api.bybit.com/v5/market/tickers"
-_SYMBOL = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT"}
+_SYMBOL = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT"}
 
 
 class BybitSource(BaseSource):

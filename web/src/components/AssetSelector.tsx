@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const ALL: string[] = ["BTC", "ETH", "SOL"];
+const ALL: string[] = ["BTC", "ETH", "SOL", "BNB"];
 
 interface Props {
   current: string;

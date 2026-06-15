@@ -53,7 +53,7 @@ export function computeVolumeProfile(candles: Candle[], bins = 50): VolumeProfil
   };
 }
 
-const SYMBOL: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT" };
+const SYMBOL: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", BNB: "BNBUSDT" };
 
 export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Promise<Candle[]> {
   const symbol = SYMBOL[asset];

@@ -372,4 +372,5 @@ export const ASSET_NAME: Record<string, string> = {
   BTC: "Bitcoin",
   ETH: "Ethereum",
   SOL: "Solana",
+  BNB: "BNB",
 };

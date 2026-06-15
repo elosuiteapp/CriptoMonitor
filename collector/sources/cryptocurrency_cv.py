@@ -35,6 +35,7 @@ _ASSET_PATTERNS = {
     "BTC": re.compile(r"\b(btc|bitcoin)\b"),
     "ETH": re.compile(r"\b(eth|ether|ethereum)\b"),
     "SOL": re.compile(r"\b(sol|solana)\b"),
+    "BNB": re.compile(r"\b(bnb|binance coin|binance smart chain|bsc)\b"),
 }
 
 
