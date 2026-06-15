@@ -14,7 +14,7 @@ import {
 
 import { fmtUsd } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
-import { buildLiquidationGrid, liqColor } from "../lib/liquidationModel";
+import { buildLiquidationGrid, liqColor, type OiPoint } from "../lib/liquidationModel";
 import {
   computeVolumeProfile,
   fetchKlines,
@@ -45,12 +45,13 @@ interface ChartProps {
   layers: ActiveLayers;
   canUseLayers: boolean;
   walls?: OrderbookWall[];
+  oiSeries?: OiPoint[];
 }
 
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, oiSeries }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -215,7 +216,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       return;
     }
 
-    const grid = buildLiquidationGrid(candles);
+    const grid = buildLiquidationGrid(candles, oiSeries ?? []);
     if (!grid) {
       clear();
       return;
@@ -326,7 +327,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       if (heatTipRef.current) heatTipRef.current.style.display = "none";
       clear();
     };
-  }, [candles, layers.liquidations, canUseLayers, chartType]);
+  }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType]);
 
   return (
     <div ref={wrapRef} className="relative h-[360px] w-full">

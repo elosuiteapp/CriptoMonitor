@@ -23,6 +23,7 @@ import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
+import { useOpenInterest } from "../hooks/useOpenInterest";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
 import { useSeries } from "../hooks/useSeries";
@@ -72,6 +73,7 @@ export default function Dashboard() {
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
   const walls = useOrderbookWalls(asset, plan);
+  const oiSeries = useOpenInterest(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
   const canUseLayers = plan?.chart_layers ?? false;
@@ -152,6 +154,7 @@ export default function Dashboard() {
             layers={layers}
             canUseLayers={canUseLayers}
             walls={walls}
+            oiSeries={oiSeries}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
           {canUseLayers && layers.cvd && (

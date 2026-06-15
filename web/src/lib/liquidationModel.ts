@@ -35,7 +35,42 @@ const TIERS: { L: number; w: number }[] = [
   { L: 10, w: 0.38 },
 ];
 
-export function buildLiquidationGrid(candles: Candle[], nBins = 140): LiqGrid | null {
+export interface OiPoint {
+  time: number; // epoch (s)
+  oi: number;
+}
+
+/**
+ * Fator de ponderação por Open Interest: candles com mais OI (mais posições abertas)
+ * geram zonas de liquidação mais fortes. Só vale dentro da janela de OI coletada;
+ * fora dela (histórico antigo) o fator é 1 → o modelo usa só o volume. Degrada com
+ * segurança: sem OI ou unidades incompatíveis, tudo vira fator 1.
+ */
+function makeOiFactor(oiSeries: OiPoint[]): (t: number) => number {
+  if (oiSeries.length < 3) return () => 1;
+  const sorted = [...oiSeries].sort((a, b) => a.time - b.time);
+  const tMin = sorted[0].time;
+  const tMax = sorted[sorted.length - 1].time;
+  const vals = sorted.map((p) => p.oi).sort((a, b) => a - b);
+  const median = vals[Math.floor(vals.length / 2)] || 0;
+  if (median <= 0) return () => 1;
+  return (t: number) => {
+    if (t < tMin || t > tMax) return 1;
+    let best = sorted[0].oi;
+    let bestDist = Math.abs(sorted[0].time - t);
+    for (const p of sorted) {
+      const d = Math.abs(p.time - t);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p.oi;
+      }
+    }
+    const f = best / median;
+    return f < 0.4 ? 0.4 : f > 2.5 ? 2.5 : f; // clamp p/ não distorcer demais
+  };
+}
+
+export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = [], nBins = 140): LiqGrid | null {
   const n = candles.length;
   if (n < 10) return null;
 
@@ -60,6 +95,7 @@ export function buildLiquidationGrid(candles: Candle[], nBins = 140): LiqGrid | 
   // depósitos de liquidação projetada por faixa de preço, e os candles que "tocam" cada faixa
   const depByBin: { col: number; amount: number }[][] = Array.from({ length: nBins }, () => []);
   const touchByBin: number[][] = Array.from({ length: nBins }, () => []);
+  const oiFactor = makeOiFactor(oiSeries);
 
   for (let i = 0; i < n; i++) {
     const c = candles[i];
@@ -69,8 +105,9 @@ export function buildLiquidationGrid(candles: Candle[], nBins = 140): LiqGrid | 
 
     const vol = c.volume > 0 ? c.volume : 0;
     if (vol <= 0) continue;
+    const weight = vol * oiFactor(c.time); // volume × OI relativo (quando há OI)
     for (const { L, w } of TIERS) {
-      const amount = vol * w;
+      const amount = weight * w;
       depByBin[binOf(c.close * (1 - 1 / L))].push({ col: i, amount }); // liq de longs (abaixo)
       depByBin[binOf(c.close * (1 + 1 / L))].push({ col: i, amount }); // liq de shorts (acima)
     }
