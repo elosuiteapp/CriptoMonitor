@@ -57,10 +57,12 @@ Adicionado após este relatório inicial:
 - **Fase 6.4 — Liquidações (heatmap temporal)** (migration **017** `liquidations`, Pro+):
   a `coinalyze.py` passou a emitir uma 2ª tabela com os **buckets de 5 min** do
   `/liquidation-history` (long/short USD por bucket, somados entre as exchanges; janela
-  rolante de 6h, +1 call/ciclo). Frontend `LiquidationsChart` no Cockpit (barras
-  divergentes estilo CoinGlass: shorts liquidados ↑ verde, longs liquidados ↓ vermelho,
-  com **spot** sobreposto). O card "Liquidações" (agregado 24h em `derivatives`) continua.
-  **Heatmap por nível de preço segue fora** (requer dados proprietários de posições).
+  rolante de 6h, +1 call/ciclo). Frontend: **camada "Liquidações (5min)"** nos toggles
+  "Camadas" → subpainel `LiquidationsStrip` (SVG) **abaixo do gráfico principal**, no
+  mesmo esquema de CVD/Funding (barras divergentes com intensidade de cor = efeito
+  mapa de calor: shorts liquidados ↑ verde, longs ↓ vermelho; o preço vem do gráfico
+  acima). O card "Liquidações" (agregado 24h em `derivatives`) continua. **Heatmap por
+  nível de preço (CoinGlass preditivo) segue fora** (requer dados proprietários de posições).
 - **Migrations agora vão até 017.**
 
 ## 2. Coletor (≈13 fontes)
