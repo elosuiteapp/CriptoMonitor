@@ -31,7 +31,7 @@ _BASE = "https://api.coinalyze.net/v1"
 # O free tier cobra a cota por nº de símbolos no request. Agregamos apenas as
 # exchanges mais líquidas e limitamos por ativo para manter as chamadas leves.
 _MAJOR_EXCHANGES = ("binance", "bybit", "okx", "bitget", "gate", "deribit", "htx", "kraken")
-_MAX_SYMBOLS_PER_ASSET = 3
+_MAX_SYMBOLS_PER_ASSET = 2  # 2 exchanges/ativo: alivia o rate limit do free tier com catálogo maior
 
 
 class CoinalyzeSource(BaseSource):
