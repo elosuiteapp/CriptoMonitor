@@ -15,7 +15,7 @@ export interface LiqPoint {
 }
 
 export interface Series {
-  cvd: SeriesPoint[]; // varejo (Binance)
+  cvd: SeriesPoint[]; // varejo agregado (Binance + OKX)
   cvdInst: SeriesPoint[]; // institucional (Coinbase)
   funding: SeriesPoint[];
   liquidations: LiqPoint[]; // liquidações realizadas por bucket de 5 min (barras)
@@ -36,12 +36,19 @@ export function useSeries(asset: string, plan: Plan | null): Series {
     }
     let active = true;
     (async () => {
-      const [{ data: prices }, { data: pricesCb }, { data: deriv }, { data: liq }] = await Promise.all([
+      const [{ data: prices }, { data: pricesOkx }, { data: pricesCb }, { data: deriv }, { data: liq }] = await Promise.all([
         supabase
           .from("prices_cex")
           .select("cvd, ts")
           .eq("asset", asset)
           .eq("exchange", "binance")
+          .order("ts", { ascending: true })
+          .limit(300),
+        supabase
+          .from("prices_cex")
+          .select("cvd, ts")
+          .eq("asset", asset)
+          .eq("exchange", "okx")
           .order("ts", { ascending: true })
           .limit(300),
         supabase
@@ -74,6 +81,15 @@ export function useSeries(asset: string, plan: Plan | null): Series {
             value: Number(r[key]),
           }));
 
+      // CVD do varejo AGREGADO = Binance + OKX, somados por timestamp (mesmo ciclo →
+      // mesmo segundo). Onde só uma exchange tem CVD, usa o que houver.
+      const cvdAggMap = new Map<number, number>();
+      for (const p of toPoints(prices, "cvd")) cvdAggMap.set(p.time, (cvdAggMap.get(p.time) ?? 0) + p.value);
+      for (const p of toPoints(pricesOkx, "cvd")) cvdAggMap.set(p.time, (cvdAggMap.get(p.time) ?? 0) + p.value);
+      const cvdRetail: SeriesPoint[] = [...cvdAggMap.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([time, value]) => ({ time, value }));
+
       const liquidations: LiqPoint[] = ((liq as { long_usd: number | null; short_usd: number | null; ts: string }[]) ?? [])
         .map((r) => ({
           time: Math.floor(new Date(r.ts).getTime() / 1000),
@@ -83,7 +99,7 @@ export function useSeries(asset: string, plan: Plan | null): Series {
         .reverse(); // veio desc → volta a crescente para o eixo do tempo
 
       setSeries({
-        cvd: toPoints(prices, "cvd"),
+        cvd: cvdRetail,
         cvdInst: toPoints(pricesCb, "cvd"),
         funding: toPoints(deriv, "funding_rate"),
         liquidations,

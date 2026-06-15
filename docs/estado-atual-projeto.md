@@ -76,6 +76,11 @@ Adicionado após este relatório inicial:
   + CVD institucional×varejo + Participação Institucional num score → uma leitura só
   ("Institucional comprando/distribuindo/equilibrado"). Substituiu os 2 cards separados
   (Prêmio + Participação) no grupo 🏦 do Cockpit — menos poluição, leitura mais direta.
+- **CVD do varejo agregado (Binance + OKX)**: `okx.py` passou a calcular CVD pelo endpoint
+  público de trades (`/market/trades` traz o `side` agressor) — mesmo método de Binance/
+  Coinbase. O front (card + subchart + `useSeries`) agora soma Binance+OKX por timestamp →
+  "CVD do varejo (Binance + OKX)". Bybit fica de fora (geo-bloqueada no Railway; exigiria
+  estender o relay). CVD institucional segue Coinbase.
 - **Volatility para SOL** (migration 018): o painel de volatilidade agora roda nos 3 ativos.
   Funções de vol extraídas para `collector/lib/volatility.py` (compartilhado, extensível):
   `fetch_rv_30d`/`term_structure`/`ivp_90d`. SOL computa IVP/RV/IV-RV/term via IV da Bybit

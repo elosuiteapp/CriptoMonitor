@@ -156,7 +156,7 @@ export default function Dashboard() {
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
           {canUseLayers && layers.cvd && (
             <>
-              <CvdSubchart data={series.cvd} title="CVD do varejo (Binance)" />
+              <CvdSubchart data={series.cvd} title="CVD do varejo (Binance + OKX)" />
               <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase)" />
             </>
           )}
@@ -198,7 +198,16 @@ export default function Dashboard() {
               <>
                 <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} />
-                <MetricCard title="CVD do varejo" reading={readCvd(payload?.price?.binance?.cvd ?? d?.cvd)} source="Binance" timestamp={updatedAt} />
+                <MetricCard
+                  title="CVD do varejo"
+                  reading={readCvd(
+                    payload?.price?.binance?.cvd == null && payload?.price?.okx?.cvd == null
+                      ? d?.cvd
+                      : (payload?.price?.binance?.cvd ?? 0) + (payload?.price?.okx?.cvd ?? 0),
+                  )}
+                  source="Binance + OKX"
+                  timestamp={updatedAt}
+                />
                 <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} />
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
