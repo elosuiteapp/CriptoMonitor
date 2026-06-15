@@ -40,7 +40,9 @@ _USER_AGENT = "CryptoMonitor/1.0 (+collector)"
 
 
 def _assets() -> list[str]:
-    raw = os.getenv("ASSETS", "BTC,ETH,SOL")
+    # Default no código inclui BNB → não depende de env var no host (Railway/Render).
+    # Para restringir/expandir sem deploy, basta setar a env ASSETS no painel.
+    raw = os.getenv("ASSETS", "BTC,ETH,SOL,BNB")
     return [a.strip().upper() for a in raw.split(",") if a.strip()]
 
 

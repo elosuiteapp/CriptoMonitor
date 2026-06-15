@@ -32,7 +32,7 @@ def _sample(outputs) -> str:
 
 
 async def main() -> int:
-    assets = [a.strip().upper() for a in os.getenv("ASSETS", "BTC,ETH,SOL").split(",") if a.strip()]
+    assets = [a.strip().upper() for a in os.getenv("ASSETS", "BTC,ETH,SOL,BNB").split(",") if a.strip()]
     sources = build_sources()
 
     print(f"\n  Smoke test · ativos={','.join(assets)} · {len(sources)} fontes\n")
