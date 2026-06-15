@@ -10,6 +10,7 @@ fração (0.54) → convertemos para % (×100) para casar com o motor (que faz i
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import statistics
@@ -67,9 +68,24 @@ class BybitOptionsSource(BaseSource):
         for asset in assets:
             if asset not in BYBIT_OPTION_ASSETS:
                 continue
-            resp = await http.get(relay, params={"coin": asset}, timeout=25.0)
-            resp.raise_for_status()
-            items = resp.json().get("list", [])
+            # O egress das Edge Functions varia: alguns nós a Bybit bloqueia (502),
+            # outros não. Cada chamada é uma invocação nova → retry pega um nó bom.
+            items: list[dict] = []
+            for attempt in range(1, 6):
+                try:
+                    resp = await http.get(relay, params={"coin": asset}, timeout=25.0)
+                    body = resp.json()
+                    if resp.status_code == 200 and body.get("list"):
+                        items = body["list"]
+                        break
+                    log.warning("relay %s tent.%d: http=%s bybit=%s count=%s",
+                                asset, attempt, resp.status_code, body.get("status"), body.get("count"))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("relay %s tent.%d erro: %s", asset, attempt, exc)
+                await asyncio.sleep(1.0)
+            if not items:
+                log.warning("bybit_options %s: relay sem dados apos retries", asset)
+                continue
 
             book: list[gamma.OptionInput] = []
             underlyings: list[float] = []
