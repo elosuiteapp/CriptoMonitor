@@ -18,7 +18,7 @@ const TENORS = ["7d", "30d", "90d", "180d"];
 
 /** Painel de volatilidade (PRD §8.9): DVOL, IV Percentile 90d, IV-RV spread e term
  *  structure. Complementa os cards de IV/Put-Call/Skew do Módulo Gamma (não duplica).
- *  Só BTC/ETH (liquidez de opções). RLS já restringe a leitura a Pro+. */
+ *  BTC/ETH via Deribit (com DVOL) e SOL via Bybit (sem DVOL). RLS restringe a Pro+. */
 export default function VolatilityPanel({ asset }: { asset: string }) {
   const [rows, setRows] = useState<VolRow[] | null>(null);
 
@@ -74,8 +74,14 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           title="DVOL (vol implícita)"
           level="neutral"
           value={latest.dvol != null ? `${latest.dvol.toFixed(1)}%` : "—"}
-          label={dvolVar != null ? `24h: ${dvolVar >= 0 ? "+" : ""}${dvolVar.toFixed(2)} pts` : "Variação 24h — acumulando"}
-          foot={dvolVar == null && histDays < 1 ? `histórico parcial: ${partialLabel}` : undefined}
+          label={
+            asset === "SOL"
+              ? "DVOL é índice da Deribit — indisponível p/ SOL"
+              : dvolVar != null
+                ? `24h: ${dvolVar >= 0 ? "+" : ""}${dvolVar.toFixed(2)} pts`
+                : "Variação 24h — acumulando"
+          }
+          foot={asset !== "SOL" && dvolVar == null && histDays < 1 ? `histórico parcial: ${partialLabel}` : undefined}
         />
         <VolCard
           title="IV Percentile 90d"
@@ -114,7 +120,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
         </div>
       </div>
       <p className="mt-2 text-[10px] text-slate-600">
-        Fonte: Deribit · {relativeTime(latest.ts)} · leitura informativa, não é recomendação.
+        Fonte: {asset === "SOL" ? "Bybit (opções)" : "Deribit"} · {relativeTime(latest.ts)} · leitura informativa, não é recomendação.
       </p>
     </div>
   );

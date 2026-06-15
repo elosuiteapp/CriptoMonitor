@@ -21,6 +21,7 @@ import httpx
 from lib import gamma
 from lib.logger import get_logger
 from lib.timeutil import now_utc, to_iso
+from lib.volatility import fetch_rv_30d, ivp_90d, term_structure
 
 from .base import BaseSource, TableRows
 
@@ -64,6 +65,7 @@ class BybitOptionsSource(BaseSource):
         ts = to_iso(now)
         opt_rows: list[dict] = []
         gp_rows: list[dict] = []
+        vol_rows: list[dict] = []
 
         for asset in assets:
             if asset not in BYBIT_OPTION_ASSETS:
@@ -144,7 +146,24 @@ class BybitOptionsSource(BaseSource):
             log.info("bybit_options %s: %d opcoes, spot=%.2f, zero_gamma=%s, max_pain=%s",
                      asset, len(book), spot, res.zero_gamma_level, res.max_pain)
 
+            # Volatility Dashboard — isolado: erro aqui nunca afeta o gamma.
+            # DVOL não existe para SOL (índice exclusivo da Deribit) → fica null.
+            try:
+                rv30, rv_days = await fetch_rv_30d(http, asset)
+                ivp, ivp_n = ivp_90d(asset, res.avg_iv, now)
+                term = term_structure(book, now)
+                spread = round(res.avg_iv - rv30, 4) if (res.avg_iv is not None and rv30 is not None) else None
+                log.info("vol %s (Bybit): ivp=%s(n=%s) rv30=%s(dias=%s) term=%s",
+                         asset, ivp, ivp_n, rv30, rv_days, term)
+                vol_rows.append({
+                    "asset": asset, "dvol": None, "ivp_90d": ivp, "rv_30d": rv30,
+                    "iv_rv_spread": spread, "term_structure": term, "ts": ts,
+                })
+            except Exception as exc:  # noqa: BLE001
+                log.warning("metricas de volatilidade %s (Bybit) falharam: %s", asset, exc)
+
         return [
             TableRows("options_oi", opt_rows, "asset,strike,type,expiry,ts"),
             TableRows("gamma_profile", gp_rows, "asset,ts"),
+            TableRows("volatility_index", vol_rows, "asset,ts"),
         ]

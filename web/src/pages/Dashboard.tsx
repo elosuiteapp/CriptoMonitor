@@ -42,7 +42,7 @@ import {
 import type { ChartType, Timeframe } from "../lib/marketData";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit via relay)
-const VOL_ASSETS = ["BTC", "ETH"]; // Volatility (DVOL): só onde há índice Deribit
+const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
@@ -176,7 +176,7 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Painel de Volatilidade (só BTC/ETH — DVOL é índice Deribit; SOL não tem) */}
+        {/* Painel de Volatilidade — BTC/ETH (Deribit, com DVOL) e SOL (Bybit, sem DVOL) */}
         {isVolAsset && advanced && (
           <section>
             <VolatilityPanel asset={asset} />

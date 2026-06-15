@@ -76,6 +76,11 @@ Adicionado após este relatório inicial:
   + CVD institucional×varejo + Participação Institucional num score → uma leitura só
   ("Institucional comprando/distribuindo/equilibrado"). Substituiu os 2 cards separados
   (Prêmio + Participação) no grupo 🏦 do Cockpit — menos poluição, leitura mais direta.
+- **Volatility para SOL** (migration 018): o painel de volatilidade agora roda nos 3 ativos.
+  Funções de vol extraídas para `collector/lib/volatility.py` (compartilhado, extensível):
+  `fetch_rv_30d`/`term_structure`/`ivp_90d`. SOL computa IVP/RV/IV-RV/term via IV da Bybit
+  (`bybit_options.py` emite `volatility_index`); **DVOL fica null** (índice exclusivo Deribit).
+  Front: `VOL_ASSETS` inclui SOL; o card DVOL mostra "indisponível p/ SOL" e a fonte vira Bybit.
 - **Migrations agora vão até 017.**
 
 ## 2. Coletor (≈13 fontes)
