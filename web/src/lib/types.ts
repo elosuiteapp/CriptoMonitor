@@ -1,6 +1,8 @@
 // Tipos compartilhados do frontend.
 
-export type Asset = "BTC" | "ETH" | "SOL" | "BNB";
+export type Asset =
+  | "BTC" | "ETH" | "SOL" | "BNB"
+  | "XRP" | "DOGE" | "ADA" | "AVAX" | "LINK" | "SUI" | "TON" | "POL" | "DOT" | "LTC";
 export type Level = "green" | "yellow" | "red" | "neutral";
 
 /** Linha da tabela `plans` (limites parametrizados). */
@@ -16,6 +18,7 @@ export interface Plan {
   ai_model: string;
   alert_channels: string[];
   history_days: number | null;
+  smart_money: boolean;
 }
 
 export interface PriceRow {

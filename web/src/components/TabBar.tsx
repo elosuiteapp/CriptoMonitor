@@ -4,7 +4,7 @@ interface Props {
   tab: TabId;
   onTab: (t: TabId) => void;
   advanced: boolean; // Pro+
-  isExpert: boolean;
+  canSmart: boolean; // acesso ao módulo Smart Money (flag do plano)
 }
 
 const TABS: { id: TabId; label: string; need: "free" | "pro" | "expert" }[] = [
@@ -15,9 +15,9 @@ const TABS: { id: TabId; label: string; need: "free" | "pro" | "expert" }[] = [
 ];
 
 /** Abas da página do ativo (PRD §8.7) — escada de profundidade e de planos. */
-export default function TabBar({ tab, onTab, advanced, isExpert }: Props) {
+export default function TabBar({ tab, onTab, advanced, canSmart }: Props) {
   const isLocked = (need: string) =>
-    (need === "pro" && !advanced) || (need === "expert" && !isExpert);
+    (need === "pro" && !advanced) || (need === "expert" && !canSmart);
 
   return (
     <div className="flex flex-wrap gap-1 border-b border-ink-600">

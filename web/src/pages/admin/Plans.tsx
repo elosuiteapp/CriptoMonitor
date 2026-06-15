@@ -46,6 +46,7 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
   const [snapMin, setSnapMin] = useState(plan.snapshot_interval_min.toString());
   const [advanced, setAdvanced] = useState(plan.advanced_metrics);
   const [chartLayers, setChartLayers] = useState(plan.chart_layers);
+  const [smartMoney, setSmartMoney] = useState(plan.smart_money);
   const [aiLimit, setAiLimit] = useState(plan.ai_daily_limit == null ? "" : plan.ai_daily_limit.toString());
   const [aiModel, setAiModel] = useState(plan.ai_model);
   const [channels, setChannels] = useState<string[]>(plan.alert_channels);
@@ -71,6 +72,7 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       p_snapshot_interval_min: parseInt(snapMin || "30", 10),
       p_advanced: advanced,
       p_chart_layers: chartLayers,
+      p_smart_money: smartMoney,
       p_ai_daily_limit: aiLimit === "" ? null : parseInt(aiLimit, 10),
       p_ai_model: aiModel,
       p_alert_channels: channels,
@@ -145,6 +147,7 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       <div className="mt-4 flex flex-wrap items-center gap-4">
         <Check label="Métricas avançadas" checked={advanced} onChange={setAdvanced} />
         <Check label="Camadas no gráfico" checked={chartLayers} onChange={setChartLayers} />
+        <Check label="Smart Money (SMC)" checked={smartMoney} onChange={setSmartMoney} />
       </div>
 
       <div className="mt-5 flex items-center gap-3">

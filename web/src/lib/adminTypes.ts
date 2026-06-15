@@ -131,6 +131,7 @@ export interface PlanRow {
   snapshot_interval_min: number;
   advanced_metrics: boolean;
   chart_layers: boolean;
+  smart_money: boolean;
   ai_daily_limit: number | null;
   ai_model: string;
   alert_channels: string[];

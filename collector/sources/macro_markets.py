@@ -29,7 +29,12 @@ _MACRO = [
     ("GOLD", "Ouro", "GC=F"),
     ("US10Y", "Treasury 10 anos", "^TNX"),
 ]
-_CRYPTO_SYMBOL = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT"}
+_CRYPTO_SYMBOL = {
+    "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT",
+    "XRP": "XRPUSDT", "DOGE": "DOGEUSDT", "ADA": "ADAUSDT", "AVAX": "AVAXUSDT",
+    "LINK": "LINKUSDT", "SUI": "SUIUSDT", "TON": "TONUSDT", "POL": "POLUSDT",
+    "DOT": "DOTUSDT", "LTC": "LTCUSDT",
+}
 
 
 def _date(ts_seconds: float) -> str:

@@ -78,6 +78,7 @@ export default function Dashboard() {
   const oiSeries = useOpenInterest(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
+  const canSmart = plan?.smart_money ?? false;
   const canUseLayers = plan?.chart_layers ?? false;
   const isOptionAsset = OPTION_ASSETS.includes(asset);
   const isVolAsset = VOL_ASSETS.includes(asset);
@@ -127,7 +128,7 @@ export default function Dashboard() {
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} />
 
-        <TabBar tab={tab} onTab={setTab} advanced={advanced} isExpert={isExpert} />
+        <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
 
         {tab === "macro" &&
           (advanced ? (
@@ -136,7 +137,7 @@ export default function Dashboard() {
             <LockedTab title="Macro & Correlações" plan="Pro" />
           ))}
         {tab === "smart" &&
-          (isExpert ? (
+          (canSmart ? (
             <SmartMoneyTab asset={asset} />
           ) : (
             <LockedTab title="Smart Money & On-chain" plan="Expert" />

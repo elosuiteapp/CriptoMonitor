@@ -19,8 +19,16 @@ log = get_logger("orderbook")
 # (api.binance.com devolve 451 em algumas regiões de nuvem, ex: Railway).
 _BINANCE = "https://data-api.binance.vision/api/v3/depth"
 _COINBASE = "https://api.exchange.coinbase.com/products/{p}/book?level=2"
-_BINANCE_SYM = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT"}
-_COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}  # BNB não existe na Coinbase
+_BINANCE_SYM = {
+    "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT",
+    "XRP": "XRPUSDT", "DOGE": "DOGEUSDT", "ADA": "ADAUSDT", "AVAX": "AVAXUSDT",
+    "LINK": "LINKUSDT", "SUI": "SUIUSDT", "TON": "TONUSDT", "POL": "POLUSDT",
+    "DOT": "DOTUSDT", "LTC": "LTCUSDT",
+}
+# Coinbase só onde a moeda é listada (as demais caem fora sem quebrar).
+_COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD",
+                  "XRP": "XRP-USD", "DOGE": "DOGE-USD", "ADA": "ADA-USD",
+                  "AVAX": "AVAX-USD", "LINK": "LINK-USD", "DOT": "DOT-USD", "LTC": "LTC-USD"}
 
 # passo do bucket de preço e notional mínimo (USD) por ativo
 _STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5, "BNB": 1.0}
@@ -30,8 +38,9 @@ _TOP = 5       # máx. de paredes por lado/exchange
 
 
 def _walls(levels, side, exchange, asset, mid, ts) -> list[dict]:
-    step = _STEP[asset]
-    threshold = _THRESHOLD[asset]
+    # Moedas sem ajuste fino usam passo ~0,1% do preço e notional padrão (auto-escala).
+    step = _STEP.get(asset) or mid * 0.001
+    threshold = _THRESHOLD.get(asset, 75_000.0)
     buckets: dict[float, float] = {}
     for lvl in levels:
         price = float(lvl[0])

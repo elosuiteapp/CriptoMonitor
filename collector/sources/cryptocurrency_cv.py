@@ -36,6 +36,16 @@ _ASSET_PATTERNS = {
     "ETH": re.compile(r"\b(eth|ether|ethereum)\b"),
     "SOL": re.compile(r"\b(sol|solana)\b"),
     "BNB": re.compile(r"\b(bnb|binance coin|binance smart chain|bsc)\b"),
+    "XRP": re.compile(r"\b(xrp|ripple)\b"),
+    "DOGE": re.compile(r"\b(doge|dogecoin)\b"),
+    "ADA": re.compile(r"\b(ada|cardano)\b"),
+    "AVAX": re.compile(r"\b(avax|avalanche)\b"),
+    "LINK": re.compile(r"\b(link|chainlink)\b"),
+    "SUI": re.compile(r"\b(sui)\b"),
+    "TON": re.compile(r"\b(ton|toncoin)\b"),
+    "POL": re.compile(r"\b(pol|polygon|matic)\b"),
+    "DOT": re.compile(r"\b(dot|polkadot)\b"),
+    "LTC": re.compile(r"\b(ltc|litecoin)\b"),
 }
 
 
