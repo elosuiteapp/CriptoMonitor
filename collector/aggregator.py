@@ -44,7 +44,8 @@ def _assets() -> list[str]:
     # + push). A env ASSETS pode ADICIONAR ativos extras, mas nunca remove os do base —
     # assim o BNB (e o core) entram automaticamente, independente de config no host.
     base = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX",
-            "LINK", "SUI", "TON", "POL", "DOT", "LTC"]
+            "LINK", "SUI", "TON", "POL", "DOT", "LTC",
+            "AAVE", "UNI", "LDO", "ARB", "ATOM"]
     extra = [a.strip().upper() for a in os.getenv("ASSETS", "").split(",") if a.strip()]
     return list(dict.fromkeys(base + extra))
 

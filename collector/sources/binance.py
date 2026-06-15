@@ -17,6 +17,7 @@ _SPOT_SYMBOL = {
     "XRP": "XRP/USDT", "DOGE": "DOGE/USDT", "ADA": "ADA/USDT", "AVAX": "AVAX/USDT",
     "LINK": "LINK/USDT", "SUI": "SUI/USDT", "TON": "TON/USDT", "POL": "POL/USDT",
     "DOT": "DOT/USDT", "LTC": "LTC/USDT",
+    "AAVE": "AAVE/USDT", "UNI": "UNI/USDT", "LDO": "LDO/USDT", "ARB": "ARB/USDT", "ATOM": "ATOM/USDT",
 }
 
 

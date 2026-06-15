@@ -383,4 +383,9 @@ export const ASSET_NAME: Record<string, string> = {
   POL: "Polygon",
   DOT: "Polkadot",
   LTC: "Litecoin",
+  AAVE: "Aave",
+  UNI: "Uniswap",
+  LDO: "Lido DAO",
+  ARB: "Arbitrum",
+  ATOM: "Cosmos",
 };

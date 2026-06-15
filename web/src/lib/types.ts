@@ -2,7 +2,8 @@
 
 export type Asset =
   | "BTC" | "ETH" | "SOL" | "BNB"
-  | "XRP" | "DOGE" | "ADA" | "AVAX" | "LINK" | "SUI" | "TON" | "POL" | "DOT" | "LTC";
+  | "XRP" | "DOGE" | "ADA" | "AVAX" | "LINK" | "SUI" | "TON" | "POL" | "DOT" | "LTC"
+  | "AAVE" | "UNI" | "LDO" | "ARB" | "ATOM";
 export type Level = "green" | "yellow" | "red" | "neutral";
 
 /** Linha da tabela `plans` (limites parametrizados). */

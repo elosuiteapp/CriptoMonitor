@@ -46,6 +46,11 @@ _ASSET_PATTERNS = {
     "POL": re.compile(r"\b(pol|polygon|matic)\b"),
     "DOT": re.compile(r"\b(dot|polkadot)\b"),
     "LTC": re.compile(r"\b(ltc|litecoin)\b"),
+    "AAVE": re.compile(r"\b(aave)\b"),
+    "UNI": re.compile(r"\b(uni|uniswap)\b"),
+    "LDO": re.compile(r"\b(ldo|lido)\b"),
+    "ARB": re.compile(r"\b(arb|arbitrum)\b"),
+    "ATOM": re.compile(r"\b(atom|cosmos)\b"),
 }
 
 
