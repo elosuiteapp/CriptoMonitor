@@ -1,9 +1,9 @@
-// Edge Function: generate-analysis (PRD §6 — provedor: Google Gemini)
-// Gera a análise narrativa de um ativo: valida plano + cota, lê o market_snapshot
-// mais recente + a camada institucional (OI delta, paredes do book, macro &
-// correlações), monta o prompt e chama a Gemini API com o modelo do plano.
-//
-// Deploy: supabase functions deploy generate-analysis · Secret: GEMINI_API_KEY
+// Edge Function: generate-analysis (PRD secao 6 - provedor: Google Gemini)
+// Analise narrativa sob demanda de um ativo: valida plano + cota, le o market_snapshot
+// mais recente + camada institucional (OI delta, paredes do book, macro & correlacoes,
+// VOLATILIDADE) e gera com o modelo do plano. Prompt em ASCII (deploy seguro); o modelo
+// responde em portugues brasileiro com acentuacao.
+// Deploy: supabase functions deploy generate-analysis - Secret: GEMINI_API_KEY
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -15,12 +15,17 @@ const CORS = {
 const FALLBACK_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = [
-  "Você é o copiloto de IA do Crypto Monitor, um cockpit de decisões para traders de cripto.",
-  "Idioma: português brasileiro claro com acentuação correta; ao usar termo técnico (funding, OI, GEX, gamma, CVD, max pain, skew, Put/Call), explique em poucas palavras.",
-  "Estrutura obrigatória: 1) Contexto macro (inclua DXY/S&P/ouro e a correlação 30d quando houver — vento a favor/contra); 2) Fluxo (varejo via perps/CVD vs. instituição via spot/divergência; use o DELTA DE OI vs. preço para ler novas posições); 3) Níveis de liquidez e opções (Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO ORDER BOOK como ímãs/suporte-resistência, citando os preços); 4) Sentimento (Fear & Greed + sentimento de opções: Put/Call, IV e skew); 5) Síntese.",
-  "Proibido: recomendar compra/venda, prever preço-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
-  "Obrigatório: usar apenas os dados fornecidos; se uma métrica vier ausente, diga que está indisponível neste ciclo e nunca invente números.",
-  "Encerre sempre com um aviso de que a análise é informativa e educacional, não constitui recomendação de compra/venda nem aconselhamento financeiro, e a decisão é sempre do usuário.",
+  "Voce e o copiloto de IA do Crypto Monitor, um cockpit de decisoes para traders de cripto.",
+  "Responda em portugues brasileiro com acentuacao correta; ao usar termo tecnico (funding, OI, GEX, gamma, CVD, max pain, skew, Put/Call, DVOL, IVP, IV-RV, term structure), explique em poucas palavras.",
+  "Estrutura obrigatoria:",
+  "1) Contexto macro - DXY/S&P/ouro/10Y e a correlacao 30d quando houver (vento a favor/contra).",
+  "2) Fluxo varejo x institucional - varejo via perps/funding/CVD da Binance; institucional via spot da Coinbase. Use o PREMIO COINBASE (preco Coinbase menos Binance), a PARTICIPACAO INSTITUCIONAL (volume da Coinbase vs Binance+OKX) e o CVD da Coinbase comparado ao da Binance. Use o DELTA DE OI vs preco para ler novas posicoes (long/short).",
+  "3) Niveis de liquidez e opcoes - Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO BOOK como imas/suporte-resistencia, citando os precos.",
+  "4) Volatilidade e sentimento - Fear & Greed; opcoes: Put/Call, IV media e skew; e o painel de volatilidade quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se o curto 7d > 90d e backwardation, mercado pricing evento de curto prazo).",
+  "5) Sintese - junte os sinais num quadro coerente.",
+  "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
+  "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e nunca invente numeros.",
+  "Encerre sempre com aviso de que a analise e informativa e educacional, nao constitui recomendacao de compra/venda nem aconselhamento financeiro, e a decisao e sempre do usuario.",
 ].join("\n");
 
 function json(status: number, body: unknown) {
@@ -61,19 +66,19 @@ async function callGemini(model: string, key: string, system: string, user: stri
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json(405, { error: "método não permitido" });
+  if (req.method !== "POST") return json(405, { error: "metodo nao permitido" });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
-  if (!GEMINI_KEY) return json(500, { error: "GEMINI_API_KEY não configurada" });
+  if (!GEMINI_KEY) return json(500, { error: "GEMINI_API_KEY nao configurada" });
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
   const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
   const { data: userData } = await admin.auth.getUser(token);
   const user = userData?.user;
-  if (!user) return json(401, { error: "não autenticado" });
+  if (!user) return json(401, { error: "nao autenticado" });
 
   const { asset } = await req.json().catch(() => ({ asset: "BTC" }));
   const ativo = String(asset || "BTC").toUpperCase();
@@ -86,11 +91,11 @@ Deno.serve(async (req) => {
     const { data: free } = await admin.from("plans").select("*").eq("slug", "free").single();
     plan = free ?? undefined;
   }
-  if (!plan) return json(500, { error: "plano não encontrado" });
+  if (!plan) return json(500, { error: "plano nao encontrado" });
 
   const assets = (plan.assets as string[]) ?? ["BTC"];
   if (!assets.includes(ativo)) {
-    return json(403, { error: `O ativo ${ativo} não está disponível no seu plano.` });
+    return json(403, { error: `O ativo ${ativo} nao esta disponivel no seu plano.` });
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -100,53 +105,58 @@ Deno.serve(async (req) => {
   const used = (usage?.count as number) ?? 0;
   const limit = plan.ai_daily_limit as number | null;
   if (limit !== null && used >= limit) {
-    return json(429, { error: `Cota diária atingida (${limit} análises). Volte amanhã ou faça upgrade.` });
+    return json(429, { error: `Cota diaria atingida (${limit} analises). Volte amanha ou faca upgrade.` });
   }
 
   const { data: snap } = await admin
     .from("market_snapshot").select("id, payload, ts")
     .eq("asset", ativo).order("ts", { ascending: false }).limit(1).maybeSingle();
   if (!snap) {
-    return json(503, { error: "Sem dados de mercado para este ativo ainda. Aguarde o próximo ciclo." });
+    return json(503, { error: "Sem dados de mercado para este ativo ainda. Aguarde o proximo ciclo." });
   }
 
-  // ── Camada institucional (Fase 6) — só para planos avançados ──────────────
+  // Camada institucional (Fase 6) - so para planos avancados
   const advanced = (plan.advanced_metrics as boolean) ?? false;
   const since15 = new Date(Date.now() - 15 * 60000).toISOString();
   const institutional: Record<string, unknown> = {};
   if (advanced) {
-    const [{ data: oi }, { data: walls }, { data: macroAssets }, { data: macroCorr }] = await Promise.all([
-      admin.from("v_oi_delta").select("oi_delta_4h, oi_delta_24h, price_delta_4h").eq("asset", ativo).maybeSingle(),
-      admin.from("orderbook_walls").select("exchange, side, price, notional_usd").eq("asset", ativo)
-        .gte("ts", since15).order("notional_usd", { ascending: false }).limit(8),
-      admin.from("macro_assets").select("symbol, name, price, change_24h, change_7d").order("ts", { ascending: false }).limit(16),
-      admin.from("macro_correlations").select("macro_symbol, corr_30d").eq("asset", ativo).order("ts", { ascending: false }).limit(12),
-    ]);
+    const [{ data: oi }, { data: walls }, { data: macroAssets }, { data: macroCorr }, { data: volRow }] =
+      await Promise.all([
+        admin.from("v_oi_delta").select("oi_delta_4h, oi_delta_24h, price_delta_4h").eq("asset", ativo).maybeSingle(),
+        admin.from("orderbook_walls").select("exchange, side, price, notional_usd").eq("asset", ativo)
+          .gte("ts", since15).order("notional_usd", { ascending: false }).limit(8),
+        admin.from("macro_assets").select("symbol, name, price, change_24h, change_7d").order("ts", { ascending: false }).limit(16),
+        admin.from("macro_correlations").select("macro_symbol, corr_30d").eq("asset", ativo).order("ts", { ascending: false }).limit(12),
+        admin.from("volatility_index").select("dvol, ivp_90d, rv_30d, iv_rv_spread, term_structure, ts")
+          .eq("asset", ativo).order("ts", { ascending: false }).limit(1).maybeSingle(),
+      ]);
     institutional.oi_delta = oi ?? null;
     institutional.order_book_walls = walls ?? [];
     institutional.macro = dedupeBy((macroAssets as Record<string, unknown>[]) ?? [], "symbol");
     institutional.macro_correlations = dedupeBy((macroCorr as Record<string, unknown>[]) ?? [], "macro_symbol");
+    institutional.volatility = volRow ?? null;
   }
 
-  // ── Notícias recentes ─────────────────────────────────────────────────────
+  // Noticias recentes
   const { data: news } = await admin
     .from("news_feed").select("title, source").contains("assets", [ativo])
     .order("published_at", { ascending: false }).limit(5);
   const newsText = (news && news.length)
     ? news.map((n) => `- ${n.title} (${n.source ?? "?"})`).join("\n")
-    : "Nenhuma notícia recente disponível.";
+    : "Nenhuma noticia recente disponivel.";
 
   const userMsg = [
     `Analise o momento de mercado do ativo ${ativo} com base nos dados abaixo.`,
-    `Siga a estrutura: macro → fluxo → níveis de liquidez/opções → sentimento → síntese.`,
+    "Estrutura: macro -> fluxo varejo x institucional -> niveis/opcoes -> volatilidade e sentimento -> sintese.",
+    "No snapshot, use price.coinbase (institucional) vs price.binance e price.okx (varejo) para volume e CVD, e o campo coinbase_premium.",
     "",
     "Snapshot consolidado (JSON):",
     JSON.stringify(snap.payload),
     "",
-    "Camada institucional adicional (OI delta, paredes do book, macro & correlações):",
+    "Camada institucional (OI delta, paredes do book, macro & correlacoes, volatilidade DVOL/IVP/IV-RV/term structure):",
     JSON.stringify(institutional),
     "",
-    "Notícias recentes:",
+    "Noticias recentes:",
     newsText,
   ].join("\n");
 
@@ -154,14 +164,14 @@ Deno.serve(async (req) => {
   let aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
   if (!aiResp.ok && usedModel !== FALLBACK_MODEL) {
     const detail = await aiResp.text();
-    console.error(`modelo ${usedModel} falhou (${aiResp.status}): ${detail.slice(0, 200)} — fallback ${FALLBACK_MODEL}`);
+    console.error(`modelo ${usedModel} falhou (${aiResp.status}): ${detail.slice(0, 200)} - fallback ${FALLBACK_MODEL}`);
     usedModel = FALLBACK_MODEL;
     aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
   }
   if (!aiResp.ok) {
     const detail = await aiResp.text();
     console.error(`Gemini falhou (${aiResp.status}): ${detail.slice(0, 300)}`);
-    return json(502, { error: "Falha ao gerar análise", detail: detail.slice(0, 300) });
+    return json(502, { error: "Falha ao gerar analise", detail: detail.slice(0, 300) });
   }
 
   const aiData = await aiResp.json();

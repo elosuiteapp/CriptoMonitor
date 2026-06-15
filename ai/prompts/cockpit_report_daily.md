@@ -14,13 +14,14 @@ Template do relatório diário por ativo, gerado pela IA (Google Gemini) e exibi
 - Sempre encerrar com o disclaimer.
 
 ## Estrutura obrigatória (markdown)
-1. **Resumo das últimas 24h** — mudança de preço, regime de gamma, fluxo (varejo × institucional) e sentimento.
-2. **Níveis em destaque** — Call Wall, Put Wall, Zero Gamma, Max Pain, POC e bolsões de liquidez (citar preços quando houver).
-3. **Leitura macro** — DXY e correlações 30d, Fear & Greed, dominância BTC.
-4. **Cenários** — cenário base + cenário alternativo, de forma **narrativa e não-direcional**
+1. **Resumo das últimas 24h** — preço, regime de gamma, fluxo varejo (Binance) × institucional (Coinbase) e sentimento. Citar **Prêmio Coinbase**, **Participação Institucional** (volume Coinbase vs Binance+OKX) e **CVD Coinbase vs Binance**.
+2. **Volatilidade** — quando houver: DVOL, IV Percentile 90d, IV-RV spread (prêmio de risco), term structure (7d>90d = backwardation).
+3. **Níveis em destaque** — Call Wall, Put Wall, Zero Gamma, Max Pain, POC e bolsões de liquidez (citar preços quando houver).
+4. **Leitura macro** — DXY e correlações 30d, Fear & Greed, dominância BTC.
+5. **Cenários** — cenário base + cenário alternativo, de forma **narrativa e não-direcional**
    (ex.: "se mantiver acima de X, o regime amortecido tende a seguir; se perder Y, o regime tende a virar negativo"). Sem alvo de preço.
-5. **Eventos relevantes** — notícias do período.
-6. **Aviso** — informativo/educacional, não é recomendação nem aconselhamento financeiro; a decisão é do usuário.
+6. **Eventos relevantes** — notícias do período.
+7. **Aviso** — informativo/educacional, não é recomendação nem aconselhamento financeiro; a decisão é do usuário.
 
 ## Dados fornecidos ao modelo (placeholders preenchidos na Edge Function)
 - `snapshot_atual` — `market_snapshot.payload` mais recente do ativo.

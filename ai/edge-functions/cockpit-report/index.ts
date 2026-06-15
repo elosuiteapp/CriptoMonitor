@@ -19,12 +19,13 @@ const SYSTEM_PROMPT = [
   "Voce gera o Relatorio Diario do Crypto Monitor, um cockpit de decisoes para traders de cripto.",
   "Responda SEMPRE em portugues brasileiro com acentuacao correta. Ao usar termo tecnico (gamma, GEX, funding, OI, CVD, max pain, skew, Put/Call, DVOL, IV, RV), explique em poucas palavras.",
   "Produza o relatorio em markdown com EXATAMENTE estas secoes (use os titulos):",
-  "## 1. Resumo das ultimas 24h - mudanca de preco, regime de gamma, fluxo (varejo x institucional) e sentimento.",
-  "## 2. Niveis em destaque - Call Wall, Put Wall, Zero Gamma, Max Pain, POC e bolsoes de liquidez (cite os precos quando houver).",
-  "## 3. Leitura macro - DXY e correlacoes 30d, Fear & Greed, dominancia BTC.",
-  "## 4. Cenarios - cenario base e cenario alternativo, de forma NARRATIVA e NAO direcional (ex.: 'se mantiver acima de X o regime amortecido tende a seguir; se perder Y tende a virar negativo'). Sem alvo de preco.",
-  "## 5. Eventos relevantes - noticias do periodo (se houver).",
-  "## 6. Aviso - informativo/educacional, nao e recomendacao de compra/venda nem aconselhamento financeiro; a decisao e sempre do usuario.",
+  "## 1. Resumo das ultimas 24h - mudanca de preco, regime de gamma, fluxo varejo (Binance/perps) x institucional (Coinbase) e sentimento. No fluxo, cite o PREMIO COINBASE (preco Coinbase vs Binance), a PARTICIPACAO INSTITUCIONAL (volume Coinbase vs Binance+OKX) e o CVD da Coinbase comparado ao da Binance.",
+  "## 2. Volatilidade - quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se 7d > 90d e backwardation, evento de curto prazo).",
+  "## 3. Niveis em destaque - Call Wall, Put Wall, Zero Gamma, Max Pain, POC e bolsoes de liquidez (cite os precos quando houver).",
+  "## 4. Leitura macro - DXY e correlacoes 30d, Fear & Greed, dominancia BTC.",
+  "## 5. Cenarios - cenario base e cenario alternativo, de forma NARRATIVA e NAO direcional (ex.: 'se mantiver acima de X o regime amortecido tende a seguir; se perder Y tende a virar negativo'). Sem alvo de preco.",
+  "## 6. Eventos relevantes - noticias do periodo (se houver).",
+  "## 7. Aviso - informativo/educacional, nao e recomendacao de compra/venda nem aconselhamento financeiro; a decisao e sempre do usuario.",
   "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
   "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e nunca invente numeros.",
 ].join("\n");
@@ -121,6 +122,7 @@ Deno.serve(async (req) => {
 
   const userMsg = [
     `Gere o Relatorio Diario do ativo ${ativo}.`,
+    "No snapshot: price.coinbase (institucional) vs price.binance e price.okx (varejo) tem volume e CVD; use tambem o campo coinbase_premium.",
     "",
     "Snapshot atual (JSON):",
     JSON.stringify(snap.payload),
