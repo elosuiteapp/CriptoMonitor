@@ -91,6 +91,10 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS 
     const series = seriesRef.current;
     if (!chart || !series || candles.length === 0) return;
     series.setData(candles as never);
+    // Reenquadra a cada troca de ativo/timeframe: vertical (autoScale do preço) +
+    // horizontal (fitContent). Sem isso o eixo de preço fica preso na faixa do
+    // ativo anterior e o novo (ex.: ETH ~1.800 na escala do BTC ~66.000) achata.
+    chart.priceScale("right").applyOptions({ autoScale: true });
     chart.timeScale().fitContent();
   }, [candles]);
 
