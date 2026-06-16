@@ -33,6 +33,7 @@ export interface SmcLayers {
   volumeProfile: boolean; // POC / Value Area (price lines)
   liquidations: boolean; // heatmap estimado (canvas atrás das velas)
   cvd: boolean; // painel de Volume Delta / CVD abaixo do gráfico (em SmartMoneyTab)
+  htf: boolean; // níveis do timeframe maior (order blocks/liquidez) como price lines
 }
 
 export const DEFAULT_LAYERS: SmcLayers = {
@@ -45,6 +46,7 @@ export const DEFAULT_LAYERS: SmcLayers = {
   volumeProfile: false,
   liquidations: false,
   cvd: false,
+  htf: false,
 };
 
 interface Props {
@@ -56,6 +58,7 @@ interface Props {
   oiSeries?: OiPoint[]; // OI p/ refinar o heatmap (cai p/ volume quando ausente)
   asset?: string; // p/ assinar a vela ao vivo (WebSocket Binance)
   tf?: Timeframe;
+  htfLevels?: { price: number; label: string }[]; // níveis do timeframe maior
 }
 
 const kfmt = (v: number) => {
@@ -68,7 +71,7 @@ const kfmt = (v: number) => {
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
-export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [], asset, tf }: Props) {
+export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [], asset, tf, htfLevels = [] }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -77,6 +80,7 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vpLinesRef = useRef<IPriceLine[]>([]);
+  const htfLinesRef = useRef<IPriceLine[]>([]);
   const lastViewKey = useRef<string | undefined>(undefined);
   const { isDark } = useTheme();
 
@@ -195,6 +199,28 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
     add(vp.vah, "rgba(56,189,248,0.5)", "VA High");
     add(vp.val, "rgba(56,189,248,0.5)", "VA Low");
   }, [vp, layers.volumeProfile]);
+
+  // ─── Níveis do timeframe MAIOR (HTF) como price lines ────────────────────────
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    for (const l of htfLinesRef.current) series.removePriceLine(l);
+    htfLinesRef.current = [];
+    if (!layers.htf) return;
+    for (const lvl of htfLevels) {
+      if (!Number.isFinite(lvl.price)) continue;
+      htfLinesRef.current.push(
+        series.createPriceLine({
+          price: lvl.price,
+          color: "#d946ef", // fuchsia — distinto das camadas do timeframe atual
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: lvl.label,
+        }),
+      );
+    }
+  }, [htfLevels, layers.htf]);
 
   // ─── Heatmap estimado de liquidações (canvas atrás das velas) ────────────────
   useEffect(() => {

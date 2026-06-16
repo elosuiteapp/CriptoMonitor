@@ -3,7 +3,7 @@
 // coincide com Put Wall + parede de compra, por exemplo, é de alta confiança —
 // algo que NENHUM dos indicadores do TradingView consegue sozinho.
 
-export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq";
+export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq" | "htf";
 
 export interface ConfluenceSource {
   kind: ConfluenceKind;

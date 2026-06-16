@@ -26,7 +26,10 @@ const TFS: { id: Timeframe; label: string }[] = [
   { id: "1w", label: "1S" },
 ];
 
-const TF_LABEL: Record<string, string> = { "1d": "1D", "4h": "4h", "1h": "1h" };
+const TF_LABEL: Record<string, string> = { "1d": "1D", "4h": "4h", "1h": "1h", "1w": "1S", "1M": "1Mês" };
+
+// Timeframe imediatamente MAIOR (para a confluência multi-timeframe / top-down).
+const HIGHER_TF: Partial<Record<Timeframe, Timeframe>> = { "4h": "1d", "1d": "1w", "1w": "1M" };
 
 const TONE_DOT: Record<Tone, string> = {
   good: "bg-emerald-500",
@@ -59,6 +62,7 @@ const MARKET_LAYERS: { key: keyof SmcLayers; label: string; help: string }[] = [
   { key: "volumeProfile", label: "Volume Profile", help: "POC (preço com mais volume negociado) e Value Area (faixa de 70% do volume) — ímãs e suporte/resistência, calculados do volume das velas." },
   { key: "cvd", label: "CVD / Volume Delta", help: "Volume delta acumulado (comprador agressor − vendedor) das velas da Binance, em painel abaixo do gráfico. Subindo = compradores no comando; divergir do preço é o sinal mais valioso." },
   { key: "liquidations", label: "Liquidações", help: "Heatmap estimado de bolsões de liquidação (modelo de alavancagem sobre as velas). Zonas quentes funcionam como ímãs de preço." },
+  { key: "htf", label: "HTF (TF maior)", help: "Níveis do timeframe MAIOR (order blocks e liquidez) projetados no gráfico atual — em fúcsia. Operar a favor do timeframe maior é o princípio nº1 do Smart Money; nível que coincide com o HTF tem muito mais peso." },
 ];
 
 // Explicação por tipo de leitura (tooltip ⓘ no título do card)
@@ -78,6 +82,7 @@ const CONF_STYLE: Record<string, string> = {
   wall: "border-border text-muted-foreground",
   vp: "border-sky-500/40 text-sky-400",
   liq: "border-amber-500/40 text-amber-400",
+  htf: "border-fuchsia-500/40 text-fuchsia-400",
 };
 
 /** Preços dos bolsões de liquidação mais fortes (coluna atual do heatmap estimado). */
@@ -125,6 +130,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const cvdSeries = useCvd(smcAsset, tf, layers.cvd);
   // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
   const perp = usePerpContext(smcAsset);
+  // Estrutura SMC do timeframe MAIOR (confluência top-down).
+  const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -211,10 +218,43 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, [smcAsset]);
 
+  // Estrutura do timeframe MAIOR (order blocks + liquidez) p/ confluência top-down.
+  useEffect(() => {
+    const up = HIGHER_TF[tf];
+    if (!up) {
+      setHtfSmc(null);
+      return;
+    }
+    let active = true;
+    fetchKlines(smcAsset, up, 320)
+      .then((k) => active && setHtfSmc(computeSmc(k)))
+      .catch(() => active && setHtfSmc(null));
+    return () => {
+      active = false;
+    };
+  }, [smcAsset, tf]);
+
+  // Níveis do timeframe maior (próximos do preço) — usados no gráfico e na confluência.
+  const htfLevels = useMemo(() => {
+    if (!htfSmc) return [];
+    const s = htfSmc;
+    const lbl = TF_LABEL[HIGHER_TF[tf] ?? ""] ?? "HTF";
+    const out: { price: number; label: string }[] = [];
+    const byDist = (a: { mid: number }, b: { mid: number }) => Math.abs(a.mid - s.price) - Math.abs(b.mid - s.price);
+    s.orderBlocks.filter((o) => o.bias === "bearish").sort(byDist).slice(0, 2).forEach((o) => out.push({ price: o.mid, label: `OB ${lbl}` }));
+    s.orderBlocks.filter((o) => o.bias === "bullish").sort(byDist).slice(0, 2).forEach((o) => out.push({ price: o.mid, label: `OB ${lbl}` }));
+    s.liquidity
+      .filter((l) => !l.swept)
+      .sort((a, b) => Math.abs(a.price - s.price) - Math.abs(b.price - s.price))
+      .slice(0, 3)
+      .forEach((l) => out.push({ price: l.price, label: `Liq ${lbl}` }));
+    return out;
+  }, [htfSmc, tf]);
+
   // Volume Profile (POC/VA) dos candles — reusado na confluência e no gráfico.
   const vp = useMemo(() => (candles.length ? computeVolumeProfile(candles) : null), [candles]);
 
-  // Confluência enriquecida: gamma + book (sources) + POC/Value Area + bolsões de liquidação
+  // Confluência enriquecida: gamma + book (sources) + POC/Value Area + liquidação + HTF
   const allSources = useMemo(() => {
     const extra: ConfluenceSource[] = [];
     if (vp) {
@@ -227,8 +267,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         extra.push({ kind: "liq", label: i === 0 ? "Liquidação (forte)" : "Liquidação", price: p }),
       );
     }
+    htfLevels.forEach((l) => extra.push({ kind: "htf", label: l.label, price: l.price }));
     return [...sources, ...extra];
-  }, [sources, candles, oiSeries, vp]);
+  }, [sources, candles, oiSeries, vp, htfLevels]);
 
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
@@ -399,7 +440,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} htfLevels={htfLevels} />
         )}
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           Zonas: <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount ·{" "}
@@ -418,7 +459,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
         <div className="flex items-baseline justify-between px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Níveis-chave por confluência</h3>
-          <span className="text-xs text-muted-foreground">SMC × book × gamma × POC × liquidação — ordenado por distância</span>
+          <span className="text-xs text-muted-foreground">SMC × book × gamma × POC × liquidação × HTF — ordenado por distância</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
