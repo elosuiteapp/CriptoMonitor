@@ -234,7 +234,7 @@ export default function Dashboard() {
             <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} info={GLOSSARY.fng} />
             {advanced ? (
               <>
-                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
+                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate == null ? null : d.funding_rate / 100)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
                 <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
                 <MetricCard
                   title="CVD do varejo"

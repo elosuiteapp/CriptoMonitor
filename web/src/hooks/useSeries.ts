@@ -104,7 +104,12 @@ export function useSeries(asset: string, plan: Plan | null): Series {
       setSeries({
         cvd: cvdRetail,
         cvdInst: toPoints((pricesCb ?? []).slice().reverse(), "cvd"),
-        funding: toPoints((deriv ?? []).slice().reverse(), "funding_rate"),
+        // Coinalyze devolve funding em PERCENT (0,01 = 0,01%); converte p/ FRAÇÃO,
+        // que é o que FundingStrip/readFunding esperam (evita exibir 100× maior).
+        funding: toPoints((deriv ?? []).slice().reverse(), "funding_rate").map((p) => ({
+          time: p.time,
+          value: p.value / 100,
+        })),
         liquidations,
       });
     })();
