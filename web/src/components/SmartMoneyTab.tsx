@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useCvd } from "../hooks/useCvd";
 import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
 import { fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
@@ -102,22 +103,21 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const { user } = useAuth();
   const { plan } = usePlan(user?.id);
   const channels = plan?.alert_channels ?? [];
-  // O Smart Money (Expert) pode ir além das moedas curadas. `smcAsset` acompanha
-  // o ativo global do cockpit, mas o seletor local pode trocar para qualquer das
-  // 100 moedas. As não-curadas só têm price-action (sem dados do coletor).
-  const [smcAsset, setSmcAsset] = useState(asset);
-  useEffect(() => setSmcAsset(asset), [asset]);
+  // O Smart Money (Expert) pode ir além das moedas curadas e LEMBRA a última moeda,
+  // timeframe e camadas (persistido em localStorage). Inicia na última escolhida;
+  // na 1ª vez, no ativo global do cockpit. As não-curadas só têm price-action.
+  const [smcAsset, setSmcAsset] = usePersistentState<string>("cm.smc-asset", asset);
   const isCurated = CURATED_ASSETS.includes(smcAsset);
   const oiSeries = useOpenInterest(smcAsset, plan);
   const [alertedIdx, setAlertedIdx] = useState<number | null>(null);
   const [alertError, setAlertError] = useState<string | null>(null);
-  const [tf, setTf] = useState<Timeframe>("1d");
+  const [tf, setTf] = usePersistentState<Timeframe>("cm.smc-tf", "1d");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [smc, setSmc] = useState<SmcResult | null>(null);
   const [sources, setSources] = useState<ConfluenceSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [layers, setLayers] = useState<SmcLayers>(DEFAULT_LAYERS);
+  const [layers, setLayers] = usePersistentState<SmcLayers>("cm.smc-layers", DEFAULT_LAYERS, true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
   // Volume Delta / CVD por candle (klines) — só busca com a camada CVD ligada.
@@ -375,7 +375,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} />
         )}
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           Zonas: <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount ·{" "}

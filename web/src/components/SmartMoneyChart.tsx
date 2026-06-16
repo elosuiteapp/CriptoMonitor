@@ -15,7 +15,7 @@ import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/c
 import { priceDecimals } from "../lib/format";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
 import { type OiPoint } from "../lib/liquidationModel";
-import type { Candle, VolumeProfile } from "../lib/marketData";
+import { subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
 const UP = "#22c55e";
@@ -54,6 +54,8 @@ interface Props {
   viewKey?: string; // muda só na troca de ativo/timeframe → re-enquadra; refresh silencioso preserva o zoom
   vp?: VolumeProfile | null; // Volume Profile (POC/VA) calculado dos candles
   oiSeries?: OiPoint[]; // OI p/ refinar o heatmap (cai p/ volume quando ausente)
+  asset?: string; // p/ assinar a vela ao vivo (WebSocket Binance)
+  tf?: Timeframe;
 }
 
 const kfmt = (v: number) => {
@@ -66,7 +68,7 @@ const kfmt = (v: number) => {
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
-export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [] }: Props) {
+export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [], asset, tf }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -143,6 +145,20 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
       chart.timeScale().fitContent();
     }
   }, [candles, viewKey]);
+
+  // ─── Vela ao vivo (WebSocket Binance) — atualiza o candle em formação ────────
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !asset || !tf) return;
+    const cleanup = subscribeKline(asset, tf, (bar) => {
+      try {
+        series.update(bar as never);
+      } catch {
+        /* atualização fora de ordem (troca de ativo): ignora */
+      }
+    });
+    return cleanup;
+  }, [asset, tf]);
 
   // ─── Marcadores BOS/CHoCH ────────────────────────────────────────────────────
   useEffect(() => {
