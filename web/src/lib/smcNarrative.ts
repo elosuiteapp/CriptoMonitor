@@ -21,6 +21,16 @@ export interface KeyLevel {
 
 const pct = (level: number, price: number) => ((level - price) / price) * 100;
 
+/** Preço adaptativo na leitura (sem símbolo): integer p/ grandes, decimais p/ sub-1. */
+const pnum = (v: number): string => {
+  const a = Math.abs(v);
+  if (a >= 100) return Math.round(v).toLocaleString("pt-BR");
+  if (a >= 1) return v.toFixed(2);
+  if (a >= 0.01) return v.toFixed(4);
+  if (a >= 0.0001) return v.toFixed(6);
+  return v.toFixed(8);
+};
+
 export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): KeyLevel[] {
   const out: KeyLevel[] = [];
   const conf = (p: number) => confluenceFor(p, smc.atr, sources);
@@ -43,7 +53,7 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
       category: "orderblock",
       price: ob.mid,
       bias: ob.bias,
-      note: `${ob.bottom.toFixed(0)}–${ob.top.toFixed(0)}`,
+      note: `${pnum(ob.bottom)}–${pnum(ob.top)}`,
     });
   }
   for (const g of smc.fvgs) {
@@ -52,7 +62,7 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
       category: "fvg",
       price: g.mid,
       bias: g.bias,
-      note: `${g.bottom.toFixed(0)}–${g.top.toFixed(0)}`,
+      note: `${pnum(g.bottom)}–${pnum(g.top)}`,
     });
   }
   for (const eq of smc.equals) {
@@ -88,7 +98,7 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
   let structText = `Estrutura principal de ${biasWord(smc.swingBias)}.`;
   if (smc.lastSwing) {
     const ev = smc.lastSwing.type === "CHoCH" ? "Mudança de Caráter (CHoCH)" : "Rompimento de Estrutura (BOS)";
-    structText += ` Último evento relevante: ${ev} de ${biasWord(smc.lastSwing.bias)} em ${smc.lastSwing.price.toFixed(0)}.`;
+    structText += ` Último evento relevante: ${ev} de ${biasWord(smc.lastSwing.bias)} em ${pnum(smc.lastSwing.price)}.`;
   }
   lines.push({ title: "Estrutura de mercado", text: structText, tone });
 
@@ -121,20 +131,20 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
     return "";
   };
   if (above) {
-    lines.push({ title: "Alvo de liquidez acima", text: `Pool de liquidez em ${above.price.toFixed(0)} (~${pct(above.price, price).toFixed(1)}%) — ímã provável${confTxt(above.price)}.`, tone: "neutral" });
+    lines.push({ title: "Alvo de liquidez acima", text: `Pool de liquidez em ${pnum(above.price)} (~${pct(above.price, price).toFixed(1)}%) — ímã provável${confTxt(above.price)}.`, tone: "neutral" });
   }
   if (below) {
-    lines.push({ title: "Alvo de liquidez abaixo", text: `Pool de liquidez em ${below.price.toFixed(0)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, tone: "neutral" });
+    lines.push({ title: "Alvo de liquidez abaixo", text: `Pool de liquidez em ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, tone: "neutral" });
   }
 
   // 5) Suporte/resistência por order block (acima e abaixo)
   const obAbove = smc.orderBlocks.filter((o) => o.mid > price).sort((a, b) => a.mid - b.mid)[0];
   const obBelow = smc.orderBlocks.filter((o) => o.mid <= price).sort((a, b) => b.mid - a.mid)[0];
   if (obAbove) {
-    lines.push({ title: "Resistência (order block)", text: `Order block de ${biasWord(obAbove.bias)} em ${obAbove.mid.toFixed(0)} acima — possível resistência${confTxt(obAbove.mid)}.`, tone: "neutral" });
+    lines.push({ title: "Resistência (order block)", text: `Order block de ${biasWord(obAbove.bias)} em ${pnum(obAbove.mid)} acima — possível resistência${confTxt(obAbove.mid)}.`, tone: "neutral" });
   }
   if (obBelow) {
-    lines.push({ title: "Suporte (order block)", text: `Order block de ${biasWord(obBelow.bias)} em ${obBelow.mid.toFixed(0)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, tone: "neutral" });
+    lines.push({ title: "Suporte (order block)", text: `Order block de ${biasWord(obBelow.bias)} em ${pnum(obBelow.mid)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, tone: "neutral" });
   }
 
   // 6) Varredura de liquidez recente (stop hunt)
@@ -142,7 +152,7 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
   if (sweep) {
     lines.push({
       title: "Varredura de liquidez",
-      text: `Liquidez ${sweep.side === "buy" ? "de compra" : "de venda"} em ${sweep.price.toFixed(0)} foi varrida há pouco — possível stop hunt; atenção a reversão se o preço rejeitar o nível.`,
+      text: `Liquidez ${sweep.side === "buy" ? "de compra" : "de venda"} em ${pnum(sweep.price)} foi varrida há pouco — possível stop hunt; atenção a reversão se o preço rejeitar o nível.`,
       tone: "warn",
     });
   }

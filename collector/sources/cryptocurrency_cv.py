@@ -51,6 +51,7 @@ _ASSET_PATTERNS = {
     "LDO": re.compile(r"\b(ldo|lido)\b"),
     "ARB": re.compile(r"\b(arb|arbitrum)\b"),
     "ATOM": re.compile(r"\b(atom|cosmos)\b"),
+    "PEPE": re.compile(r"\b(pepe)\b"),
 }
 
 

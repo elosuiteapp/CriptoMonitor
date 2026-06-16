@@ -21,12 +21,23 @@ export function fmtUsd(value: number | null | undefined, digits = 1): string {
   return `${sign}US$ ${abs.toFixed(digits)}`;
 }
 
+/** Nº de casas decimais por magnitude — moedas sub-centavo (ex.: PEPE ~US$0,000003)
+ *  precisam de mais casas; usado no preço e na escala dos gráficos. */
+export function priceDecimals(value: number | null | undefined): number {
+  const a = Math.abs(value ?? 0);
+  if (a >= 10) return 2;
+  if (a >= 1) return 4;
+  if (a >= 0.01) return 4;
+  if (a >= 0.0001) return 6;
+  return 8;
+}
+
 export function fmtPrice(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "—";
   return value.toLocaleString("pt-BR", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: value < 10 ? 4 : 2,
+    maximumFractionDigits: priceDecimals(value),
   });
 }
 
@@ -388,4 +399,5 @@ export const ASSET_NAME: Record<string, string> = {
   LDO: "Lido DAO",
   ARB: "Arbitrum",
   ATOM: "Cosmos",
+  PEPE: "Pepe",
 };

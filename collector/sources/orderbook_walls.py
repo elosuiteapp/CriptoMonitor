@@ -25,12 +25,14 @@ _BINANCE_SYM = {
     "LINK": "LINKUSDT", "SUI": "SUIUSDT", "TON": "TONUSDT", "POL": "POLUSDT",
     "DOT": "DOTUSDT", "LTC": "LTCUSDT",
     "AAVE": "AAVEUSDT", "UNI": "UNIUSDT", "LDO": "LDOUSDT", "ARB": "ARBUSDT", "ATOM": "ATOMUSDT",
+    "PEPE": "PEPEUSDT",
 }
 # Coinbase só onde a moeda é listada (as demais caem fora sem quebrar).
 _COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD",
                   "XRP": "XRP-USD", "DOGE": "DOGE-USD", "ADA": "ADA-USD",
                   "AVAX": "AVAX-USD", "LINK": "LINK-USD", "DOT": "DOT-USD", "LTC": "LTC-USD",
-                  "AAVE": "AAVE-USD", "UNI": "UNI-USD", "LDO": "LDO-USD", "ARB": "ARB-USD", "ATOM": "ATOM-USD"}
+                  "AAVE": "AAVE-USD", "UNI": "UNI-USD", "LDO": "LDO-USD", "ARB": "ARB-USD",
+                  "ATOM": "ATOM-USD", "PEPE": "PEPE-USD"}
 
 # passo do bucket de preço e notional mínimo (USD) por ativo
 _STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5, "BNB": 1.0}

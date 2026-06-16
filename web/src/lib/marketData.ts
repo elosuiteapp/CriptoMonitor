@@ -59,6 +59,7 @@ const SYMBOL: Record<string, string> = {
   LINK: "LINKUSDT", SUI: "SUIUSDT", TON: "TONUSDT", POL: "POLUSDT",
   DOT: "DOTUSDT", LTC: "LTCUSDT",
   AAVE: "AAVEUSDT", UNI: "UNIUSDT", LDO: "LDOUSDT", ARB: "ARBUSDT", ATOM: "ATOMUSDT",
+  PEPE: "PEPEUSDT",
 };
 
 export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Promise<Candle[]> {

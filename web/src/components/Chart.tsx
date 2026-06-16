@@ -12,7 +12,7 @@ import {
   type Time,
 } from "lightweight-charts";
 
-import { fmtUsd } from "../lib/format";
+import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import { buildLiquidationGrid, liqColor, type OiPoint } from "../lib/liquidationModel";
 import {
@@ -125,6 +125,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         const candles = await fetchKlines(asset, timeframe);
         if (cancelled) return;
         series.setData(toSeriesData(candles) as never);
+        const dec = priceDecimals(candles[candles.length - 1]?.close);
+        series.applyOptions({ priceFormat: { type: "price", precision: dec, minMove: Math.pow(10, -dec) } });
         chart.timeScale().fitContent();
         setVp(computeVolumeProfile(candles));
         setCandles(candles);

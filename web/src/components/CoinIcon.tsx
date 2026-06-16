@@ -7,6 +7,7 @@ const BRAND: Record<string, string> = {
   LINK: "#2a5ada", SUI: "#4da2ff", TON: "#0098ea", POL: "#8247e5",
   DOT: "#e6007a", LTC: "#345d9d",
   AAVE: "#b6509e", UNI: "#ff007a", LDO: "#00a3ff", ARB: "#28a0f0", ATOM: "#2e3148",
+  PEPE: "#4aae4f",
 };
 
 /** Logo da moeda (CoinCap CDN). Se o logo não existir, mostra um selo colorido

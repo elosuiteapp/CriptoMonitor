@@ -45,7 +45,7 @@ def _assets() -> list[str]:
     # assim o BNB (e o core) entram automaticamente, independente de config no host.
     base = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX",
             "LINK", "SUI", "TON", "POL", "DOT", "LTC",
-            "AAVE", "UNI", "LDO", "ARB", "ATOM"]
+            "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE"]
     extra = [a.strip().upper() for a in os.getenv("ASSETS", "").split(",") if a.strip()]
     return list(dict.fromkeys(base + extra))
 

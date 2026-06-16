@@ -8,6 +8,7 @@ import {
   type Time,
 } from "lightweight-charts";
 
+import { priceDecimals } from "../lib/format";
 import type { Candle } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
@@ -41,8 +42,13 @@ interface Props {
   viewKey?: string; // muda só na troca de ativo/timeframe → re-enquadra; refresh silencioso preserva o zoom
 }
 
-const kfmt = (v: number) =>
-  Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : `${Math.round(v)}`;
+const kfmt = (v: number) => {
+  const a = Math.abs(v);
+  if (a >= 1000) return `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
+  if (a >= 1) return `${Math.round(v)}`;
+  if (a >= 0.01) return v.toFixed(4);
+  return v.toFixed(8); // moedas sub-centavo (ex.: PEPE)
+};
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
@@ -93,6 +99,9 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
     const series = seriesRef.current;
     if (!chart || !series || candles.length === 0) return;
     series.setData(candles as never);
+    // Precisão do eixo conforme a magnitude (moedas sub-centavo precisam de mais casas).
+    const dec = priceDecimals(candles[candles.length - 1].close);
+    series.applyOptions({ priceFormat: { type: "price", precision: dec, minMove: Math.pow(10, -dec) } });
     // Re-enquadra só quando muda ativo/timeframe (viewKey). No refresh silencioso o
     // viewKey não muda → preserva o zoom/pan do usuário. Sem o re-enquadre, o eixo de
     // preço ficaria preso na faixa do ativo anterior (ex.: ETH ~1.800 na escala do BTC).

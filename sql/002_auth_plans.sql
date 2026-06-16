@@ -30,8 +30,8 @@ insert into public.plans
    advanced_metrics, chart_layers, ai_daily_limit, ai_model, alert_channels, history_days)
 values
   ('free',   'Free',       0, 0, array['BTC'],              30, false, false,    1, 'claude-haiku-4-5',  array[]::text[],            1),
-  ('pro',    'Pro',     5900, 1, array['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','SUI','TON','POL','DOT','LTC','AAVE','UNI','LDO','ARB','ATOM'],   5, true,  true,    10, 'claude-sonnet-4-6', array['email'],            30),
-  ('expert', 'Expert', 14900, 2, array['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','SUI','TON','POL','DOT','LTC','AAVE','UNI','LDO','ARB','ATOM'],   5, true,  true,    30, 'claude-fable-5',    array['email','whatsapp'], null)
+  ('pro',    'Pro',     5900, 1, array['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','SUI','TON','POL','DOT','LTC','AAVE','UNI','LDO','ARB','ATOM','PEPE'],   5, true,  true,    10, 'claude-sonnet-4-6', array['email'],            30),
+  ('expert', 'Expert', 14900, 2, array['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','SUI','TON','POL','DOT','LTC','AAVE','UNI','LDO','ARB','ATOM','PEPE'],   5, true,  true,    30, 'claude-fable-5',    array['email','whatsapp'], null)
 on conflict (slug) do update set
   name                  = excluded.name,
   price_cents           = excluded.price_cents,

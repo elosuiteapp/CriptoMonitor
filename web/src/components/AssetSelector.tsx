@@ -7,7 +7,7 @@ import CoinIcon from "./CoinIcon";
 const ALL: string[] = [
   "BTC", "ETH", "SOL", "BNB",
   "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC",
-  "AAVE", "UNI", "LDO", "ARB", "ATOM",
+  "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE",
 ];
 
 interface Props {
