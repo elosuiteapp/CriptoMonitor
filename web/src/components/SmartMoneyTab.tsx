@@ -256,19 +256,6 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> ao vivo
           </span>
         </div>
-        <div className="flex gap-1 rounded-lg border border-border bg-card dark:bg-card/60 p-0.5">
-          {TFS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTf(t.id)}
-              className={`rounded-md px-3 py-1 text-xs transition-colors ${
-                tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
@@ -326,21 +313,36 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Gráfico SMC */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
-        {/* Toggles de camadas */}
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {LAYER_LABELS.map(({ key, label, help }) => (
-            <span
-              key={key}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
-              }`}
-            >
-              <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
-                {label}
+        {/* Camadas (esquerda) + timeframe (direita) — controlam o gráfico abaixo */}
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {LAYER_LABELS.map(({ key, label, help }) => (
+              <span
+                key={key}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                  layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
+                }`}
+              >
+                <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
+                  {label}
+                </button>
+                <InfoTip text={help} />
+              </span>
+            ))}
+          </div>
+          <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
+            {TFS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTf(t.id)}
+                className={`rounded-md px-3 py-1 text-xs transition-colors ${
+                  tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.label}
               </button>
-              <InfoTip text={help} />
-            </span>
-          ))}
+            ))}
+          </div>
         </div>
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
