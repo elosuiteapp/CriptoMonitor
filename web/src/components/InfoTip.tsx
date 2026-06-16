@@ -27,17 +27,17 @@ export default function InfoTip({ text, className = "" }: { text: string; classN
             setOpen((o) => !o);
           }
         }}
-        className={`grid h-4 w-4 cursor-help select-none place-items-center rounded-full border border-slate-500/50 text-[9px] font-bold leading-none text-slate-400 transition-colors hover:border-accent hover:text-accent ${className}`}
+        className={`grid h-4 w-4 cursor-help select-none place-items-center rounded-full border border-border text-[9px] font-bold leading-none text-muted-foreground transition-colors hover:border-primary hover:text-primary ${className}`}
       >
         i
       </span>
       {open && (
         <span
           role="tooltip"
-          className="tip-in pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-xl border border-ink-500 bg-ink-900/95 p-3 text-[11px] font-normal normal-case leading-relaxed tracking-normal text-slate-200 shadow-2xl ring-1 ring-black/50 backdrop-blur"
+          className="tip-in pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-xl border border-border bg-background/95 p-3 text-[11px] font-normal normal-case leading-relaxed tracking-normal text-foreground shadow-2xl ring-1 ring-black/50 backdrop-blur"
         >
           {text}
-          <span className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-ink-500 bg-ink-900" />
+          <span className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-border bg-background" />
         </span>
       )}
     </span>

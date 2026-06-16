@@ -35,12 +35,12 @@ export default function CotCard({ cot }: { cot: CotRow }) {
   })();
 
   return (
-    <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-4">
+    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
       <div className="flex items-baseline justify-between">
-        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Posicionamento CME · CFTC <InfoTip text={GLOSSARY.cot} />
         </span>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[11px] text-muted-foreground">
           relatório de {reportTxt}{cot.open_interest ? ` · OI ${cot.open_interest.toLocaleString("pt-BR")}` : ""}
         </span>
       </div>
@@ -67,7 +67,7 @@ export default function CotCard({ cot }: { cot: CotRow }) {
         />
       </div>
 
-      <p className="mt-3 text-[10px] text-slate-600">
+      <p className="mt-3 text-[10px] text-muted-foreground">
         Asset Managers comprados = viés institucional de fundo. O net short dos hedge funds é, em boa parte,{" "}
         <strong>basis trade</strong> (vendido no futuro + comprado no spot/ETF) — carry, não aposta de queda.
         Atualiza semanalmente (sexta).

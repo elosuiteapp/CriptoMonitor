@@ -17,8 +17,8 @@ export default function Usage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Uso & IA</h1>
-        <p className="text-sm text-slate-500">Consumo do copiloto de IA e distribuição por modelo.</p>
+        <h1 className="text-2xl font-bold text-foreground">Uso & IA</h1>
+        <p className="text-sm text-muted-foreground">Consumo do copiloto de IA e distribuição por modelo.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -42,8 +42,8 @@ export default function Usage() {
           {(byModel ?? []).map((m) => (
             <div key={m.model_used} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-200">{m.model_used}</span>
-                <span className="text-slate-400">{fmtInt(m.analyses)}</span>
+                <span className="text-foreground">{m.model_used}</span>
+                <span className="num text-muted-foreground">{fmtInt(m.analyses)}</span>
               </div>
               <HBar value={m.analyses} max={maxModel} color="#6366f1" />
             </div>

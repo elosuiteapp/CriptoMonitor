@@ -32,14 +32,14 @@ export default function Audit() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-white">Auditoria</h1>
-        <p className="text-sm text-slate-500">Últimas 100 ações administrativas registradas.</p>
+        <h1 className="text-2xl font-bold text-foreground">Auditoria</h1>
+        <p className="text-sm text-muted-foreground">Últimas 100 ações administrativas registradas.</p>
       </div>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-ink-600 text-xs uppercase text-slate-500">
+            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Quando</th>
                 <th className="px-4 py-3 font-medium">Admin</th>
@@ -50,14 +50,14 @@ export default function Audit() {
             </thead>
             <tbody>
               {(rows ?? []).map((r) => (
-                <tr key={r.id} className="border-b border-ink-700/60 align-top">
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">{fmtDateTime(r.created_at)}</td>
-                  <td className="px-4 py-3 text-slate-300">{r.admin_email ?? "—"}</td>
+                <tr key={r.id} className="border-b border-border align-top">
+                  <td className="num whitespace-nowrap px-4 py-3 text-muted-foreground">{fmtDateTime(r.created_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{r.admin_email ?? "—"}</td>
                   <td className="px-4 py-3"><Badge tone="accent">{ACTION_LABEL[r.action] ?? r.action}</Badge></td>
-                  <td className="px-4 py-3 text-xs text-slate-400">
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
                     {r.target_type ? `${r.target_type}: ${r.target_id}` : "—"}
                   </td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-slate-500">
+                  <td className="num px-4 py-3 text-[11px] text-muted-foreground">
                     {r.detail ? JSON.stringify(r.detail) : "—"}
                   </td>
                 </tr>

@@ -21,8 +21,8 @@ export default function Overview() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Visão geral</h1>
-        <p className="text-sm text-slate-500">Saúde do negócio em tempo real.</p>
+        <h1 className="text-2xl font-bold text-foreground">Visão geral</h1>
+        <p className="text-sm text-muted-foreground">Saúde do negócio em tempo real.</p>
       </div>
 
       {/* KPIs financeiros */}
@@ -77,9 +77,9 @@ export default function Overview() {
           {o.plan_distribution.map((p) => (
             <div key={p.slug} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-200">{p.name}</span>
-                <span className="text-slate-400">
-                  {fmtInt(p.count)} assinantes · <span className="text-slate-300">{fmtBRL(p.mrr_cents)}/mês</span>
+                <span className="text-foreground">{p.name}</span>
+                <span className="text-muted-foreground">
+                  <span className="num">{fmtInt(p.count)}</span> assinantes · <span className="text-muted-foreground"><span className="num">{fmtBRL(p.mrr_cents)}</span>/mês</span>
                 </span>
               </div>
               <HBar value={p.count} max={maxPlan} color={PLAN_COLORS[p.slug] ?? "#6366f1"} />

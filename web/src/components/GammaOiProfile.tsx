@@ -49,9 +49,9 @@ export default function GammaOiProfile({
     };
   }, [asset]);
 
-  if (rows == null) return <div className="text-xs text-slate-500">Carregando open interest…</div>;
+  if (rows == null) return <div className="text-xs text-muted-foreground">Carregando open interest…</div>;
   if (rows.length === 0)
-    return <div className="text-xs text-slate-500">Sem dados de open interest por strike.</div>;
+    return <div className="text-xs text-muted-foreground">Sem dados de open interest por strike.</div>;
 
   // Só o snapshot mais recente (todas as linhas de uma coleta compartilham o mesmo ts)
   const latestTs = rows[0].ts;
@@ -67,7 +67,7 @@ export default function GammaOiProfile({
     byStrike.set(k, a);
   }
   const aggs = [...byStrike.values()].sort((a, b) => b.strike - a.strike);
-  if (aggs.length === 0) return <div className="text-xs text-slate-500">Sem dados de open interest por strike.</div>;
+  if (aggs.length === 0) return <div className="text-xs text-muted-foreground">Sem dados de open interest por strike.</div>;
 
   const maxSide = Math.max(1, ...aggs.map((a) => Math.max(a.call, a.put)));
   const totalCall = aggs.reduce((s, a) => s + a.call, 0);
@@ -77,10 +77,10 @@ export default function GammaOiProfile({
 
   return (
     <div>
-      <p className="mb-2 text-[10px] leading-snug text-slate-500">
-        Contratos <span className="text-slate-300">crus</span> em aberto (vencimento mais próximo) — <span className="text-slate-300">duas barras por strike</span>:
+      <p className="mb-2 text-[10px] leading-snug text-muted-foreground">
+        Contratos <span className="text-foreground">crus</span> em aberto (vencimento mais próximo) — <span className="text-foreground">duas barras por strike</span>:
         put à esquerda (suporte) e call à direita (resistência), cada uma com a quantidade. Diferente do GEX, que pondera pelo gama e
-        condensa cada strike numa barra só. Cor cheia = <span className="text-slate-300">muro de OI</span>.
+        condensa cada strike numa barra só. Cor cheia = <span className="text-foreground">muro de OI</span>.
       </p>
 
       <div className="space-y-0.5">
@@ -98,42 +98,42 @@ export default function GammaOiProfile({
               title={`Strike ${fmtStrike(a.strike)} — Calls ${fmtOi(a.call)} · Puts ${fmtOi(a.put)}`}
             >
               <div className="flex h-3 flex-1 items-center justify-end gap-1">
-                {a.put > 0 && <span className="tabular-nums text-rose-300/50">{fmtOi(a.put)}</span>}
+                {a.put > 0 && <span className="num text-rose-600/70 dark:text-rose-400/50">{fmtOi(a.put)}</span>}
                 <div
-                  className={`h-2 rounded-l ${isPutWall ? "bg-signal-red" : "bg-signal-red/70"}`}
+                  className={`h-2 rounded-l ${isPutWall ? "bg-rose-500" : "bg-rose-500/70"}`}
                   style={{ width: `${putPct}%` }}
                 />
               </div>
               <div
-                className={`w-16 text-center tabular-nums ${
-                  isSpot ? "font-bold text-accent" : isMaxPain ? "font-semibold text-signal-yellow" : "text-slate-500"
+                className={`w-16 text-center num ${
+                  isSpot ? "font-bold text-primary" : isMaxPain ? "font-semibold text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                 }`}
               >
                 {fmtStrike(a.strike)}
               </div>
               <div className="flex h-3 flex-1 items-center gap-1">
                 <div
-                  className={`h-2 rounded-r ${isCallWall ? "bg-signal-green" : "bg-signal-green/70"}`}
+                  className={`h-2 rounded-r ${isCallWall ? "bg-emerald-500" : "bg-emerald-500/70"}`}
                   style={{ width: `${callPct}%` }}
                 />
-                {a.call > 0 && <span className="tabular-nums text-emerald-300/50">{fmtOi(a.call)}</span>}
+                {a.call > 0 && <span className="num text-emerald-600/70 dark:text-emerald-400/50">{fmtOi(a.call)}</span>}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[10px] text-slate-500">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
         <span>
-          ◀ Puts <span className="tabular-nums text-rose-300/80">{fmtOi(totalPut)}</span> · muro{" "}
-          <span className="text-slate-300">{fmtStrike(putWall.strike)}</span>
+          ◀ Puts <span className="num text-rose-600/80 dark:text-rose-400/80">{fmtOi(totalPut)}</span> · muro{" "}
+          <span className="text-foreground">{fmtStrike(putWall.strike)}</span>
         </span>
-        <span className="text-slate-600">
+        <span className="text-muted-foreground">
           {expiry ? `venc. ${new Date(expiry).toLocaleDateString("pt-BR")}` : ""} · OI em contratos
         </span>
         <span>
-          muro <span className="text-slate-300">{fmtStrike(callWall.strike)}</span> · Calls{" "}
-          <span className="tabular-nums text-emerald-300/80">{fmtOi(totalCall)}</span> ▶
+          muro <span className="text-foreground">{fmtStrike(callWall.strike)}</span> · Calls{" "}
+          <span className="num text-emerald-600/80 dark:text-emerald-400/80">{fmtOi(totalCall)}</span> ▶
         </span>
       </div>
     </div>

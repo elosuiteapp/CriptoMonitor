@@ -39,14 +39,14 @@ const clampPos = (c: number) => (Math.max(-1, Math.min(1, c)) + 1) / 2;
 function CorrGauge({ corr }: { corr: CorrVal | null }) {
   const c30 = corr?.c30 ?? null;
   const c90 = corr?.c90 ?? null;
-  const color = c30 == null ? "text-slate-500" : c30 > 0.05 ? "text-signal-green" : c30 < -0.05 ? "text-signal-red" : "text-slate-400";
+  const color = c30 == null ? "text-muted-foreground" : c30 > 0.05 ? "text-emerald-600 dark:text-emerald-400" : c30 < -0.05 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground";
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">correlação</span>
-        <span className={`text-xs font-semibold ${color}`}>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">correlação</span>
+        <span className={`num text-xs font-semibold ${color}`}>
           {c30 == null ? "sem dado ainda" : `${fmtCorr(c30)} · ${corrStrength(c30)} ${corrDir(c30)}`}
-          {c90 != null && <span className="ml-1 font-normal text-slate-500">· 90d {fmtCorr(c90)}</span>}
+          {c90 != null && <span className="ml-1 font-normal text-muted-foreground">· 90d {fmtCorr(c90)}</span>}
         </span>
       </div>
       <div
@@ -61,12 +61,12 @@ function CorrGauge({ corr }: { corr: CorrVal | null }) {
           />
         )}
         <div
-          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ink-900"
+          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-background"
           style={{ left: `${clampPos(c30 ?? 0) * 100}%` }}
           title={c30 == null ? "" : `30d ${fmtCorr(c30)}`}
         />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-600">
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
         <span>inversa (−1)</span>
         <span>0</span>
         <span>direta (+1)</span>
@@ -236,7 +236,7 @@ export default function MacroTab({ asset }: { asset: string }) {
 
   if (!macro.length) {
     return (
-      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-6 text-sm text-slate-500">
+      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
         Dados macro indisponíveis — aguardando coleta (a cada 30 min).
       </div>
     );
@@ -255,10 +255,10 @@ export default function MacroTab({ asset }: { asset: string }) {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-sm font-semibold text-slate-300">Macro & Correlações · {asset}</h2>
+      <h2 className="text-sm font-semibold text-foreground">Macro & Correlações · {asset}</h2>
 
       {synthesis && (
-        <div className="rounded-2xl border border-accent/30 bg-accent/5 p-4 text-sm text-slate-200">
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm text-foreground">
           <span className="mr-2">🧭</span>
           {synthesis}
         </div>
@@ -277,26 +277,26 @@ export default function MacroTab({ asset }: { asset: string }) {
         {showBtc && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">₿ Bitcoin <InfoTip text={MACRO_HELP.BTC} /></span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">₿ Bitcoin <InfoTip text={MACRO_HELP.BTC} /></span>
               <span className="text-xs text-amber-500/80">referência cripto</span>
             </div>
-            <div className="mt-0.5 text-xs text-slate-500">o maior motor das altcoins</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">o maior motor das altcoins</div>
             <CorrGauge corr={corr["BTC"] ?? null} />
           </div>
         )}
 
         {sortedMacro.map((m) => (
-          <div key={m.symbol} className="rounded-2xl border border-ink-600 bg-ink-800/60 p-4">
+          <div key={m.symbol} className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                 {m.name} <InfoTip text={MACRO_HELP[m.symbol] ?? ""} />
               </span>
-              <span className="text-xs text-slate-400">
+              <span className="num text-xs text-muted-foreground">
                 {m.price ?? "—"}
                 {m.symbol === "US10Y" ? "%" : ""}
               </span>
             </div>
-            <div className="mt-0.5 text-xs text-slate-500">
+            <div className="num mt-0.5 text-xs text-muted-foreground">
               7d {fmtPct((m.change_7d ?? 0) * 100, 1)} · 24h {fmtPct((m.change_24h ?? 0) * 100, 1)}
             </div>
             <CorrGauge corr={corr[m.symbol] ?? null} />
@@ -305,65 +305,65 @@ export default function MacroTab({ asset }: { asset: string }) {
       </div>
 
       {/* Como ler este painel */}
-      <div className="rounded-2xl border border-ink-600 bg-ink-800/40 p-4 text-xs text-slate-400">
-        <div className="font-semibold text-slate-300">Como ler este painel</div>
+      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4 text-xs text-muted-foreground">
+        <div className="font-semibold text-foreground">Como ler este painel</div>
         <ul className="mt-2 space-y-1.5">
           <li>
-            • <strong>Correlação</strong> vai de <span className="text-signal-red">−1 (anda ao contrário)</span> a{" "}
-            <span className="text-signal-green">+1 (anda junto)</span>; quanto maior o valor (em módulo), mais forte a relação.
+            • <strong>Correlação</strong> vai de <span className="text-rose-600 dark:text-rose-400">−1 (anda ao contrário)</span> a{" "}
+            <span className="text-emerald-600 dark:text-emerald-400">+1 (anda junto)</span>; quanto maior o valor (em módulo), mais forte a relação.
           </li>
           <li>
             • Marcador <strong>cheio = 30 dias</strong> (recente); <strong>fantasma = 90 dias</strong>. Se o de 30d está mais à
             direita que o de 90d, a relação está <strong>fortalecendo</strong>.
           </li>
           <li>
-            • <strong>Vento macro:</strong> seguir Nasdaq/S&P = <span className="text-signal-green">risco-on</span> · inversa ao
-            VIX = sensível ao <span className="text-signal-red">medo</span> · inversa ao DXY = sensível ao dólar · alts seguem o ₿ BTC.
+            • <strong>Vento macro:</strong> seguir Nasdaq/S&P = <span className="text-emerald-600 dark:text-emerald-400">risco-on</span> · inversa ao
+            VIX = sensível ao <span className="text-rose-600 dark:text-rose-400">medo</span> · inversa ao DXY = sensível ao dólar · alts seguem o ₿ BTC.
           </li>
-          <li>• Passe o mouse no <span className="cursor-help text-slate-300">ⓘ</span> de cada card para entender o que ele significa.</li>
+          <li>• Passe o mouse no <span className="cursor-help text-foreground">ⓘ</span> de cada card para entender o que ele significa.</li>
         </ul>
       </div>
 
       {/* Calendário econômico */}
-      <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-4">
+      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-slate-300">Calendário econômico (EUA)</h3>
-          <span className="text-[11px] text-slate-500">eventos que mexem com o macro</span>
+          <h3 className="text-sm font-semibold text-foreground">Calendário econômico (EUA)</h3>
+          <span className="text-[11px] text-muted-foreground">eventos que mexem com o macro</span>
         </div>
-        {events == null && <p className="mt-3 text-xs text-slate-500">Carregando…</p>}
+        {events == null && <p className="mt-3 text-xs text-muted-foreground">Carregando…</p>}
         {events && events.length === 0 && (
-          <p className="mt-3 text-xs text-slate-500">Sem eventos de alto/médio impacto nos próximos dias.</p>
+          <p className="mt-3 text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias.</p>
         )}
         <div className="mt-3 space-y-2">
           {events?.map((e, i) => {
             const cd = countdown(e.date);
             return (
-              <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-ink-700/60 px-3 py-2 text-xs">
+              <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-xs">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${e.impact === "High" ? "bg-signal-red" : "bg-signal-yellow"}`} />
-                  <span className="truncate text-slate-200">{e.title}</span>
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${e.impact === "High" ? "bg-rose-500" : "bg-amber-500"}`} />
+                  <span className="truncate text-foreground">{e.title}</span>
                   {cd && (
-                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-signal-red/40 text-signal-red" : "border-ink-500 text-slate-400"}`}>
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
                       {cd}
                     </span>
                   )}
                 </span>
-                <span className="flex shrink-0 items-center gap-3 text-slate-500">
+                <span className="flex shrink-0 items-center gap-3 text-muted-foreground">
                   {(e.forecast || e.previous) && (
-                    <span className="hidden md:inline">
+                    <span className="num hidden md:inline">
                       ant. {e.previous ?? "—"} · est. {e.forecast ?? "—"}
                     </span>
                   )}
-                  <span className="whitespace-nowrap text-slate-400">{fmtEvtDate(e.date)}</span>
+                  <span className="num whitespace-nowrap text-muted-foreground">{fmtEvtDate(e.date)}</span>
                 </span>
               </div>
             );
           })}
         </div>
-        <p className="mt-2 text-[10px] text-slate-600">Fonte: ForexFactory · USD, alto/médio impacto.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Fonte: ForexFactory · USD, alto/médio impacto.</p>
       </div>
 
-      <p className="text-xs text-slate-600">
+      <p className="text-xs text-muted-foreground">
         Correlação de Pearson dos retornos diários entre {asset} e cada referência (marcador cheio = 30d, fantasma = 90d).
         Cotações via Yahoo Finance.
       </p>

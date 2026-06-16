@@ -16,7 +16,7 @@ import AdminUsage from "./pages/admin/Usage";
 import AdminUsers from "./pages/admin/Users";
 
 function Loading() {
-  return <div className="grid h-full place-items-center text-slate-500">Carregando…</div>;
+  return <div className="grid h-full place-items-center text-muted-foreground">Carregando…</div>;
 }
 
 export default function App() {

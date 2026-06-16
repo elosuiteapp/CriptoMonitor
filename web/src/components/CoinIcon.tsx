@@ -18,7 +18,7 @@ export default function CoinIcon({ asset, size = 18 }: { asset: string; size?: n
   if (broken) {
     return (
       <span
-        className="inline-grid shrink-0 place-items-center rounded-full font-bold text-white"
+        className="inline-grid shrink-0 place-items-center rounded-full font-bold text-primary-foreground"
         style={{ width: size, height: size, background: BRAND[asset] ?? "#475569", fontSize: size * 0.42 }}
         aria-hidden
       >

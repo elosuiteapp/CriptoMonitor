@@ -65,13 +65,13 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
 
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">
+      <h2 className="mb-3 text-sm font-semibold text-foreground">
         {general ? "Notícias gerais do mercado" : `Notícias · ${asset}`}
       </h2>
       <div className="space-y-2">
-        {loading && <p className="text-sm text-slate-500">Carregando…</p>}
+        {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
         {!loading && items.length === 0 && (
-          <p className="text-sm text-slate-500">Sem notícias recentes.</p>
+          <p className="text-sm text-muted-foreground">Sem notícias recentes.</p>
         )}
         {items.map((n, i) => (
           <a
@@ -79,10 +79,10 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
             href={n.url}
             target="_blank"
             rel="noreferrer"
-            className="flex items-start justify-between gap-4 rounded-lg border border-ink-600 bg-ink-800/60 px-4 py-3 transition hover:border-ink-500"
+            className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card dark:bg-card/60 px-4 py-3 transition hover:border-border"
           >
-            <span className="text-sm text-slate-200">{n.title}</span>
-            <span className="shrink-0 text-right text-[10px] leading-tight text-slate-500">
+            <span className="text-sm text-foreground">{n.title}</span>
+            <span className="shrink-0 text-right text-[10px] leading-tight text-muted-foreground">
               {n.source}
               <br />
               {relativeTime(n.published_at)} ↗
@@ -90,7 +90,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
           </a>
         ))}
         {!plan?.advanced_metrics && items.length > 0 && (
-          <p className="text-[10px] text-slate-600">Mais notícias no plano Pro.</p>
+          <p className="text-[10px] text-muted-foreground">Mais notícias no plano Pro.</p>
         )}
       </div>
     </section>

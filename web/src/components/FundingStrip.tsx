@@ -6,17 +6,17 @@ import InfoTip from "./InfoTip";
 export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
   if (!data.length) {
     return (
-      <div className="rounded-lg border border-ink-600 bg-ink-800/40 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         Funding — aguardando coleta
       </div>
     );
   }
   const last = data[data.length - 1].value;
   return (
-    <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-2">
-      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
+    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1.5">Funding (faixa temporal) <InfoTip text="Funding ao longo do tempo: verde = comprados pagando (otimismo alavancado), vermelho = vendidos pagando. Faixas longas no mesmo lado sinalizam posicionamento esticado." /></span>
-        <span className={last >= 0 ? "text-signal-green" : "text-signal-red"}>
+        <span className={`num ${last >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
           atual {fmtPct(last * 100, 4)}
         </span>
       </div>
@@ -25,7 +25,7 @@ export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
           <div
             key={i}
             title={fmtPct(p.value * 100, 4)}
-            className={`h-full flex-1 ${p.value >= 0 ? "bg-signal-green/70" : "bg-signal-red/70"}`}
+            className={`h-full flex-1 ${p.value >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`}
           />
         ))}
       </div>

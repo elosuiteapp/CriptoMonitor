@@ -50,14 +50,14 @@ function profileBars(gamma: GammaData | null): Bar[] {
 
 function GammaCard({ title, label, level, value, info }: { title: string; label: string; level: "green" | "yellow" | "red" | "neutral"; value: string; info?: string }) {
   return (
-    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
+    <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${LEVEL_DOT[level]}`} />
-        <span className="text-xs uppercase tracking-wide text-slate-500">{title}</span>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">{title}</span>
         {info && <span className="ml-auto">{<InfoTip text={info} />}</span>}
       </div>
-      <div className="mt-2 text-lg font-semibold text-white">{value}</div>
-      <div className="mt-1 text-xs leading-snug text-slate-400">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-foreground num">{value}</div>
+      <div className="mt-1 text-xs leading-snug text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -67,7 +67,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
   if (!gamma) {
     return (
-      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-6 text-sm text-slate-500">
+      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
         Módulo Gamma indisponível — aguardando coleta de opções.
       </div>
     );
@@ -142,17 +142,17 @@ export default function GammaPanel({ gamma, asset }: Props) {
       </div>
 
       {/* Perfil de gamma por strike — Barras ou Linha (estilo SpotGamma) */}
-      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-3">
             <span>{VIEW_TITLE[view]}</span>
-            <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
+            <div className="flex gap-1 rounded-md bg-muted p-0.5">
               {(["bars", "line", "oi", "levels"] as ProfileView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
                   className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${
-                    view === v ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+                    view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {VIEW_LABEL[v]}
@@ -160,7 +160,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
               ))}
             </div>
           </div>
-          <span>GEX líquido no spot: {fmtUsd(gamma.net_gex_spot)}</span>
+          <span>GEX líquido no spot: <span className="num">{fmtUsd(gamma.net_gex_spot)}</span></span>
         </div>
 
         {view === "levels" ? (
@@ -170,7 +170,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
         ) : view === "line" ? (
           <GammaProfileLine gamma={gamma} />
         ) : bars.length === 0 ? (
-          <div className="text-xs text-slate-500">Sem dados de perfil.</div>
+          <div className="text-xs text-muted-foreground">Sem dados de perfil.</div>
         ) : (
           <div className="space-y-0.5">
             {bars.map((b) => {
@@ -180,13 +180,13 @@ export default function GammaPanel({ gamma, asset }: Props) {
               return (
                 <div key={b.strike} className="flex items-center gap-2 text-[10px]">
                   <div className="flex h-3 flex-1 items-center justify-end">
-                    {!positive && <div className="h-2 rounded-l bg-signal-red/80" style={{ width: `${pct}%` }} />}
+                    {!positive && <div className="h-2 rounded-l bg-rose-500/80" style={{ width: `${pct}%` }} />}
                   </div>
-                  <div className={`w-16 text-center tabular-nums ${isSpot ? "font-bold text-accent" : "text-slate-500"}`}>
+                  <div className={`w-16 text-center num ${isSpot ? "font-bold text-primary" : "text-muted-foreground"}`}>
                     {fmtStrike(b.strike)}
                   </div>
                   <div className="flex h-3 flex-1 items-center">
-                    {positive && <div className="h-2 rounded-r bg-signal-green/80" style={{ width: `${pct}%` }} />}
+                    {positive && <div className="h-2 rounded-r bg-emerald-500/80" style={{ width: `${pct}%` }} />}
                   </div>
                 </div>
               );
@@ -195,7 +195,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
         )}
 
         {view === "bars" && (
-          <div className="mt-2 flex justify-between text-[10px] text-slate-600">
+          <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
             <span>◀ Puts (suporte)</span>
             <span>Calls (resistência) ▶</span>
           </div>
@@ -204,8 +204,8 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
       {/* Fluxo de opções (proxy HIRO) — só BTC/ETH (fonte options_flow é Deribit) */}
       {asset !== "SOL" && (
-        <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
-          <div className="mb-2 text-xs text-slate-500">
+        <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+          <div className="mb-2 text-xs text-muted-foreground">
             Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min
           </div>
           <OptionsFlowChart asset={asset} />

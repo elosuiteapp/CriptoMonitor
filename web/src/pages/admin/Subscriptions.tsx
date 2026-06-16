@@ -21,8 +21,8 @@ export default function Subscriptions() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Assinaturas & Receita</h1>
-        <p className="text-sm text-slate-500">Receita recorrente, retenção e quebra por plano.</p>
+        <h1 className="text-2xl font-bold text-foreground">Assinaturas & Receita</h1>
+        <p className="text-sm text-muted-foreground">Receita recorrente, retenção e quebra por plano.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -44,7 +44,7 @@ export default function Subscriptions() {
         <SectionTitle hint="MRR por plano">Receita por plano</SectionTitle>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
+            <thead className="text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-2 font-medium">Plano</th>
                 <th className="py-2 text-right font-medium">Assinantes</th>
@@ -55,11 +55,11 @@ export default function Subscriptions() {
             </thead>
             <tbody>
               {o.plan_distribution.map((p) => (
-                <tr key={p.slug} className="border-t border-ink-700/60">
-                  <td className="py-2.5 text-slate-200">{p.name}</td>
-                  <td className="py-2.5 text-right text-slate-300">{fmtInt(p.count)}</td>
-                  <td className="py-2.5 text-right text-slate-300">{fmtBRL(p.mrr_cents)}</td>
-                  <td className="py-2.5 text-right text-slate-400">{fmtPct1(p.mrr_cents / totalMrr)}</td>
+                <tr key={p.slug} className="border-t border-border">
+                  <td className="py-2.5 text-foreground">{p.name}</td>
+                  <td className="num py-2.5 text-right text-muted-foreground">{fmtInt(p.count)}</td>
+                  <td className="num py-2.5 text-right text-muted-foreground">{fmtBRL(p.mrr_cents)}</td>
+                  <td className="num py-2.5 text-right text-muted-foreground">{fmtPct1(p.mrr_cents / totalMrr)}</td>
                   <td className="py-2.5 pl-4">
                     <HBar value={p.mrr_cents} max={maxMrr} color={PLAN_COLORS[p.slug] ?? "#6366f1"} />
                   </td>

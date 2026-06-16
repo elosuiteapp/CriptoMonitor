@@ -110,14 +110,14 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
     <div>
       <div className="relative">
         <div ref={ref} className="h-[260px] w-full" />
-        <div ref={emptyRef} className="absolute inset-0 grid place-items-center text-xs text-slate-500" style={{ display: "none" }}>
+        <div ref={emptyRef} className="absolute inset-0 grid place-items-center text-xs text-muted-foreground" style={{ display: "none" }}>
           Acumulando fluxo de opções (a cada 5 min).
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-500">
+      <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-emerald-500" />Fluxo subindo (hedge comprador: compra de call/venda de put)</span>
         <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-rose-500" />Fluxo caindo (hedge vendedor)</span>
-        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-slate-400" />Spot</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-muted-foreground" />Spot</span>
       </div>
     </div>
   );

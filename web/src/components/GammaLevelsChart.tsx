@@ -118,13 +118,13 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
         ) : (
           <span />
         )}
-        <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
+        <div className="flex gap-1 rounded-md bg-muted p-0.5">
           {[7, 30, 90].map((d) => (
             <button
               key={d}
               onClick={() => setDays(d)}
               className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
-                days === d ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+                days === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {d}d
@@ -134,7 +134,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
       </div>
 
       {data == null || data.length < 2 ? (
-        <div className="grid h-[300px] place-items-center text-xs text-slate-500">
+        <div className="grid h-[300px] place-items-center text-xs text-muted-foreground">
           Acumulando histórico de níveis (a cada 5 min) — janela de {days} dias.
         </div>
       ) : (
@@ -267,7 +267,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
         })()
       )}
 
-      <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-500">
+      <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
         {SERIES.map((s) => (
           <span key={s.key} className="flex items-center gap-1">
             <span className="h-1.5 w-3 rounded" style={{ background: s.color }} />
@@ -282,7 +282,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
           <span className="h-2.5 w-3 rounded" style={{ background: "rgba(239,68,68,0.3)" }} />
           regime − (volátil)
         </span>
-        <span className="text-slate-600">· fundo = spot vs Zero Gamma · ↑/↓ = parede fora da janela (valor real ao lado)</span>
+        <span className="text-muted-foreground">· fundo = spot vs Zero Gamma · ↑/↓ = parede fora da janela (valor real ao lado)</span>
       </div>
     </div>
   );

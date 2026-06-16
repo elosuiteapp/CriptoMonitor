@@ -25,8 +25,8 @@ export default function Plans() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-white">Planos</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-foreground">Planos</h1>
+        <p className="text-sm text-muted-foreground">
           Os limites do produto são parametrizados aqui — alterar um valor muda o gating na hora, sem deploy.
         </p>
       </div>
@@ -86,14 +86,14 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
     }
   }
 
-  const inputCls = "mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100";
-  const labelCls = "text-xs text-slate-400";
+  const inputCls = "mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+  const labelCls = "text-xs text-muted-foreground";
 
   return (
     <Card className="p-5">
       <div className="flex items-baseline justify-between">
         <SectionTitle hint={`slug: ${plan.slug}`}>{plan.name}</SectionTitle>
-        <span className="text-sm font-semibold text-slate-300">{fmtBRL(Math.round(parseFloat(priceReais || "0") * 100))}/mês</span>
+        <span className="num text-sm font-semibold text-foreground">{fmtBRL(Math.round(parseFloat(priceReais || "0") * 100))}/mês</span>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -114,11 +114,11 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
           <input type="number" min="1" value={snapMin} onChange={(e) => setSnapMin(e.target.value)} className={inputCls} />
         </label>
         <label className={labelCls}>
-          Limite diário de IA <span className="text-slate-600">(vazio = ilimitado)</span>
+          Limite diário de IA <span className="text-muted-foreground">(vazio = ilimitado)</span>
           <input type="number" min="0" value={aiLimit} onChange={(e) => setAiLimit(e.target.value)} className={inputCls} />
         </label>
         <label className={labelCls}>
-          Histórico (dias) <span className="text-slate-600">(vazio = completo)</span>
+          Histórico (dias) <span className="text-muted-foreground">(vazio = completo)</span>
           <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={inputCls} />
         </label>
       </div>
@@ -151,10 +151,10 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       </div>
 
       <div className="mt-5 flex items-center gap-3">
-        <button onClick={save} disabled={busy} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50">
+        <button onClick={save} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
           {busy ? "Salvando…" : "Salvar plano"}
         </button>
-        {msg && <span className="text-xs text-signal-green">{msg}</span>}
+        {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}
       </div>
       {err && <div className="mt-3"><ErrorBox message={err} /></div>}
     </Card>
@@ -167,7 +167,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-        active ? "border-accent bg-accent/15 text-accent" : "border-ink-500 text-slate-400 hover:bg-ink-700"
+        active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
       }`}
     >
       {children}
@@ -177,8 +177,8 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-300">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-accent" />
+    <label className="flex items-center gap-2 text-sm text-foreground">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-primary" />
       {label}
     </label>
   );

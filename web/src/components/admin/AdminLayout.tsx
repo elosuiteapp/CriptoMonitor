@@ -15,13 +15,13 @@ const NAV = [
 export default function AdminLayout() {
   const { signOut } = useAuth();
   return (
-    <div className="flex min-h-full flex-col bg-ink-900 md:flex-row">
+    <div className="flex min-h-full flex-col bg-background md:flex-row">
       {/* Sidebar */}
-      <aside className="shrink-0 border-b border-ink-600 bg-ink-800/60 md:w-60 md:border-b-0 md:border-r">
+      <aside className="shrink-0 border-b border-border bg-card dark:bg-card/60 md:w-60 md:border-b-0 md:border-r">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
-            <div className="text-sm font-bold text-white">Crypto Monitor</div>
-            <div className="text-xs text-accent">Administração</div>
+            <div className="text-sm font-bold text-foreground">Crypto Monitor</div>
+            <div className="text-xs text-primary">Administração</div>
           </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-2 pb-3 md:flex-col md:overflow-visible">
@@ -32,7 +32,7 @@ export default function AdminLayout() {
               end={item.end}
               className={({ isActive }) =>
                 `whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive ? "bg-accent/15 text-accent" : "text-slate-400 hover:bg-ink-700 hover:text-slate-200"
+                  isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`
               }
             >
@@ -40,11 +40,11 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="hidden border-t border-ink-600 px-4 py-3 md:block">
-          <Link to="/" className="block text-xs text-slate-400 hover:text-slate-200">
+        <div className="hidden border-t border-border px-4 py-3 md:block">
+          <Link to="/" className="block text-xs text-muted-foreground hover:text-foreground">
             ← Voltar ao app
           </Link>
-          <button onClick={() => signOut()} className="mt-2 block text-xs text-slate-500 hover:text-slate-300">
+          <button onClick={() => signOut()} className="mt-2 block text-xs text-muted-foreground hover:text-foreground">
             Sair
           </button>
         </div>

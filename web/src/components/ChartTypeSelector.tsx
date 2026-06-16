@@ -26,26 +26,26 @@ interface Props {
 export default function ChartTypeSelector({ chartType, onChartType, timeframe, onTimeframe }: Props) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex gap-1 rounded-lg bg-ink-700 p-1">
+      <div className="flex gap-1 rounded-lg bg-muted p-1">
         {TIMEFRAMES.map((tf) => (
           <button
             key={tf.id}
             onClick={() => onTimeframe(tf.id)}
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-              timeframe === tf.id ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+              timeframe === tf.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {tf.label}
           </button>
         ))}
       </div>
-      <div className="flex gap-1 rounded-lg bg-ink-700 p-1">
+      <div className="flex gap-1 rounded-lg bg-muted p-1">
         {TYPES.map((t) => (
           <button
             key={t.id}
             onClick={() => onChartType(t.id)}
             className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-              chartType === t.id ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+              chartType === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {t.label}

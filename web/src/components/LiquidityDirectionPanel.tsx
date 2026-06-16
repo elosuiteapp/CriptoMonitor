@@ -28,19 +28,19 @@ export default function LiquidityDirectionPanel({
   const dom = sc != null && macro?.total_mcap ? (sc / macro.total_mcap) * 100 : null;
 
   return (
-    <div className="rounded-xl border-2 border-accent/70 bg-ink-800/60 p-4 ring-1 ring-accent/15">
+    <div className="rounded-xl border-2 border-primary/70 bg-card dark:bg-card/60 p-4 ring-1 ring-primary/15">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
           Liquidez &amp; direção (DeFi) <InfoTip text={GLOSSARY.marketLiquidity} />
         </span>
-        <span className="text-[10px] text-slate-600">Fonte: DefiLlama · {relativeTime(updatedAt)}</span>
+        <span className="text-[10px] text-muted-foreground">Fonte: DefiLlama · {relativeTime(updatedAt)}</span>
       </div>
 
       {/* Stablecoins — dry powder */}
       <div className="mt-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm text-slate-200">Stablecoins (dry powder)</span>
-          <span className="text-xs text-slate-500">
+          <span className="text-sm text-foreground">Stablecoins (dry powder)</span>
+          <span className="num text-xs text-muted-foreground">
             {fmtUsd(sc)}
             {dom != null && ` · ${dom.toFixed(1)}% do mcap`}
           </span>
@@ -57,8 +57,8 @@ export default function LiquidityDirectionPanel({
       {/* Volume de DEX — especulação/atividade */}
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm text-slate-200">Volume DEX (24h)</span>
-          <span className="text-xs text-slate-500">{fmtUsd(liquidity.dex_volume_24h)}</span>
+          <span className="text-sm text-foreground">Volume DEX (24h)</span>
+          <span className="num text-xs text-muted-foreground">{fmtUsd(liquidity.dex_volume_24h)}</span>
         </div>
         <ForceGauge
           pos={posFromChg(liquidity.dex_change_7d, 60)}
@@ -72,8 +72,8 @@ export default function LiquidityDirectionPanel({
       {/* Fees / receita — uso real */}
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm text-slate-200">Fees / receita DeFi (24h)</span>
-          <span className="text-xs text-slate-500">{fmtUsd(liquidity.fees_24h)}</span>
+          <span className="text-sm text-foreground">Fees / receita DeFi (24h)</span>
+          <span className="num text-xs text-muted-foreground">{fmtUsd(liquidity.fees_24h)}</span>
         </div>
         <ForceGauge
           pos={posFromChg(liquidity.fees_change_7d, 40)}
@@ -84,7 +84,7 @@ export default function LiquidityDirectionPanel({
         />
       </div>
 
-      <p className="mt-3 text-[10px] text-slate-600">
+      <p className="mt-3 text-[10px] text-muted-foreground">
         Stablecoins subindo = combustível entrando · DEX aquecendo = mais especulação · fees subindo = uso real crescendo.
       </p>
     </div>

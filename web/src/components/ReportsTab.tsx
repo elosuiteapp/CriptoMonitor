@@ -19,7 +19,7 @@ const modelLabel = (m: string) =>
 function inline(s: string): ReactNode {
   return s.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
     p.startsWith("**") && p.endsWith("**") ? (
-      <strong key={i} className="text-slate-100">{p.slice(2, -2)}</strong>
+      <strong key={i} className="text-foreground">{p.slice(2, -2)}</strong>
     ) : (
       <span key={i}>{p}</span>
     ),
@@ -31,13 +31,13 @@ function MarkdownLite({ text }: { text: string }) {
   text.split("\n").forEach((line, i) => {
     const t = line.trim();
     if (!t) return out.push(<div key={i} className="h-2" />);
-    if (t.startsWith("## ")) return out.push(<h4 key={i} className="mt-3 mb-1 text-sm font-semibold text-white">{inline(t.slice(3))}</h4>);
-    if (t.startsWith("### ")) return out.push(<h5 key={i} className="mt-2 text-sm font-medium text-slate-200">{inline(t.slice(4))}</h5>);
-    if (t.startsWith("# ")) return out.push(<h4 key={i} className="mt-3 text-sm font-semibold text-white">{inline(t.slice(2))}</h4>);
+    if (t.startsWith("## ")) return out.push(<h4 key={i} className="mt-3 mb-1 text-sm font-semibold text-foreground">{inline(t.slice(3))}</h4>);
+    if (t.startsWith("### ")) return out.push(<h5 key={i} className="mt-2 text-sm font-medium text-foreground">{inline(t.slice(4))}</h5>);
+    if (t.startsWith("# ")) return out.push(<h4 key={i} className="mt-3 text-sm font-semibold text-foreground">{inline(t.slice(2))}</h4>);
     if (/^[-*]\s/.test(t)) return out.push(
-      <div key={i} className="flex gap-1.5 text-sm leading-relaxed text-slate-300"><span className="text-slate-500">•</span><span>{inline(t.slice(2))}</span></div>,
+      <div key={i} className="flex gap-1.5 text-sm leading-relaxed text-foreground"><span className="text-muted-foreground">•</span><span>{inline(t.slice(2))}</span></div>,
     );
-    out.push(<p key={i} className="text-sm leading-relaxed text-slate-300">{inline(t)}</p>);
+    out.push(<p key={i} className="text-sm leading-relaxed text-foreground">{inline(t)}</p>);
   });
   return <div>{out}</div>;
 }
@@ -99,14 +99,14 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-200">Relatórios diários · {asset}</h2>
-          <p className="text-xs text-slate-500">Gerados pela IA (Gemini) a partir do snapshot, gamma, macro e notícias.</p>
+          <h2 className="text-sm font-semibold text-foreground">Relatórios diários · {asset}</h2>
+          <p className="text-xs text-muted-foreground">Gerados pela IA (Gemini) a partir do snapshot, gamma, macro e notícias.</p>
         </div>
         {isExpert && (
           <button
             onClick={generate}
             disabled={generating}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {generating ? "Gerando…" : "✨ Gerar relatório agora"}
           </button>
@@ -114,20 +114,20 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
       </div>
 
       {!advanced && (
-        <div className="rounded-xl border border-accent/40 bg-accent/10 p-4 text-sm text-slate-200">
+        <div className="rounded-xl border border-primary/40 bg-primary/10 p-4 text-sm text-foreground">
           🔒 Desbloqueie os <strong>relatórios diários</strong> no plano <strong>Pro</strong> — leitura
           completa do dia (gamma, fluxo, macro e cenários) gerada pela IA.
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-signal-red/40 bg-signal-red/10 p-3 text-sm text-signal-red">{error}</div>
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400">{error}</div>
       )}
 
       {rows == null ? (
-        <p className="text-sm text-slate-500">Carregando…</p>
+        <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-6 text-sm text-slate-400">
+        <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
           {advanced
             ? isExpert
               ? "Nenhum relatório ainda. Clique em “Gerar relatório agora”."
@@ -140,22 +140,22 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
             const isOpen = open === r.id;
             const dt = new Date(r.created_at);
             return (
-              <div key={r.id} className="rounded-xl border border-ink-600 bg-ink-800/60">
+              <div key={r.id} className="rounded-xl border border-border bg-card dark:bg-card/60">
                 <button
                   onClick={() => setOpen(isOpen ? null : r.id)}
                   className="flex w-full items-center justify-between gap-3 p-4 text-left"
                 >
-                  <span className="flex items-center gap-2 text-sm text-slate-200">
-                    <span className="rounded bg-ink-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">Diário</span>
-                    {dt.toLocaleDateString("pt-BR")} · {dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  <span className="flex items-center gap-2 text-sm text-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Diário</span>
+                    <span className="num">{dt.toLocaleDateString("pt-BR")} · {dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
                   </span>
-                  <span className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
                     {modelLabel(r.model_used)}
                     <span>{isOpen ? "−" : "+"}</span>
                   </span>
                 </button>
                 {isOpen && (
-                  <div className="border-t border-ink-600 p-4">
+                  <div className="border-t border-border p-4">
                     <MarkdownLite text={r.content} />
                   </div>
                 )}

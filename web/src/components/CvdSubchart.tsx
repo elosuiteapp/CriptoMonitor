@@ -6,7 +6,7 @@ import { fmtUsd } from "../lib/format";
 export default function CvdSubchart({ data, title = "CVD do varejo" }: { data: SeriesPoint[]; title?: string }) {
   if (!data.length) {
     return (
-      <div className="rounded-lg border border-ink-600 bg-ink-800/40 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         {title} — aguardando coleta
       </div>
     );
@@ -18,10 +18,10 @@ export default function CvdSubchart({ data, title = "CVD do varejo" }: { data: S
   const last = data[data.length - 1].value;
 
   return (
-    <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-2">
-      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
+    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{title}</span>
-        <span className={last >= 0 ? "text-signal-green" : "text-signal-red"}>{fmtUsd(last)}</span>
+        <span className={`num ${last >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{fmtUsd(last)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-12 w-full">
         <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(148,163,184,0.2)" strokeWidth="0.3" />
@@ -35,7 +35,7 @@ export default function CvdSubchart({ data, title = "CVD do varejo" }: { data: S
               y={y}
               width={Math.max(0.5, bw - 0.3)}
               height={h}
-              className={p.value >= 0 ? "fill-signal-green/70" : "fill-signal-red/70"}
+              className={p.value >= 0 ? "fill-emerald-500/70 dark:fill-emerald-400/70" : "fill-rose-500/70 dark:fill-rose-400/70"}
             />
           );
         })}

@@ -81,11 +81,11 @@ export default function Pricing() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
       <div className="mb-8 text-center">
-        <Link to="/" className="text-sm text-slate-500 hover:underline">
+        <Link to="/" className="text-sm text-muted-foreground hover:underline">
           ← Voltar
         </Link>
-        <h1 className="mt-2 text-3xl font-bold text-white">Planos</h1>
-        <p className="mt-1 text-slate-500">O cockpit completo de decisões do trader.</p>
+        <h1 className="mt-2 text-3xl font-bold text-foreground">Planos</h1>
+        <p className="mt-1 text-muted-foreground">O cockpit completo de decisões do trader.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -93,15 +93,15 @@ export default function Pricing() {
           <div
             key={p.name}
             className={`rounded-2xl border p-6 ${
-              p.highlight ? "border-accent bg-accent/5" : "border-ink-600 bg-ink-800/60"
+              p.highlight ? "border-primary bg-primary/5" : "border-border bg-card dark:bg-card/60"
             }`}
           >
-            <h2 className="text-lg font-semibold text-white">{p.name}</h2>
-            <div className="mt-1 text-2xl font-bold text-white">{p.price}</div>
-            <ul className="mt-4 space-y-2 text-sm text-slate-300">
+            <h2 className="text-lg font-semibold text-foreground">{p.name}</h2>
+            <div className="mt-1 text-2xl font-bold text-foreground num">{p.price}</div>
+            <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               {p.features.map((f) => (
                 <li key={f} className="flex gap-2">
-                  <span className="text-signal-green">✓</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">✓</span>
                   {f}
                 </li>
               ))}
@@ -109,7 +109,7 @@ export default function Pricing() {
             {p.slug === "free" ? (
               <button
                 disabled
-                className="mt-6 w-full cursor-not-allowed rounded-lg border border-ink-500 py-2 text-sm font-semibold text-slate-500"
+                className="mt-6 w-full cursor-not-allowed rounded-lg border border-border py-2 text-sm font-semibold text-muted-foreground"
               >
                 Plano gratuito
               </button>
@@ -117,7 +117,7 @@ export default function Pricing() {
               <button
                 onClick={() => subscribe(p.slug as "pro" | "expert")}
                 disabled={busy !== null}
-                className="mt-6 w-full rounded-lg bg-accent py-2 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
+                className="mt-6 w-full rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {busy === p.slug ? "Redirecionando…" : "Assinar"}
               </button>
@@ -125,8 +125,8 @@ export default function Pricing() {
           </div>
         ))}
       </div>
-      {error && <p className="mt-4 text-center text-sm text-signal-red">{error}</p>}
-      <p className="mt-6 text-center text-xs text-slate-600">
+      {error && <p className="mt-4 text-center text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+      <p className="mt-6 text-center text-xs text-muted-foreground">
         Pagamento via PIX e cartão (Mercado Pago).
       </p>
     </div>

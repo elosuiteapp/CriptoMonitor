@@ -8,7 +8,7 @@ import { fmtUsd } from "../lib/format";
 export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
   if (data.length < 2) {
     return (
-      <div className="rounded-lg border border-ink-600 bg-ink-800/40 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         Liquidações realizadas (5 min) — aguardando coleta
       </div>
     );
@@ -23,13 +23,13 @@ export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
   const totShort = data.reduce((a, p) => a + p.short, 0);
 
   return (
-    <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-2">
-      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
+    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>Liquidações realizadas (5 min) · últimas ~12h</span>
         <span>
-          <span className="text-signal-green">shorts {fmtUsd(totShort)}</span>
-          <span className="mx-1 text-slate-600">·</span>
-          <span className="text-signal-red">longs {fmtUsd(totLong)}</span>
+          <span className="text-emerald-600 dark:text-emerald-400">shorts {fmtUsd(totShort)}</span>
+          <span className="mx-1 text-muted-foreground">·</span>
+          <span className="text-rose-600 dark:text-rose-400">longs {fmtUsd(totLong)}</span>
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-14 w-full">
@@ -40,8 +40,8 @@ export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
           const w = Math.max(0.5, bw - 0.3);
           return (
             <g key={i}>
-              {p.short > 0 && <rect x={i * bw} y={mid - hs} width={w} height={hs} className="fill-signal-green/80" />}
-              {p.long > 0 && <rect x={i * bw} y={mid} width={w} height={hl} className="fill-signal-red/80" />}
+              {p.short > 0 && <rect x={i * bw} y={mid - hs} width={w} height={hs} className="fill-emerald-500/80" />}
+              {p.long > 0 && <rect x={i * bw} y={mid} width={w} height={hl} className="fill-rose-500/80" />}
             </g>
           );
         })}

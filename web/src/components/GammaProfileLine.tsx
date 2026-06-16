@@ -49,7 +49,7 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
 
   if (all.length < 2 || spot == null) {
     return (
-      <div className="grid h-[300px] place-items-center text-xs text-slate-500">
+      <div className="grid h-[300px] place-items-center text-xs text-muted-foreground">
         Sem perfil de opções suficiente para desenhar a curva.
       </div>
     );
@@ -170,21 +170,21 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
       </div>
 
       {/* Legenda dos níveis com valor */}
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400">
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
         {levels.map((l) => (
           <span key={l.name} className="flex items-center gap-1">
             <span className="h-1.5 w-3 rounded" style={{ background: l.color }} />
-            {l.name}: <span className="tabular-nums text-slate-300">{fmtPrice(l.v)}</span>
+            {l.name}: <span className="num text-foreground">{fmtPrice(l.v)}</span>
           </span>
         ))}
       </div>
 
       {/* Como ler — onde os dealers estão e para onde o preço é puxado */}
-      <p className="mt-2 text-[11px] leading-snug text-slate-500">
-        À <span className="text-signal-green">direita do Ponto Zero</span> os dealers ficam{" "}
-        <span className="text-signal-green">comprados em gamma</span> (vendem altas/compram quedas → preço tende a grudar);
-        à <span className="text-signal-red">esquerda</span> ficam{" "}
-        <span className="text-signal-red">vendidos</span> (movimentos amplificam). O preço costuma ser puxado para as
+      <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+        À <span className="text-emerald-600 dark:text-emerald-400">direita do Ponto Zero</span> os dealers ficam{" "}
+        <span className="text-emerald-600 dark:text-emerald-400">comprados em gamma</span> (vendem altas/compram quedas → preço tende a grudar);
+        à <span className="text-rose-600 dark:text-rose-400">esquerda</span> ficam{" "}
+        <span className="text-rose-600 dark:text-rose-400">vendidos</span> (movimentos amplificam). O preço costuma ser puxado para as
         paredes (Put/Call) e para o Max Pain.
       </p>
     </div>

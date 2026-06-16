@@ -10,7 +10,7 @@ export default function AdminRoute() {
   const { isAdmin, loading: adminLoading } = useIsAdmin(user?.id);
 
   if (loading || adminLoading) {
-    return <div className="grid h-full place-items-center text-slate-500">Carregando…</div>;
+    return <div className="grid h-full place-items-center text-muted-foreground">Carregando…</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
   if (!isAdmin) return <Navigate to="/" replace />;

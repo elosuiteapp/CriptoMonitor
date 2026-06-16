@@ -337,11 +337,11 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
       {canUseLayers && layers.liquidations && (
         <>
-          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-ink-900/70 px-2 py-0.5 text-[10px] text-slate-400">
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             Heatmap de liquidações · estimativa (modelo de alavancagem)
           </div>
           {/* Legenda de intensidade (fraco → forte) */}
-          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-ink-900/60 px-1.5 py-0.5 text-[9px] text-slate-400">
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span>fraco</span>
             <span
               className="h-2 w-24 rounded"
@@ -351,13 +351,13 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           </div>
           <div
             ref={heatTipRef}
-            className="pointer-events-none absolute z-20 rounded bg-ink-900/95 px-2 py-1 text-[10px] text-slate-200 shadow-lg ring-1 ring-ink-600"
+            className="pointer-events-none absolute z-20 rounded bg-background/95 px-2 py-1 text-[10px] text-foreground shadow-lg ring-1 ring-border"
             style={{ display: "none" }}
           />
         </>
       )}
       {error && (
-        <div className="absolute inset-0 z-20 grid place-items-center text-sm text-slate-500">
+        <div className="absolute inset-0 z-20 grid place-items-center text-sm text-muted-foreground">
           Gráfico indisponível ({error})
         </div>
       )}

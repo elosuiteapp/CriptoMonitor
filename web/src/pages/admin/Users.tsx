@@ -43,14 +43,14 @@ export default function Users() {
     setPage(0);
   }
 
-  const selectCls = "rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100";
+  const selectCls = "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
 
   return (
     <div className="space-y-5">
       <div className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Usuários</h1>
-          <p className="text-sm text-slate-500">{fmtInt(total)} no total · clique em uma linha para gerenciar.</p>
+          <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
+          <p className="text-sm text-muted-foreground">{fmtInt(total)} no total · clique em uma linha para gerenciar.</p>
         </div>
       </div>
 
@@ -60,7 +60,7 @@ export default function Users() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Buscar por e-mail ou nome…"
-          className="min-w-[220px] flex-1 rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100"
+          className="min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
         />
         <select value={plan ?? ""} onChange={(e) => { setPlan(e.target.value || null); setPage(0); }} className={selectCls}>
           <option value="">Todos os planos</option>
@@ -74,11 +74,11 @@ export default function Users() {
           <option value="past_due">Em atraso</option>
           <option value="canceled">Cancelada</option>
         </select>
-        <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90">
+        <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
           Buscar
         </button>
         {(search || plan || status) && (
-          <button type="button" onClick={reset} className="text-xs text-slate-500 hover:text-slate-300">
+          <button type="button" onClick={reset} className="text-xs text-muted-foreground hover:text-foreground">
             Limpar
           </button>
         )}
@@ -89,7 +89,7 @@ export default function Users() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-ink-600 text-xs uppercase text-slate-500">
+            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Usuário</th>
                 <th className="px-4 py-3 font-medium">Plano</th>
@@ -105,21 +105,21 @@ export default function Users() {
                 <tr
                   key={u.id}
                   onClick={() => setSelected(u.id)}
-                  className="cursor-pointer border-b border-ink-700/60 hover:bg-ink-700/40"
+                  className="cursor-pointer border-b border-border hover:bg-muted"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-100">{u.email}</span>
+                      <span className="text-foreground">{u.email}</span>
                       {u.role === "admin" && <Badge tone="accent">admin</Badge>}
                     </div>
-                    {u.full_name && <div className="text-xs text-slate-500">{u.full_name}</div>}
+                    {u.full_name && <div className="text-xs text-muted-foreground">{u.full_name}</div>}
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{u.plan_name ?? "—"}</td>
+                  <td className="px-4 py-3 text-foreground">{u.plan_name ?? "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={u.sub_status} /></td>
-                  <td className="px-4 py-3 text-slate-400">{fmtDate(u.created_at)}</td>
-                  <td className="px-4 py-3 text-slate-400">{timeAgo(u.last_sign_in_at)}</td>
-                  <td className="px-4 py-3 text-right text-slate-300">{fmtInt(u.ai_30d)}</td>
-                  <td className="px-4 py-3 text-right text-slate-300">{fmtInt(u.alerts_active)}</td>
+                  <td className="num px-4 py-3 text-muted-foreground">{fmtDate(u.created_at)}</td>
+                  <td className="num px-4 py-3 text-muted-foreground">{timeAgo(u.last_sign_in_at)}</td>
+                  <td className="num px-4 py-3 text-right text-muted-foreground">{fmtInt(u.ai_30d)}</td>
+                  <td className="num px-4 py-3 text-right text-muted-foreground">{fmtInt(u.alerts_active)}</td>
                 </tr>
               ))}
             </tbody>
@@ -131,20 +131,20 @@ export default function Users() {
 
       {/* Paginação */}
       {pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-400">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>Página {page + 1} de {pages}</span>
           <div className="flex gap-2">
             <button
               disabled={page === 0}
               onClick={() => setPage((p) => Math.max(p - 1, 0))}
-              className="rounded-lg border border-ink-500 px-3 py-1.5 disabled:opacity-40 hover:bg-ink-700"
+              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40 hover:bg-muted"
             >
               Anterior
             </button>
             <button
               disabled={page + 1 >= pages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-lg border border-ink-500 px-3 py-1.5 disabled:opacity-40 hover:bg-ink-700"
+              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40 hover:bg-muted"
             >
               Próxima
             </button>

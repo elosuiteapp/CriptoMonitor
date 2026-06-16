@@ -89,32 +89,32 @@ export default function Alerts() {
   return (
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <Link to="/" className="text-sm text-slate-500 hover:underline">
+        <Link to="/" className="text-sm text-muted-foreground hover:underline">
           ← Voltar ao cockpit
         </Link>
-        <h1 className="mt-3 text-2xl font-bold text-white">Alertas</h1>
+        <h1 className="mt-3 text-2xl font-bold text-foreground">Alertas</h1>
 
         {!canCreate ? (
-          <div className="mt-6 rounded-2xl border border-ink-600 bg-ink-800/60 p-6 text-sm text-slate-400">
+          <div className="mt-6 rounded-2xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
             Alertas por e-mail estão disponíveis no <strong>Pro</strong> e WhatsApp no{" "}
             <strong>Expert</strong>.{" "}
-            <Link to="/pricing" className="text-accent hover:underline">
+            <Link to="/pricing" className="text-primary hover:underline">
               Ver planos →
             </Link>
           </div>
         ) : (
-          <form onSubmit={createAlert} className="mt-6 grid gap-3 rounded-2xl border border-ink-600 bg-ink-800/60 p-5 sm:grid-cols-2">
-            <label className="text-xs text-slate-400">
+          <form onSubmit={createAlert} className="mt-6 grid gap-3 rounded-2xl border border-border bg-card dark:bg-card/60 p-5 sm:grid-cols-2">
+            <label className="text-xs text-muted-foreground">
               Ativo
-              <select value={asset} onChange={(e) => setAsset(e.target.value)} className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100">
+              <select value={asset} onChange={(e) => setAsset(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground num">
                 {assets.map((a) => (
                   <option key={a} value={a}>{a}</option>
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-muted-foreground">
               Métrica
-              <select value={metric} onChange={(e) => setMetric(e.target.value)} className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100">
+              <select value={metric} onChange={(e) => setMetric(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
                 {METRICS.map((m) => (
                   <option key={m.id} value={m.id}>{m.label}</option>
                 ))}
@@ -122,32 +122,32 @@ export default function Alerts() {
             </label>
 
             {metric === "gamma_regime" ? (
-              <label className="text-xs text-slate-400 sm:col-span-2">
+              <label className="text-xs text-muted-foreground sm:col-span-2">
                 Quando o regime virar
-                <select value={regime} onChange={(e) => setRegime(e.target.value)} className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100">
+                <select value={regime} onChange={(e) => setRegime(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
                   <option value="negative">Negativo (movimentos amplificados)</option>
                   <option value="positive">Positivo (volatilidade amortecida)</option>
                 </select>
               </label>
             ) : (
               <>
-                <label className="text-xs text-slate-400">
+                <label className="text-xs text-muted-foreground">
                   Condição
-                  <select value={op} onChange={(e) => setOp(e.target.value)} className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100">
+                  <select value={op} onChange={(e) => setOp(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
                     <option value=">">acima de</option>
                     <option value="<">abaixo de</option>
                   </select>
                 </label>
-                <label className="text-xs text-slate-400">
+                <label className="text-xs text-muted-foreground">
                   Valor {metric === "funding" ? "(%)" : "(US$)"}
-                  <input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} required className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100" />
+                  <input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} required className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground num" />
                 </label>
               </>
             )}
 
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-muted-foreground">
               Canal
-              <select value={channel} onChange={(e) => setChannel(e.target.value)} className="mt-1 w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100">
+              <select value={channel} onChange={(e) => setChannel(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
                 {channels.map((c) => (
                   <option key={c} value={c}>{c === "email" ? "E-mail" : "WhatsApp"}</option>
                 ))}
@@ -155,25 +155,25 @@ export default function Alerts() {
             </label>
 
             <div className="flex items-end">
-              <button type="submit" disabled={busy} className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50">
+              <button type="submit" disabled={busy} className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                 {busy ? "…" : "Criar alerta"}
               </button>
             </div>
-            {error && <p className="text-sm text-signal-red sm:col-span-2">{error}</p>}
+            {error && <p className="text-sm text-rose-600 dark:text-rose-400 sm:col-span-2">{error}</p>}
           </form>
         )}
 
-        <h2 className="mt-8 text-sm font-semibold text-slate-300">Seus alertas</h2>
+        <h2 className="mt-8 text-sm font-semibold text-foreground">Seus alertas</h2>
         <div className="mt-3 space-y-2">
-          {rows.length === 0 && <p className="text-sm text-slate-500">Nenhum alerta criado.</p>}
+          {rows.length === 0 && <p className="text-sm text-muted-foreground">Nenhum alerta criado.</p>}
           {rows.map((r) => (
-            <div key={r.id} className="flex items-center justify-between rounded-lg border border-ink-600 bg-ink-800/60 px-4 py-3 text-sm">
-              <span className="text-slate-200">
+            <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card dark:bg-card/60 px-4 py-3 text-sm">
+              <span className="text-foreground">
                 <strong>{r.asset}</strong> · {r.metric}{" "}
                 {r.condition.equals ? `→ ${r.condition.equals}` : `${r.condition.op} ${r.condition.value}`}{" "}
-                <span className="text-slate-500">· {r.channel}</span>
+                <span className="text-muted-foreground">· {r.channel}</span>
               </span>
-              <button onClick={() => remove(r.id)} className="text-xs text-signal-red hover:underline">
+              <button onClick={() => remove(r.id)} className="text-xs text-rose-600 dark:text-rose-400 hover:underline">
                 Excluir
               </button>
             </div>

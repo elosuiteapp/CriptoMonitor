@@ -15,9 +15,9 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
-  { key: "gex", label: "Opções (Call/Put Wall)", color: "bg-signal-green", desc: "Strikes com maior gama (GEX): Call Wall = teto/resistência, Put Wall = piso/suporte onde os dealers tendem a segurar o preço." },
+  { key: "gex", label: "Opções (Call/Put Wall)", color: "bg-emerald-500", desc: "Strikes com maior gama (GEX): Call Wall = teto/resistência, Put Wall = piso/suporte onde os dealers tendem a segurar o preço." },
   { key: "zeroGamma", label: "Zero Gamma", color: "bg-purple-500", desc: "Nível onde o gama dos dealers vira de positivo para negativo. Acima: dealers amortecem (mercado mais calmo). Abaixo: amplificam (mais volátil)." },
-  { key: "maxPain", label: "Max Pain", color: "bg-signal-yellow", desc: "Preço onde o maior volume de opções expira sem valor. Perto do vencimento o preço tende a gravitar para cá (efeito ímã)." },
+  { key: "maxPain", label: "Max Pain", color: "bg-amber-500", desc: "Preço onde o maior volume de opções expira sem valor. Perto do vencimento o preço tende a gravitar para cá (efeito ímã)." },
   { key: "volumeProfile", label: "Volume Profile (POC)", color: "bg-sky-400", desc: "POC = preço com maior volume negociado no período (ímã de liquidez); VA High/Low delimitam 70% do volume." },
   { key: "orderbookWalls", label: "Paredes do book", color: "bg-amber-500", desc: "Grandes ordens no livro (Binance+Coinbase): paredes de compra = suporte, de venda = resistência." },
   { key: "funding", label: "Funding", color: "bg-sky-500", desc: "Taxa de financiamento dos perpétuos: positiva = comprados pagam (otimismo alavancado), negativa = vendidos pagam." },
@@ -28,7 +28,7 @@ const ITEMS: Item[] = [
 export default function LayerToggles({ layers, onToggle, locked }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-slate-500">Camadas:</span>
+      <span className="text-muted-foreground">Camadas:</span>
       {ITEMS.map((item) => {
         const active = !locked && layers[item.key];
         return (
@@ -36,10 +36,10 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
             key={item.key}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition ${
               locked
-                ? "cursor-not-allowed border-ink-500 text-slate-600"
+                ? "cursor-not-allowed border-border text-muted-foreground"
                 : active
-                  ? "border-accent/60 bg-accent/10 text-slate-100"
-                  : "border-ink-500 text-slate-400 hover:border-ink-400"
+                  ? "border-primary/60 bg-primary/10 text-foreground"
+                  : "border-border text-muted-foreground hover:border-border"
             }`}
           >
             <button
@@ -48,7 +48,7 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
               onClick={() => onToggle(item.key)}
               className="flex items-center gap-1.5 disabled:cursor-not-allowed"
             >
-              <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-slate-600"}`} />
+              <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-muted"}`} />
               {item.label}
               {locked && <span aria-hidden>🔒</span>}
             </button>
@@ -56,7 +56,7 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
           </span>
         );
       })}
-      {locked && <span className="text-slate-600">— disponível no Pro</span>}
+      {locked && <span className="text-muted-foreground">— disponível no Pro</span>}
     </div>
   );
 }

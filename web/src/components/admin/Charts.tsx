@@ -11,7 +11,7 @@ export function LineChart({
   stroke?: string;
   id?: string;
 }) {
-  if (!values.length) return <div style={{ height }} className="grid place-items-center text-xs text-slate-600">sem dados</div>;
+  if (!values.length) return <div style={{ height }} className="grid place-items-center text-xs text-muted-foreground">sem dados</div>;
   const w = 320;
   const h = height;
   const max = Math.max(...values, 1);
@@ -36,7 +36,7 @@ export function LineChart({
 }
 
 export function BarChart({ values, height = 72, color = "#6366f1" }: { values: number[]; height?: number; color?: string }) {
-  if (!values.length) return <div style={{ height }} className="grid place-items-center text-xs text-slate-600">sem dados</div>;
+  if (!values.length) return <div style={{ height }} className="grid place-items-center text-xs text-muted-foreground">sem dados</div>;
   const max = Math.max(...values, 1);
   return (
     <div className="flex items-end gap-px" style={{ height }}>
@@ -56,7 +56,7 @@ export function BarChart({ values, height = 72, color = "#6366f1" }: { values: n
 export function HBar({ value, max, color = "#6366f1" }: { value: number; max: number; color?: string }) {
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-ink-700">
+    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
     </div>
   );

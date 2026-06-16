@@ -23,10 +23,10 @@ export default function System() {
     <div className="space-y-5">
       <div className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Saúde do sistema</h1>
-          <p className="text-sm text-slate-500">Frescor e volume de cada fonte do pipeline de coleta.</p>
+          <h1 className="text-2xl font-bold text-foreground">Saúde do sistema</h1>
+          <p className="text-sm text-muted-foreground">Frescor e volume de cada fonte do pipeline de coleta.</p>
         </div>
-        <button onClick={() => reload()} className="rounded-lg border border-ink-500 px-3 py-1.5 text-sm text-slate-300 hover:bg-ink-700">
+        <button onClick={() => reload()} className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted">
           Atualizar
         </button>
       </div>
@@ -40,7 +40,7 @@ export default function System() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-ink-600 text-xs uppercase text-slate-500">
+            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Fonte</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -53,17 +53,17 @@ export default function System() {
               {rows.map((r) => {
                 const f = freshness(r.age_min);
                 return (
-                  <tr key={r.source} className="border-b border-ink-700/60">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-200">{r.source}</td>
+                  <tr key={r.source} className="border-b border-border">
+                    <td className="px-4 py-3 num text-xs text-foreground">{r.source}</td>
                     <td className="px-4 py-3">
-                      <span className="flex items-center gap-2 text-xs text-slate-400">
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ background: f.color }} />
                         {f.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{fmtDateTime(r.last_ts)}</td>
-                    <td className="px-4 py-3 text-slate-400">{timeAgo(r.last_ts)}</td>
-                    <td className="px-4 py-3 text-right text-slate-300">{fmtInt(Number(r.row_count))}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{fmtDateTime(r.last_ts)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{timeAgo(r.last_ts)}</td>
+                    <td className="px-4 py-3 text-right num text-foreground">{fmtInt(Number(r.row_count))}</td>
                   </tr>
                 );
               })}

@@ -44,7 +44,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   const latest = rows[0];
   if (!latest) {
     return (
-      <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4 text-sm text-slate-500">
+      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4 text-sm text-muted-foreground">
         Painel de volatilidade — acumulando dados (a cada 5 min).
       </div>
     );
@@ -67,8 +67,8 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   const maxIv = Math.max(1, ...TENORS.map((t) => term[t] ?? 0));
 
   return (
-    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+    <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Painel de volatilidade (opções)
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -103,29 +103,29 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           foot={latest.rv_30d != null ? `RV 30d: ${latest.rv_30d.toFixed(1)}%` : undefined}
         />
         {/* Term structure — mini-chart de barras por tenor */}
-        <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-3">
+        <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-3">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[tsRead.level]}`} />
-            <span className="text-[11px] uppercase tracking-wide text-slate-500">Term structure</span>
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Term structure</span>
             <span className="ml-auto">{<InfoTip text={GLOSSARY.termStructure} />}</span>
           </div>
           <div className="mt-2 space-y-1">
             {TENORS.map((t) => (
               <div key={t} className="flex items-center gap-1.5 text-[10px]">
-                <span className="w-7 text-slate-500">{t}</span>
-                <div className="h-2 flex-1 rounded bg-ink-700">
-                  <div className="h-2 rounded bg-accent/70" style={{ width: `${((term[t] ?? 0) / maxIv) * 100}%` }} />
+                <span className="num w-7 text-muted-foreground">{t}</span>
+                <div className="h-2 flex-1 rounded bg-muted">
+                  <div className="h-2 rounded bg-primary/70" style={{ width: `${((term[t] ?? 0) / maxIv) * 100}%` }} />
                 </div>
-                <span className="w-10 text-right tabular-nums text-slate-400">
+                <span className="num w-10 text-right text-muted-foreground">
                   {term[t] != null ? `${term[t].toFixed(0)}%` : "—"}
                 </span>
               </div>
             ))}
           </div>
-          <div className="mt-1.5 text-[10px] leading-snug text-slate-500">{tsRead.label}</div>
+          <div className="mt-1.5 text-[10px] leading-snug text-muted-foreground">{tsRead.label}</div>
         </div>
       </div>
-      <p className="mt-2 text-[10px] text-slate-600">
+      <p className="mt-2 text-[10px] text-muted-foreground">
         Fonte: {asset === "SOL" ? "Bybit (opções)" : "Deribit"} · {relativeTime(latest.ts)} · leitura informativa, não é recomendação.
       </p>
     </div>
@@ -134,15 +134,15 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
 
 function VolCard({ title, level, value, label, foot, info }: { title: string; level: Level; value: string; label: string; foot?: string; info?: string }) {
   return (
-    <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-3">
+    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-3">
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[level]}`} />
-        <span className="text-[11px] uppercase tracking-wide text-slate-500">{title}</span>
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</span>
         {info && <span className="ml-auto">{<InfoTip text={info} />}</span>}
       </div>
-      <div className="mt-1 text-lg font-semibold text-white">{value}</div>
-      <div className="mt-0.5 text-[11px] leading-snug text-slate-400">{label}</div>
-      {foot && <div className="mt-1 text-[10px] text-amber-400/80">{foot}</div>}
+      <div className="num mt-1 text-lg font-semibold text-foreground">{value}</div>
+      <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{label}</div>
+      {foot && <div className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">{foot}</div>}
     </div>
   );
 }

@@ -19,10 +19,10 @@ export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit }: Props
   return (
     <button
       onClick={() => navigate(`/analysis?asset=${asset}`)}
-      className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/20 transition hover:bg-accent/90"
+      className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:bg-primary/90"
     >
       ✨ O que está acontecendo?
-      {counter && <span className="text-xs font-normal text-indigo-200">({counter})</span>}
+      {counter && <span className="text-xs font-normal text-primary-foreground/80">({counter})</span>}
     </button>
   );
 }

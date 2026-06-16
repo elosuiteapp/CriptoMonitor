@@ -24,20 +24,20 @@ const TFS: { id: Timeframe; label: string }[] = [
 const TF_LABEL: Record<string, string> = { "1d": "1D", "4h": "4h", "1h": "1h" };
 
 const TONE_DOT: Record<Tone, string> = {
-  good: "bg-signal-green",
-  bad: "bg-signal-red",
-  warn: "bg-signal-yellow",
-  neutral: "bg-slate-500",
+  good: "bg-emerald-500",
+  bad: "bg-rose-500",
+  warn: "bg-amber-500",
+  neutral: "bg-muted",
 };
 
 const BIAS_TONE: Record<string, string> = {
-  bullish: "border-signal-green/40 text-signal-green",
-  bearish: "border-signal-red/40 text-signal-red",
-  neutral: "border-ink-500 text-slate-400",
+  bullish: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  bearish: "border-rose-500/40 text-rose-600 dark:text-rose-400",
+  neutral: "border-border text-muted-foreground",
 };
 
 const biasDot = (b: "bullish" | "bearish" | "neutral") =>
-  b === "bullish" ? "bg-signal-green" : b === "bearish" ? "bg-signal-red" : "bg-slate-500";
+  b === "bullish" ? "bg-emerald-500" : b === "bearish" ? "bg-rose-500" : "bg-muted";
 
 const LAYER_LABELS: { key: keyof SmcLayers; label: string; help: string }[] = [
   { key: "orderBlocks", label: "Order Blocks", help: "Order blocks — zonas onde a mão forte posicionou (última vela antes de um movimento forte). Viram suporte (demanda) ou resistência (oferta)." },
@@ -61,8 +61,8 @@ const READING_HELP: Record<string, string> = {
 };
 
 const CONF_STYLE: Record<string, string> = {
-  gamma: "border-accent/40 text-accent",
-  wall: "border-slate-500/40 text-slate-300",
+  gamma: "border-primary/40 text-primary",
+  wall: "border-border text-muted-foreground",
   vp: "border-sky-500/40 text-sky-400",
   liq: "border-amber-500/40 text-amber-400",
 };
@@ -239,22 +239,22 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-slate-300">Smart Money · {asset}</h2>
+          <h2 className="text-sm font-semibold text-foreground">Smart Money · {asset}</h2>
           <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>
             Viés: {bias === "bullish" ? "alta" : bias === "bearish" ? "baixa" : "indefinido"}
             <InfoTip text={GLOSSARY.bias} />
           </span>
-          <span className="flex items-center gap-1 text-[11px] text-slate-500" title="Atualiza automaticamente a cada 60s">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-green" /> ao vivo
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground" title="Atualiza automaticamente a cada 60s">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> ao vivo
           </span>
         </div>
-        <div className="flex gap-1 rounded-lg border border-ink-600 bg-ink-800/60 p-0.5">
+        <div className="flex gap-1 rounded-lg border border-border bg-card dark:bg-card/60 p-0.5">
           {TFS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTf(t.id)}
               className={`rounded-md px-3 py-1 text-xs transition-colors ${
-                tf === t.id ? "bg-accent/20 text-accent" : "text-slate-400 hover:text-slate-200"
+                tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {t.label}
@@ -265,13 +265,13 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Tendência (top-down):
             <InfoTip text="Viés da estrutura em vários timeframes (1D/4h/1h). Operar a favor do timeframe maior aumenta a chance — princípio nº1 do Smart Money." />
           </span>
           {mtf.length === 0 ? (
-            <span className="text-xs text-slate-600">calculando…</span>
+            <span className="text-xs text-muted-foreground">calculando…</span>
           ) : (
             mtf.map((m) => (
               <span key={m.tf} className={`rounded-full border px-2 py-0.5 text-xs ${BIAS_TONE[m.bias]}`}>
@@ -284,21 +284,21 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-signal-red/40 bg-signal-red/10 p-4 text-sm text-signal-red">{error}</div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-400">{error}</div>
       )}
 
       {/* Leitura automática em PT */}
       {narrative.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
           {narrative.map((l, i) => (
-            <div key={i} className="flex gap-2 rounded-xl border border-ink-600 bg-ink-800/60 p-3">
+            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card dark:bg-card/60 p-3">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[l.tone]}`} />
               <div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                   {l.title}
                   {READING_HELP[l.title] && <InfoTip text={READING_HELP[l.title]} />}
                 </div>
-                <div className="text-xs text-slate-400">{l.text}</div>
+                <div className="text-xs text-muted-foreground">{l.text}</div>
               </div>
             </div>
           ))}
@@ -306,14 +306,14 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       )}
 
       {/* Gráfico SMC */}
-      <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
+      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
         {/* Toggles de camadas */}
         <div className="mb-2 flex flex-wrap gap-1.5">
           {LAYER_LABELS.map(({ key, label, help }) => (
             <span
               key={key}
               className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                layers[key] ? "border-accent/40 bg-accent/15 text-accent" : "border-ink-500 text-slate-500"
+                layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
               }`}
             >
               <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
@@ -324,27 +324,27 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           ))}
         </div>
         {loading && candles.length === 0 ? (
-          <div className="grid h-[380px] place-items-center text-sm text-slate-500">Carregando estrutura…</div>
+          <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
           <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} />
         )}
-        <p className="mt-2 px-1 text-[11px] text-slate-500">
-          Zonas: <span className="text-signal-green">verde</span> = demanda/discount ·{" "}
-          <span className="text-signal-red">vermelho</span> = oferta/premium ·{" "}
+        <p className="mt-2 px-1 text-[11px] text-muted-foreground">
+          Zonas: <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount ·{" "}
+          <span className="text-rose-600 dark:text-rose-400">vermelho</span> = oferta/premium ·{" "}
           <span className="text-amber-500">âmbar</span> = liquidez · <span className="text-purple-400">violeta</span> = imbalance (FVG) ·
           EQH/EQL = topos/fundos iguais · setas = BOS/CHoCH. Tudo calculado dos candles.
         </p>
       </div>
 
       {/* Tabela de níveis-chave com confluência */}
-      <div className="overflow-hidden rounded-2xl border border-ink-600 bg-ink-800/60">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
         <div className="flex items-baseline justify-between px-4 py-3">
-          <h3 className="text-sm font-semibold text-slate-300">Níveis-chave por confluência</h3>
-          <span className="text-xs text-slate-500">SMC × book × gamma × POC × liquidação — ordenado por distância</span>
+          <h3 className="text-sm font-semibold text-foreground">Níveis-chave por confluência</h3>
+          <span className="text-xs text-muted-foreground">SMC × book × gamma × POC × liquidação — ordenado por distância</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-ink-600 text-xs uppercase text-slate-500">
+            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Nível</th>
                 <th className="px-4 py-2 text-right font-medium">Preço</th>
@@ -357,8 +357,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
               {keyLevels.slice(0, 14).map((lvl, i) => (
                 <tr
                   key={i}
-                  className={`border-b border-ink-700/60 ${
-                    lvl.confluence.some((c) => c.strength === "exact") || lvl.confluence.length >= 2 ? "bg-accent/5" : ""
+                  className={`border-b border-border ${
+                    lvl.confluence.some((c) => c.strength === "exact") || lvl.confluence.length >= 2 ? "bg-primary/5" : ""
                   } ${lvl.swept ? "opacity-50" : ""}`}
                 >
                   <td
@@ -367,18 +367,18 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                   >
                     <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 shrink-0 rounded-full ${biasDot(lvl.bias)}`} />
-                      <span className="text-slate-200">{lvl.label}</span>
+                      <span className="text-foreground">{lvl.label}</span>
                     </div>
-                    {lvl.note && <div className="pl-4 text-[11px] text-slate-500">{lvl.note}</div>}
+                    {lvl.note && <div className="pl-4 text-[11px] text-muted-foreground">{lvl.note}</div>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-slate-300">{fmtPrice(lvl.price)}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-slate-400">
+                  <td className="num whitespace-nowrap px-4 py-2.5 text-right text-foreground">{fmtPrice(lvl.price)}</td>
+                  <td className="num whitespace-nowrap px-4 py-2.5 text-right text-muted-foreground">
                     {lvl.distancePct >= 0 ? "+" : ""}
                     {lvl.distancePct.toFixed(1)}%
                   </td>
                   <td className="px-4 py-2.5">
                     {lvl.confluence.length === 0 ? (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-muted-foreground">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {lvl.confluence.map((c, j) => (
@@ -401,8 +401,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                       onClick={() => createAlert(lvl, i)}
                       className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
                         alertedIdx === i
-                          ? "border-signal-green/40 text-signal-green"
-                          : "border-ink-500 text-slate-400 hover:bg-ink-700 hover:text-slate-200"
+                          ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       {alertedIdx === i ? "✓ criado" : "🔔 alerta"}
@@ -414,20 +414,20 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           </table>
         </div>
         {!loading && keyLevels.length === 0 && (
-          <div className="grid place-items-center py-8 text-sm text-slate-500">Sem níveis suficientes neste timeframe.</div>
+          <div className="grid place-items-center py-8 text-sm text-muted-foreground">Sem níveis suficientes neste timeframe.</div>
         )}
       </div>
       {alertError ? (
-        <p className="text-xs text-signal-red">{alertError}</p>
+        <p className="text-xs text-rose-600 dark:text-rose-400">{alertError}</p>
       ) : (
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-muted-foreground">
           🔔 cria um alerta de preço no nível (toque acima → dispara na subida; abaixo → na descida). Gerencie em{" "}
-          <Link to="/alerts" className="text-accent hover:underline">Alertas</Link>.
+          <Link to="/alerts" className="text-primary hover:underline">Alertas</Link>.
         </p>
       )}
 
       {/* Nota on-chain (futuro) */}
-      <p className="text-[11px] text-slate-600">
+      <p className="text-[11px] text-muted-foreground">
         Em breve: camada on-chain (exchange netflow, whale alerts, MVRV, unlocks) quando houver fonte de dados dedicada.
       </p>
     </section>
@@ -439,12 +439,12 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
   const range = smc.trailingTop - smc.trailingBottom;
   const pos = range > 0 ? Math.max(0, Math.min(1, (smc.price - smc.trailingBottom) / range)) : 0.5;
   const zone = smc.price >= smc.premium.bottom ? "Premium" : smc.price <= smc.discount.top ? "Discount" : "Equilíbrio";
-  const zoneColor = zone === "Premium" ? "text-signal-red" : zone === "Discount" ? "text-signal-green" : "text-slate-400";
+  const zoneColor = zone === "Premium" ? "text-rose-600 dark:text-rose-400" : zone === "Discount" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground";
   return (
-    <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
+    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
       <div className="flex items-center justify-between text-xs">
-        <span className="flex items-center gap-1.5 text-slate-400">Posição no range <InfoTip text={GLOSSARY.rangePosition} /></span>
-        <span className={zoneColor}>
+        <span className="flex items-center gap-1.5 text-muted-foreground">Posição no range <InfoTip text={GLOSSARY.rangePosition} /></span>
+        <span className={`num ${zoneColor}`}>
           {(pos * 100).toFixed(0)}% · {zone}
         </span>
       </div>
@@ -453,11 +453,11 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
         style={{ background: "linear-gradient(to right, rgba(34,197,94,0.5), rgba(148,163,184,0.3), rgba(239,68,68,0.5))" }}
       >
         <div
-          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ink-900"
+          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-border bg-background"
           style={{ left: `${pos * 100}%` }}
         />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
         <span>Discount</span>
         <span>Equilíbrio</span>
         <span>Premium</span>
