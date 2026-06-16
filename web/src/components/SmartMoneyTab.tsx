@@ -7,6 +7,7 @@ import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePerpContext } from "../hooks/usePerpContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
+import { useUnlocks } from "../hooks/useUnlocks";
 import { fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, type Candle, type Timeframe } from "../lib/marketData";
@@ -138,6 +139,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const cvdSeries = useCvd(smcAsset, tf, layers.cvd);
   // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
   const perp = usePerpContext(smcAsset);
+  // On-chain: próximo token unlock (DefiLlama) — evento de oferta.
+  const unlock = useUnlocks(smcAsset);
   // Estrutura SMC do timeframe MAIOR (confluência top-down).
   const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
   // Radar de eventos SMC (in-app): avisa BOS/CHoCH/varredura novos com a aba aberta.
@@ -414,6 +417,41 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
               <InfoTip text="Open Interest: valor total em contratos perpétuos abertos (Binance Futures). Subindo junto com o preço = posições novas; subindo contra o preço = atenção a squeeze." />
             </span>
           )}
+        </div>
+      )}
+
+      {/* On-chain: próximo token unlock (DefiLlama) — evento de oferta */}
+      {unlock && (
+        <div
+          className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
+            unlock.pctOfSupply >= 1
+              ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400"
+              : "border-border bg-card text-foreground dark:bg-card/60"
+          }`}
+        >
+          <span aria-hidden className="mt-px">🔓</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-semibold">
+              On-chain · Próximo unlock — {smcAsset}
+              <InfoTip text="Token unlock: liberação programada de tokens em vesting. Liberações grandes (>1% do supply) tendem a gerar pressão vendedora. Fonte: DefiLlama (on-chain)." />
+            </div>
+            <div className={unlock.pctOfSupply >= 1 ? "" : "text-muted-foreground"}>
+              <span className="num">{new Date(unlock.date).toLocaleDateString("pt-BR")}</span> (em{" "}
+              <span className="num">{Math.max(0, Math.round((unlock.date - Date.now()) / 86400000))}</span>d)
+              {unlock.pctOfSupply > 0 && (
+                <>
+                  {" "}
+                  · <span className="num">{unlock.pctOfSupply.toFixed(2)}%</span> do supply
+                </>
+              )}
+              {smc?.price ? (
+                <>
+                  {" "}
+                  · ~<span className="num">{fmtUsd(unlock.tokens * smc.price)}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
         </div>
       )}
 
