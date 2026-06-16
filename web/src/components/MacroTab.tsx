@@ -120,6 +120,26 @@ function fmtEvtDate(iso: string): string {
   return d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// Explicação por referência (tooltip no ⓘ de cada card)
+const MACRO_HELP: Record<string, string> = {
+  BTC: "Bitcoin é o principal motor das altcoins. Correlação alta (+) = a moeda segue o BTC; baixa = anda mais por conta própria.",
+  DXY: "Índice do dólar (força do dólar). Cripto costuma ser inversa: quando o dólar cai (−), a cripto tende a subir.",
+  SPX: "S&P 500 — as 500 maiores empresas dos EUA, termômetro de risco. Correlação alta (+) = a moeda anda como ativo de risco (risco-on).",
+  NASDAQ: "Nasdaq — bolsa de tecnologia, o ativo tradicional mais parecido com cripto. Correlação alta (+) = perfil risco-on/tech.",
+  GOLD: "Ouro — reserva de valor clássica. Correlação direta (+) sugere a moeda sendo tratada como 'ouro digital' / proteção.",
+  US10Y: "Juro de 10 anos dos EUA (custo do dinheiro). Juros subindo pressionam ativos de risco — correlação inversa (−) é comum.",
+  VIX: "VIX — índice do medo do mercado. Correlação inversa forte (−) = a moeda cai quando o pânico aumenta.",
+};
+
+function Info({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <span title={text} aria-label={text} className="cursor-help text-slate-500 hover:text-slate-300">
+      ⓘ
+    </span>
+  );
+}
+
 /** Aba "Macro & Correlações" (PRD §8.7 / §8.8.3) — Pro+. */
 export default function MacroTab({ asset }: { asset: string }) {
   const [macro, setMacro] = useState<MacroAssetRow[]>([]);
@@ -211,7 +231,7 @@ export default function MacroTab({ asset }: { asset: string }) {
         {showBtc && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm font-semibold text-slate-200">₿ Bitcoin</span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">₿ Bitcoin <Info text={MACRO_HELP.BTC} /></span>
               <span className="text-xs text-amber-500/80">referência cripto</span>
             </div>
             <div className="mt-0.5 text-xs text-slate-500">o maior motor das altcoins</div>
@@ -222,7 +242,9 @@ export default function MacroTab({ asset }: { asset: string }) {
         {sortedMacro.map((m) => (
           <div key={m.symbol} className="rounded-2xl border border-ink-600 bg-ink-800/60 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm font-semibold text-slate-200">{m.name}</span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">
+                {m.name} <Info text={MACRO_HELP[m.symbol] ?? ""} />
+              </span>
               <span className="text-xs text-slate-400">
                 {m.price ?? "—"}
                 {m.symbol === "US10Y" ? "%" : ""}
@@ -234,6 +256,26 @@ export default function MacroTab({ asset }: { asset: string }) {
             <CorrGauge corr={corr[m.symbol] ?? null} />
           </div>
         ))}
+      </div>
+
+      {/* Como ler este painel */}
+      <div className="rounded-2xl border border-ink-600 bg-ink-800/40 p-4 text-xs text-slate-400">
+        <div className="font-semibold text-slate-300">Como ler este painel</div>
+        <ul className="mt-2 space-y-1.5">
+          <li>
+            • <strong>Correlação</strong> vai de <span className="text-signal-red">−1 (anda ao contrário)</span> a{" "}
+            <span className="text-signal-green">+1 (anda junto)</span>; quanto maior o valor (em módulo), mais forte a relação.
+          </li>
+          <li>
+            • Marcador <strong>cheio = 30 dias</strong> (recente); <strong>fantasma = 90 dias</strong>. Se o de 30d está mais à
+            direita que o de 90d, a relação está <strong>fortalecendo</strong>.
+          </li>
+          <li>
+            • <strong>Vento macro:</strong> seguir Nasdaq/S&P = <span className="text-signal-green">risco-on</span> · inversa ao
+            VIX = sensível ao <span className="text-signal-red">medo</span> · inversa ao DXY = sensível ao dólar · alts seguem o ₿ BTC.
+          </li>
+          <li>• Passe o mouse no <span className="cursor-help text-slate-300">ⓘ</span> de cada card para entender o que ele significa.</li>
+        </ul>
       </div>
 
       {/* Calendário econômico */}
