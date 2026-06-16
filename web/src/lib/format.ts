@@ -418,18 +418,27 @@ export function readOptionsPositioning(
 }
 
 // ─── Utilidades de UI ────────────────────────────────────────────────────────
+// Semáforo refinado (institucional): emerald/amber/rose em vez das cores cruas.
 export const LEVEL_DOT: Record<Level, string> = {
-  green: "bg-signal-green",
-  yellow: "bg-signal-yellow",
-  red: "bg-signal-red",
-  neutral: "bg-slate-500",
+  green: "bg-emerald-500",
+  yellow: "bg-amber-500",
+  red: "bg-rose-500",
+  neutral: "bg-slate-400 dark:bg-slate-500",
 };
 
 export const LEVEL_RING: Record<Level, string> = {
-  green: "ring-signal-green/40",
-  yellow: "ring-signal-yellow/40",
-  red: "ring-signal-red/40",
-  neutral: "ring-slate-600/40",
+  green: "ring-emerald-500/40",
+  yellow: "ring-amber-500/40",
+  red: "ring-rose-500/40",
+  neutral: "ring-slate-400/40",
+};
+
+/** Cor de TEXTO por nível (claro/escuro) — para valores numéricos e rótulos. */
+export const LEVEL_TEXT: Record<Level, string> = {
+  green: "text-emerald-600 dark:text-emerald-400",
+  yellow: "text-amber-600 dark:text-amber-400",
+  red: "text-rose-600 dark:text-rose-400",
+  neutral: "text-muted-foreground",
 };
 
 export const ASSET_NAME: Record<string, string> = {

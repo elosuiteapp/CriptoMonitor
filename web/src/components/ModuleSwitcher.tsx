@@ -19,23 +19,21 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-lg border border-ink-500 bg-ink-700/60 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-ink-600"
+        className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-muted"
         title="Módulo de mercado"
       >
         <span aria-hidden className="text-base leading-none">
           {active.icon}
         </span>
         <span>{active.label}</span>
-        <span className="text-xs text-slate-400">▾</span>
+        <span className="text-xs text-muted-foreground">▾</span>
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-ink-600 bg-ink-800 p-1 shadow-2xl">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Módulo de mercado
-            </p>
+          <div className="absolute left-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-2xl">
+            <p className="px-3 pb-1 pt-2 section-title">Módulo de mercado</p>
 
             {MODULES.map((m) => {
               const isActive = m.id === current;
@@ -49,15 +47,15 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
                     {m.icon}
                   </span>
                   <span className="flex flex-col">
-                    <span className="flex items-center gap-1.5 font-medium text-slate-100">
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
                       {m.label}
                       {!m.available && (
-                        <span className="rounded-full border border-ink-500 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        <span className="rounded-full border border-border px-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                           Em breve
                         </span>
                       )}
                     </span>
-                    <span className="text-[11px] text-slate-500">{m.description}</span>
+                    <span className="text-[11px] text-muted-foreground">{m.description}</span>
                   </span>
                 </span>
               );
@@ -82,15 +80,15 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
                     onChange(m.id);
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-ink-700 ${
-                    isActive ? "bg-accent/15" : ""
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted ${
+                    isActive ? "bg-primary/10" : ""
                   }`}
                 >
                   {head}
                   {isActive ? (
-                    <span className="text-accent">✓</span>
+                    <span className="text-primary">✓</span>
                   ) : !m.available && isAdmin ? (
-                    <span className="rounded-full bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                    <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                       admin
                     </span>
                   ) : null}
@@ -99,7 +97,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
             })}
 
             {!isAdmin && (
-              <p className="px-3 pb-2 pt-1 text-[11px] text-slate-600">
+              <p className="px-3 pb-2 pt-1 text-[11px] text-muted-foreground">
                 Novos módulos serão liberados conforme seu plano.
               </p>
             )}

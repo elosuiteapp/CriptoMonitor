@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crypto Monitor — Cockpit do trader</title>
+    <!-- Aplica o tema antes do React montar (evita flash claro/escuro). Padrão: escuro. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("cm.theme");
+          document.documentElement.classList.toggle("dark", t ? t === "dark" : true);
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

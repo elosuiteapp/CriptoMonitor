@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LEVEL_DOT, relativeTime } from "../lib/format";
 import type { Reading } from "../lib/format";
 import InfoTip from "./InfoTip";
+import Card from "./ui/Card";
 
 interface Props {
   title: string;
@@ -12,7 +13,7 @@ interface Props {
   source?: string;
   /** Timestamp do snapshot que originou a leitura (§8.6.5). */
   timestamp?: string | null;
-  /** Card de leitura institucional (spot/smart money): ganha borda de destaque + selo. */
+  /** Card de leitura institucional (spot/smart money): ganha destaque + selo. */
   institutional?: boolean;
   /** Explicação do termo (tooltip ⓘ ao lado do título). */
   info?: string;
@@ -23,43 +24,39 @@ interface Props {
 export default function MetricCard({ title, reading, expanded, source, timestamp, institutional, info }: Props) {
   const [open, setOpen] = useState(false);
   return (
-    <div
-      className={`rounded-xl bg-ink-800/60 p-4 ${
-        institutional ? "border-2 border-accent/70 ring-1 ring-accent/15" : "border border-ink-600"
-      }`}
-    >
+    <Card highlight={institutional} className="p-4">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-3 text-left">
         <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${LEVEL_DOT[reading.level]}`} />
         <span className="flex-1">
-          <span className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-500">
+          <span className="section-title flex items-center gap-1.5">
             {title}
             {info && <InfoTip text={info} />}
           </span>
-          <span className="mt-0.5 block text-sm text-slate-100">{reading.label}</span>
+          <span className="mt-0.5 block text-sm text-foreground">{reading.label}</span>
         </span>
-        <span className="text-xs text-slate-600">{open ? "−" : "+"}</span>
+        <span className="text-xs text-muted-foreground">{open ? "−" : "+"}</span>
       </button>
 
       {open && (
-        <div className="mt-3 border-t border-ink-600 pt-3 text-xs text-slate-400">
-          <div className="font-mono text-slate-300">{reading.detail}</div>
+        <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+          <div className="num text-foreground">{reading.detail}</div>
           {expanded}
         </div>
       )}
 
       {(source || timestamp || institutional) && (
-        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600">
+        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1.5">
             {institutional && (
-              <span className="rounded bg-accent/20 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-accent">
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-primary">
                 Institucional
               </span>
             )}
             {source && <span>Fonte: {source}</span>}
           </span>
-          <span>{relativeTime(timestamp)}</span>
+          <span className="num">{relativeTime(timestamp)}</span>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

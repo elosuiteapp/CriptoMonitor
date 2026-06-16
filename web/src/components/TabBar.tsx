@@ -20,7 +20,7 @@ export default function TabBar({ tab, onTab, advanced, canSmart }: Props) {
     (need === "pro" && !advanced) || (need === "expert" && !canSmart);
 
   return (
-    <div className="flex flex-wrap gap-1 border-b border-ink-600">
+    <div className="flex flex-wrap gap-1 border-b border-border">
       {TABS.map((t) => {
         const locked = isLocked(t.need);
         const active = tab === t.id;
@@ -28,10 +28,10 @@ export default function TabBar({ tab, onTab, advanced, canSmart }: Props) {
           <button
             key={t.id}
             onClick={() => onTab(t.id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-all duration-200 ${
               active
-                ? "border-accent text-white"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {t.label} {locked && <span aria-hidden>🔒</span>}

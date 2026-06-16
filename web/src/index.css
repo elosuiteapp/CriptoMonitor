@@ -2,19 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
+/*
+ * ─── Tokens de tema ──────────────────────────────────────────────────────────
+ * Claro = :root · Escuro = .dark (estratégia darkMode: "class").
+ * Valores em canais RGB separados por espaço para permitir opacidade nos
+ * utilitários (ex.: bg-surface/60, border-primary/20).
+ */
+@layer base {
+  :root {
+    --bg: 248 250 252; /* slate-50  — fundo da aplicação */
+    --surface: 255 255 255; /* white     — barras / superfícies elevadas */
+    --card: 255 255 255; /* white     — cards e módulos */
+    --border: 226 232 240; /* slate-200 — bordas e divisores */
+    --fg: 15 23 42; /* slate-900 — texto principal */
+    --muted: 241 245 249; /* slate-100 — superfícies sutis / skeletons */
+    --muted-fg: 100 116 139; /* slate-500 — texto secundário */
+    --primary: 99 102 241; /* indigo-500 — ação/realce */
+    --primary-fg: 255 255 255;
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg: 9 13 22; /* ~#090d16  — fundo institucional profundo */
+    --surface: 15 23 42; /* slate-900 */
+    --card: 15 23 42; /* slate-900 */
+    --border: 30 41 59; /* slate-800 */
+    --fg: 241 245 249; /* slate-100 */
+    --muted: 30 41 59; /* slate-800 */
+    --muted-fg: 148 163 184; /* slate-400 */
+    --primary: 99 102 241;
+    --primary-fg: 255 255 255;
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+@layer components {
+  /* Tipografia financeira: monoespaçado + dígitos tabulares evita layout-shift
+     quando preços/métricas atualizam via WebSocket. Use em TODO número. */
+  .num {
+    @apply font-mono tabular-nums;
+  }
 
-body {
-  @apply bg-ink-900 text-slate-200 antialiased;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Título de seção pequeno, institucional e escaneável. */
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
 }
 
 /* Esconde a scrollbar horizontal de faixas de toggles */

@@ -26,24 +26,28 @@ export default function PriceHeader({ asset, payload, updatedAt }: Props) {
   }, [asset]);
 
   const changeColor =
-    change24h == null ? "text-slate-500" : change24h >= 0 ? "text-signal-green" : "text-signal-red";
+    change24h == null
+      ? "text-muted-foreground"
+      : change24h >= 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-rose-600 dark:text-rose-400";
 
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
         <div className="flex items-baseline gap-2">
-          <h1 className="text-2xl font-semibold text-slate-100">{asset}</h1>
-          <span className="text-sm text-slate-500">{ASSET_NAME[asset] ?? asset}</span>
+          <h1 className="text-2xl font-semibold text-foreground">{asset}</h1>
+          <span className="text-sm text-muted-foreground">{ASSET_NAME[asset] ?? asset}</span>
         </div>
         <div className="mt-1 flex items-baseline gap-3">
-          <span className="text-3xl font-bold tabular-nums text-white">{fmtPrice(price)}</span>
-          <span className={`text-sm font-medium tabular-nums ${changeColor}`}>
+          <span className="num text-3xl font-bold text-foreground">{fmtPrice(price)}</span>
+          <span className={`num text-sm font-medium ${changeColor}`}>
             {change24h == null ? "" : `${fmtPct(change24h, 2)} 24h`}
           </span>
         </div>
       </div>
-      <div className="text-right text-xs text-slate-500">
-        {when ? <>Atualizado {when}</> : "Aguardando primeiro ciclo de coleta"}
+      <div className="text-right text-xs text-muted-foreground">
+        {when ? <>Atualizado <span className="num">{when}</span></> : "Aguardando primeiro ciclo de coleta"}
       </div>
     </div>
   );

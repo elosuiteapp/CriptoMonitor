@@ -23,6 +23,7 @@ import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
+import ThemeToggle from "../components/ui/ThemeToggle";
 import UserMenu from "../components/UserMenu";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
@@ -103,7 +104,7 @@ export default function Dashboard() {
   const fng = useMemo<Reading>(() => readFng(payload?.sentiment?.fng_value), [payload]);
 
   if (planLoading || !plan) {
-    return <div className="grid h-full place-items-center text-slate-500">Carregando plano…</div>;
+    return <div className="grid h-full place-items-center text-muted-foreground">Carregando plano…</div>;
   }
 
   const d = payload?.derivatives;
@@ -115,29 +116,30 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-full flex-col">
       {/* Top bar */}
-      <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-ink-600 bg-ink-900/80 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface/80 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-3">
           {user && <UserMenu user={user} planName={plan.name} onSignOut={signOut} />}
-          <span className="font-bold text-white">Crypto Monitor</span>
-          <span className="hidden h-5 w-px bg-ink-600 sm:block" />
+          <span className="font-bold text-foreground">Crypto Monitor</span>
+          <span className="hidden h-5 w-px bg-border sm:block" />
           <ModuleSwitcher current={market} onChange={setMarket} isAdmin={isAdmin} />
           {market === "crypto" && (
             <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full border border-ink-500 px-2.5 py-1 text-xs text-slate-400">
+          <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
             Plano {plan.name}
           </span>
           <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
-          <Link to="/alerts" className="text-xs text-slate-400 hover:text-slate-200">
+          <Link to="/alerts" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
             Alertas
           </Link>
           {isAdmin && (
-            <Link to="/admin" className="text-xs font-semibold text-accent hover:text-accent/80">
+            <Link to="/admin" className="text-xs font-semibold text-primary transition-colors hover:text-primary/80">
               Admin
             </Link>
           )}
+          <ThemeToggle />
         </div>
       </header>
 
@@ -167,7 +169,7 @@ export default function Dashboard() {
         {tab === "cockpit" && (
           <>
         {/* Gráfico com camadas */}
-        <section className="space-y-3 rounded-2xl border border-ink-600 bg-ink-800/40 p-4">
+        <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
           <ChartTypeSelector
             chartType={chartType}
             onChartType={setChartType}
@@ -198,7 +200,7 @@ export default function Dashboard() {
         {/* Painel Gamma (BTC/ETH, Pro+) */}
         {isOptionAsset && (
           <section>
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">Módulo Gamma (estilo SpotGamma)</h2>
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Módulo Gamma (estilo SpotGamma)</h2>
             {advanced ? (
               <GammaPanel gamma={payload?.gamma ?? null} asset={asset} />
             ) : (
@@ -216,12 +218,12 @@ export default function Dashboard() {
 
         {/* Cards de métricas — separados por audiência: varejo × institucional (§8.6.3) */}
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-slate-300">Fluxo, liquidez e sentimento</h2>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Fluxo, liquidez e sentimento</h2>
 
           {/* ── Varejo e alavancagem (perps, fluxo e posicionamento do varejo) ── */}
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span>🛒 Varejo e alavancagem</span>
-            <span className="h-px flex-1 bg-ink-600" />
+            <span className="h-px flex-1 bg-border" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} info={GLOSSARY.fng} />
@@ -255,9 +257,9 @@ export default function Dashboard() {
           </div>
 
           {/* ── Institucional e estrutural (spot/smart money, capital estrutural) ── */}
-          <div className="mb-2 mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-accent">
+          <div className="mb-2 mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-primary">
             <span>🏦 Institucional e estrutural</span>
-            <span className="h-px flex-1 bg-accent/30" />
+            <span className="h-px flex-1 bg-primary/30" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {advanced ? (
