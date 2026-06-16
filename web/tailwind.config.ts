@@ -59,9 +59,10 @@ export default {
       },
 
       boxShadow: {
-        // Claro: sombra premium suave e difusa (sem peso).
-        card: "0 4px 20px -4px rgb(0 0 0 / 0.05)",
-        "card-hover": "0 8px 28px -6px rgb(0 0 0 / 0.08)",
+        // Claro: sombra em camadas (Stripe/Apple) — uma rente + uma difusa — para
+        // os cards brancos saltarem do fundo off-white sem depender de borda.
+        card: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 6px 18px -6px rgb(0 0 0 / 0.10)",
+        "card-hover": "0 2px 4px 0 rgb(0 0 0 / 0.05), 0 12px 28px -8px rgb(0 0 0 / 0.12)",
         // Escuro: brilho interno sutil no topo + leve elevação (não a sombra preta pesada).
         glow: "inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.35)",
       },

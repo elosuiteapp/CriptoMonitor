@@ -10,14 +10,14 @@
  */
 @layer base {
   :root {
-    --bg: 248 250 252; /* slate-50  — fundo da aplicação */
-    --surface: 255 255 255; /* white     — barras / superfícies elevadas */
-    --card: 255 255 255; /* white     — cards e módulos */
-    --border: 226 232 240; /* slate-200 — bordas e divisores */
-    --fg: 15 23 42; /* slate-900 — texto principal */
-    --muted: 241 245 249; /* slate-100 — superfícies sutis / skeletons */
-    --muted-fg: 100 116 139; /* slate-500 — texto secundário */
-    --primary: 99 102 241; /* indigo-500 — ação/realce */
+    --bg: 243 244 246; /* #F3F4F6 gray-100 — off-white frio: cards brancos "saltam" do fundo */
+    --surface: 255 255 255; /* white — barras / dropdowns / modais */
+    --card: 255 255 255; /* white puro — cards e módulos */
+    --border: 229 231 235; /* #E5E7EB gray-200 — borda quase invisível (neutra, sem azulado) */
+    --fg: 17 24 39; /* #111827 gray-900 — títulos/valores em chumbo (não preto puro) */
+    --muted: 229 231 235; /* #E5E7EB — preenchimentos sutis / hover / skeleton */
+    --muted-fg: 107 114 128; /* #6B7280 gray-500 — texto secundário */
+    --primary: 79 70 229; /* #4F46E5 indigo-600 — índigo forte/sóbrio no claro (institucional) */
     --primary-fg: 255 255 255;
     color-scheme: light;
   }

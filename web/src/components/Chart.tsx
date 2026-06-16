@@ -12,6 +12,8 @@ import {
   type Time,
 } from "lightweight-charts";
 
+import { useTheme } from "../hooks/useTheme";
+import { chartAxisColors } from "../lib/chartTheme";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import { buildLiquidationGrid, liqColor, type OiPoint } from "../lib/liquidationModel";
@@ -62,25 +64,27 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const [error, setError] = useState<string | null>(null);
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const { isDark } = useTheme();
 
   // ─── Cria o chart uma vez ──────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const c = chartAxisColors(isDark);
     const chart = createChart(el, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#94a3b8",
+        textColor: c.text,
         fontFamily: "system-ui, sans-serif",
       },
       grid: {
-        vertLines: { color: "rgba(148,163,184,0.06)" },
-        horzLines: { color: "rgba(148,163,184,0.06)" },
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "rgba(148,163,184,0.15)" },
-      timeScale: { borderColor: "rgba(148,163,184,0.15)", timeVisible: true },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border, timeVisible: true },
     });
     chartRef.current = chart;
     return () => {
@@ -89,7 +93,19 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       seriesRef.current = null;
       priceLinesRef.current = [];
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Recolore eixos/grade ao trocar de tema (sem recriar o chart).
+  useEffect(() => {
+    const c = chartAxisColors(isDark);
+    chartRef.current?.applyOptions({
+      layout: { textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+  }, [isDark]);
 
   // ─── (Re)cria a série conforme o tipo de gráfico e carrega os dados ─────────
   useEffect(() => {

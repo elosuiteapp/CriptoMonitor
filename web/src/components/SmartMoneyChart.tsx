@@ -8,6 +8,8 @@ import {
   type Time,
 } from "lightweight-charts";
 
+import { useTheme } from "../hooks/useTheme";
+import { chartAxisColors } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
 import type { Candle } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
@@ -59,24 +61,26 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastViewKey = useRef<string | undefined>(undefined);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const c = chartAxisColors(isDark);
     const chart = createChart(el, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#94a3b8",
+        textColor: c.text,
         fontFamily: "system-ui, sans-serif",
       },
       grid: {
-        vertLines: { color: "rgba(148,163,184,0.06)" },
-        horzLines: { color: "rgba(148,163,184,0.06)" },
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "rgba(148,163,184,0.15)" },
-      timeScale: { borderColor: "rgba(148,163,184,0.15)", timeVisible: true },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border, timeVisible: true },
     });
     const series = chart.addCandlestickSeries({
       upColor: UP,
@@ -92,7 +96,19 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
       chartRef.current = null;
       seriesRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Recolore eixos/grade ao trocar de tema (sem recriar o chart).
+  useEffect(() => {
+    const c = chartAxisColors(isDark);
+    chartRef.current?.applyOptions({
+      layout: { textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+  }, [isDark]);
 
   useEffect(() => {
     const chart = chartRef.current;

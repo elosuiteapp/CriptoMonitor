@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { ColorType, LineStyle, createChart, type IChartApi } from "lightweight-charts";
 
+import { useTheme } from "../hooks/useTheme";
+import { chartAxisColors } from "../lib/chartTheme";
 import { supabase } from "../lib/supabase";
 
 /** Proxy de fluxo de opções (HIRO simplificado, PRD3). Linha do delta-fluxo
@@ -9,6 +11,7 @@ import { supabase } from "../lib/supabase";
 export default function OptionsFlowChart({ asset }: { asset: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const emptyRef = useRef<HTMLDivElement | null>(null);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     let chart: IChartApi | undefined;
@@ -26,24 +29,25 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
       const gpRows = ((gp as { spot_price: number | null; ts: string }[]) ?? []).slice().reverse();
       if (emptyRef.current) emptyRef.current.style.display = flowRows.length < 2 ? "block" : "none";
 
+      const ax = chartAxisColors(isDark);
       chart = createChart(ref.current, {
         autoSize: true,
         layout: {
           background: { type: ColorType.Solid, color: "transparent" },
-          textColor: "#94a3b8",
+          textColor: ax.text,
           fontFamily: "system-ui, sans-serif",
         },
         grid: {
-          vertLines: { color: "rgba(148,163,184,0.06)" },
-          horzLines: { color: "rgba(148,163,184,0.06)" },
+          vertLines: { color: ax.grid },
+          horzLines: { color: ax.grid },
         },
-        rightPriceScale: { borderColor: "rgba(148,163,184,0.15)" },
-        leftPriceScale: { visible: true, borderColor: "rgba(148,163,184,0.15)" },
-        timeScale: { borderColor: "rgba(148,163,184,0.15)", timeVisible: true },
+        rightPriceScale: { borderColor: ax.border },
+        leftPriceScale: { visible: true, borderColor: ax.border },
+        timeScale: { borderColor: ax.border, timeVisible: true },
       });
 
       const spotSeries = chart.addLineSeries({
-        color: "#94a3b8", lineWidth: 1, lineStyle: LineStyle.Dotted, priceScaleId: "right", priceLineVisible: false, lastValueVisible: true, title: "Spot",
+        color: ax.text, lineWidth: 1, lineStyle: LineStyle.Dotted, priceScaleId: "right", priceLineVisible: false, lastValueVisible: true, title: "Spot",
       });
 
       let cum = 0;
@@ -107,7 +111,7 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
       cancelled = true;
       chart?.remove();
     };
-  }, [asset]);
+  }, [asset, isDark]);
 
   return (
     <div>
