@@ -62,8 +62,8 @@ export default {
         // Claro: sombra premium suave e difusa (sem peso).
         card: "0 4px 20px -4px rgb(0 0 0 / 0.05)",
         "card-hover": "0 8px 28px -6px rgb(0 0 0 / 0.08)",
-        // Escuro: brilho interno sutil no topo, em vez de sombra preta.
-        glow: "inset 0 1px 0 0 rgb(255 255 255 / 0.04)",
+        // Escuro: brilho interno sutil no topo + leve elevação (não a sombra preta pesada).
+        glow: "inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.35)",
       },
     },
   },
