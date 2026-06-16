@@ -6,7 +6,7 @@ import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePlan } from "../hooks/usePlan";
 import { fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
-import { computeVolumeProfile, fetchKlines, type Candle, type Timeframe } from "../lib/marketData";
+import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
@@ -14,6 +14,7 @@ import { GLOSSARY } from "../lib/glossary";
 import { supabase } from "../lib/supabase";
 import InfoTip from "./InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
+import SmcAssetPicker from "./SmcAssetPicker";
 
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "4h", label: "4h" },
@@ -91,7 +92,13 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const { user } = useAuth();
   const { plan } = usePlan(user?.id);
   const channels = plan?.alert_channels ?? [];
-  const oiSeries = useOpenInterest(asset, plan);
+  // O Smart Money (Expert) pode ir além das moedas curadas. `smcAsset` acompanha
+  // o ativo global do cockpit, mas o seletor local pode trocar para qualquer das
+  // 100 moedas. As não-curadas só têm price-action (sem dados do coletor).
+  const [smcAsset, setSmcAsset] = useState(asset);
+  useEffect(() => setSmcAsset(asset), [asset]);
+  const isCurated = CURATED_ASSETS.includes(smcAsset);
+  const oiSeries = useOpenInterest(smcAsset, plan);
   const [alertedIdx, setAlertedIdx] = useState<number | null>(null);
   const [alertError, setAlertError] = useState<string | null>(null);
   const [tf, setTf] = useState<Timeframe>("1d");
@@ -114,7 +121,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         setError(null);
       }
       try {
-        const klines = await fetchKlines(asset, tf, 320);
+        const klines = await fetchKlines(smcAsset, tf, 320);
         if (!active) return;
         setCandles(klines);
         setSmc(computeSmc(klines));
@@ -124,14 +131,14 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           supabase
             .from("gamma_profile")
             .select("call_wall, put_wall, zero_gamma_level, max_pain, ts")
-            .eq("asset", asset)
+            .eq("asset", smcAsset)
             .order("ts", { ascending: false })
             .limit(1)
             .maybeSingle(),
           supabase
             .from("orderbook_walls")
             .select("side, price, notional_usd, ts")
-            .eq("asset", asset)
+            .eq("asset", smcAsset)
             .order("ts", { ascending: false })
             .limit(40),
         ]);
@@ -163,7 +170,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [asset, tf]);
+  }, [smcAsset, tf]);
 
   // Viés multi-timeframe (top-down): calcula a estrutura em 1D/4h/1h
   useEffect(() => {
@@ -174,7 +181,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       const out = await Promise.all(
         tfs.map(async (t) => {
           try {
-            const k = await fetchKlines(asset, t, 320);
+            const k = await fetchKlines(smcAsset, t, 320);
             const r = computeSmc(k);
             return { tf: t, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral" };
           } catch {
@@ -187,7 +194,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     return () => {
       active = false;
     };
-  }, [asset]);
+  }, [smcAsset]);
 
   // Confluência enriquecida: gamma + book (sources) + POC/Value Area + bolsões de liquidação
   const allSources = useMemo(() => {
@@ -221,7 +228,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     const op = lvl.price >= smc.price ? ">" : "<";
     const { error } = await supabase.from("alerts").insert({
       user_id: user.id,
-      asset,
+      asset: smcAsset,
       metric: "price",
       condition: { op, value: Math.round(lvl.price) },
       channel: channels[0],
@@ -238,8 +245,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     <section className="space-y-4">
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-foreground">Smart Money · {asset}</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Smart Money</h2>
+          <SmcAssetPicker current={smcAsset} onChange={setSmcAsset} />
           <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>
             Viés: {bias === "bullish" ? "alta" : bias === "bearish" ? "baixa" : "indefinido"}
             <InfoTip text={GLOSSARY.bias} />
@@ -287,6 +295,17 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-400">{error}</div>
       )}
 
+      {!isCurated && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400">
+          <span aria-hidden className="mt-px">⚠</span>
+          <span>
+            <b>{smcAsset}</b> está fora da lista institucional: leitura por <b>price-action puro</b>{" "}
+            (velas da Binance). Sem gamma, paredes do book e dados do coletor — a confluência fica
+            limitada a POC/Value Area e bolsões de liquidação.
+          </span>
+        </div>
+      )}
+
       {/* Leitura automática em PT */}
       {narrative.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -326,7 +345,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} />
         )}
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           Zonas: <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount ·{" "}

@@ -53,14 +53,31 @@ export function computeVolumeProfile(candles: Candle[], bins = 50): VolumeProfil
   };
 }
 
-const SYMBOL: Record<string, string> = {
-  BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", BNB: "BNBUSDT",
-  XRP: "XRPUSDT", DOGE: "DOGEUSDT", ADA: "ADAUSDT", AVAX: "AVAXUSDT",
-  LINK: "LINKUSDT", SUI: "SUIUSDT", TON: "TONUSDT", POL: "POLUSDT",
-  DOT: "DOTUSDT", LTC: "LTCUSDT",
-  AAVE: "AAVEUSDT", UNI: "UNIUSDT", LDO: "LDOUSDT", ARB: "ARBUSDT", ATOM: "ATOMUSDT",
-  PEPE: "PEPEUSDT",
-};
+/** Moedas com dados do COLETOR (gamma/book/OI/snapshot) — confluência completa
+ *  no Smart Money e disponíveis no cockpit conforme o plano. */
+export const CURATED_ASSETS = [
+  "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI",
+  "TON", "POL", "DOT", "LTC", "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE",
+];
+
+/** Universo do Smart Money (Expert): 100 moedas populares da Binance. As que NÃO
+ *  estão em CURATED_ASSETS só têm price-action (velas), sem dados do coletor. */
+export const SMC_ASSETS = [
+  ...CURATED_ASSETS,
+  "TRX", "BCH", "NEAR", "APT", "ICP", "FIL", "ETC", "HBAR", "XLM", "IMX",
+  "OP", "INJ", "VET", "GRT", "ALGO", "STX", "RENDER", "MKR", "SAND", "MANA",
+  "AXS", "THETA", "XTZ", "EOS", "CHZ", "GALA", "CRV", "SNX", "COMP", "APE",
+  "FLOW", "EGLD", "DYDX", "ENS", "SEI", "TIA", "WIF", "BONK", "JUP", "WLD",
+  "ENA", "ORDI", "PENDLE", "FET", "RUNE", "KAVA", "ROSE", "ZEC", "DASH", "1INCH",
+  "ZIL", "ENJ", "BAT", "QNT", "NEO", "IOTA", "KSM", "GMT", "JASMY", "MASK",
+  "CFX", "AR", "ONDO", "TWT", "GMX", "SUSHI", "YFI", "ANKR", "CELO", "SKL",
+  "LRC", "ONT", "RVN", "STORJ", "FLOKI", "PYTH", "JTO", "STRK", "BLUR", "W",
+];
+
+// Quase todo par é <TICKER>USDT na Binance — gera o mapa a partir da lista.
+const SYMBOL: Record<string, string> = Object.fromEntries(
+  SMC_ASSETS.map((a) => [a, `${a}USDT`]),
+);
 
 export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Promise<Candle[]> {
   const symbol = SYMBOL[asset];
