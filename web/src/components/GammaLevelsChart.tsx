@@ -9,6 +9,8 @@ interface Row {
   call_wall: number | null;
   put_wall: number | null;
   max_pain: number | null;
+  net_gex_spot: number | null;
+  regime: string | null;
 }
 
 type Key = "spot_price" | "zero_gamma_level" | "max_pain" | "call_wall" | "put_wall";
@@ -98,9 +100,24 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
   const padL = 40;
   const padR = 96;
 
+  // Histórico parcial: a coleta é recente, então a janela escolhida ainda pode não estar cheia.
+  const histDays =
+    data && data.length >= 2
+      ? (new Date(data[data.length - 1].ts).getTime() - new Date(data[0].ts).getTime()) / 86_400_000
+      : 0;
+  const partial = histDays > 0 && histDays < days * 0.9;
+  const partialLabel = histDays >= 1 ? `${Math.round(histDays)}d` : `${Math.max(1, Math.round(histDays * 24))}h`;
+
   return (
     <div ref={wrapRef} className="w-full">
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {partial ? (
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400/80">
+            histórico parcial: {partialLabel} (enche até {days}d)
+          </span>
+        ) : (
+          <span />
+        )}
         <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
           {[7, 30, 90].map((d) => (
             <button
@@ -163,8 +180,33 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
           for (let i = 1; i < labels.length; i++)
             if (labels[i].y - labels[i - 1].y < gap) labels[i].y = labels[i - 1].y + gap;
 
+          // Bandas de regime ao fundo: agrupa pontos consecutivos de mesmo regime usando as
+          // bordas das células (meio-do-caminho entre pontos), sem buracos. Verde = gama
+          // positivo (dealers amortecem, calmo); vermelho = negativo (amplificam, volátil).
+          const xAt = data.map((r) => xFor(r.ts));
+          const cellL = (i: number) => (i === 0 ? padL : (xAt[i - 1] + xAt[i]) / 2);
+          const cellR = (i: number) => (i === data.length - 1 ? w - padR : (xAt[i] + xAt[i + 1]) / 2);
+          const bands: { x0: number; x1: number; regime: string }[] = [];
+          data.forEach((r, i) => {
+            const reg = r.regime ?? "";
+            const last = bands[bands.length - 1];
+            if (last && last.regime === reg) last.x1 = cellR(i);
+            else bands.push({ x0: cellL(i), x1: cellR(i), regime: reg });
+          });
+          const bandFill = (reg: string) =>
+            reg === "positive" ? "rgba(34,197,94,0.07)" : reg === "negative" ? "rgba(239,68,68,0.08)" : "transparent";
+
           return (
             <svg width={w} height={H} role="img" aria-label="Níveis de gamma ao longo do tempo">
+              {bands.map((b, i) => (
+                <g key={`band-${i}`}>
+                  <rect x={b.x0} y={padT} width={Math.max(0, b.x1 - b.x0)} height={plotH} fill={bandFill(b.regime)} />
+                  {i > 0 && (
+                    <line x1={b.x0} y1={padT} x2={b.x0} y2={padT + plotH} stroke="rgba(148,163,184,0.18)" strokeWidth="1" strokeDasharray="2 3" />
+                  )}
+                </g>
+              ))}
+
               {gridYs.map((p, i) => (
                 <g key={i}>
                   <line x1={padL} y1={yFor(p)} x2={w - padR} y2={yFor(p)} stroke="rgba(148,163,184,0.1)" strokeWidth="1" />
@@ -232,7 +274,15 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
             {s.name}
           </span>
         ))}
-        <span className="text-slate-600">· ↑/↓ = parede fora da janela (valor real ao lado)</span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-3 rounded" style={{ background: "rgba(34,197,94,0.25)" }} />
+          regime + (calmo)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-3 rounded" style={{ background: "rgba(239,68,68,0.3)" }} />
+          regime − (volátil)
+        </span>
+        <span className="text-slate-600">· fundo = spot vs Zero Gamma · ↑/↓ = parede fora da janela (valor real ao lado)</span>
       </div>
     </div>
   );
