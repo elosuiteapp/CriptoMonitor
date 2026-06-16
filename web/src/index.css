@@ -44,8 +44,9 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    @apply bg-background text-foreground antialiased font-sans;
+    letter-spacing: -0.011em; /* tracking levemente fechado: Inter fica mais premium */
+    text-rendering: optimizeLegibility;
   }
 }
 
@@ -54,6 +55,7 @@
      quando preços/métricas atualizam via WebSocket. Use em TODO número. */
   .num {
     @apply font-mono tabular-nums;
+    letter-spacing: 0; /* mono não leva o tracking fechado da interface */
   }
 
   /* Título de seção pequeno, institucional e escaneável. */
@@ -82,4 +84,27 @@
 }
 .tip-in {
   animation: tipIn 120ms ease-out;
+}
+
+/* Scrollbar fina e temática (toque premium, claro/escuro) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--muted-fg) / 0.22) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--muted-fg) / 0.22);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted-fg) / 0.4);
+  background-clip: padding-box;
 }

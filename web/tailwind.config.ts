@@ -47,11 +47,20 @@ export default {
       },
 
       fontFamily: {
-        // Tipografia financeira: monoespaçada para alinhar dígitos (ver `.num`).
+        // Interface: Inter (premium, neutra). Cai para system-ui se não carregar.
+        sans: [
+          "Inter",
+          "system-ui",
+          "-apple-system",
+          '"Segoe UI"',
+          "Roboto",
+          "sans-serif",
+        ],
+        // Tipografia financeira: JetBrains Mono p/ alinhar dígitos (ver `.num`).
         mono: [
+          '"JetBrains Mono"',
           "ui-monospace",
           "SFMono-Regular",
-          '"JetBrains Mono"',
           "Menlo",
           "Consolas",
           "monospace",
