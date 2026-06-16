@@ -4,9 +4,10 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useCvd } from "../hooks/useCvd";
 import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
+import { usePerpContext } from "../hooks/usePerpContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
-import { fmtPrice, fmtUsd } from "../lib/format";
+import { fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
@@ -122,6 +123,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
   // Volume Delta / CVD por candle (klines) — só busca com a camada CVD ligada.
   const cvdSeries = useCvd(smcAsset, tf, layers.cvd);
+  // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
+  const perp = usePerpContext(smcAsset);
 
   useEffect(() => {
     let active = true;
@@ -271,6 +274,27 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           </span>
         </div>
       </div>
+
+      {/* Contexto de derivativos (Binance Futures): funding + OI — qualquer moeda com perp */}
+      {perp && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 dark:bg-card/60">
+            <span className="text-muted-foreground">Funding</span>
+            <span className={`num font-medium ${perp.fundingRate >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+              {fmtPct(perp.fundingRate * 100, 4)}
+            </span>
+            <span className="text-[10px] text-muted-foreground">/8h</span>
+            <InfoTip text="Funding atual do perpétuo USDT-M da Binance (intervalo de 8h). Positivo = comprados pagando vendidos (otimismo alavancado); negativo = vendidos pagando." />
+          </span>
+          {perp.oiUsd != null && (
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 dark:bg-card/60">
+              <span className="text-muted-foreground">OI</span>
+              <span className="num font-medium text-foreground">{fmtUsd(perp.oiUsd)}</span>
+              <InfoTip text="Open Interest: valor total em contratos perpétuos abertos (Binance Futures). Subindo junto com o preço = posições novas; subindo contra o preço = atenção a squeeze." />
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
       <div className="grid gap-2 sm:grid-cols-2">

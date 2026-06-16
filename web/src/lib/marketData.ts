@@ -123,6 +123,40 @@ export async function fetchVolumeDelta(asset: string, tf: Timeframe, limit = 300
   });
 }
 
+export interface PerpContext {
+  fundingRate: number; // FRAÇÃO (ex.: 0.0001 = 0,01%), intervalo 8h — convenção Binance fapi
+  oiUsd: number | null; // open interest em USD (contratos × mark price)
+  nextFundingTime: number | null; // epoch ms do próximo funding
+}
+
+/** Contexto de derivativos da Binance Futures (USDT-M) p/ qualquer moeda com perp:
+ *  funding atual + open interest em USD. 100% client-side e público (sem coletor/
+ *  Coinbase). null quando a moeda não tem perp na Binance ou a API falha. */
+export async function fetchPerpContext(asset: string): Promise<PerpContext | null> {
+  const symbol = SYMBOL[asset];
+  if (!symbol) return null;
+  try {
+    const [piRes, oiRes] = await Promise.all([
+      fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`),
+      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`),
+    ]);
+    if (!piRes.ok) return null;
+    const p = await piRes.json();
+    const mark = Number(p.markPrice);
+    const fundingRate = Number(p.lastFundingRate);
+    if (!Number.isFinite(fundingRate)) return null;
+    let oiUsd: number | null = null;
+    if (oiRes.ok) {
+      const o = await oiRes.json();
+      const base = Number(o.openInterest);
+      if (Number.isFinite(base) && Number.isFinite(mark)) oiUsd = base * mark;
+    }
+    return { fundingRate, oiUsd, nextFundingTime: Number(p.nextFundingTime) || null };
+  } catch {
+    return null;
+  }
+}
+
 /** Variação percentual de 24h (ticker da Binance). null se indisponível. */
 export async function fetch24hChange(asset: string): Promise<number | null> {
   const symbol = SYMBOL[asset];
