@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fmtPct } from "../lib/format";
 import { supabase } from "../lib/supabase";
+import InfoTip from "./InfoTip";
 
 interface MacroAssetRow {
   symbol: string;
@@ -131,14 +132,6 @@ const MACRO_HELP: Record<string, string> = {
   VIX: "VIX — índice do medo do mercado. Correlação inversa forte (−) = a moeda cai quando o pânico aumenta.",
 };
 
-function Info({ text }: { text: string }) {
-  if (!text) return null;
-  return (
-    <span title={text} aria-label={text} className="cursor-help text-slate-500 hover:text-slate-300">
-      ⓘ
-    </span>
-  );
-}
 
 /** Aba "Macro & Correlações" (PRD §8.7 / §8.8.3) — Pro+. */
 export default function MacroTab({ asset }: { asset: string }) {
@@ -231,7 +224,7 @@ export default function MacroTab({ asset }: { asset: string }) {
         {showBtc && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">₿ Bitcoin <Info text={MACRO_HELP.BTC} /></span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">₿ Bitcoin <InfoTip text={MACRO_HELP.BTC} /></span>
               <span className="text-xs text-amber-500/80">referência cripto</span>
             </div>
             <div className="mt-0.5 text-xs text-slate-500">o maior motor das altcoins</div>
@@ -243,7 +236,7 @@ export default function MacroTab({ asset }: { asset: string }) {
           <div key={m.symbol} className="rounded-2xl border border-ink-600 bg-ink-800/60 p-4">
             <div className="flex items-baseline justify-between">
               <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-200">
-                {m.name} <Info text={MACRO_HELP[m.symbol] ?? ""} />
+                {m.name} <InfoTip text={MACRO_HELP[m.symbol] ?? ""} />
               </span>
               <span className="text-xs text-slate-400">
                 {m.price ?? "—"}

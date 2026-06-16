@@ -25,3 +25,16 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Fade-in suave dos tooltips (InfoTip) */
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tip-in {
+  animation: tipIn 120ms ease-out;
+}

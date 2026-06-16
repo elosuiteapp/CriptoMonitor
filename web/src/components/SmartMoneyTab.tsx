@@ -10,7 +10,9 @@ import { computeVolumeProfile, fetchKlines, type Candle, type Timeframe } from "
 import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
+import { GLOSSARY } from "../lib/glossary";
 import { supabase } from "../lib/supabase";
+import InfoTip from "./InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
 
 const TFS: { id: Timeframe; label: string }[] = [
@@ -226,8 +228,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-slate-300">Smart Money · {asset}</h2>
-          <span className={`rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>
+          <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>
             Viés: {bias === "bullish" ? "alta" : bias === "bearish" ? "baixa" : "indefinido"}
+            <InfoTip text={GLOSSARY.bias} />
           </span>
           <span className="flex items-center gap-1 text-[11px] text-slate-500" title="Atualiza automaticamente a cada 60s">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-green" /> ao vivo
@@ -422,7 +425,7 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
   return (
     <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-400">Posição no range</span>
+        <span className="flex items-center gap-1.5 text-slate-400">Posição no range <InfoTip text={GLOSSARY.rangePosition} /></span>
         <span className={zoneColor}>
           {(pos * 100).toFixed(0)}% · {zone}
         </span>

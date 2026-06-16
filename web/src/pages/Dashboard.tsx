@@ -42,6 +42,7 @@ import {
   type Reading,
 } from "../lib/format";
 import type { ChartType, Timeframe } from "../lib/marketData";
+import { GLOSSARY } from "../lib/glossary";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit via relay)
 const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
@@ -204,13 +205,14 @@ export default function Dashboard() {
             <span className="h-px flex-1 bg-ink-600" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} />
+            <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} info={GLOSSARY.fng} />
             {advanced ? (
               <>
-                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} />
-                <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} />
+                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
+                <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
                 <MetricCard
                   title="CVD do varejo"
+                  info={GLOSSARY.cvd}
                   reading={readCvd(
                     payload?.price?.binance?.cvd == null && payload?.price?.okx?.cvd == null
                       ? d?.cvd
@@ -219,8 +221,8 @@ export default function Dashboard() {
                   source="Binance + OKX"
                   timestamp={updatedAt}
                 />
-                <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} />
-                <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} />
+                <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.longShort} />
+                <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.liquidations} />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
               </>
             ) : (
@@ -244,6 +246,7 @@ export default function Dashboard() {
                 <MetricCard
                   institutional
                   title="Viés Institucional × Varejo"
+                  info={GLOSSARY.institutionalBias}
                   reading={readInstitutionalBias(
                     payload?.coinbase_premium,
                     payload?.price?.coinbase?.volume_spot,
@@ -257,12 +260,13 @@ export default function Dashboard() {
                   timestamp={updatedAt}
                 />
                 {defi && (
-                  <MetricCard institutional title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} />
+                  <MetricCard institutional title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} info={GLOSSARY.tvl} />
                 )}
                 {dex && (
                   <MetricCard
                     institutional
                     title="Liquidez DEX"
+                    info={GLOSSARY.dexLiquidity}
                     reading={{
                       label: `${dex.pair}: ${fmtUsd(dex.liquidity_usd)} de liquidez`,
                       detail: `Volume 24h ${fmtUsd(dex.volume_24h)}`,
@@ -276,6 +280,7 @@ export default function Dashboard() {
                   <MetricCard
                     institutional
                     title="Macro do mercado"
+                    info={GLOSSARY.macroMarket}
                     reading={{
                       label: `Dominância BTC ${fmtPct(macro.btc_dominance, 1)} · mcap ${fmtUsd(macro.total_mcap)}`,
                       detail: `Dominância BTC ${fmtPct(macro.btc_dominance, 2)} · Market cap total ${fmtUsd(macro.total_mcap)}`,
