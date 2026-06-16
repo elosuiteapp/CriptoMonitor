@@ -21,6 +21,7 @@ import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
+import UserMenu from "../components/UserMenu";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -105,7 +106,8 @@ export default function Dashboard() {
     <div className="flex min-h-full flex-col">
       {/* Top bar */}
       <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-ink-600 bg-ink-900/80 px-4 py-3 backdrop-blur">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {user && <UserMenu user={user} planName={plan.name} onSignOut={signOut} />}
           <span className="font-bold text-white">Crypto Monitor</span>
           <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
         </div>
@@ -122,9 +124,6 @@ export default function Dashboard() {
               Admin
             </Link>
           )}
-          <button onClick={() => signOut()} className="text-xs text-slate-500 hover:text-slate-300">
-            Sair
-          </button>
         </div>
       </header>
 
