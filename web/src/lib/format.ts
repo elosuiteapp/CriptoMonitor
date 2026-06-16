@@ -364,6 +364,59 @@ export function readTermStructure(term: Record<string, number> | null | undefine
   return { label: "Estrutura normal — mercado tranquilo", level: "green" };
 }
 
+/** ETFs spot (BTC/ETH): fluxo líquido do último dia útil + sequência de dias. */
+export function readEtfFlow(
+  net: number | null | undefined,
+  streak: number | null | undefined,
+  flow7d: number | null | undefined,
+  asOf?: string | null,
+): Reading {
+  if (net == null) return { label: "ETFs spot indisponível", detail: "—", level: "neutral" };
+  const days = Math.abs(streak ?? 0);
+  const seq = days >= 2 ? ` · ${days}º dia de ${net >= 0 ? "entradas" : "saídas"}` : "";
+  const detail =
+    `Dia ${fmtUsd(net)}${flow7d != null ? ` · 7d ${fmtUsd(flow7d)}` : ""}${asOf ? ` · ${asOf}` : ""}`;
+  if (net > 0) return { label: `ETFs spot comprando${seq} — entrada institucional`, detail, level: "green" };
+  if (net < 0) return { label: `ETFs spot vendendo${seq} — saída institucional`, detail, level: "red" };
+  return { label: "ETFs spot sem fluxo no dia", detail, level: "yellow" };
+}
+
+/** Liquidez de mercado: oferta de stablecoins (dry powder) + dominância + TVL DeFi. */
+export function readMarketLiquidity(
+  totalSc: number | null | undefined,
+  chg7dPct: number | null | undefined,
+  totalMcap?: number | null,
+  tvl?: number | null,
+): Reading {
+  if (totalSc == null) return { label: "Liquidez de mercado indisponível", detail: "—", level: "neutral" };
+  const dom = totalMcap ? (totalSc / totalMcap) * 100 : null;
+  const detail =
+    `Stablecoins ${fmtUsd(totalSc)}${chg7dPct != null ? ` (7d ${fmtPct(chg7dPct, 2)})` : ""}` +
+    `${dom != null ? ` · dominância ${dom.toFixed(1)}%` : ""}${tvl != null ? ` · TVL DeFi ${fmtUsd(tvl)}` : ""}`;
+  if (chg7dPct != null && chg7dPct >= 0.3)
+    return { label: "Liquidez entrando — oferta de stablecoins subindo (dry powder)", detail, level: "green" };
+  if (chg7dPct != null && chg7dPct <= -0.3)
+    return { label: "Liquidez recuando — stablecoins saindo do mercado", detail, level: "yellow" };
+  return { label: "Liquidez estável — oferta de stablecoins de lado", detail, level: "neutral" };
+}
+
+/** Posicionamento institucional em opções (Deribit): Put/Call ratio + skew de IV. */
+export function readOptionsPositioning(
+  pcr: number | null | undefined,
+  skew: number | null | undefined,
+): Reading {
+  if (pcr == null && skew == null) return { label: "Opções indisponível", detail: "—", level: "neutral" };
+  const detail = `Put/Call ${pcr != null ? pcr.toFixed(2) : "—"} · Skew ${skew != null ? fmtPct(skew, 1) : "—"}`;
+  let score = 0;
+  if (pcr != null) score += pcr >= 1.2 ? -1 : pcr <= 0.7 ? 1 : 0;
+  if (skew != null) score += skew >= 3 ? -1 : skew <= -3 ? 1 : 0;
+  if (score <= -1)
+    return { label: "Hedge institucional elevado — puts caros, demanda por proteção", detail, level: "red" };
+  if (score >= 1)
+    return { label: "Apetite por alta — calls demandados, pouca proteção", detail, level: "green" };
+  return { label: "Opções equilibradas entre proteção e alta", detail, level: "yellow" };
+}
+
 // ─── Utilidades de UI ────────────────────────────────────────────────────────
 export const LEVEL_DOT: Record<Level, string> = {
   green: "bg-signal-green",

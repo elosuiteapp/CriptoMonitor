@@ -33,11 +33,14 @@ import {
   fmtPct,
   fmtUsd,
   readCvd,
+  readEtfFlow,
   readInstitutionalBias,
   readFng,
   readFunding,
   readLiquidations,
   readLongShort,
+  readMarketLiquidity,
+  readOptionsPositioning,
   readTvl,
   type Reading,
 } from "../lib/format";
@@ -287,6 +290,49 @@ export default function Dashboard() {
                       level: "neutral",
                     }}
                     source="CoinGecko"
+                    timestamp={updatedAt}
+                  />
+                )}
+                {payload?.etf_flows && (
+                  <MetricCard
+                    institutional
+                    title="ETFs spot"
+                    info={GLOSSARY.etfFlows}
+                    reading={readEtfFlow(
+                      payload.etf_flows.net_flow_usd,
+                      payload.etf_flows.streak_days,
+                      payload.etf_flows.flow_7d_usd,
+                      payload.etf_flows.as_of,
+                    )}
+                    source="Farside"
+                    timestamp={updatedAt}
+                  />
+                )}
+                {payload?.liquidity && (
+                  <MetricCard
+                    institutional
+                    title="Liquidez & Direção"
+                    info={GLOSSARY.marketLiquidity}
+                    reading={readMarketLiquidity(
+                      payload.liquidity.total_stablecoin_usd,
+                      payload.liquidity.stablecoin_chg_7d_pct,
+                      macro?.total_mcap,
+                      payload.liquidity.total_tvl_usd,
+                    )}
+                    source="DefiLlama"
+                    timestamp={updatedAt}
+                  />
+                )}
+                {payload?.gamma && (
+                  <MetricCard
+                    institutional
+                    title="Hedge institucional (opções)"
+                    info={GLOSSARY.optionsPositioning}
+                    reading={readOptionsPositioning(
+                      payload.gamma.put_call_ratio,
+                      payload.gamma.iv_skew,
+                    )}
+                    source="Deribit"
                     timestamp={updatedAt}
                   />
                 )}

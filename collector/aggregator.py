@@ -49,6 +49,7 @@ _GRID_TS_TABLES = frozenset({
     "prices_cex", "derivatives", "gamma_profile", "options_oi", "volatility_index",
     "onchain_perps", "dex_liquidity", "defi_health", "orderbook_walls",
     "macro", "macro_assets", "macro_correlations", "market_snapshot",
+    "etf_flows", "market_liquidity",
 })
 _GRID_MINUTES = 5
 
@@ -93,9 +94,11 @@ def _rows_of(results: list[SourceResult], table: str) -> list[dict]:
 def build_snapshots(
     results: list[SourceResult], assets: list[str], ts: str,
     macro_fallback: dict | None = None, deriv_fallback: dict[str, dict] | None = None,
+    etf_fallback: dict[str, dict] | None = None, liquidity_fallback: dict | None = None,
 ) -> list[dict]:
     """Consolida a visão por ativo num único JSONB por ativo."""
     deriv_fb = deriv_fallback or {}
+    etf_fb = etf_fallback or {}
     prices: dict[str, list[dict]] = {}
     for row in _rows_of(results, "prices_cex"):
         prices.setdefault(row["asset"], []).append(row)
@@ -104,6 +107,7 @@ def build_snapshots(
     gamma = _index_by_asset(results, "gamma_profile")
     onchain = _index_by_asset(results, "onchain_perps")
     dex = _index_by_asset(results, "dex_liquidity")
+    etf = _index_by_asset(results, "etf_flows")
 
     defi_rows = _rows_of(results, "defi_health")
     defi_by_chain = {r["chain"]: r for r in defi_rows}
@@ -113,6 +117,8 @@ def build_snapshots(
     sentiment = sentiment_rows[0] if sentiment_rows else None
     macro_rows = _rows_of(results, "macro")
     macro = macro_rows[0] if macro_rows else macro_fallback
+    liq_rows = _rows_of(results, "market_liquidity")
+    liquidity = liq_rows[0] if liq_rows else liquidity_fallback
     news = _rows_of(results, "news_feed")
 
     snapshots: list[dict] = []
@@ -137,6 +143,10 @@ def build_snapshots(
             "defi_health": defi_by_chain.get(chain_of.get(asset, "")),
             "sentiment": sentiment,
             "macro": macro,
+            # Camada institucional: ETFs spot (BTC/ETH) por ativo; liquidez de mercado
+            # (stablecoins + TVL) é market-wide (igual ao macro).
+            "etf_flows": etf.get(asset) or etf_fb.get(asset),
+            "liquidity": liquidity,
             "news": [n for n in news if asset in (n.get("assets") or [])][:5],
         }
         snapshots.append({"asset": asset, "payload": payload, "ts": ts})
@@ -159,9 +169,14 @@ class Collector:
                 continue
             if s.name == "macro_markets" and (minute % 30) != 0:  # macro/correlações: 30 min
                 continue
+            # Camada institucional (dado diário/lento): a cada 15 min, carry-forward preenche
+            # os ciclos intermediários. Mantém o coletor leve (ETFs/stablecoins são páginas
+            # grandes; não vale puxar a cada 5 min).
+            if s.name in ("etf_flows", "market_liquidity") and (minute % 15) != 0:
+                continue
             # No ciclo imediato de startup (todo restart dispara um, fora da grade) pulamos
             # a Coinalyze: ela cobra a cota por símbolo e um burst extra fora de hora estoura
-            # o 429, derrubando funding/long-short/liquidações. Roda no próximo ciclo agendado.
+            # o 429. Roda no próximo ciclo agendado.
             if startup and s.name == "coinalyze":
                 continue
             active.append(s)
@@ -201,6 +216,37 @@ class Collector:
         except Exception as exc:  # noqa: BLE001
             log.warning("falha ao carregar derivativos anteriores: %s", exc)
             return {}
+
+    def _latest_by_asset(self, table: str, columns: str, max_age_min: int = 360) -> dict[str, dict]:
+        """Carry-forward por ativo de uma tabela institucional (último valor recente)."""
+        try:
+            cutoff = to_iso(now_utc() - timedelta(minutes=max_age_min))
+            res = (
+                get_supabase().table(table).select(columns)
+                .gte("ts", cutoff).order("ts", desc=True).limit(200).execute()
+            )
+            out: dict[str, dict] = {}
+            for row in res.data or []:
+                a = row.get("asset")
+                if a and a not in out:
+                    out[a] = row
+            return out
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha ao carregar %s anterior: %s", table, exc)
+            return {}
+
+    def _latest_row(self, table: str, columns: str, max_age_min: int = 720) -> dict | None:
+        """Carry-forward de uma tabela market-wide (última linha recente)."""
+        try:
+            cutoff = to_iso(now_utc() - timedelta(minutes=max_age_min))
+            res = (
+                get_supabase().table(table).select(columns)
+                .gte("ts", cutoff).order("ts", desc=True).limit(1).execute()
+            )
+            return res.data[0] if res.data else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha ao carregar %s anterior: %s", table, exc)
+            return None
 
     async def run_cycle(self, startup: bool = False) -> list[SourceResult]:
         now = now_utc()
@@ -243,10 +289,23 @@ class Collector:
         if len(_index_by_asset(results, "derivatives")) < len(self.assets):
             deriv_fallback = self._latest_derivatives()
 
+        # Camada institucional (roda a cada 15 min): nos ciclos em que não rodou, carrega
+        # o último valor recente p/ o card não piscar. ETFs/CME por ativo, liquidez market-wide.
+        etf_fallback = None
+        if not _index_by_asset(results, "etf_flows"):
+            etf_fallback = self._latest_by_asset(
+                "etf_flows", "asset,net_flow_usd,flow_7d_usd,streak_days,as_of,ts")
+        liquidity_fallback = None
+        if not _rows_of(results, "market_liquidity"):
+            liquidity_fallback = self._latest_row(
+                "market_liquidity",
+                "total_stablecoin_usd,stablecoin_chg_7d_usd,stablecoin_chg_7d_pct,total_tvl_usd,ts")
+
         # Recalcular e gravar o snapshot consolidado (isolado: nunca derruba o ciclo)
         snapshots: list[dict] = []
         try:
-            snapshots = build_snapshots(results, self.assets, ts, macro_fallback, deriv_fallback)
+            snapshots = build_snapshots(results, self.assets, ts, macro_fallback, deriv_fallback,
+                                        etf_fallback, liquidity_fallback)
             upsert("market_snapshot", snapshots, "asset,ts")
         except Exception as exc:  # noqa: BLE001
             log.warning("falha ao montar/gravar market_snapshot: %s", exc)

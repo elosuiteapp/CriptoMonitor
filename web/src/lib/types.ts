@@ -81,6 +81,20 @@ export interface MacroData {
   total_mcap: number | null;
 }
 
+export interface EtfFlowsData {
+  net_flow_usd: number | null;   // fluxo líquido do último dia útil (US$)
+  flow_7d_usd: number | null;    // soma 7 dias (US$)
+  streak_days: number | null;    // dias consecutivos no mesmo sentido (+entrada / −saída)
+  as_of: string | null;          // rótulo do dia de referência
+}
+
+export interface MarketLiquidityData {
+  total_stablecoin_usd: number | null;
+  stablecoin_chg_7d_usd: number | null;
+  stablecoin_chg_7d_pct: number | null;
+  total_tvl_usd: number | null;
+}
+
 export interface OrderbookWall {
   exchange: string;
   side: "bid" | "ask";
@@ -109,5 +123,7 @@ export interface SnapshotPayload {
   defi_health: DefiHealthData | null;
   sentiment: SentimentData | null;
   macro: MacroData | null;
+  etf_flows: EtfFlowsData | null;        // ETFs spot (BTC/ETH); null nos demais ativos
+  liquidity: MarketLiquidityData | null; // liquidez de mercado (market-wide)
   news: NewsItem[];
 }

@@ -16,8 +16,10 @@ from .cryptocurrency_cv import CryptocurrencyCvSource
 from .defillama import DefiLlamaSource
 from .deribit import DeribitSource
 from .dexscreener import DexScreenerSource
+from .etf_flows import EtfFlowsSource
 from .hyperliquid import HyperliquidSource
 from .macro_markets import MacroMarketsSource
+from .market_liquidity import MarketLiquiditySource
 from .okx import OkxSource
 from .options_flow import OptionsFlowSource
 from .orderbook_walls import OrderbookWallsSource
@@ -42,4 +44,6 @@ def build_sources() -> list[BaseSource]:
         MacroMarketsSource(),
         OrderbookWallsSource(),
         OptionsFlowSource(),
+        EtfFlowsSource(),          # ETFs spot BTC/ETH (Farside via relay) — institucional
+        MarketLiquiditySource(),   # stablecoins + TVL (DefiLlama) — liquidez/direção
     ]

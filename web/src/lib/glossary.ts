@@ -17,4 +17,7 @@ export const GLOSSARY: Record<string, string> = {
   ivp: "IV Percentile 90d — onde a volatilidade implícita atual está na faixa dos últimos 90 dias (0–100). Alto = opções caras (favorece vender); baixo = baratas (favorece comprar).",
   ivRv: "IV − RV spread: volatilidade implícita menos a realizada. Positivo = mercado precificando mais oscilação do que de fato aconteceu — prêmio de risco caro.",
   termStructure: "Volatilidade implícita por prazo (7d→180d). Curto prazo acima do longo (backwardation) sugere o mercado precificando um evento próximo.",
+  etfFlows: "Fluxo líquido dos ETFs spot (BTC/ETH) nos EUA — a porta institucional do ciclo. Entrada líquida = instituições comprando; saída = realizando. A sequência de dias mostra a persistência do fluxo.",
+  marketLiquidity: "Liquidez do mercado: oferta total de stablecoins (o 'dry powder' parado pronto pra entrar) e TVL DeFi. Stablecoins subindo = combustível chegando; a dominância (stablecoins ÷ market cap) caindo = capital saindo pra risco.",
+  optionsPositioning: "Posicionamento institucional em opções (Deribit): Put/Call ratio + skew de IV. Puts caros / muitos puts = demanda por proteção (defensivo); calls caros = aposta em alta.",
 };

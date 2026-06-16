@@ -70,6 +70,8 @@ export function useSnapshot(asset: string, plan: Plan | null) {
         defi_health: null,
         sentiment: sent ? { fng_value: sent.fng_value, classification: sent.classification } : null,
         macro: null,
+        etf_flows: null,
+        liquidity: null,
         news: [],
       };
       setPayload(built);
