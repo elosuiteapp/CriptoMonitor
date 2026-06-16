@@ -38,6 +38,19 @@ log = get_logger("aggregator")
 
 _USER_AGENT = "CryptoMonitor/1.0 (+collector)"
 
+# Tabelas de SNAPSHOT (ts = instante da coleta): o ts é reescrito para o início do
+# bucket de 5 min, de modo que ciclos extras (restart do worker, que dispara um ciclo
+# imediato fora da grade, ou execução concorrente) no mesmo bucket colapsem numa ÚNICA
+# linha via o upsert (…,ts) — em vez de gravar linhas redundantes com ts de microssegundo
+# sempre distinto. Ficam de fora as tabelas com ts de EVENTO (sentiment diário,
+# liquidations e news com tempo próprio) e o options_flow, que já ancora seu ts no bucket.
+_GRID_TS_TABLES = frozenset({
+    "prices_cex", "derivatives", "gamma_profile", "options_oi", "volatility_index",
+    "onchain_perps", "dex_liquidity", "defi_health", "orderbook_walls",
+    "macro", "macro_assets", "macro_correlations", "market_snapshot",
+})
+_GRID_MINUTES = 5
+
 
 def _assets() -> list[str]:
     # Conjunto-base SEMPRE coletado, definido no código (adicionar moeda = editar aqui
@@ -159,7 +172,11 @@ class Collector:
 
     async def run_cycle(self) -> list[SourceResult]:
         now = now_utc()
-        ts = to_iso(now.replace(second=0, microsecond=0))
+        # ts do ciclo ancorado à grade de 5 min (…:00,:05,…): ciclos extras (restart do
+        # worker / concorrência) no mesmo bucket viram a MESMA linha no upsert, não duplicam.
+        grid = now.replace(second=0, microsecond=0)
+        grid = grid.replace(minute=(grid.minute // _GRID_MINUTES) * _GRID_MINUTES)
+        ts = to_iso(grid)
         sources = self._active_sources(now.minute)
         log.info("── ciclo %s · %d fonte(s) · ativos=%s", ts, len(sources), ",".join(self.assets))
 
@@ -172,6 +189,11 @@ class Collector:
             if not r.ok:
                 continue
             for output in r.outputs:
+                # Snapshot: ancora o ts da coleta no bucket de 5 min → dedup via upsert.
+                if output.table in _GRID_TS_TABLES:
+                    for row in output.rows:
+                        if row.get("ts") is not None:
+                            row["ts"] = ts
                 try:
                     written += upsert(output.table, output.rows, output.on_conflict)
                 except Exception as exc:  # noqa: BLE001
