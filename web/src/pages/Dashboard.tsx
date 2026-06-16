@@ -104,7 +104,7 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-full flex-col">
       {/* Top bar */}
-      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-ink-600 bg-ink-900/80 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-ink-600 bg-ink-900/80 px-4 py-3 backdrop-blur">
         <div className="flex items-center gap-4">
           <span className="font-bold text-white">Crypto Monitor</span>
           <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
