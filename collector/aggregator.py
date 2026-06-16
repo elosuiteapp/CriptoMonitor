@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -90,9 +91,11 @@ def _rows_of(results: list[SourceResult], table: str) -> list[dict]:
 
 
 def build_snapshots(
-    results: list[SourceResult], assets: list[str], ts: str, macro_fallback: dict | None = None
+    results: list[SourceResult], assets: list[str], ts: str,
+    macro_fallback: dict | None = None, deriv_fallback: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Consolida a visão por ativo num único JSONB por ativo."""
+    deriv_fb = deriv_fallback or {}
     prices: dict[str, list[dict]] = {}
     for row in _rows_of(results, "prices_cex"):
         prices.setdefault(row["asset"], []).append(row)
@@ -125,7 +128,9 @@ def build_snapshots(
             "generated_at": ts,
             "price": price_map or None,
             "coinbase_premium": coinbase_premium,
-            "derivatives": derivatives.get(asset),
+            # Coinalyze falhou neste ciclo? usa o último derivativo recente (< 30 min)
+            # p/ a cockpit não piscar 'indisponível' num blip.
+            "derivatives": derivatives.get(asset) or deriv_fb.get(asset),
             "gamma": gamma.get(asset),
             "onchain_perps": onchain.get(asset),
             "dex_liquidity": dex.get(asset),
@@ -146,13 +151,18 @@ class Collector:
         self.macro_interval = int(os.getenv("MACRO_INTERVAL_MINUTES", "15"))
         self._last_macro_minute: int | None = None
 
-    def _active_sources(self, minute: int):
+    def _active_sources(self, minute: int, startup: bool = False):
         """Filtra as fontes do ciclo (espaça a CoinGecko)."""
         active = []
         for s in self.sources:
             if s.name == "coingecko" and (minute % self.macro_interval) != 0:
                 continue
             if s.name == "macro_markets" and (minute % 30) != 0:  # macro/correlações: 30 min
+                continue
+            # No ciclo imediato de startup (todo restart dispara um, fora da grade) pulamos
+            # a Coinalyze: ela cobra a cota por símbolo e um burst extra fora de hora estoura
+            # o 429, derrubando funding/long-short/liquidações. Roda no próximo ciclo agendado.
+            if startup and s.name == "coinalyze":
                 continue
             active.append(s)
         return active
@@ -170,14 +180,36 @@ class Collector:
             log.warning("falha ao carregar macro anterior: %s", exc)
             return None
 
-    async def run_cycle(self) -> list[SourceResult]:
+    def _latest_derivatives(self) -> dict[str, dict]:
+        """Último derivativo por ativo, só se RECENTE (< 30 min). Carry-forward p/ a
+        cockpit não piscar 'indisponível' num blip da Coinalyze — mas sem mascarar uma
+        queda longa (aí o card fica indisponível mesmo, o que é honesto)."""
+        try:
+            cutoff = to_iso(now_utc() - timedelta(minutes=30))
+            res = (
+                get_supabase().table("derivatives")
+                .select("asset, open_interest, funding_rate, long_short_ratio, "
+                        "liq_long_usd, liq_short_usd, cvd, ts")
+                .gte("ts", cutoff).order("ts", desc=True).limit(200).execute()
+            )
+            out: dict[str, dict] = {}
+            for row in res.data or []:
+                a = row.get("asset")
+                if a and a not in out:
+                    out[a] = row
+            return out
+        except Exception as exc:  # noqa: BLE001
+            log.warning("falha ao carregar derivativos anteriores: %s", exc)
+            return {}
+
+    async def run_cycle(self, startup: bool = False) -> list[SourceResult]:
         now = now_utc()
         # ts do ciclo ancorado à grade de 5 min (…:00,:05,…): ciclos extras (restart do
         # worker / concorrência) no mesmo bucket viram a MESMA linha no upsert, não duplicam.
         grid = now.replace(second=0, microsecond=0)
         grid = grid.replace(minute=(grid.minute // _GRID_MINUTES) * _GRID_MINUTES)
         ts = to_iso(grid)
-        sources = self._active_sources(now.minute)
+        sources = self._active_sources(now.minute, startup=startup)
         log.info("── ciclo %s · %d fonte(s) · ativos=%s", ts, len(sources), ",".join(self.assets))
 
         async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}) as http:
@@ -205,10 +237,16 @@ class Collector:
         if not any(o.table == "macro" for r in results if r.ok for o in r.outputs):
             macro_fallback = self._latest_macro()
 
+        # Derivativos (Coinalyze): se faltou ativo neste ciclo (falha/429/skip de startup),
+        # busca o último recente p/ a cockpit não piscar 'indisponível'.
+        deriv_fallback = None
+        if len(_index_by_asset(results, "derivatives")) < len(self.assets):
+            deriv_fallback = self._latest_derivatives()
+
         # Recalcular e gravar o snapshot consolidado (isolado: nunca derruba o ciclo)
         snapshots: list[dict] = []
         try:
-            snapshots = build_snapshots(results, self.assets, ts, macro_fallback)
+            snapshots = build_snapshots(results, self.assets, ts, macro_fallback, deriv_fallback)
             upsert("market_snapshot", snapshots, "asset,ts")
         except Exception as exc:  # noqa: BLE001
             log.warning("falha ao montar/gravar market_snapshot: %s", exc)
@@ -232,7 +270,9 @@ async def _main_async(once: bool) -> None:
     scheduler.start()
     log.info("scheduler iniciado · ciclo a cada %d min · Ctrl+C para sair", interval)
     try:
-        await collector.run_cycle()  # primeiro ciclo imediato (nunca pode derrubar o worker)
+        # Primeiro ciclo imediato (nunca pode derrubar o worker). startup=True pula a
+        # Coinalyze p/ o restart não estourar o rate limit dela fora da grade.
+        await collector.run_cycle(startup=True)
     except Exception as exc:  # noqa: BLE001
         log.exception("primeiro ciclo falhou (worker segue rodando): %s", exc)
     try:
