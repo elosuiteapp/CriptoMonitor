@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ASSET_NAME } from "../lib/format";
+import { ASSET_NAME, isInstitutional } from "../lib/format";
 import CoinIcon from "./CoinIcon";
 
 const ALL: string[] = [
@@ -44,6 +44,14 @@ export default function AssetSelector({ current, allowed, onChange }: Props) {
                   <CoinIcon asset={asset} />
                   <span className="font-medium text-foreground">{asset}</span>
                   <span className="text-xs text-muted-foreground">{ASSET_NAME[asset] ?? ""}</span>
+                  {isInstitutional(asset) && (
+                    <span
+                      title="Camada institucional completa (gamma, opções, DVOL, CVD Coinbase)"
+                      className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary"
+                    >
+                      gamma
+                    </span>
+                  )}
                 </span>
               );
               if (!unlocked) {

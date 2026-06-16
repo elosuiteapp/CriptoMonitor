@@ -441,6 +441,12 @@ export const LEVEL_TEXT: Record<Level, string> = {
   neutral: "text-muted-foreground",
 };
 
+/** Moedas com a camada institucional COMPLETA (gamma/opções/DVOL/CVD-Coinbase) —
+ *  exigem bolsa de opções líquida (Deribit BTC/ETH, Bybit SOL). As demais têm o
+ *  cockpit de derivativos & fluxo (funding/OI/long-short/liquidações/book). */
+export const INSTITUTIONAL_ASSETS = ["BTC", "ETH", "SOL"];
+export const isInstitutional = (asset: string) => INSTITUTIONAL_ASSETS.includes(asset);
+
 export const ASSET_NAME: Record<string, string> = {
   BTC: "Bitcoin",
   ETH: "Ethereum",

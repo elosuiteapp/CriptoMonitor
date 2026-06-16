@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { ASSET_NAME, fmtPct, fmtPrice } from "../lib/format";
+import { ASSET_NAME, fmtPct, fmtPrice, isInstitutional } from "../lib/format";
 import { fetch24hChange } from "../lib/marketData";
 import type { SnapshotPayload } from "../lib/types";
 
@@ -36,9 +36,23 @@ export default function PriceHeader({ asset, payload, updatedAt }: Props) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <div className="flex items-baseline gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">{asset}</h1>
           <span className="text-sm text-muted-foreground">{ASSET_NAME[asset] ?? asset}</span>
+          <span
+            title={
+              isInstitutional(asset)
+                ? "Camada institucional completa: gamma, opções, volatilidade (DVOL) e CVD/prêmio Coinbase — além de derivativos e fluxo."
+                : "Cockpit de derivativos & fluxo: funding (CEX + on-chain), OI, long/short, liquidações e paredes do book. Sem gamma/opções (não há bolsa de opções líquida para esta moeda)."
+            }
+            className={`cursor-help rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              isInstitutional(asset)
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border bg-muted text-muted-foreground"
+            }`}
+          >
+            {isInstitutional(asset) ? "Institucional + Gamma" : "Derivativos & fluxo"}
+          </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-3">
           <span className="num text-[2.6rem] font-bold leading-none tracking-tight text-foreground">
