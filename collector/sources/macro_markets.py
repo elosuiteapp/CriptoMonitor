@@ -20,7 +20,7 @@ from .base import BaseSource, TableRows
 log = get_logger("macro")
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 _YF = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
-_BINANCE = "https://api.binance.com/api/v3/klines"
+_BINANCE = "https://data-api.binance.vision/api/v3/klines"  # endpoint público SEM geo-bloqueio (api.binance.com dá 451 na nuvem)
 
 # (código interno, nome exibido, símbolo no Yahoo)
 _MACRO = [
