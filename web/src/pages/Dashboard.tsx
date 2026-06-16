@@ -11,7 +11,6 @@ import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LiquidationsStrip from "../components/LiquidationsStrip";
-import LiquidityDirectionPanel from "../components/LiquidityDirectionPanel";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
@@ -329,16 +328,6 @@ export default function Dashboard() {
               </>
             )}
           </div>
-
-          {advanced && payload?.liquidity && (
-            <div className="mt-3">
-              <LiquidityDirectionPanel
-                liquidity={payload.liquidity}
-                macro={macro ?? null}
-                updatedAt={updatedAt}
-              />
-            </div>
-          )}
         </section>
 
         {/* Bloco de notícias — §8.6.4 (todos os planos) */}

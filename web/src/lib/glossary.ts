@@ -20,4 +20,5 @@ export const GLOSSARY: Record<string, string> = {
   etfFlows: "Fluxo líquido dos ETFs spot (BTC/ETH) nos EUA — a porta institucional do ciclo. Entrada líquida = instituições comprando; saída = realizando. A sequência de dias mostra a persistência do fluxo.",
   marketLiquidity: "Liquidez do mercado: oferta total de stablecoins (o 'dry powder' parado pronto pra entrar) e TVL DeFi. Stablecoins subindo = combustível chegando; a dominância (stablecoins ÷ market cap) caindo = capital saindo pra risco.",
   optionsPositioning: "Posicionamento institucional em opções (Deribit): Put/Call ratio + skew de IV. Puts caros / muitos puts = demanda por proteção (defensivo); calls caros = aposta em alta.",
+  cot: "COT (Commitment of Traders, CFTC): posicionamento SEMANAL por categoria nos futuros CME de BTC/ETH. Asset Managers = institucional 'real money' (direcional); Leveraged Funds = hedge funds (cujo net short costuma ser basis trade, não aposta de queda). Sai sexta, com dados de terça.",
 };

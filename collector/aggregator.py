@@ -174,6 +174,9 @@ class Collector:
             # grandes; não vale puxar a cada 5 min).
             if s.name in ("etf_flows", "market_liquidity") and (minute % 15) != 0:
                 continue
+            # CFTC COT é semanal — basta atualizar a tabela de vez em quando (a cada 30 min).
+            if s.name == "cftc_cot" and (minute % 30) != 0:
+                continue
             # No ciclo imediato de startup (todo restart dispara um, fora da grade) pulamos
             # a Coinalyze: ela cobra a cota por símbolo e um burst extra fora de hora estoura
             # o 429. Roda no próximo ciclo agendado.

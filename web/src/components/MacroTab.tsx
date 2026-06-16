@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 
 import { fmtPct } from "../lib/format";
 import { supabase } from "../lib/supabase";
+import type { MacroData, MarketLiquidityData } from "../lib/types";
+import CotCard, { type CotRow } from "./CotCard";
 import InfoTip from "./InfoTip";
+import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
 
 interface MacroAssetRow {
   symbol: string;
@@ -138,6 +141,10 @@ export default function MacroTab({ asset }: { asset: string }) {
   const [macro, setMacro] = useState<MacroAssetRow[]>([]);
   const [corr, setCorr] = useState<Record<string, CorrVal>>({});
   const [events, setEvents] = useState<EconEvent[] | null>(null);
+  const [liquidity, setLiquidity] = useState<MarketLiquidityData | null>(null);
+  const [liqTs, setLiqTs] = useState<string | null>(null);
+  const [macroRow, setMacroRow] = useState<MacroData | null>(null);
+  const [cot, setCot] = useState<CotRow | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -173,6 +180,44 @@ export default function MacroTab({ asset }: { asset: string }) {
         }
         setCorr(map);
       });
+
+    // Pano de fundo do mercado (market-wide + posicionamento institucional CME)
+    supabase
+      .from("market_liquidity")
+      .select("*")
+      .order("ts", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!active) return;
+        setLiquidity((data as MarketLiquidityData) ?? null);
+        setLiqTs((data as { ts?: string } | null)?.ts ?? null);
+      });
+
+    supabase
+      .from("macro")
+      .select("btc_dominance, total_mcap")
+      .order("ts", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setMacroRow((data as MacroData) ?? null);
+      });
+
+    if (asset === "BTC" || asset === "ETH") {
+      supabase
+        .from("cot_positioning")
+        .select("*")
+        .eq("asset", asset)
+        .order("report_date", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (active) setCot((data as CotRow) ?? null);
+        });
+    } else {
+      setCot(null);
+    }
 
     return () => {
       active = false;
@@ -216,6 +261,14 @@ export default function MacroTab({ asset }: { asset: string }) {
         <div className="rounded-2xl border border-accent/30 bg-accent/5 p-4 text-sm text-slate-200">
           <span className="mr-2">🧭</span>
           {synthesis}
+        </div>
+      )}
+
+      {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME */}
+      {(liquidity || cot) && (
+        <div className="space-y-3">
+          {liquidity && <LiquidityDirectionPanel liquidity={liquidity} macro={macroRow} updatedAt={liqTs} />}
+          {cot && <CotCard cot={cot} />}
         </div>
       )}
 

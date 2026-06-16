@@ -9,6 +9,7 @@ from .alternative_me import AlternativeMeSource
 from .base import BaseSource, SourceResult, TableRows
 from .binance import BinanceSource
 from .bybit_options import BybitOptionsSource
+from .cftc_cot import CftcCotSource
 from .coinalyze import CoinalyzeSource
 from .coinbase import CoinbaseSource
 from .coingecko import CoinGeckoSource
@@ -45,5 +46,6 @@ def build_sources() -> list[BaseSource]:
         OrderbookWallsSource(),
         OptionsFlowSource(),
         EtfFlowsSource(),          # ETFs spot BTC/ETH (Farside via relay) — institucional
-        MarketLiquiditySource(),   # stablecoins + TVL (DefiLlama) — liquidez/direção
+        MarketLiquiditySource(),   # stablecoins + TVL + DEX + fees (DefiLlama) — liquidez/direção
+        CftcCotSource(),           # CFTC COT (CME BTC/ETH) — posicionamento institucional (aba Macro)
     ]
