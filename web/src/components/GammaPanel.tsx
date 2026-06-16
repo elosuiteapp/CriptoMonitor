@@ -19,7 +19,7 @@ import OptionsFlowChart from "./OptionsFlowChart";
 
 type ProfileView = "bars" | "line" | "oi" | "levels";
 
-const VIEW_LABEL: Record<ProfileView, string> = { bars: "Barras", line: "Linha", oi: "OI", levels: "Níveis" };
+const VIEW_LABEL: Record<ProfileView, string> = { bars: "GEX (barras)", line: "GEX (linha)", oi: "OI", levels: "Níveis" };
 const VIEW_TITLE: Record<ProfileView, string> = {
   bars: "Perfil de gamma por strike",
   line: "Perfil de gamma (linha)",

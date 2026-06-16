@@ -78,8 +78,9 @@ export default function GammaOiProfile({
   return (
     <div>
       <p className="mb-2 text-[10px] leading-snug text-slate-500">
-        Onde os contratos se acumulam (vencimento mais próximo) — os <span className="text-slate-300">muros de OI</span>,
-        diferentes dos muros de GEX. Puts à esquerda (suporte), calls à direita (resistência).
+        Contratos <span className="text-slate-300">crus</span> em aberto (vencimento mais próximo) — <span className="text-slate-300">duas barras por strike</span>:
+        put à esquerda (suporte) e call à direita (resistência), cada uma com a quantidade. Diferente do GEX, que pondera pelo gama e
+        condensa cada strike numa barra só. Cor cheia = <span className="text-slate-300">muro de OI</span>.
       </p>
 
       <div className="space-y-0.5">
