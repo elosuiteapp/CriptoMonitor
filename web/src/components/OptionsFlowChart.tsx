@@ -4,7 +4,8 @@ import { ColorType, LineStyle, createChart, type IChartApi } from "lightweight-c
 import { supabase } from "../lib/supabase";
 
 /** Proxy de fluxo de opções (HIRO simplificado, PRD3). Linha do delta-fluxo
- *  acumulado (eixo esquerdo) sobre o preço spot (eixo direito). Resolução 5 min. */
+ *  acumulado (eixo esquerdo), colorida por direção (verde sobe / vermelho cai),
+ *  sobre o preço spot (eixo direito). Resolução 5 min. */
 export default function OptionsFlowChart({ asset }: { asset: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const emptyRef = useRef<HTMLDivElement | null>(null);
@@ -38,10 +39,16 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
         timeScale: { borderColor: "rgba(148,163,184,0.15)", timeVisible: true },
       });
 
-      const flowSeries = chart.addLineSeries({
-        color: "#38bdf8", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
+      // Duas séries para colorir o acumulado por direção: verde quando sobe (fluxo
+      // de hedge comprador), vermelho quando cai. Cada trecho é desenhado por uma
+      // série; os pontos de virada entram nas duas para a linha não quebrar.
+      const upSeries = chart.addLineSeries({
+        color: "#22c55e", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
       });
-      flowSeries.createPriceLine({
+      const downSeries = chart.addLineSeries({
+        color: "#ef4444", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
+      });
+      upSeries.createPriceLine({
         price: 0, color: "rgba(148,163,184,0.35)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "",
       });
       const spotSeries = chart.addLineSeries({
@@ -50,14 +57,26 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
 
       let cum = 0;
       const seen = new Set<number>();
-      const flowData = flowRows
+      const cumData = flowRows
         .filter((r) => r.net_delta_flow != null)
         .map((r) => {
           cum += Number(r.net_delta_flow);
           return { time: Math.floor(new Date(r.ts).getTime() / 1000), value: Number(cum.toFixed(4)) };
         })
         .filter((p) => (seen.has(p.time) ? false : (seen.add(p.time), true)));
-      flowSeries.setData(flowData as never);
+
+      const upData: { time: number; value?: number }[] = [];
+      const downData: { time: number; value?: number }[] = [];
+      cumData.forEach((p, i) => {
+        const prevUp = i > 0 ? p.value >= cumData[i - 1].value : null;
+        const nextUp = i < cumData.length - 1 ? cumData[i + 1].value >= p.value : null;
+        const inUp = prevUp === true || nextUp === true;
+        const inDown = prevUp === false || nextUp === false;
+        upData.push(inUp ? { time: p.time, value: p.value } : { time: p.time });
+        downData.push(inDown ? { time: p.time, value: p.value } : { time: p.time });
+      });
+      upSeries.setData(upData as never);
+      downSeries.setData(downData as never);
 
       const seen2 = new Set<number>();
       const spotData = gpRows
@@ -84,7 +103,8 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
         </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-500">
-        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-sky-400" />Fluxo acumulado (compra de call/venda de put = ↑)</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-emerald-500" />Fluxo subindo (hedge comprador: compra de call/venda de put)</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-rose-500" />Fluxo caindo (hedge vendedor)</span>
         <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-slate-400" />Spot</span>
       </div>
     </div>
