@@ -41,6 +41,9 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
       const flowSeries = chart.addLineSeries({
         color: "#38bdf8", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
       });
+      flowSeries.createPriceLine({
+        price: 0, color: "rgba(148,163,184,0.35)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "",
+      });
       const spotSeries = chart.addLineSeries({
         color: "#94a3b8", lineWidth: 1, lineStyle: LineStyle.Dotted, priceScaleId: "right", priceLineVisible: false, lastValueVisible: true, title: "Spot",
       });
