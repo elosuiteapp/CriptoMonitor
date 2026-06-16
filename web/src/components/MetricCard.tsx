@@ -24,17 +24,31 @@ interface Props {
 export default function MetricCard({ title, reading, expanded, source, timestamp, institutional, info }: Props) {
   const [open, setOpen] = useState(false);
   return (
-    <Card highlight={institutional} className="p-4">
+    <Card
+      highlight={institutional}
+      className="p-4 transition-all duration-200 hover:border-foreground/10 hover:shadow-card-hover"
+    >
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-3 text-left">
-        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${LEVEL_DOT[reading.level]}`} />
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${LEVEL_DOT[reading.level]}`} />
         <span className="flex-1">
           <span className="section-title flex items-center gap-1.5">
             {title}
             {info && <InfoTip text={info} />}
           </span>
-          <span className="mt-0.5 block text-sm text-foreground">{reading.label}</span>
+          <span className="mt-1 block text-sm leading-snug text-foreground">{reading.label}</span>
         </span>
-        <span className="text-xs text-muted-foreground">{open ? "−" : "+"}</span>
+        <svg
+          className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </button>
 
       {open && (

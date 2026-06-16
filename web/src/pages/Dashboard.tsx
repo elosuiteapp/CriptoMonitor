@@ -221,11 +221,12 @@ export default function Dashboard() {
           <h2 className="mb-3 text-sm font-semibold text-foreground">Fluxo, liquidez e sentimento</h2>
 
           {/* ── Varejo e alavancagem (perps, fluxo e posicionamento do varejo) ── */}
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>🛒 Varejo e alavancagem</span>
+          <div className="mb-3 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+            <span>Varejo e alavancagem</span>
             <span className="h-px flex-1 bg-border" />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} info={GLOSSARY.fng} />
             {advanced ? (
               <>
@@ -257,11 +258,12 @@ export default function Dashboard() {
           </div>
 
           {/* ── Institucional e estrutural (spot/smart money, capital estrutural) ── */}
-          <div className="mb-2 mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-primary">
-            <span>🏦 Institucional e estrutural</span>
-            <span className="h-px flex-1 bg-primary/30" />
+          <div className="mb-3 mt-6 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span>Institucional e estrutural</span>
+            <span className="h-px flex-1 bg-primary/25" />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {advanced ? (
               <>
                 <MetricCard
