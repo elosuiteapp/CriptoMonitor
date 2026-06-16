@@ -1,4 +1,5 @@
 import type { ActiveLayers } from "./Chart";
+import InfoTip from "./InfoTip";
 
 interface Props {
   layers: ActiveLayers;
@@ -31,11 +32,8 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
       {ITEMS.map((item) => {
         const active = !locked && layers[item.key];
         return (
-          <button
+          <span
             key={item.key}
-            disabled={locked}
-            onClick={() => onToggle(item.key)}
-            title={item.desc}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition ${
               locked
                 ? "cursor-not-allowed border-ink-500 text-slate-600"
@@ -44,10 +42,18 @@ export default function LayerToggles({ layers, onToggle, locked }: Props) {
                   : "border-ink-500 text-slate-400 hover:border-ink-400"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-slate-600"}`} />
-            {item.label}
-            {locked && <span aria-hidden>🔒</span>}
-          </button>
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => onToggle(item.key)}
+              className="flex items-center gap-1.5 disabled:cursor-not-allowed"
+            >
+              <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-slate-600"}`} />
+              {item.label}
+              {locked && <span aria-hidden>🔒</span>}
+            </button>
+            {!locked && <InfoTip text={item.desc} />}
+          </span>
         );
       })}
       {locked && <span className="text-slate-600">— disponível no Pro</span>}

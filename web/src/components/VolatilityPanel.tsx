@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { LEVEL_DOT, readIvp, readIvRvSpread, readTermStructure, relativeTime } from "../lib/format";
+import { GLOSSARY } from "../lib/glossary";
 import { supabase } from "../lib/supabase";
 import type { Level } from "../lib/types";
+import InfoTip from "./InfoTip";
 
 interface VolRow {
   asset: string;
@@ -71,6 +73,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <VolCard
+          info={GLOSSARY.dvol}
           title="DVOL (vol implícita)"
           level="neutral"
           value={latest.dvol != null ? `${latest.dvol.toFixed(1)}%` : "—"}
@@ -84,6 +87,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           foot={asset !== "SOL" && dvolVar == null && histDays < 1 ? `histórico parcial: ${partialLabel}` : undefined}
         />
         <VolCard
+          info={GLOSSARY.ivp}
           title="IV Percentile 90d"
           level={ivp.level}
           value={latest.ivp_90d != null ? `${latest.ivp_90d.toFixed(0)}/100` : "—"}
@@ -91,6 +95,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           foot={histDays < 90 ? `histórico parcial: ${partialLabel} (enche até 90d)` : undefined}
         />
         <VolCard
+          info={GLOSSARY.ivRv}
           title="IV − RV spread"
           level={spread.level}
           value={latest.iv_rv_spread != null ? `${latest.iv_rv_spread >= 0 ? "+" : ""}${latest.iv_rv_spread.toFixed(1)}` : "—"}
@@ -102,6 +107,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[tsRead.level]}`} />
             <span className="text-[11px] uppercase tracking-wide text-slate-500">Term structure</span>
+            <span className="ml-auto">{<InfoTip text={GLOSSARY.termStructure} />}</span>
           </div>
           <div className="mt-2 space-y-1">
             {TENORS.map((t) => (
@@ -126,12 +132,13 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   );
 }
 
-function VolCard({ title, level, value, label, foot }: { title: string; level: Level; value: string; label: string; foot?: string }) {
+function VolCard({ title, level, value, label, foot, info }: { title: string; level: Level; value: string; label: string; foot?: string; info?: string }) {
   return (
     <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-3">
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[level]}`} />
         <span className="text-[11px] uppercase tracking-wide text-slate-500">{title}</span>
+        {info && <span className="ml-auto">{<InfoTip text={info} />}</span>}
       </div>
       <div className="mt-1 text-lg font-semibold text-white">{value}</div>
       <div className="mt-0.5 text-[11px] leading-snug text-slate-400">{label}</div>

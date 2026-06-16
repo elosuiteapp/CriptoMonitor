@@ -12,6 +12,7 @@ import {
 } from "../lib/format";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
+import InfoTip from "./InfoTip";
 import GammaProfileLine from "./GammaProfileLine";
 import OptionsFlowChart from "./OptionsFlowChart";
 
@@ -47,11 +48,11 @@ function profileBars(gamma: GammaData | null): Bar[] {
 
 function GammaCard({ title, label, level, value, info }: { title: string; label: string; level: "green" | "yellow" | "red" | "neutral"; value: string; info?: string }) {
   return (
-    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4" title={info}>
+    <div className="rounded-xl border border-ink-600 bg-ink-800/60 p-4">
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${LEVEL_DOT[level]}`} />
         <span className="text-xs uppercase tracking-wide text-slate-500">{title}</span>
-        {info && <span className="ml-auto cursor-help text-[11px] leading-none text-slate-600" title={info}>ⓘ</span>}
+        {info && <span className="ml-auto">{<InfoTip text={info} />}</span>}
       </div>
       <div className="mt-2 text-lg font-semibold text-white">{value}</div>
       <div className="mt-1 text-xs leading-snug text-slate-400">{label}</div>

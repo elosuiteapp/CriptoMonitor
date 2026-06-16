@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { readOiDelta } from "../lib/format";
+import { GLOSSARY } from "../lib/glossary";
 import { supabase } from "../lib/supabase";
 import MetricCard from "./MetricCard";
 
@@ -34,6 +35,7 @@ export default function OIDeltaCard({ asset, timestamp }: { asset: string; times
       reading={readOiDelta(row?.oi_delta_4h, row?.price_delta_4h)}
       source="Coinalyze (4h)"
       timestamp={timestamp}
+      info={GLOSSARY.oiDelta}
     />
   );
 }

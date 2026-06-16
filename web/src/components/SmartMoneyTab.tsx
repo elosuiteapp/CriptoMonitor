@@ -39,14 +39,26 @@ const BIAS_TONE: Record<string, string> = {
 const biasDot = (b: "bullish" | "bearish" | "neutral") =>
   b === "bullish" ? "bg-signal-green" : b === "bearish" ? "bg-signal-red" : "bg-slate-500";
 
-const LAYER_LABELS: { key: keyof SmcLayers; label: string }[] = [
-  { key: "orderBlocks", label: "Order Blocks" },
-  { key: "fvg", label: "Imbalance" },
-  { key: "liquidity", label: "Liquidez" },
-  { key: "zones", label: "Zonas" },
-  { key: "equal", label: "EQH/EQL" },
-  { key: "structure", label: "BOS/CHoCH" },
+const LAYER_LABELS: { key: keyof SmcLayers; label: string; help: string }[] = [
+  { key: "orderBlocks", label: "Order Blocks", help: "Order blocks — zonas onde a mão forte posicionou (última vela antes de um movimento forte). Viram suporte (demanda) ou resistência (oferta)." },
+  { key: "fvg", label: "Imbalance", help: "Imbalance / FVG (Fair Value Gap) — gap de 3 velas onde o preço passou rápido demais. Tende a ser preenchido depois (ímã)." },
+  { key: "liquidity", label: "Liquidez", help: "Zonas de liquidez — aglomerados de stops (topos/fundos iguais). Funcionam como ímãs; o preço costuma buscá-los." },
+  { key: "zones", label: "Zonas", help: "Premium/Discount — metade cara (premium, zona de venda) e barata (discount, zona de compra) do range, com o equilíbrio no meio." },
+  { key: "equal", label: "EQH/EQL", help: "EQH/EQL — topos iguais (Equal Highs) e fundos iguais (Equal Lows): regiões com liquidez acumulada logo acima/abaixo." },
+  { key: "structure", label: "BOS/CHoCH", help: "BOS = rompimento de estrutura (continuação da tendência); CHoCH = mudança de caráter (possível reversão)." },
 ];
+
+// Explicação por tipo de leitura (tooltip ⓘ no título do card)
+const READING_HELP: Record<string, string> = {
+  "Estrutura de mercado": "Direção dada pela sequência de topos e fundos. BOS = rompimento (continuação); CHoCH = mudança de caráter (possível reversão).",
+  "Estrutura interna": "A estrutura num grau menor (curto prazo). Quando diverge da principal, costuma anteceder pivôs ou pullbacks.",
+  "Zona de preço": "Onde o preço está no range: Discount (barato, zona de compra da mão forte), Premium (caro, zona de venda) ou Equilíbrio.",
+  "Alvo de liquidez acima": "Pool de liquidez = aglomerado de stops acima do preço. Ímã provável — o preço tende a buscá-lo antes de seguir.",
+  "Alvo de liquidez abaixo": "Pool de liquidez = aglomerado de stops abaixo do preço. Ímã provável — o preço tende a buscá-lo antes de seguir.",
+  "Resistência (order block)": "Order block de oferta acima do preço — zona onde vendedores tendem a reagir (possível resistência).",
+  "Suporte (order block)": "Order block de demanda abaixo do preço — zona onde compradores tendem a reagir (possível suporte).",
+  "Varredura de liquidez": "Stop hunt: o preço varre uma região de stops e reverte. Sinal clássico de manipulação da mão forte antes do movimento real.",
+};
 
 const CONF_STYLE: Record<string, string> = {
   gamma: "border-accent/40 text-accent",
@@ -254,7 +266,10 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
-          <span className="text-xs text-slate-400">Tendência (top-down):</span>
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            Tendência (top-down):
+            <InfoTip text="Viés da estrutura em vários timeframes (1D/4h/1h). Operar a favor do timeframe maior aumenta a chance — princípio nº1 do Smart Money." />
+          </span>
           {mtf.length === 0 ? (
             <span className="text-xs text-slate-600">calculando…</span>
           ) : (
@@ -279,7 +294,10 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             <div key={i} className="flex gap-2 rounded-xl border border-ink-600 bg-ink-800/60 p-3">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[l.tone]}`} />
               <div>
-                <div className="text-xs font-semibold text-slate-300">{l.title}</div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                  {l.title}
+                  {READING_HELP[l.title] && <InfoTip text={READING_HELP[l.title]} />}
+                </div>
                 <div className="text-xs text-slate-400">{l.text}</div>
               </div>
             </div>
@@ -291,18 +309,18 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       <div className="rounded-2xl border border-ink-600 bg-ink-800/60 p-3">
         {/* Toggles de camadas */}
         <div className="mb-2 flex flex-wrap gap-1.5">
-          {LAYER_LABELS.map(({ key, label }) => (
-            <button
+          {LAYER_LABELS.map(({ key, label, help }) => (
+            <span
               key={key}
-              onClick={() => toggleLayer(key)}
-              className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                layers[key]
-                  ? "border-accent/40 bg-accent/15 text-accent"
-                  : "border-ink-500 text-slate-500 hover:text-slate-300"
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                layers[key] ? "border-accent/40 bg-accent/15 text-accent" : "border-ink-500 text-slate-500"
               }`}
             >
-              {label}
-            </button>
+              <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
+                {label}
+              </button>
+              <InfoTip text={help} />
+            </span>
           ))}
         </div>
         {loading && candles.length === 0 ? (

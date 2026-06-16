@@ -1,5 +1,6 @@
 import type { SeriesPoint } from "../hooks/useSeries";
 import { fmtPct } from "../lib/format";
+import InfoTip from "./InfoTip";
 
 /** Faixa de cor de funding positivo/negativo ao longo do tempo (PRD §8.4). */
 export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
@@ -14,7 +15,7 @@ export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
   return (
     <div className="rounded-lg border border-ink-600 bg-ink-800/40 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
-        <span>Funding (faixa temporal)</span>
+        <span className="flex items-center gap-1.5">Funding (faixa temporal) <InfoTip text="Funding ao longo do tempo: verde = comprados pagando (otimismo alavancado), vermelho = vendidos pagando. Faixas longas no mesmo lado sinalizam posicionamento esticado." /></span>
         <span className={last >= 0 ? "text-signal-green" : "text-signal-red"}>
           atual {fmtPct(last * 100, 4)}
         </span>

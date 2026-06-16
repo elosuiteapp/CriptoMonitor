@@ -12,4 +12,9 @@ export const GLOSSARY: Record<string, string> = {
   macroMarket: "Dominância do BTC + capitalização total do mercado. Dominância subindo = dinheiro indo pro BTC (alts perdem força) e vice-versa.",
   rangePosition: "Onde o preço está dentro do range recente: 0% = fundo (discount/barato), 100% = topo (premium/caro). Mão forte tende a comprar no discount e vender no premium.",
   bias: "Viés da estrutura de mercado (Smart Money): de ALTA quando o preço rompe topos/fundos pra cima (BOS de alta), de BAIXA no contrário. Define a direção dominante.",
+  oiDelta: "Delta de Open Interest vs preço (4h): mostra se o movimento veio de posições NOVAS. OI sobe + preço sobe = novas compras; OI sobe + preço cai = novas vendas (atenção a squeeze).",
+  dvol: "DVOL — índice de volatilidade implícita da Deribit (o 'VIX da cripto'). Alto = o mercado espera movimentos grandes; baixo = calmaria precificada.",
+  ivp: "IV Percentile 90d — onde a volatilidade implícita atual está na faixa dos últimos 90 dias (0–100). Alto = opções caras (favorece vender); baixo = baratas (favorece comprar).",
+  ivRv: "IV − RV spread: volatilidade implícita menos a realizada. Positivo = mercado precificando mais oscilação do que de fato aconteceu — prêmio de risco caro.",
+  termStructure: "Volatilidade implícita por prazo (7d→180d). Curto prazo acima do longo (backwardation) sugere o mercado precificando um evento próximo.",
 };
