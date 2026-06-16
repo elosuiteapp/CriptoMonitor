@@ -19,15 +19,17 @@ from .base import BaseSource, TableRows
 
 log = get_logger("macro")
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-_YF = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
+_YF = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=6mo"
 _BINANCE = "https://data-api.binance.vision/api/v3/klines"  # endpoint público SEM geo-bloqueio (api.binance.com dá 451 na nuvem)
 
 # (código interno, nome exibido, símbolo no Yahoo)
 _MACRO = [
     ("DXY", "Dollar Index (DXY)", "DX-Y.NYB"),
     ("SPX", "S&P 500", "^GSPC"),
+    ("NASDAQ", "Nasdaq", "^IXIC"),
     ("GOLD", "Ouro", "GC=F"),
     ("US10Y", "Treasury 10 anos", "^TNX"),
+    ("VIX", "VIX (índice do medo)", "^VIX"),
 ]
 _CRYPTO_SYMBOL = {
     "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT",
@@ -57,6 +59,13 @@ def _pearson(ra: np.ndarray, rb: np.ndarray) -> float | None:
     if len(ra) < 6 or ra.std() == 0 or rb.std() == 0:
         return None
     return round(float(np.corrcoef(ra, rb)[0, 1]), 4)
+
+
+def _corr_window(ra: np.ndarray, rb: np.ndarray, n: int) -> float | None:
+    """Correlação sobre os últimos n retornos (dias úteis comuns)."""
+    if len(ra) < 6:
+        return None
+    return _pearson(ra[-n:], rb[-n:])
 
 
 class MacroMarketsSource(BaseSource):
@@ -101,20 +110,25 @@ class MacroMarketsSource(BaseSource):
             if not sym:
                 continue
             try:
-                r = await http.get(_BINANCE, params={"symbol": sym, "interval": "1d", "limit": 45}, timeout=20.0)
+                r = await http.get(_BINANCE, params={"symbol": sym, "interval": "1d", "limit": 120}, timeout=20.0)
                 r.raise_for_status()
                 crypto_series[asset] = {_date(k[0] / 1000): float(k[4]) for k in r.json()}
             except Exception as exc:  # noqa: BLE001
                 log.warning("klines diários %s falharam: %s", asset, exc)
 
-        # 3. Correlação 30d (retornos diários) cripto × macro
+        # 3. Correlação 30d e 90d cripto × macro, e cripto × BTC (driver das alts)
         corr_rows: list[dict] = []
         for asset, cseries in crypto_series.items():
-            for code in macro_series:
-                ra, rb = _series_to_returns(cseries, macro_series[code])
-                corr = _pearson(ra, rb)
-                if corr is not None:
-                    corr_rows.append({"asset": asset, "macro_symbol": code, "corr_30d": corr, "ts": ts})
+            targets: dict[str, dict[str, float]] = dict(macro_series)
+            if asset != "BTC" and "BTC" in crypto_series:
+                targets["BTC"] = crypto_series["BTC"]  # BTC como referência cripto
+            for code, oseries in targets.items():
+                ra, rb = _series_to_returns(cseries, oseries)
+                c30 = _corr_window(ra, rb, 22)  # ~30 dias úteis
+                c90 = _corr_window(ra, rb, 64)  # ~90 dias úteis
+                if c30 is not None:
+                    corr_rows.append({"asset": asset, "macro_symbol": code,
+                                      "corr_30d": c30, "corr_90d": c90, "ts": ts})
 
         return [
             TableRows("macro_assets", macro_rows, "symbol,ts"),
