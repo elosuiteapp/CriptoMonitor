@@ -7,6 +7,7 @@ import Chart, { type ActiveLayers } from "../components/Chart";
 import ChartTypeSelector from "../components/ChartTypeSelector";
 import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
+import ForexPlaceholder from "../components/ForexPlaceholder";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
@@ -15,6 +16,7 @@ import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
 import MetricCard from "../components/MetricCard";
+import ModuleSwitcher from "../components/ModuleSwitcher";
 import NewsBlock from "../components/NewsBlock";
 import OIDeltaCard from "../components/OIDeltaCard";
 import PriceHeader from "../components/PriceHeader";
@@ -25,6 +27,7 @@ import UserMenu from "../components/UserMenu";
 import VolatilityPanel from "../components/VolatilityPanel";
 import { useAuth } from "../hooks/useAuth";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
@@ -53,7 +56,8 @@ const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DV
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { plan, loading: planLoading } = usePlan(user?.id);
-  const { isAdmin } = useIsAdmin(user?.id);
+  const { isAdmin, loading: adminLoading } = useIsAdmin(user?.id);
+  const { module: market, setModule: setMarket } = useModule();
 
   const allowed = plan?.assets ?? ["BTC"];
   const [asset, setAsset] = useState("BTC");
@@ -75,6 +79,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (plan && !plan.assets.includes(asset)) setAsset(plan.assets[0] ?? "BTC");
   }, [plan, asset]);
+
+  // Forex ainda é só para admin (preview). Se um não-admin tiver "forex" salvo
+  // no localStorage, volta para Crypto assim que o papel for resolvido.
+  useEffect(() => {
+    if (market === "forex" && !adminLoading && !isAdmin) setMarket("crypto");
+  }, [market, adminLoading, isAdmin]);
 
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
@@ -109,7 +119,11 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           {user && <UserMenu user={user} planName={plan.name} onSignOut={signOut} />}
           <span className="font-bold text-white">Crypto Monitor</span>
-          <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
+          <span className="hidden h-5 w-px bg-ink-600 sm:block" />
+          <ModuleSwitcher current={market} onChange={setMarket} isAdmin={isAdmin} />
+          {market === "crypto" && (
+            <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="rounded-full border border-ink-500 px-2.5 py-1 text-xs text-slate-400">
@@ -128,6 +142,10 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
+        {market === "forex" ? (
+          <ForexPlaceholder onBack={() => setMarket("crypto")} />
+        ) : (
+          <>
         <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} />
 
         <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
@@ -331,6 +349,8 @@ export default function Dashboard() {
 
         {/* Bloco de notícias — §8.6.4 (todos os planos) */}
         <NewsBlock asset={asset} plan={plan} />
+          </>
+        )}
           </>
         )}
       </main>
