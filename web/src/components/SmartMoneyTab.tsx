@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
+import { useCvd } from "../hooks/useCvd";
 import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePlan } from "../hooks/usePlan";
 import { fmtPrice, fmtUsd } from "../lib/format";
@@ -15,6 +16,7 @@ import { supabase } from "../lib/supabase";
 import InfoTip from "./InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
 import SmcAssetPicker from "./SmcAssetPicker";
+import VolumeDeltaSubchart from "./VolumeDeltaSubchart";
 
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "4h", label: "4h" },
@@ -47,6 +49,14 @@ const LAYER_LABELS: { key: keyof SmcLayers; label: string; help: string }[] = [
   { key: "zones", label: "Zonas", help: "Premium/Discount — metade cara (premium, zona de venda) e barata (discount, zona de compra) do range, com o equilíbrio no meio." },
   { key: "equal", label: "EQH/EQL", help: "EQH/EQL — topos iguais (Equal Highs) e fundos iguais (Equal Lows): regiões com liquidez acumulada logo acima/abaixo." },
   { key: "structure", label: "BOS/CHoCH", help: "BOS = rompimento de estrutura (continuação da tendência); CHoCH = mudança de caráter (possível reversão)." },
+];
+
+// Indicadores de mercado (calculados das velas da Binance — sem dados do coletor;
+// funcionam em qualquer das 100 moedas). Mesmo esquema de toggle das camadas SMC.
+const MARKET_LAYERS: { key: keyof SmcLayers; label: string; help: string }[] = [
+  { key: "volumeProfile", label: "Volume Profile", help: "POC (preço com mais volume negociado) e Value Area (faixa de 70% do volume) — ímãs e suporte/resistência, calculados do volume das velas." },
+  { key: "cvd", label: "CVD / Volume Delta", help: "Volume delta acumulado (comprador agressor − vendedor) das velas da Binance, em painel abaixo do gráfico. Subindo = compradores no comando; divergir do preço é o sinal mais valioso." },
+  { key: "liquidations", label: "Liquidações", help: "Heatmap estimado de bolsões de liquidação (modelo de alavancagem sobre as velas). Zonas quentes funcionam como ímãs de preço." },
 ];
 
 // Explicação por tipo de leitura (tooltip ⓘ no título do card)
@@ -110,6 +120,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [layers, setLayers] = useState<SmcLayers>(DEFAULT_LAYERS);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
+  // Volume Delta / CVD por candle (klines) — só busca com a camada CVD ligada.
+  const cvdSeries = useCvd(smcAsset, tf, layers.cvd);
 
   useEffect(() => {
     let active = true;
@@ -196,22 +208,24 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, [smcAsset]);
 
+  // Volume Profile (POC/VA) dos candles — reusado na confluência e no gráfico.
+  const vp = useMemo(() => (candles.length ? computeVolumeProfile(candles) : null), [candles]);
+
   // Confluência enriquecida: gamma + book (sources) + POC/Value Area + bolsões de liquidação
   const allSources = useMemo(() => {
     const extra: ConfluenceSource[] = [];
+    if (vp) {
+      extra.push({ kind: "vp", label: "POC", price: vp.poc });
+      extra.push({ kind: "vp", label: "VA High", price: vp.vah });
+      extra.push({ kind: "vp", label: "VA Low", price: vp.val });
+    }
     if (candles.length) {
-      const vp = computeVolumeProfile(candles);
-      if (vp) {
-        extra.push({ kind: "vp", label: "POC", price: vp.poc });
-        extra.push({ kind: "vp", label: "VA High", price: vp.vah });
-        extra.push({ kind: "vp", label: "VA Low", price: vp.val });
-      }
       liqMagnets(candles, oiSeries).forEach((p, i) =>
         extra.push({ kind: "liq", label: i === 0 ? "Liquidação (forte)" : "Liquidação", price: p }),
       );
     }
     return [...sources, ...extra];
-  }, [sources, candles, oiSeries]);
+  }, [sources, candles, oiSeries, vp]);
 
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
@@ -315,8 +329,22 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
         {/* Camadas (esquerda) + timeframe (direita) — controlam o gráfico abaixo */}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {LAYER_LABELS.map(({ key, label, help }) => (
+              <span
+                key={key}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                  layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
+                }`}
+              >
+                <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
+                  {label}
+                </button>
+                <InfoTip text={help} />
+              </span>
+            ))}
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            {MARKET_LAYERS.map(({ key, label, help }) => (
               <span
                 key={key}
                 className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
@@ -347,7 +375,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} />
         )}
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           Zonas: <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount ·{" "}
@@ -356,6 +384,11 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           EQH/EQL = topos/fundos iguais · setas = BOS/CHoCH. Tudo calculado dos candles.
         </p>
       </div>
+
+      {/* Volume Delta / CVD (klines) — painel abaixo do gráfico, qualquer moeda */}
+      {layers.cvd && (
+        <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD (Binance · ${tf.toUpperCase()})`} />
+      )}
 
       {/* Tabela de níveis-chave com confluência */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">

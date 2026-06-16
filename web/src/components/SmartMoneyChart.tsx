@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import {
   ColorType,
   CrosshairMode,
+  LineStyle,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
@@ -11,7 +13,9 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
-import type { Candle } from "../lib/marketData";
+import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
+import { type OiPoint } from "../lib/liquidationModel";
+import type { Candle, VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
 const UP = "#22c55e";
@@ -26,6 +30,9 @@ export interface SmcLayers {
   zones: boolean; // premium/discount/equilibrium + topo/fundo
   equal: boolean; // EQH/EQL
   structure: boolean; // marcadores BOS/CHoCH
+  volumeProfile: boolean; // POC / Value Area (price lines)
+  liquidations: boolean; // heatmap estimado (canvas atrás das velas)
+  cvd: boolean; // painel de Volume Delta / CVD abaixo do gráfico (em SmartMoneyTab)
 }
 
 export const DEFAULT_LAYERS: SmcLayers = {
@@ -35,6 +42,9 @@ export const DEFAULT_LAYERS: SmcLayers = {
   zones: true,
   equal: true,
   structure: true,
+  volumeProfile: false,
+  liquidations: false,
+  cvd: false,
 };
 
 interface Props {
@@ -42,6 +52,8 @@ interface Props {
   smc: SmcResult | null;
   layers?: SmcLayers;
   viewKey?: string; // muda só na troca de ativo/timeframe → re-enquadra; refresh silencioso preserva o zoom
+  vp?: VolumeProfile | null; // Volume Profile (POC/VA) calculado dos candles
+  oiSeries?: OiPoint[]; // OI p/ refinar o heatmap (cai p/ volume quando ausente)
 }
 
 const kfmt = (v: number) => {
@@ -54,12 +66,15 @@ const kfmt = (v: number) => {
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
-export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey }: Props) {
+export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [] }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  const heatRef = useRef<HTMLCanvasElement | null>(null);
+  const heatTipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const vpLinesRef = useRef<IPriceLine[]>([]);
   const lastViewKey = useRef<string | undefined>(undefined);
   const { isDark } = useTheme();
 
@@ -146,6 +161,42 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
     }));
     series.setMarkers(markers as never);
   }, [smc, layers.structure]);
+
+  // ─── Volume Profile (POC / Value Area) como price lines ──────────────────────
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    for (const l of vpLinesRef.current) series.removePriceLine(l);
+    vpLinesRef.current = [];
+    if (!layers.volumeProfile || !vp) return;
+    const add = (price: number | null | undefined, color: string, title: string) => {
+      if (price == null || !Number.isFinite(price)) return;
+      vpLinesRef.current.push(
+        series.createPriceLine({ price, color, lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title }),
+      );
+    };
+    add(vp.poc, "#38bdf8", "POC");
+    add(vp.vah, "rgba(56,189,248,0.5)", "VA High");
+    add(vp.val, "rgba(56,189,248,0.5)", "VA Low");
+  }, [vp, layers.volumeProfile]);
+
+  // ─── Heatmap estimado de liquidações (canvas atrás das velas) ────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const canvas = heatRef.current;
+    const wrap = wrapRef.current;
+    if (!chart || !series || !canvas || !wrap) return;
+    if (!layers.liquidations || candles.length < 10) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
+    return runLiquidationHeatmap({ chart, series, canvas, wrap, tip: heatTipRef.current, candles, oiSeries });
+  }, [candles, oiSeries, layers.liquidations]);
 
   // ─── Zonas preenchidas (canvas overlay) ──────────────────────────────────────
   useEffect(() => {
@@ -364,8 +415,29 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
 
   return (
     <div ref={wrapRef} className="relative h-[380px] w-full">
+      <canvas ref={heatRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
       <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 2 }} />
+      {layers.liquidations && (
+        <>
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
+            Heatmap de liquidações · estimativa (modelo de alavancagem)
+          </div>
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+            <span>fraco</span>
+            <span
+              className="h-2 w-24 rounded"
+              style={{ background: "linear-gradient(to right, rgb(12,16,40), rgb(49,46,129), rgb(13,148,136), rgb(132,204,22), rgb(250,204,21))" }}
+            />
+            <span>forte</span>
+          </div>
+          <div
+            ref={heatTipRef}
+            className="pointer-events-none absolute z-20 rounded bg-background/95 px-2 py-1 text-[10px] text-foreground shadow-lg ring-1 ring-border"
+            style={{ display: "none" }}
+          />
+        </>
+      )}
     </div>
   );
 }
