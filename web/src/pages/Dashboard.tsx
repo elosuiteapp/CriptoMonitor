@@ -26,7 +26,9 @@ import TabBar, { type TabId } from "../components/TabBar";
 import ThemeToggle from "../components/ui/ThemeToggle";
 import UserMenu from "../components/UserMenu";
 import VolatilityPanel from "../components/VolatilityPanel";
+import VolumeDeltaSubchart from "../components/VolumeDeltaSubchart";
 import { useAuth } from "../hooks/useAuth";
+import { useCvd } from "../hooks/useCvd";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
@@ -91,6 +93,8 @@ export default function Dashboard() {
   const series = useSeries(asset, plan);
   const walls = useOrderbookWalls(asset, plan);
   const oiSeries = useOpenInterest(asset, plan);
+  // Volume Delta / CVD por candle (klines da Binance) — só quando a camada CVD liga.
+  const cvdSeries = useCvd(asset, timeframe, (plan?.chart_layers ?? false) && layers.cvd);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
   const canSmart = plan?.smart_money ?? false;
@@ -189,8 +193,8 @@ export default function Dashboard() {
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
           {canUseLayers && layers.cvd && (
             <>
-              <CvdSubchart data={series.cvd} title="CVD do varejo (Binance + OKX)" />
-              <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase)" />
+              <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD (Binance · ${timeframe.toUpperCase()})`} />
+              <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
             </>
           )}
           {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}

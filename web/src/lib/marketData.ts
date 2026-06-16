@@ -96,6 +96,33 @@ export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Pr
   }));
 }
 
+export interface CvdPoint {
+  time: number; // epoch (s) — alinhado às velas do gráfico
+  delta: number; // saldo agressor do candle (USDT): comprador − vendedor
+  cvd: number; // soma acumulada do delta (volume delta cumulativo)
+}
+
+/** Volume Delta / CVD por candle, das klines da Binance. Usa o volume comprador
+ *  agressor (takerBuyQuote, índice 10) vs o volume total em quote (índice 7):
+ *  delta = 2·takerBuyQuote − quoteVol. CVD = soma acumulada. Mesmo timeframe do
+ *  gráfico, histórico completo, qualquer moeda — sem depender do coletor. */
+export async function fetchVolumeDelta(asset: string, tf: Timeframe, limit = 300): Promise<CvdPoint[]> {
+  const symbol = SYMBOL[asset];
+  if (!symbol) return [];
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Binance klines ${res.status}`);
+  const raw = (await res.json()) as unknown[][];
+  let cum = 0;
+  return raw.map((k) => {
+    const quoteVol = Number(k[7]);
+    const takerBuyQuote = Number(k[10]);
+    const delta = 2 * takerBuyQuote - quoteVol;
+    cum += delta;
+    return { time: Math.floor((k[0] as number) / 1000), delta, cvd: cum };
+  });
+}
+
 /** Variação percentual de 24h (ticker da Binance). null se indisponível. */
 export async function fetch24hChange(asset: string): Promise<number | null> {
   const symbol = SYMBOL[asset];
