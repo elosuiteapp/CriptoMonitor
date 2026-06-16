@@ -93,6 +93,10 @@ export interface MarketLiquidityData {
   stablecoin_chg_7d_usd: number | null;
   stablecoin_chg_7d_pct: number | null;
   total_tvl_usd: number | null;
+  dex_volume_24h: number | null;
+  dex_change_7d: number | null;
+  fees_24h: number | null;
+  fees_change_7d: number | null;
 }
 
 export interface OrderbookWall {

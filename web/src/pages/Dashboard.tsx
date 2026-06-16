@@ -11,6 +11,7 @@ import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LiquidationsStrip from "../components/LiquidationsStrip";
+import LiquidityDirectionPanel from "../components/LiquidityDirectionPanel";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
 import MacroTab from "../components/MacroTab";
@@ -39,7 +40,6 @@ import {
   readFunding,
   readLiquidations,
   readLongShort,
-  readMarketLiquidity,
   readOptionsPositioning,
   readTvl,
   type Reading,
@@ -308,21 +308,6 @@ export default function Dashboard() {
                     timestamp={updatedAt}
                   />
                 )}
-                {payload?.liquidity && (
-                  <MetricCard
-                    institutional
-                    title="Liquidez & Direção"
-                    info={GLOSSARY.marketLiquidity}
-                    reading={readMarketLiquidity(
-                      payload.liquidity.total_stablecoin_usd,
-                      payload.liquidity.stablecoin_chg_7d_pct,
-                      macro?.total_mcap,
-                      payload.liquidity.total_tvl_usd,
-                    )}
-                    source="DefiLlama"
-                    timestamp={updatedAt}
-                  />
-                )}
                 {payload?.gamma && (
                   <MetricCard
                     institutional
@@ -344,6 +329,16 @@ export default function Dashboard() {
               </>
             )}
           </div>
+
+          {advanced && payload?.liquidity && (
+            <div className="mt-3">
+              <LiquidityDirectionPanel
+                liquidity={payload.liquidity}
+                macro={macro ?? null}
+                updatedAt={updatedAt}
+              />
+            </div>
+          )}
         </section>
 
         {/* Bloco de notícias — §8.6.4 (todos os planos) */}

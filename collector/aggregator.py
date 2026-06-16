@@ -299,7 +299,8 @@ class Collector:
         if not _rows_of(results, "market_liquidity"):
             liquidity_fallback = self._latest_row(
                 "market_liquidity",
-                "total_stablecoin_usd,stablecoin_chg_7d_usd,stablecoin_chg_7d_pct,total_tvl_usd,ts")
+                "total_stablecoin_usd,stablecoin_chg_7d_usd,stablecoin_chg_7d_pct,total_tvl_usd,"
+                "dex_volume_24h,dex_change_7d,fees_24h,fees_change_7d,ts")
 
         # Recalcular e gravar o snapshot consolidado (isolado: nunca derruba o ciclo)
         snapshots: list[dict] = []

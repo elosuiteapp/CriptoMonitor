@@ -18,6 +18,8 @@ from .base import BaseSource, TableRows
 
 _STABLE_ALL = "https://stablecoins.llama.fi/stablecoincharts/all"
 _CHAINS = "https://api.llama.fi/v2/chains"
+_DEXS = "https://api.llama.fi/overview/dexs?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true"
+_FEES = "https://api.llama.fi/overview/fees?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true"
 
 
 def _total_circulating(point: dict) -> float | None:
@@ -55,11 +57,29 @@ class MarketLiquiditySource(BaseSource):
         except Exception:  # noqa: BLE001
             total_tvl = None
 
+        # Atividade on-chain: volume de DEX (especulação) e fees/receita (uso real) — best-effort
+        dex_vol_24h, dex_chg_7d = await self._overview(http, _DEXS)
+        fees_24h, fees_chg_7d = await self._overview(http, _FEES)
+
         row = {
             "total_stablecoin_usd": total_sc,
             "stablecoin_chg_7d_usd": chg7,
             "stablecoin_chg_7d_pct": chg7_pct,
             "total_tvl_usd": total_tvl,
+            "dex_volume_24h": dex_vol_24h,
+            "dex_change_7d": dex_chg_7d,
+            "fees_24h": fees_24h,
+            "fees_change_7d": fees_chg_7d,
             "ts": ts,
         }
         return [TableRows("market_liquidity", [row], "ts")]
+
+    async def _overview(self, http, url) -> tuple[float | None, float | None]:
+        """(total24h, change_7d %) de um endpoint /overview da DefiLlama. (None, None) se falhar."""
+        try:
+            r = await http.get(url, timeout=25.0)
+            r.raise_for_status()
+            d = r.json()
+            return d.get("total24h"), d.get("change_7d")
+        except Exception:  # noqa: BLE001 — best-effort
+            return None, None
