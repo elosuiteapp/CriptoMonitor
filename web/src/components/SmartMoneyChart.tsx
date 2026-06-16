@@ -9,7 +9,7 @@ import {
 } from "lightweight-charts";
 
 import { useTheme } from "../hooks/useTheme";
-import { chartAxisColors } from "../lib/chartTheme";
+import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
 import type { Candle } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
@@ -79,8 +79,9 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
         horzLines: { color: c.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: chartLocalization,
       rightPriceScale: { borderColor: c.border },
-      timeScale: { borderColor: c.border, timeVisible: true },
+      timeScale: { borderColor: c.border, timeVisible: true, tickMarkFormatter: chartTickFormatter },
     });
     const series = chart.addCandlestickSeries({
       upColor: UP,

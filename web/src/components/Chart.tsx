@@ -13,7 +13,7 @@ import {
 } from "lightweight-charts";
 
 import { useTheme } from "../hooks/useTheme";
-import { chartAxisColors } from "../lib/chartTheme";
+import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import { buildLiquidationGrid, liqColor, type OiPoint } from "../lib/liquidationModel";
@@ -83,8 +83,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         horzLines: { color: c.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: chartLocalization,
       rightPriceScale: { borderColor: c.border },
-      timeScale: { borderColor: c.border, timeVisible: true },
+      timeScale: { borderColor: c.border, timeVisible: true, tickMarkFormatter: chartTickFormatter },
     });
     chartRef.current = chart;
     return () => {

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { ColorType, LineStyle, createChart, type IChartApi } from "lightweight-charts";
 
 import { useTheme } from "../hooks/useTheme";
-import { chartAxisColors } from "../lib/chartTheme";
+import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { supabase } from "../lib/supabase";
 
 /** Proxy de fluxo de opções (HIRO simplificado, PRD3). Linha do delta-fluxo
@@ -41,9 +41,10 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
           vertLines: { color: ax.grid },
           horzLines: { color: ax.grid },
         },
+        localization: chartLocalization,
         rightPriceScale: { borderColor: ax.border },
         leftPriceScale: { visible: true, borderColor: ax.border },
-        timeScale: { borderColor: ax.border, timeVisible: true },
+        timeScale: { borderColor: ax.border, timeVisible: true, tickMarkFormatter: chartTickFormatter },
       });
 
       const spotSeries = chart.addLineSeries({
