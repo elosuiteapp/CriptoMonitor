@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
@@ -85,6 +85,14 @@ const CONF_STYLE: Record<string, string> = {
   htf: "border-fuchsia-500/40 text-fuchsia-400",
 };
 
+// Cores do banner do radar de eventos SMC, por tom.
+const BANNER_TONE: Record<string, string> = {
+  good: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  bad: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300",
+  warn: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  neutral: "border-border bg-card text-foreground",
+};
+
 /** Preços dos bolsões de liquidação mais fortes (coluna atual do heatmap estimado). */
 function liqMagnets(candles: Candle[], oi: OiPoint[], topN = 3): number[] {
   const grid = buildLiquidationGrid(candles, oi);
@@ -132,6 +140,10 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const perp = usePerpContext(smcAsset);
   // Estrutura SMC do timeframe MAIOR (confluência top-down).
   const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
+  // Radar de eventos SMC (in-app): avisa BOS/CHoCH/varredura novos com a aba aberta.
+  const [radarOn, setRadarOn] = usePersistentState<boolean>("cm.smc-radar", false);
+  const [smcAlert, setSmcAlert] = useState<{ text: string; tone: Tone } | null>(null);
+  const lastEventRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -275,6 +287,52 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
   const narrative: ReadingLine[] = smc ? buildNarrative(smc, allSources) : [];
 
+  // Radar in-app: detecta evento SMC novo (BOS/CHoCH ou varredura de liquidez) e avisa.
+  useEffect(() => {
+    if (!radarOn || !smc) return;
+    const key = `${smcAsset}-${tf}`;
+    const events: { time: number; text: string; tone: Tone }[] = [];
+    const ls = smc.structures[smc.structures.length - 1];
+    if (ls) {
+      events.push({
+        time: ls.time,
+        text: `novo ${ls.type} de ${ls.bias === "bullish" ? "alta" : "baixa"} em ${fmtPrice(ls.price)}`,
+        tone: ls.bias === "bullish" ? "good" : "bad",
+      });
+    }
+    const sweep = smc.liquidity.filter((l) => l.sweptRecently).sort((a, b) => b.time - a.time)[0];
+    if (sweep) {
+      events.push({ time: sweep.time, text: `varredura de liquidez (stop hunt) em ${fmtPrice(sweep.price)}`, tone: "warn" });
+    }
+    const latest = events.sort((a, b) => b.time - a.time)[0];
+    if (!latest) return;
+    const sig = `${latest.time}|${latest.text}`;
+    const prev = lastEventRef.current[key];
+    lastEventRef.current[key] = sig;
+    if (prev === undefined || prev === sig) return; // 1ª vez semeia; igual = sem novidade
+    const msg = `${smcAsset} · ${TF_LABEL[tf] ?? tf}: ${latest.text}`;
+    setSmcAlert({ text: msg, tone: latest.tone });
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("Crypto Monitor · Smart Money", { body: msg });
+      }
+    } catch {
+      /* Notification indisponível */
+    }
+  }, [smc, radarOn, smcAsset, tf]);
+
+  // Limpa o aviso ao trocar de moeda/timeframe.
+  useEffect(() => setSmcAlert(null), [smcAsset, tf]);
+
+  function toggleRadar() {
+    const next = !radarOn;
+    setRadarOn(next);
+    if (next && typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+    if (!next) setSmcAlert(null);
+  }
+
   // Cria um alerta de preço no nível SMC (reaproveita o módulo de Alertas).
   async function createAlert(lvl: KeyLevel, idx: number) {
     setAlertError(null);
@@ -301,6 +359,19 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
   return (
     <section className="space-y-4">
+      {/* Banner do radar de eventos SMC */}
+      {smcAlert && (
+        <div className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${BANNER_TONE[smcAlert.tone]}`}>
+          <span className="flex items-center gap-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[smcAlert.tone]}`} />
+            🔔 {smcAlert.text}
+          </span>
+          <button onClick={() => setSmcAlert(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label="Dispensar">
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -313,6 +384,15 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground" title="Atualiza automaticamente a cada 60s">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> ao vivo
           </span>
+          <button
+            onClick={toggleRadar}
+            title={radarOn ? "Radar de eventos SMC ligado — avisa BOS/CHoCH/varredura com a aba aberta" : "Ativar radar de eventos SMC (BOS/CHoCH/varredura)"}
+            className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+              radarOn ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            🔔 Radar{radarOn ? " ON" : ""}
+          </button>
         </div>
       </div>
 
