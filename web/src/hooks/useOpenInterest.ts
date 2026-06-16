@@ -25,17 +25,21 @@ export function useOpenInterest(asset: string, plan: Plan | null): OiPoint[] {
     }
     let active = true;
     (async () => {
+      // 2000 linhas MAIS RECENTES (desc + limit) e depois inverte para crescente —
+      // ordenar asc + limit pegaria as mais ANTIGAS e travaria o histórico quando a
+      // tabela passar de 2000 linhas.
       const { data } = await supabase
         .from("derivatives")
         .select("open_interest, ts")
         .eq("asset", asset)
         .not("open_interest", "is", null)
-        .order("ts", { ascending: true })
+        .order("ts", { ascending: false })
         .limit(2000);
       if (!active) return;
       const pts = ((data as { open_interest: number | null; ts: string }[]) ?? [])
         .filter((r) => r.open_interest != null)
-        .map((r) => ({ time: Math.floor(new Date(r.ts).getTime() / 1000), oi: Number(r.open_interest) }));
+        .map((r) => ({ time: Math.floor(new Date(r.ts).getTime() / 1000), oi: Number(r.open_interest) }))
+        .reverse();
       setOi(pts);
     })();
     return () => {

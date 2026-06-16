@@ -42,27 +42,27 @@ export function useSeries(asset: string, plan: Plan | null): Series {
           .select("cvd, ts")
           .eq("asset", asset)
           .eq("exchange", "binance")
-          .order("ts", { ascending: true })
+          .order("ts", { ascending: false })
           .limit(300),
         supabase
           .from("prices_cex")
           .select("cvd, ts")
           .eq("asset", asset)
           .eq("exchange", "okx")
-          .order("ts", { ascending: true })
+          .order("ts", { ascending: false })
           .limit(300),
         supabase
           .from("prices_cex")
           .select("cvd, ts")
           .eq("asset", asset)
           .eq("exchange", "coinbase")
-          .order("ts", { ascending: true })
+          .order("ts", { ascending: false })
           .limit(300),
         supabase
           .from("derivatives")
           .select("funding_rate, ts")
           .eq("asset", asset)
-          .order("ts", { ascending: true })
+          .order("ts", { ascending: false })
           .limit(300),
         supabase
           .from("liquidations")
@@ -98,10 +98,13 @@ export function useSeries(asset: string, plan: Plan | null): Series {
         }))
         .reverse(); // veio desc → volta a crescente para o eixo do tempo
 
+      // As queries acima vêm em ordem DECRESCENTE (para pegar as 300 mais recentes);
+      // cvdRetail já reordena ao montar o mapa, mas cvdInst e funding precisam ser
+      // invertidos de volta para crescente antes de virarem pontos do gráfico.
       setSeries({
         cvd: cvdRetail,
-        cvdInst: toPoints(pricesCb, "cvd"),
-        funding: toPoints(deriv, "funding_rate"),
+        cvdInst: toPoints((pricesCb ?? []).slice().reverse(), "cvd"),
+        funding: toPoints((deriv ?? []).slice().reverse(), "funding_rate"),
         liquidations,
       });
     })();

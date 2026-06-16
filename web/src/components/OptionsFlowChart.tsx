@@ -14,13 +14,16 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
     let chart: IChartApi | undefined;
     let cancelled = false;
     (async () => {
+      // Busca as 288 linhas MAIS RECENTES (24h): ordena desc + limit e depois
+      // inverte para crescente (o gráfico exige tempo crescente). Ordenar asc +
+      // limit traria as 288 MAIS ANTIGAS — o gráfico ficava parado no 1º dia.
       const [{ data: flow }, { data: gp }] = await Promise.all([
-        supabase.from("options_flow").select("net_delta_flow, ts").eq("asset", asset).order("ts", { ascending: true }).limit(288),
-        supabase.from("gamma_profile").select("spot_price, ts").eq("asset", asset).order("ts", { ascending: true }).limit(288),
+        supabase.from("options_flow").select("net_delta_flow, ts").eq("asset", asset).order("ts", { ascending: false }).limit(288),
+        supabase.from("gamma_profile").select("spot_price, ts").eq("asset", asset).order("ts", { ascending: false }).limit(288),
       ]);
       if (cancelled || !ref.current) return;
-      const flowRows = (flow as { net_delta_flow: number | null; ts: string }[]) ?? [];
-      const gpRows = (gp as { spot_price: number | null; ts: string }[]) ?? [];
+      const flowRows = ((flow as { net_delta_flow: number | null; ts: string }[]) ?? []).slice().reverse();
+      const gpRows = ((gp as { spot_price: number | null; ts: string }[]) ?? []).slice().reverse();
       if (emptyRef.current) emptyRef.current.style.display = flowRows.length < 2 ? "block" : "none";
 
       chart = createChart(ref.current, {
