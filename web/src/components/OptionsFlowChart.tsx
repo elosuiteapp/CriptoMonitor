@@ -39,18 +39,6 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
         timeScale: { borderColor: "rgba(148,163,184,0.15)", timeVisible: true },
       });
 
-      // Duas séries para colorir o acumulado por direção: verde quando sobe (fluxo
-      // de hedge comprador), vermelho quando cai. Cada trecho é desenhado por uma
-      // série; os pontos de virada entram nas duas para a linha não quebrar.
-      const upSeries = chart.addLineSeries({
-        color: "#22c55e", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
-      });
-      const downSeries = chart.addLineSeries({
-        color: "#ef4444", lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: true, title: "Fluxo acum.",
-      });
-      upSeries.createPriceLine({
-        price: 0, color: "rgba(148,163,184,0.35)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "",
-      });
       const spotSeries = chart.addLineSeries({
         color: "#94a3b8", lineWidth: 1, lineStyle: LineStyle.Dotted, priceScaleId: "right", priceLineVisible: false, lastValueVisible: true, title: "Spot",
       });
@@ -65,18 +53,42 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
         })
         .filter((p) => (seen.has(p.time) ? false : (seen.add(p.time), true)));
 
-      const upData: { time: number; value?: number }[] = [];
-      const downData: { time: number; value?: number }[] = [];
-      cumData.forEach((p, i) => {
-        const prevUp = i > 0 ? p.value >= cumData[i - 1].value : null;
-        const nextUp = i < cumData.length - 1 ? cumData[i + 1].value >= p.value : null;
-        const inUp = prevUp === true || nextUp === true;
-        const inDown = prevUp === false || nextUp === false;
-        upData.push(inUp ? { time: p.time, value: p.value } : { time: p.time });
-        downData.push(inDown ? { time: p.time, value: p.value } : { time: p.time });
+      // Cor por direção do acumulado: cada trecho contíguo de mesma direção é UMA
+      // série própria (séries sobrepostas vazariam cor uma na outra). A direção sai
+      // de uma média móvel curta pra não virar confete no ruído. Verde sobe, vermelho desce.
+      const ch = chart;
+      const win = 5;
+      const sm = cumData.map((_, i) => {
+        let s = 0;
+        let c = 0;
+        for (let j = Math.max(0, i - win + 1); j <= i; j++) {
+          s += cumData[j].value;
+          c++;
+        }
+        return s / c;
       });
-      upSeries.setData(upData as never);
-      downSeries.setData(downData as never);
+      const runs: { up: boolean; pts: { time: number; value: number }[] }[] = [];
+      for (let i = 1; i < cumData.length; i++) {
+        const up = sm[i] >= sm[i - 1];
+        const last = runs[runs.length - 1];
+        if (last && last.up === up) last.pts.push(cumData[i]);
+        else runs.push({ up, pts: [cumData[i - 1], cumData[i]] });
+      }
+      runs.forEach((run, idx) => {
+        const isLast = idx === runs.length - 1;
+        const s = ch.addLineSeries({
+          color: run.up ? "#22c55e" : "#ef4444",
+          lineWidth: 2,
+          priceScaleId: "left",
+          priceLineVisible: false,
+          lastValueVisible: isLast,
+          title: isLast ? "Fluxo acum." : "",
+        });
+        s.setData(run.pts as never);
+        if (idx === 0) {
+          s.createPriceLine({ price: 0, color: "rgba(148,163,184,0.35)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" });
+        }
+      });
 
       const seen2 = new Set<number>();
       const spotData = gpRows
