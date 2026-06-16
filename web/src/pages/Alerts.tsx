@@ -58,10 +58,12 @@ export default function Alerts() {
     setError(null);
     setBusy(true);
     try {
+      // Funding é comparado contra derivatives.funding_rate, que está em PERCENT
+      // (Coinalyze: 0,01 = 0,01%). O usuário digita em % → guarda em % (sem /100).
       const condition =
         metric === "gamma_regime"
           ? { equals: regime }
-          : { op, value: metric === "funding" ? Number(value) / 100 : Number(value) };
+          : { op, value: Number(value) };
       const { error } = await supabase.from("alerts").insert({
         user_id: user!.id,
         asset,
