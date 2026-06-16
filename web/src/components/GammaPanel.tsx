@@ -10,6 +10,7 @@ import {
   readSkew,
   LEVEL_DOT,
 } from "../lib/format";
+import { GLOSSARY } from "../lib/glossary";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
 import GammaOiProfile from "./GammaOiProfile";
@@ -205,8 +206,9 @@ export default function GammaPanel({ gamma, asset }: Props) {
       {/* Fluxo de opções (proxy HIRO) — só BTC/ETH (fonte options_flow é Deribit) */}
       {asset !== "SOL" && (
         <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
-          <div className="mb-2 text-xs text-muted-foreground">
-            Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min</span>
+            <InfoTip text={GLOSSARY.optionsFlow} />
           </div>
           <OptionsFlowChart asset={asset} />
         </div>
