@@ -12,16 +12,18 @@ import {
 } from "../lib/format";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
+import GammaOiProfile from "./GammaOiProfile";
 import InfoTip from "./InfoTip";
 import GammaProfileLine from "./GammaProfileLine";
 import OptionsFlowChart from "./OptionsFlowChart";
 
-type ProfileView = "bars" | "line" | "levels";
+type ProfileView = "bars" | "line" | "oi" | "levels";
 
-const VIEW_LABEL: Record<ProfileView, string> = { bars: "Barras", line: "Linha", levels: "Níveis" };
+const VIEW_LABEL: Record<ProfileView, string> = { bars: "Barras", line: "Linha", oi: "OI", levels: "Níveis" };
 const VIEW_TITLE: Record<ProfileView, string> = {
   bars: "Perfil de gamma por strike",
   line: "Perfil de gamma (linha)",
+  oi: "Open interest por strike",
   levels: "Níveis de gamma no tempo",
 };
 
@@ -145,7 +147,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
           <div className="flex items-center gap-3">
             <span>{VIEW_TITLE[view]}</span>
             <div className="flex gap-1 rounded-md bg-ink-700 p-0.5">
-              {(["bars", "line", "levels"] as ProfileView[]).map((v) => (
+              {(["bars", "line", "oi", "levels"] as ProfileView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
@@ -163,6 +165,8 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
         {view === "levels" ? (
           <GammaLevelsChart asset={asset} />
+        ) : view === "oi" ? (
+          <GammaOiProfile asset={asset} spot={gamma.spot_price ?? null} maxPain={gamma.max_pain ?? null} />
         ) : view === "line" ? (
           <GammaProfileLine gamma={gamma} />
         ) : bars.length === 0 ? (
