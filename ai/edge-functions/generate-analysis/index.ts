@@ -24,6 +24,7 @@ const SYSTEM_PROMPT = [
   "3b) Estrutura de mercado (Smart Money Concepts) - quando a ESTRUTURA SMC for fornecida, use o vies por timeframe (1D e 4h), o ultimo evento (BOS = continuacao / CHoCH = possivel reversao), os order blocks de suporte/resistencia, os pools de liquidez (alvos magneticos) e a zona premium (caro) / discount (barato). DESTAQUE como ALTA CONFLUENCIA quando um order block ou pool de liquidez coincidir (preco proximo) com Call/Put Wall, Zero Gamma, Max Pain ou parede do book. Explique BOS/CHoCH/order block/liquidez em poucas palavras.",
   "4) Volatilidade e sentimento - Fear & Greed; opcoes: Put/Call, IV media e skew; e o painel de volatilidade quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se o curto 7d > 90d e backwardation, mercado pricing evento de curto prazo).",
   "5) Sintese - junte os sinais num quadro coerente.",
+  "FUNDING (unidades): no snapshot, derivatives.funding_rate (CEX, Coinalyze) ja vem em PERCENT (0,01 = 0,01%, intervalo 8h) e onchain_perps.funding_rate (Hyperliquid) vem em FRACAO (x100 para %). Use os valores de funding ja convertidos para percent fornecidos no prompt e NUNCA multiplique o CEX por 100.",
   "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
   "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e nunca invente numeros.",
   "Encerre sempre com aviso de que a analise e informativa e educacional, nao constitui recomendacao de compra/venda nem aconselhamento financeiro, e a decisao e sempre do usuario.",
@@ -147,10 +148,21 @@ Deno.serve(async (req) => {
     ? news.map((n) => `- ${n.title} (${n.source ?? "?"})`).join("\n")
     : "Nenhuma noticia recente disponivel.";
 
+  // Funding ja convertido p/ PERCENT (evita a IA tratar o valor cru com unidade errada).
+  const pl = snap.payload as Record<string, unknown>;
+  const cexF = (pl?.derivatives as Record<string, unknown> | undefined)?.funding_rate as number | null | undefined;
+  const onchF = (pl?.onchain_perps as Record<string, unknown> | undefined)?.funding_rate as number | null | undefined;
+  const fundingLines = [
+    "FUNDING ja convertido para PERCENT (use exatamente estes; nao multiplique de novo):",
+    `- CEX agregado (Coinalyze, intervalo 8h): ${cexF == null ? "indisponivel" : cexF.toFixed(4) + "%"}`,
+    `- Onchain (Hyperliquid, intervalo 1h): ${onchF == null ? "indisponivel" : (onchF * 100).toFixed(4) + "%"}`,
+  ];
+
   const userMsg = [
     `Analise o momento de mercado do ativo ${ativo} com base nos dados abaixo.`,
     "Estrutura: macro -> fluxo varejo x institucional -> niveis/opcoes -> volatilidade e sentimento -> sintese.",
     "No snapshot, use price.coinbase (institucional) vs price.binance e price.okx (varejo) para volume e CVD, e o campo coinbase_premium.",
+    ...fundingLines,
     "",
     "Snapshot consolidado (JSON):",
     JSON.stringify(snap.payload),

@@ -26,6 +26,7 @@ const SYSTEM_PROMPT = [
   "## 5. Cenarios - cenario base e cenario alternativo, de forma NARRATIVA e NAO direcional (ex.: 'se mantiver acima de X o regime amortecido tende a seguir; se perder Y tende a virar negativo'). Sem alvo de preco.",
   "## 6. Eventos relevantes - noticias do periodo (se houver).",
   "## 7. Aviso - informativo/educacional, nao e recomendacao de compra/venda nem aconselhamento financeiro; a decisao e sempre do usuario.",
+  "FUNDING (unidades): no snapshot, derivatives.funding_rate (CEX, Coinalyze) ja vem em PERCENT (0,01 = 0,01%, intervalo 8h) e onchain_perps.funding_rate (Hyperliquid) vem em FRACAO (x100 para %). Use os valores de funding ja convertidos para percent fornecidos no prompt e NUNCA multiplique o CEX por 100.",
   "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
   "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e nunca invente numeros.",
 ].join("\n");
@@ -120,9 +121,17 @@ Deno.serve(async (req) => {
     ? news.map((n) => `- ${n.title} (${n.source ?? "?"})`).join("\n")
     : "Nenhuma noticia relevante nas ultimas 24h.";
 
+  // Funding ja convertido p/ PERCENT (evita a IA tratar o valor cru com unidade errada).
+  const pl = snap.payload as Record<string, unknown>;
+  const cexF = (pl?.derivatives as Record<string, unknown> | undefined)?.funding_rate as number | null | undefined;
+  const onchF = (pl?.onchain_perps as Record<string, unknown> | undefined)?.funding_rate as number | null | undefined;
+
   const userMsg = [
     `Gere o Relatorio Diario do ativo ${ativo}.`,
     "No snapshot: price.coinbase (institucional) vs price.binance e price.okx (varejo) tem volume e CVD; use tambem o campo coinbase_premium.",
+    "FUNDING ja convertido para PERCENT (use exatamente estes; nao multiplique de novo):",
+    `- CEX agregado (Coinalyze, intervalo 8h): ${cexF == null ? "indisponivel" : cexF.toFixed(4) + "%"}`,
+    `- Onchain (Hyperliquid, intervalo 1h): ${onchF == null ? "indisponivel" : (onchF * 100).toFixed(4) + "%"}`,
     "",
     "Snapshot atual (JSON):",
     JSON.stringify(snap.payload),
