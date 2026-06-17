@@ -21,6 +21,16 @@ export function fmtUsd(value: number | null | undefined, digits = 1): string {
   return `${sign}US$ ${abs.toFixed(digits)}`;
 }
 
+/** Número compacto sem moeda (ex.: 786360 → "786 mil", 1858597 → "1.9 mi"). */
+export function fmtCompact(value: number | null | undefined, digits = 1): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return `${(value / 1e9).toFixed(digits)} bi`;
+  if (abs >= 1e6) return `${(value / 1e6).toFixed(digits)} mi`;
+  if (abs >= 1e3) return `${(value / 1e3).toFixed(0)} mil`;
+  return `${Math.round(value)}`;
+}
+
 /** Nº de casas decimais por magnitude — moedas sub-centavo (ex.: PEPE ~US$0,000003)
  *  precisam de mais casas; usado no preço e na escala dos gráficos. */
 export function priceDecimals(value: number | null | undefined): number {

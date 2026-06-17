@@ -101,3 +101,63 @@ export function fetchStablecoinLiquidity(): Promise<StablecoinLiquidity | null> 
   if (!_scCache) _scCache = _fetchStablecoins();
   return _scCache;
 }
+
+// ─── Atividade de rede (on-chain, por blockchain) ────────────────────────────
+// BTC/ETH/LTC/BCH/DOGE via Blockchair (CORS aberto); SOL via RPC pública (TPS).
+// Só L1s nativos: para tokens a "rede" é ambígua, então fica oculto.
+export interface NetworkActivity {
+  chain: string; // nome amigável da rede (Bitcoin/Ethereum/Solana…)
+  txs24h?: number; // transações nas últimas 24h (UTXO/ETH)
+  avgFeeUsd?: number; // taxa média 24h em USD
+  mempool?: number; // transações na fila (mempool)
+  hashrateEhs?: number; // hashrate em EH/s (só PoW: BTC/LTC/DOGE)
+  tps?: number; // transações/s não-voto (Solana)
+}
+
+const NET_CHAIN: Record<string, { src: "blockchair" | "solana"; chain?: string; name: string }> = {
+  BTC: { src: "blockchair", chain: "bitcoin", name: "Bitcoin" },
+  ETH: { src: "blockchair", chain: "ethereum", name: "Ethereum" },
+  SOL: { src: "solana", name: "Solana" },
+  LTC: { src: "blockchair", chain: "litecoin", name: "Litecoin" },
+  BCH: { src: "blockchair", chain: "bitcoin-cash", name: "Bitcoin Cash" },
+  DOGE: { src: "blockchair", chain: "dogecoin", name: "Dogecoin" },
+};
+
+export async function fetchNetworkActivity(asset: string): Promise<NetworkActivity | null> {
+  const m = NET_CHAIN[asset];
+  if (!m) return null;
+  try {
+    if (m.src === "solana") {
+      const res = await fetch("https://api.mainnet-beta.solana.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getRecentPerformanceSamples", params: [5] }),
+      });
+      if (!res.ok) return null;
+      const j = await res.json();
+      const samples = (j?.result ?? []) as { numNonVoteTransactions?: number; samplePeriodSecs?: number }[];
+      if (!samples.length) return null;
+      let nv = 0;
+      let secs = 0;
+      for (const s of samples) {
+        nv += Number(s.numNonVoteTransactions) || 0;
+        secs += Number(s.samplePeriodSecs) || 0;
+      }
+      return { chain: m.name, tps: secs > 0 ? nv / secs : undefined };
+    }
+    const res = await fetch(`https://api.blockchair.com/${m.chain}/stats`);
+    if (!res.ok) return null;
+    const d = (await res.json())?.data;
+    if (!d) return null;
+    const hash = Number(d.hashrate_24h);
+    return {
+      chain: m.name,
+      txs24h: Number(d.transactions_24h) || undefined,
+      avgFeeUsd: Number(d.average_transaction_fee_usd_24h) || undefined,
+      mempool: Number(d.mempool_transactions) || undefined,
+      hashrateEhs: hash > 0 ? hash / 1e18 : undefined,
+    };
+  } catch {
+    return null;
+  }
+}

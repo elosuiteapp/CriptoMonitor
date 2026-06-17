@@ -3,13 +3,14 @@ import { Link } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
 import { useCvd } from "../hooks/useCvd";
+import { useNetworkActivity } from "../hooks/useNetworkActivity";
 import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePerpContext } from "../hooks/usePerpContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
 import { useStablecoins } from "../hooks/useStablecoins";
 import { useUnlocks } from "../hooks/useUnlocks";
-import { fmtPct, fmtPrice, fmtUsd } from "../lib/format";
+import { fmtCompact, fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
@@ -144,6 +145,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const unlock = useUnlocks(smcAsset);
   // On-chain: liquidez em stablecoins (dry powder) — market-wide.
   const stables = useStablecoins();
+  // On-chain: atividade da blockchain (L1s nativos).
+  const net = useNetworkActivity(smcAsset);
   // Estrutura SMC do timeframe MAIOR (confluência top-down).
   const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
   // Radar de eventos SMC (in-app): avisa BOS/CHoCH/varredura novos com a aba aberta.
@@ -477,6 +480,36 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                 {fmtPct(stables.chg30d, 2)}
               </span>{" "}
               · {stables.chg7d >= 0.3 ? "liquidez entrando (dry powder)" : stables.chg7d <= -0.3 ? "liquidez saindo" : "liquidez de lado"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* On-chain: atividade da blockchain (L1s nativos) */}
+      {net && (
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+          <span aria-hidden className="mt-px">📊</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-semibold text-foreground">
+              On-chain · Rede {net.chain}
+              <InfoTip text="Atividade da blockchain: transações nas últimas 24h, taxa média paga, transações na fila (mempool) e hashrate (poder de mineração, só redes PoW). Solana mostra TPS (transações/s, sem votos). Mais atividade/taxas = rede mais demandada. Fonte: Blockchair / RPC Solana." />
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
+              {net.txs24h != null && (
+                <span>Txs 24h <span className="num text-foreground">{fmtCompact(net.txs24h)}</span></span>
+              )}
+              {net.tps != null && (
+                <span>TPS (sem votos) <span className="num text-foreground">{Math.round(net.tps).toLocaleString("pt-BR")}</span></span>
+              )}
+              {net.avgFeeUsd != null && (
+                <span>Taxa méd. <span className="num text-foreground">{fmtUsd(net.avgFeeUsd, 2)}</span></span>
+              )}
+              {net.mempool != null && (
+                <span>Mempool <span className="num text-foreground">{fmtCompact(net.mempool)}</span></span>
+              )}
+              {net.hashrateEhs != null && (
+                <span>Hashrate <span className="num text-foreground">{net.hashrateEhs.toFixed(0)} EH/s</span></span>
+              )}
             </div>
           </div>
         </div>
