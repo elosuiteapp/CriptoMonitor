@@ -8,21 +8,24 @@ interface Props {
   planName: string | null;
   initialName: string;
   initialPhone: string;
+  initialCpf: string;
   onClose: () => void;
   onSave: (fields: Partial<Profile>) => Promise<{ error: unknown }>;
 }
 
-/** Modal "Finalizar cadastro" — edita nome e telefone (gravados em profiles). */
+/** Modal "Finalizar cadastro" — edita nome, telefone e CPF (gravados em profiles). */
 export default function ProfileModal({
   email,
   planName,
   initialName,
   initialPhone,
+  initialCpf,
   onClose,
   onSave,
 }: Props) {
   const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState(initialPhone);
+  const [cpf, setCpf] = useState(initialCpf);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -32,7 +35,11 @@ export default function ProfileModal({
     setBusy(true);
     setError(null);
     setDone(false);
-    const { error } = await onSave({ full_name: name.trim() || null, phone: phone.trim() || null });
+    const { error } = await onSave({
+      full_name: name.trim() || null,
+      phone: phone.trim() || null,
+      cpf: cpf.trim() || null,
+    });
     setBusy(false);
     if (error) {
       setError(error instanceof Error ? error.message : "Não foi possível salvar.");
@@ -92,6 +99,21 @@ export default function ProfileModal({
             />
             <span className="mt-1 block text-[11px] text-muted-foreground">
               Usado para alertas por WhatsApp (plano Expert).
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted-foreground">CPF</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              className={`num ${fieldClass}`}
+              value={cpf}
+              onChange={(e) => setCpf(e.target.value)}
+              placeholder="000.000.000-00"
+            />
+            <span className="mt-1 block text-[11px] text-muted-foreground">
+              Necessário para pagamento em reais (Pix/cartão via Asaas).
             </span>
           </label>
 

@@ -6,9 +6,10 @@ import { supabase } from "../lib/supabase";
 export interface Profile {
   full_name: string | null;
   phone: string | null;
+  cpf: string | null; // exigido pelo Asaas no checkout em BRL
 }
 
-const EMPTY: Profile = { full_name: null, phone: null };
+const EMPTY: Profile = { full_name: null, phone: null, cpf: null };
 
 /**
  * Lê e atualiza a linha do usuário logado em `public.profiles` (RLS: cada um
@@ -28,7 +29,7 @@ export function useProfile(user: User | null) {
     setLoading(true);
     const { data } = await supabase
       .from("profiles")
-      .select("full_name, phone")
+      .select("full_name, phone, cpf")
       .eq("id", user.id)
       .maybeSingle();
     setProfile((data as Profile | null) ?? { ...EMPTY });

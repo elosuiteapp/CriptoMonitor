@@ -91,6 +91,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
           planName={planName}
           initialName={profile?.full_name ?? ""}
           initialPhone={profile?.phone ?? ""}
+          initialCpf={profile?.cpf ?? ""}
           onClose={() => setEditing(false)}
           onSave={save}
         />

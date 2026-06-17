@@ -36,8 +36,16 @@ Deno.serve(async (req) => {
   const { data: plan } = await admin.from("plans").select("name, price_cents").eq("slug", plan_slug).single();
   if (!plan) return json(400, { error: "plano não encontrado" });
 
-  const { data: prof } = await admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+  const { data: prof } = await admin.from("profiles").select("full_name, cpf").eq("id", user.id).maybeSingle();
   const name = (prof?.full_name as string) || user.email?.split("@")[0] || "Cliente";
+  const cpf = String((prof?.cpf as string) ?? "").replace(/\D/g, "");
+  // Asaas exige CPF/CNPJ no cliente. Sem isso, pede pra completar o perfil.
+  if (cpf.length !== 11 && cpf.length !== 14) {
+    return json(200, {
+      code: "cpf_required",
+      error: "Informe seu CPF no perfil (menu do seu nome → Finalizar cadastro) para assinar em reais.",
+    });
+  }
 
   // 1) Cliente Asaas (reusa pelo externalReference = user.id)
   let customerId: string | undefined;
@@ -47,7 +55,7 @@ Deno.serve(async (req) => {
     const c = await fetch(`${BASE}/customers`, {
       method: "POST",
       headers: ah,
-      body: JSON.stringify({ name, email: user.email, externalReference: user.id }),
+      body: JSON.stringify({ name, email: user.email, cpfCnpj: cpf, externalReference: user.id }),
     });
     if (!c.ok) return json(502, { error: "Falha ao criar cliente Asaas", detail: (await c.text()).slice(0, 300) });
     customerId = (await c.json()).id;
