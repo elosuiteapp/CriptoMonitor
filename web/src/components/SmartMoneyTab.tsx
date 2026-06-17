@@ -7,6 +7,7 @@ import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePerpContext } from "../hooks/usePerpContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
+import { useStablecoins } from "../hooks/useStablecoins";
 import { useUnlocks } from "../hooks/useUnlocks";
 import { fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
@@ -141,6 +142,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const perp = usePerpContext(smcAsset);
   // On-chain: próximo token unlock (DefiLlama) — evento de oferta.
   const unlock = useUnlocks(smcAsset);
+  // On-chain: liquidez em stablecoins (dry powder) — market-wide.
+  const stables = useStablecoins();
   // Estrutura SMC do timeframe MAIOR (confluência top-down).
   const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
   // Radar de eventos SMC (in-app): avisa BOS/CHoCH/varredura novos com a aba aberta.
@@ -450,6 +453,30 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                   · ~<span className="num">{fmtUsd(unlock.tokens * smc.price)}</span>
                 </>
               ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* On-chain: liquidez em stablecoins (dry powder) — market-wide */}
+      {stables && (
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+          <span aria-hidden className="mt-px">🪙</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-semibold text-foreground">
+              On-chain · Liquidez em stablecoins (mercado)
+              <InfoTip text="Oferta total de stablecoins atreladas ao dólar — o 'dry powder' parado pronto pra entrar. Subindo = capital novo chegando ao mercado; caindo = capital saindo. Mercado-amplo (igual para todas as moedas). Fonte: DefiLlama." />
+            </div>
+            <div className="text-muted-foreground">
+              <span className="num text-foreground">{fmtUsd(stables.total)}</span> · 7d{" "}
+              <span className={`num ${stables.chg7d >= 0.3 ? "text-emerald-600 dark:text-emerald-400" : stables.chg7d <= -0.3 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
+                {fmtPct(stables.chg7d, 2)}
+              </span>{" "}
+              · 30d{" "}
+              <span className={`num ${stables.chg30d >= 0.3 ? "text-emerald-600 dark:text-emerald-400" : stables.chg30d <= -0.3 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
+                {fmtPct(stables.chg30d, 2)}
+              </span>{" "}
+              · {stables.chg7d >= 0.3 ? "liquidez entrando (dry powder)" : stables.chg7d <= -0.3 ? "liquidez saindo" : "liquidez de lado"}
             </div>
           </div>
         </div>

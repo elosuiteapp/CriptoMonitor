@@ -65,3 +65,39 @@ export async function fetchNextUnlock(asset: string): Promise<UnlockEvent | null
     return null;
   }
 }
+
+// ─── Stablecoins (dry powder) — sinal on-chain MARKET-WIDE (DefiLlama) ────────
+export interface StablecoinLiquidity {
+  total: number; // oferta total de stablecoins atrelados ao USD (USD)
+  chg7d: number; // variação % em 7 dias
+  chg30d: number; // variação % em 30 dias
+}
+
+async function _fetchStablecoins(): Promise<StablecoinLiquidity | null> {
+  try {
+    const res = await fetch("https://stablecoins.llama.fi/stablecoincharts/all");
+    if (!res.ok) return null;
+    const a = await res.json();
+    if (!Array.isArray(a) || a.length < 31) return null;
+    const val = (x: { totalCirculatingUSD?: { peggedUSD?: number } }) =>
+      Number(x?.totalCirculatingUSD?.peggedUSD) || 0;
+    const now = val(a[a.length - 1]);
+    const d7 = val(a[a.length - 8]);
+    const d30 = val(a[a.length - 31]);
+    if (!now) return null;
+    return {
+      total: now,
+      chg7d: d7 ? ((now - d7) / d7) * 100 : 0,
+      chg30d: d30 ? ((now - d30) / d30) * 100 : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Market-wide → busca uma vez por carga (cacheia a promessa; muda devagar).
+let _scCache: Promise<StablecoinLiquidity | null> | null = null;
+export function fetchStablecoinLiquidity(): Promise<StablecoinLiquidity | null> {
+  if (!_scCache) _scCache = _fetchStablecoins();
+  return _scCache;
+}
