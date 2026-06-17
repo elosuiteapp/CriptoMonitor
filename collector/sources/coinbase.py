@@ -51,14 +51,17 @@ class CoinbaseSource(BaseSource):
                 vol_base = float(stats["volume"]) if stats.get("volume") else None
                 volume_spot = vol_base * last if (vol_base is not None and last is not None) else None
 
-                # CVD institucional: Σ (preço·tamanho · +1 comprador agressor / −1 vendedor).
-                # Na Coinbase o `side` já é o lado agressor (taker), buy=+1 (verificado empírico).
+                # CVD institucional: Σ (preço·tamanho · sinal do agressor).
+                # ATENÇÃO: na Coinbase Exchange o `side` é o lado do MAKER (ordem que
+                # estava no book), NÃO o do agressor. side="buy" => maker comprador e
+                # agressor VENDEDOR (down-tick) => −1; side="sell" => agressor COMPRADOR
+                # (up-tick) => +1. Verificado nos trades reais (buy↔down, sell↔up).
                 cvd = None
                 try:
                     tr = await http.get(_TRADES.format(product=product), timeout=15.0)
                     tr.raise_for_status()
                     cvd = sum(
-                        float(t["price"]) * float(t["size"]) * (1.0 if t.get("side") == "buy" else -1.0)
+                        float(t["price"]) * float(t["size"]) * (1.0 if t.get("side") == "sell" else -1.0)
                         for t in tr.json()
                         if t.get("price") and t.get("size")
                     )
