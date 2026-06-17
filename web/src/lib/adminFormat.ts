@@ -3,7 +3,32 @@
 export const fmtBRL = (cents: number | null | undefined) =>
   ((cents ?? 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+export const fmtUSD = (cents: number | null | undefined) =>
+  ((cents ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
 export const fmtInt = (n: number | null | undefined) => (n ?? 0).toLocaleString("pt-BR");
+
+/** Compacta números grandes para os KPIs (1.2k, 3,4 mi). */
+export const fmtCompact = (n: number | null | undefined) =>
+  (n ?? 0).toLocaleString("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+
+/** Rótulo amigável do gateway de pagamento. */
+export const GATEWAY_LABEL: Record<string, string> = {
+  mercadopago: "Mercado Pago",
+  asaas: "Asaas",
+  paddle: "Paddle",
+  manual: "Manual",
+};
+export const gatewayLabel = (g: string | null | undefined) =>
+  GATEWAY_LABEL[g ?? "manual"] ?? (g || "—");
+
+/** Cor de marca por gateway (para barras/badges). */
+export const GATEWAY_COLOR: Record<string, string> = {
+  mercadopago: "#00b1ea",
+  asaas: "#1565ff",
+  paddle: "#ffd230",
+  manual: "#64748b",
+};
 
 export const fmtPct1 = (f: number | null | undefined) =>
   `${((f ?? 0) * 100).toFixed(1)}%`;

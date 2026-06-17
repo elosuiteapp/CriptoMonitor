@@ -1,7 +1,8 @@
-import { BarChart, HBar, LineChart } from "../../components/admin/Charts";
-import { Card, Empty, ErrorBox, SectionTitle, StatCard } from "../../components/admin/ui";
+import { BarChart, Donut, HBar, LineChart } from "../../components/admin/Charts";
+import { IconAlert, IconCpu, IconMoney, IconOverview, IconTrendUp, IconUsers } from "../../components/admin/icons";
+import { Card, Empty, ErrorBox, PageHeader, SectionTitle, StatCard } from "../../components/admin/ui";
 import { useAdminRpc } from "../../hooks/useAdminRpc";
-import { fmtBRL, fmtInt, fmtPct1 } from "../../lib/adminFormat";
+import { fmtBRL, fmtInt, fmtPct1, fmtUSD, GATEWAY_COLOR, gatewayLabel } from "../../lib/adminFormat";
 import type { AdminOverview, SignupPoint, UsagePoint } from "../../lib/adminTypes";
 
 const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e" };
@@ -17,33 +18,31 @@ export default function Overview() {
   const churn = o.subs_active + o.subs_canceled_30d > 0 ? o.subs_canceled_30d / (o.subs_active + o.subs_canceled_30d) : 0;
   const arpu = o.subs_paid_active > 0 ? o.mrr_cents / o.subs_paid_active : 0;
   const maxPlan = Math.max(...o.plan_distribution.map((p) => p.count), 1);
+  const gw = o.gateway_distribution ?? [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Visão geral</h1>
-        <p className="text-sm text-muted-foreground">Saúde do negócio em tempo real.</p>
-      </div>
+      <PageHeader icon={<IconOverview />} title="Visão geral" subtitle="Saúde do negócio em tempo real." />
 
       {/* KPIs financeiros */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="MRR (receita recorrente mensal)" value={fmtBRL(o.mrr_cents)} sub={`ARR ${fmtBRL(o.arr_cents)}`} tone="good" />
-        <StatCard label="ARPU (receita média / assinante pago)" value={fmtBRL(arpu)} sub={`${fmtInt(o.subs_paid_active)} pagantes`} />
+        <StatCard label="MRR (receita recorrente)" value={fmtBRL(o.mrr_cents)} sub={`ARR ${fmtBRL(o.arr_cents)}`} tone="good" icon={<IconMoney />} />
+        <StatCard label="MRR internacional" value={fmtUSD(o.mrr_usd_cents)} sub={`ARR ${fmtUSD(o.arr_usd_cents)}`} icon={<IconMoney />} />
+        <StatCard label="ARPU (média / pagante)" value={fmtBRL(arpu)} sub={`${fmtInt(o.subs_paid_active)} pagantes`} icon={<IconTrendUp />} />
         <StatCard
           label="Churn 30d"
           value={fmtPct1(churn)}
           sub={`${fmtInt(o.subs_canceled_30d)} cancelamentos`}
           tone={churn > 0.1 ? "bad" : churn > 0 ? "warn" : "good"}
         />
-        <StatCard label="Em atraso (past due)" value={fmtInt(o.subs_past_due)} tone={o.subs_past_due > 0 ? "warn" : undefined} />
       </div>
 
       {/* KPIs de usuários / engajamento */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Usuários totais" value={fmtInt(o.users_total)} sub={`+${fmtInt(o.users_today)} hoje · +${fmtInt(o.users_7d)} 7d`} />
-        <StatCard label="Assinaturas ativas" value={fmtInt(o.subs_active)} sub={`${fmtInt(o.subs_paid_active)} pagas`} />
-        <StatCard label="Análises de IA (30d)" value={fmtInt(o.ai_30d)} sub={`${fmtInt(o.ai_today)} hoje · ${fmtInt(o.ai_total)} no total`} />
-        <StatCard label="Alertas ativos" value={fmtInt(o.alerts_active)} />
+        <StatCard label="Usuários totais" value={fmtInt(o.users_total)} sub={`+${fmtInt(o.users_today)} hoje · +${fmtInt(o.users_7d)} 7d`} icon={<IconUsers />} />
+        <StatCard label="Assinaturas ativas" value={fmtInt(o.subs_active)} sub={`${fmtInt(o.subs_paid_active)} pagas · ${fmtInt(o.subs_past_due)} em atraso`} />
+        <StatCard label="Análises de IA (30d)" value={fmtInt(o.ai_30d)} sub={`${fmtInt(o.ai_today)} hoje · ${fmtInt(o.ai_total)} total`} icon={<IconCpu />} />
+        <StatCard label="Alertas ativos" value={fmtInt(o.alerts_active)} icon={<IconAlert />} />
       </div>
 
       {/* Gráficos */}
@@ -69,24 +68,45 @@ export default function Overview() {
         </div>
       </Card>
 
-      {/* Distribuição de planos */}
-      <Card className="p-4">
-        <SectionTitle>Distribuição por plano</SectionTitle>
-        <div className="mt-4 space-y-3">
-          {o.plan_distribution.length === 0 && <Empty>Nenhum plano.</Empty>}
-          {o.plan_distribution.map((p) => (
-            <div key={p.slug} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-foreground">{p.name}</span>
-                <span className="text-muted-foreground">
-                  <span className="num">{fmtInt(p.count)}</span> assinantes · <span className="text-muted-foreground"><span className="num">{fmtBRL(p.mrr_cents)}</span>/mês</span>
-                </span>
+      {/* Distribuição de planos + gateways */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <SectionTitle>Distribuição por plano</SectionTitle>
+          <div className="mt-4 space-y-3">
+            {o.plan_distribution.length === 0 && <Empty>Nenhum plano.</Empty>}
+            {o.plan_distribution.map((p) => (
+              <div key={p.slug} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-foreground">{p.name}</span>
+                  <span className="text-muted-foreground">
+                    <span className="num">{fmtInt(p.count)}</span> assinantes · <span className="num">{fmtBRL(p.mrr_cents)}</span>/mês
+                  </span>
+                </div>
+                <HBar value={p.count} max={maxPlan} color={PLAN_COLORS[p.slug] ?? "#6366f1"} />
               </div>
-              <HBar value={p.count} max={maxPlan} color={PLAN_COLORS[p.slug] ?? "#6366f1"} />
-            </div>
-          ))}
-        </div>
-      </Card>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle hint="assinaturas pagas ativas">Receita por gateway</SectionTitle>
+          <div className="mt-4">
+            {gw.length === 0 ? (
+              <Empty>Nenhuma assinatura paga ainda.</Empty>
+            ) : (
+              <Donut
+                centerValue={fmtBRL(o.mrr_cents)}
+                centerLabel="MRR total"
+                data={gw.map((g) => ({
+                  label: `${gatewayLabel(g.gateway)} (${fmtInt(g.count)})`,
+                  value: g.mrr_cents || g.count,
+                  color: GATEWAY_COLOR[g.gateway] ?? "#64748b",
+                }))}
+              />
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

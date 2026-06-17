@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 
-import { Card, Empty, ErrorBox, SectionTitle } from "../../components/admin/ui";
+import { IconPlans } from "../../components/admin/icons";
+import { Card, Empty, ErrorBox, PageHeader, SectionTitle } from "../../components/admin/ui";
 import { supabase } from "../../lib/supabase";
-import { fmtBRL } from "../../lib/adminFormat";
+import { fmtBRL, fmtUSD } from "../../lib/adminFormat";
 import type { PlanRow } from "../../lib/adminTypes";
 
-const ALL_ASSETS = ["BTC", "ETH", "SOL"];
+const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC"];
 const ALL_CHANNELS = ["email", "whatsapp"];
 
 export default function Plans() {
@@ -24,11 +25,14 @@ export default function Plans() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Planos</h1>
-        <p className="text-sm text-muted-foreground">
-          Os limites do produto são parametrizados aqui — alterar um valor muda o gating na hora, sem deploy.
-        </p>
+      <PageHeader
+        icon={<IconPlans />}
+        title="Planos"
+        subtitle="Limites e preços do produto — alterar um valor muda o gating na hora, sem deploy."
+      />
+      <div className="rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+        Cobrança por idioma: <b className="text-foreground">PT → Asaas (reais)</b> usa o preço em R$;{" "}
+        <b className="text-foreground">EN → Paddle (dólar)</b> usa o preço em US$ e o <i>Paddle price id</i> do plano.
       </div>
       {error && <ErrorBox message={error} />}
       {!plans && <Empty>Carregando…</Empty>}
@@ -42,6 +46,8 @@ export default function Plans() {
 function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
   const [name, setName] = useState(plan.name);
   const [priceReais, setPriceReais] = useState((plan.price_cents / 100).toString());
+  const [priceUsd, setPriceUsd] = useState((plan.price_usd_cents / 100).toString());
+  const [paddleId, setPaddleId] = useState(plan.paddle_price_id ?? "");
   const [assets, setAssets] = useState<string[]>(plan.assets);
   const [snapMin, setSnapMin] = useState(plan.snapshot_interval_min.toString());
   const [advanced, setAdvanced] = useState(plan.advanced_metrics);
@@ -56,6 +62,8 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const isPaid = plan.slug !== "free";
+
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
@@ -68,6 +76,8 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       p_slug: plan.slug,
       p_name: name,
       p_price_cents: Math.round(parseFloat(priceReais || "0") * 100),
+      p_price_usd_cents: Math.round(parseFloat(priceUsd || "0") * 100),
+      p_paddle_price_id: paddleId.trim() || null,
       p_assets: assets,
       p_snapshot_interval_min: parseInt(snapMin || "30", 10),
       p_advanced: advanced,
@@ -83,17 +93,27 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
     else {
       setMsg("Plano salvo.");
       onSaved();
+      setTimeout(() => setMsg(null), 2500);
     }
   }
 
-  const inputCls = "mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+  const inputCls = "mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary";
   const labelCls = "text-xs text-muted-foreground";
 
   return (
-    <Card className="p-5">
-      <div className="flex items-baseline justify-between">
+    <Card className="p-5" hover>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SectionTitle hint={`slug: ${plan.slug}`}>{plan.name}</SectionTitle>
-        <span className="num text-sm font-semibold text-foreground">{fmtBRL(Math.round(parseFloat(priceReais || "0") * 100))}/mês</span>
+        <span className="text-sm text-muted-foreground">
+          <span className="num font-semibold text-foreground">{fmtBRL(Math.round(parseFloat(priceReais || "0") * 100))}</span>
+          {isPaid && (
+            <>
+              {" · "}
+              <span className="num font-semibold text-foreground">{fmtUSD(Math.round(parseFloat(priceUsd || "0") * 100))}</span>
+            </>
+          )}
+          <span className="text-muted-foreground">/mês</span>
+        </span>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -102,8 +122,12 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
         </label>
         <label className={labelCls}>
-          Preço mensal (R$)
-          <input type="number" step="0.01" min="0" value={priceReais} onChange={(e) => setPriceReais(e.target.value)} className={inputCls} />
+          Preço mensal — reais (R$)
+          <input type="number" step="0.01" min="0" value={priceReais} onChange={(e) => setPriceReais(e.target.value)} className={`num ${inputCls}`} />
+        </label>
+        <label className={labelCls}>
+          Preço mensal — dólar (US$)
+          <input type="number" step="0.01" min="0" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} className={`num ${inputCls}`} disabled={!isPaid} />
         </label>
         <label className={labelCls}>
           Modelo de IA
@@ -111,16 +135,22 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
         </label>
         <label className={labelCls}>
           Snapshot (min)
-          <input type="number" min="1" value={snapMin} onChange={(e) => setSnapMin(e.target.value)} className={inputCls} />
+          <input type="number" min="1" value={snapMin} onChange={(e) => setSnapMin(e.target.value)} className={`num ${inputCls}`} />
         </label>
         <label className={labelCls}>
           Limite diário de IA <span className="text-muted-foreground">(vazio = ilimitado)</span>
-          <input type="number" min="0" value={aiLimit} onChange={(e) => setAiLimit(e.target.value)} className={inputCls} />
+          <input type="number" min="0" value={aiLimit} onChange={(e) => setAiLimit(e.target.value)} className={`num ${inputCls}`} />
         </label>
         <label className={labelCls}>
           Histórico (dias) <span className="text-muted-foreground">(vazio = completo)</span>
-          <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={inputCls} />
+          <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={`num ${inputCls}`} />
         </label>
+        {isPaid && (
+          <label className={`${labelCls} sm:col-span-2`}>
+            Paddle price id <span className="text-muted-foreground">(checkout em dólar / EN)</span>
+            <input value={paddleId} onChange={(e) => setPaddleId(e.target.value)} placeholder="pri_01h…" className={`num ${inputCls}`} />
+          </label>
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -151,7 +181,7 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       </div>
 
       <div className="mt-5 flex items-center gap-3">
-        <button onClick={save} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button onClick={save} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-50">
           {busy ? "Salvando…" : "Salvar plano"}
         </button>
         {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}

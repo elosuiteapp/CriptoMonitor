@@ -1,4 +1,5 @@
-import { Card, Empty, ErrorBox, StatCard } from "../../components/admin/ui";
+import { IconRefresh, IconSystem } from "../../components/admin/icons";
+import { Card, ErrorBox, PageHeader, Skeleton, StatCard } from "../../components/admin/ui";
 import { useAdminRpc } from "../../hooks/useAdminRpc";
 import { fmtDateTime, fmtInt, timeAgo } from "../../lib/adminFormat";
 import type { DataHealthRow } from "../../lib/adminTypes";
@@ -66,20 +67,19 @@ export default function System() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Saúde do sistema</h1>
-          <p className="text-sm text-muted-foreground">
-            Frescor de cada fonte do pipeline, avaliado pela cadência esperada de cada uma.
-          </p>
-        </div>
-        <button
-          onClick={() => reload()}
-          className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
-        >
-          Atualizar
-        </button>
-      </div>
+      <PageHeader
+        icon={<IconSystem />}
+        title="Saúde do sistema"
+        subtitle="Frescor de cada fonte do pipeline, avaliado pela cadência esperada de cada uma."
+        actions={
+          <button
+            onClick={() => reload()}
+            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            <IconRefresh size={16} /> Atualizar
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard label="Fontes monitoradas" value={fmtInt(rows.length)} />
@@ -90,7 +90,7 @@ export default function System() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+            <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Fonte</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -105,7 +105,7 @@ export default function System() {
                 const f = statusOf(r.age_min, r.source);
                 const exp = EXPECTED_MIN[r.source] ?? DEFAULT_EXPECTED;
                 return (
-                  <tr key={r.source} className="border-b border-border">
+                  <tr key={r.source} className="border-b border-border last:border-0 hover:bg-muted/40">
                     <td className="num px-4 py-3 text-xs text-foreground">{r.source}</td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -123,7 +123,7 @@ export default function System() {
             </tbody>
           </table>
         </div>
-        {loading && <Empty>Carregando…</Empty>}
+        {loading && rows.length === 0 && <Skeleton rows={8} />}
       </Card>
 
       <p className="text-xs text-muted-foreground">

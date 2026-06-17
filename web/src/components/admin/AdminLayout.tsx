@@ -1,58 +1,105 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../../hooks/useAuth";
+import ThemeToggle from "../ui/ThemeToggle";
+import {
+  IconAudit,
+  IconBack,
+  IconLogout,
+  IconOverview,
+  IconPlans,
+  IconRevenue,
+  IconSystem,
+  IconUsage,
+  IconUsers,
+} from "./icons";
 
 const NAV = [
-  { to: "/admin", label: "Visão geral", end: true },
-  { to: "/admin/users", label: "Usuários" },
-  { to: "/admin/subscriptions", label: "Assinaturas & Receita" },
-  { to: "/admin/plans", label: "Planos" },
-  { to: "/admin/usage", label: "Uso & IA" },
-  { to: "/admin/system", label: "Saúde do sistema" },
-  { to: "/admin/audit", label: "Auditoria" },
+  { to: "/admin", label: "Visão geral", end: true, icon: IconOverview },
+  { to: "/admin/users", label: "Usuários", icon: IconUsers },
+  { to: "/admin/subscriptions", label: "Assinaturas & Receita", icon: IconRevenue },
+  { to: "/admin/plans", label: "Planos", icon: IconPlans },
+  { to: "/admin/usage", label: "Uso & IA", icon: IconUsage },
+  { to: "/admin/system", label: "Saúde do sistema", icon: IconSystem },
+  { to: "/admin/audit", label: "Auditoria", icon: IconAudit },
 ];
 
 export default function AdminLayout() {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const email = user?.email ?? "";
+
   return (
     <div className="flex min-h-full flex-col bg-background md:flex-row">
       {/* Sidebar */}
-      <aside className="shrink-0 border-b border-border bg-card dark:bg-card/60 md:w-60 md:border-b-0 md:border-r">
-        <div className="flex items-center justify-between px-4 py-4">
-          <div>
-            <div className="text-sm font-bold text-foreground">Crypto Monitor</div>
-            <div className="text-xs text-primary">Administração</div>
+      <aside className="flex shrink-0 flex-col border-b border-border bg-surface md:sticky md:top-0 md:h-screen md:w-64 md:border-b-0 md:border-r">
+        {/* Marca */}
+        <div className="flex items-center justify-between gap-2 px-4 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-sm font-bold text-primary-foreground shadow-sm">
+              CM
+            </span>
+            <div>
+              <div className="text-sm font-bold leading-tight text-foreground">Crypto Monitor</div>
+              <div className="text-[11px] font-medium uppercase tracking-wider text-primary">Administração</div>
+            </div>
+          </div>
+          <div className="md:hidden">
+            <ThemeToggle />
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-3 md:flex-col md:overflow-visible">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+
+        {/* Navegação */}
+        <nav className="flex gap-1 overflow-x-auto px-2 pb-3 md:flex-1 md:flex-col md:overflow-visible">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  `group flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`
+                }
+              >
+                <Icon size={17} />
+                {item.label}
+              </NavLink>
+            );
+          })}
         </nav>
-        <div className="hidden border-t border-border px-4 py-3 md:block">
-          <Link to="/" className="block text-xs text-muted-foreground hover:text-foreground">
-            ← Voltar ao app
-          </Link>
-          <button onClick={() => signOut()} className="mt-2 block text-xs text-muted-foreground hover:text-foreground">
-            Sair
-          </button>
+
+        {/* Rodapé: identidade + ações */}
+        <div className="hidden border-t border-border px-3 py-3 md:block">
+          {email && (
+            <div className="mb-2 truncate px-1 text-[11px] text-muted-foreground" title={email}>
+              {email}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              to="/"
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <IconBack size={14} /> App
+            </Link>
+            <button
+              onClick={() => signOut()}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <IconLogout size={14} /> Sair
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
       {/* Conteúdo */}
       <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">
           <Outlet />
         </div>
       </main>

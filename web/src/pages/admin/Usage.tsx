@@ -1,5 +1,6 @@
 import { BarChart, HBar } from "../../components/admin/Charts";
-import { Card, Empty, ErrorBox, SectionTitle, StatCard } from "../../components/admin/ui";
+import { IconCpu, IconUsage } from "../../components/admin/icons";
+import { Card, Empty, ErrorBox, PageHeader, SectionTitle, StatCard } from "../../components/admin/ui";
 import { useAdminRpc } from "../../hooks/useAdminRpc";
 import { fmtInt } from "../../lib/adminFormat";
 import type { AdminOverview, ModelUsage, UsagePoint } from "../../lib/adminTypes";
@@ -16,16 +17,13 @@ export default function Usage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Uso & IA</h1>
-        <p className="text-sm text-muted-foreground">Consumo do copiloto de IA e distribuição por modelo.</p>
-      </div>
+      <PageHeader icon={<IconUsage />} title="Uso & IA" subtitle="Consumo do copiloto de IA e distribuição por modelo." />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Análises hoje" value={fmtInt(o?.ai_today)} />
+        <StatCard label="Análises hoje" value={fmtInt(o?.ai_today)} icon={<IconCpu />} />
         <StatCard label="Análises 30d" value={fmtInt(o?.ai_30d)} />
         <StatCard label="Análises 90d" value={fmtInt(total90)} />
-        <StatCard label="Total acumulado" value={fmtInt(o?.ai_total)} />
+        <StatCard label="Total acumulado" value={fmtInt(o?.ai_total)} tone="good" />
       </div>
 
       <Card className="p-4">

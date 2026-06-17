@@ -5,6 +5,14 @@ export interface PlanDistribution {
   name: string;
   count: number;
   mrr_cents: number;
+  price_cents: number;
+  price_usd_cents: number;
+}
+
+export interface GatewayDistribution {
+  gateway: string; // mercadopago | asaas | paddle | manual
+  count: number;
+  mrr_cents: number;
 }
 
 export interface AdminOverview {
@@ -19,11 +27,14 @@ export interface AdminOverview {
   subs_past_due: number;
   mrr_cents: number;
   arr_cents: number;
+  mrr_usd_cents: number;
+  arr_usd_cents: number;
   ai_today: number;
   ai_30d: number;
   ai_total: number;
   alerts_active: number;
   plan_distribution: PlanDistribution[];
+  gateway_distribution: GatewayDistribution[];
 }
 
 export interface SignupPoint {
@@ -47,12 +58,14 @@ export interface AdminUserRow {
   email: string;
   full_name: string | null;
   phone: string | null;
+  cpf: string | null;
   role: string;
   created_at: string;
   last_sign_in_at: string | null;
   plan_slug: string | null;
   plan_name: string | null;
   sub_status: string | null;
+  gateway: string | null;
   current_period_end: string | null;
   ai_30d: number;
   alerts_active: number;
@@ -68,6 +81,7 @@ export interface AdminUserDetail {
     email_confirmed_at: string | null;
     full_name: string | null;
     phone: string | null;
+    cpf: string | null;
     role: string;
   };
   subscriptions: Array<{
@@ -75,6 +89,7 @@ export interface AdminUserDetail {
     status: string;
     current_period_end: string | null;
     created_at: string;
+    gateway: string | null;
     gateway_customer_id: string | null;
     gateway_subscription_id: string | null;
     plan_slug: string;
@@ -126,6 +141,8 @@ export interface PlanRow {
   slug: string;
   name: string;
   price_cents: number;
+  price_usd_cents: number;
+  paddle_price_id: string | null;
   sort_order: number;
   assets: string[];
   snapshot_interval_min: number;

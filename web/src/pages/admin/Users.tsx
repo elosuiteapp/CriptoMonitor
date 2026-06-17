@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import UserDetailModal from "../../components/admin/UserDetailModal";
-import { Badge, Card, Empty, ErrorBox, StatusBadge } from "../../components/admin/ui";
+import { IconDownload, IconUsers } from "../../components/admin/icons";
+import { Badge, Card, Empty, ErrorBox, GatewayBadge, PageHeader, Skeleton, StatusBadge } from "../../components/admin/ui";
 import { useAdminRpc } from "../../hooks/useAdminRpc";
-import { fmtDate, fmtInt, timeAgo } from "../../lib/adminFormat";
+import { supabase } from "../../lib/supabase";
+import { fmtDate, fmtDateTime, fmtInt, timeAgo } from "../../lib/adminFormat";
 import type { AdminUserRow } from "../../lib/adminTypes";
 
 const PAGE_SIZE = 50;
@@ -15,6 +17,7 @@ export default function Users() {
   const [status, setStatus] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const params = {
     p_search: search,
@@ -43,16 +46,58 @@ export default function Users() {
     setPage(0);
   }
 
-  const selectCls = "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+  // Exporta TODOS os usuários do filtro atual (não só a página) como CSV.
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_list_users", {
+        p_search: search,
+        p_plan: plan,
+        p_status: status,
+        p_limit: 100000,
+        p_offset: 0,
+      });
+      if (error) throw error;
+      const all = (data as AdminUserRow[]) ?? [];
+      const headers = ["email", "nome", "telefone", "cpf", "papel", "plano", "status", "gateway", "criado", "ultimo_acesso", "ia_30d", "alertas"];
+      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = all.map((u) =>
+        [u.email, u.full_name, u.phone, u.cpf, u.role, u.plan_name, u.sub_status, u.gateway, u.created_at, u.last_sign_in_at, u.ai_30d, u.alerts_active]
+          .map(esc)
+          .join(","),
+      );
+      const csv = "﻿" + [headers.join(","), ...lines].join("\r\n"); // BOM p/ Excel
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `usuarios-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Falha ao exportar.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const selectCls = "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary";
 
   return (
     <div className="space-y-5">
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
-          <p className="text-sm text-muted-foreground">{fmtInt(total)} no total · clique em uma linha para gerenciar.</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={<IconUsers />}
+        title="Usuários"
+        subtitle={`${fmtInt(total)} no total · clique em uma linha para gerenciar.`}
+        actions={
+          <button
+            onClick={exportCsv}
+            disabled={exporting || total === 0}
+            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            <IconDownload size={16} /> {exporting ? "Exportando…" : "Exportar CSV"}
+          </button>
+        }
+      />
 
       {/* Filtros */}
       <form onSubmit={applySearch} className="flex flex-wrap items-center gap-2">
@@ -60,7 +105,7 @@ export default function Users() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Buscar por e-mail ou nome…"
-          className="min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+          className="min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary"
         />
         <select value={plan ?? ""} onChange={(e) => { setPlan(e.target.value || null); setPage(0); }} className={selectCls}>
           <option value="">Todos os planos</option>
@@ -74,7 +119,7 @@ export default function Users() {
           <option value="past_due">Em atraso</option>
           <option value="canceled">Cancelada</option>
         </select>
-        <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
+        <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90">
           Buscar
         </button>
         {(search || plan || status) && (
@@ -89,11 +134,12 @@ export default function Users() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+            <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Usuário</th>
                 <th className="px-4 py-3 font-medium">Plano</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Gateway</th>
                 <th className="px-4 py-3 font-medium">Criado</th>
                 <th className="px-4 py-3 font-medium">Último acesso</th>
                 <th className="px-4 py-3 text-right font-medium">IA 30d</th>
@@ -105,7 +151,7 @@ export default function Users() {
                 <tr
                   key={u.id}
                   onClick={() => setSelected(u.id)}
-                  className="cursor-pointer border-b border-border hover:bg-muted"
+                  className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-muted/60"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -116,7 +162,8 @@ export default function Users() {
                   </td>
                   <td className="px-4 py-3 text-foreground">{u.plan_name ?? "—"}</td>
                   <td className="px-4 py-3"><StatusBadge status={u.sub_status} /></td>
-                  <td className="num px-4 py-3 text-muted-foreground">{fmtDate(u.created_at)}</td>
+                  <td className="px-4 py-3">{u.sub_status ? <GatewayBadge gateway={u.gateway} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                  <td className="num px-4 py-3 text-muted-foreground" title={fmtDateTime(u.created_at)}>{fmtDate(u.created_at)}</td>
                   <td className="num px-4 py-3 text-muted-foreground">{timeAgo(u.last_sign_in_at)}</td>
                   <td className="num px-4 py-3 text-right text-muted-foreground">{fmtInt(u.ai_30d)}</td>
                   <td className="num px-4 py-3 text-right text-muted-foreground">{fmtInt(u.alerts_active)}</td>
@@ -126,7 +173,7 @@ export default function Users() {
           </table>
         </div>
         {!loading && rows.length === 0 && <Empty>Nenhum usuário encontrado.</Empty>}
-        {loading && <Empty>Carregando…</Empty>}
+        {loading && rows.length === 0 && <Skeleton rows={8} />}
       </Card>
 
       {/* Paginação */}
@@ -137,14 +184,14 @@ export default function Users() {
             <button
               disabled={page === 0}
               onClick={() => setPage((p) => Math.max(p - 1, 0))}
-              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40 hover:bg-muted"
+              className="rounded-lg border border-border px-3 py-1.5 transition-colors hover:bg-muted disabled:opacity-40"
             >
               Anterior
             </button>
             <button
               disabled={page + 1 >= pages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40 hover:bg-muted"
+              className="rounded-lg border border-border px-3 py-1.5 transition-colors hover:bg-muted disabled:opacity-40"
             >
               Próxima
             </button>

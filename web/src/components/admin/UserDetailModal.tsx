@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { fmtBRL, fmtDate, fmtDateTime, fmtInt, timeAgo } from "../../lib/adminFormat";
 import type { AdminUserDetail } from "../../lib/adminTypes";
-import { Badge, Card, ErrorBox, SectionTitle, StatusBadge } from "./ui";
+import { Badge, Card, ErrorBox, GatewayBadge, SectionTitle, StatusBadge } from "./ui";
 
 interface PlanOption { slug: string; name: string; }
 
@@ -125,13 +125,13 @@ export default function UserDetailModal({
               {/* Resumo */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Info label="Telefone" value={detail.profile.phone ?? "—"} />
+                <Info label="CPF" value={detail.profile.cpf ?? "—"} />
                 <Info label="Cadastro" value={fmtDate(detail.profile.created_at)} />
                 <Info label="Último acesso" value={timeAgo(detail.profile.last_sign_in_at)} />
                 <Info label="E-mail confirmado" value={detail.profile.email_confirmed_at ? "sim" : "não"} />
                 <Info label="Análises (total)" value={fmtInt(detail.ai_total)} />
                 <Info label="Uso 30d (cota)" value={fmtInt(detail.usage_30d)} />
                 <Info label="Alertas" value={fmtInt(detail.alerts.length)} />
-                <Info label="Assinaturas" value={fmtInt(detail.subscriptions.length)} />
               </div>
 
               {/* Gerenciar assinatura */}
@@ -177,9 +177,10 @@ export default function UserDetailModal({
                 <div className="mt-2 space-y-2">
                   {detail.subscriptions.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma.</p>}
                   {detail.subscriptions.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between rounded-lg border border-border bg-muted px-3 py-2 text-sm">
-                      <span className="text-foreground">
+                    <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2 text-foreground">
                         {s.plan_name} · <span className="num">{fmtBRL(s.price_cents)}</span>/mês
+                        <GatewayBadge gateway={s.gateway} />
                       </span>
                       <span className="flex items-center gap-3 text-xs text-muted-foreground">
                         <StatusBadge status={s.status} />

@@ -57,7 +57,71 @@ export function HBar({ value, max, color = "#6366f1" }: { value: number; max: nu
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+    </div>
+  );
+}
+
+/** Rosca (donut) para distribuições com poucas fatias. Mostra total no centro. */
+export function Donut({
+  data,
+  size = 132,
+  thickness = 16,
+  centerLabel,
+  centerValue,
+}: {
+  data: { label: string; value: number; color: string }[];
+  size?: number;
+  thickness?: number;
+  centerLabel?: string;
+  centerValue?: string;
+}) {
+  const total = data.reduce((a, d) => a + d.value, 0);
+  const r = (size - thickness) / 2;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <div className="flex items-center gap-4">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0 -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(var(--muted))" strokeWidth={thickness} />
+        {total > 0 &&
+          data.map((d, i) => {
+            const len = (d.value / total) * c;
+            const seg = (
+              <circle
+                key={i}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={d.color}
+                strokeWidth={thickness}
+                strokeDasharray={`${len} ${c - len}`}
+                strokeDashoffset={-offset}
+                strokeLinecap="butt"
+              />
+            );
+            offset += len;
+            return seg;
+          })}
+      </svg>
+      <div className="min-w-0">
+        {centerValue != null && (
+          <div className="mb-2">
+            <div className="num text-xl font-bold text-foreground">{centerValue}</div>
+            {centerLabel && <div className="text-xs text-muted-foreground">{centerLabel}</div>}
+          </div>
+        )}
+        <ul className="space-y-1">
+          {data.map((d) => (
+            <li key={d.label} className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: d.color }} />
+              <span className="text-foreground">{d.label}</span>
+              <span className="num ml-auto">{total > 0 ? Math.round((d.value / total) * 100) : 0}%</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
