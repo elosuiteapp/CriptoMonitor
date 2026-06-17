@@ -6,6 +6,7 @@ import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import NotFound from "./pages/NotFound";
 import Pricing from "./pages/Pricing";
 import AdminAffiliates from "./pages/admin/Affiliates";
 import AdminRoute from "./pages/admin/AdminRoute";
@@ -46,7 +47,7 @@ export default function App() {
         <Route path="audit" element={<AdminAudit />} />
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

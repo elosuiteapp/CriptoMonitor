@@ -87,8 +87,8 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
 
       {editing && (
         <ProfileModal
+          user={user}
           email={email}
-          planName={planName}
           initialName={profile?.full_name ?? ""}
           initialPhone={profile?.phone ?? ""}
           initialCpf={profile?.cpf ?? ""}

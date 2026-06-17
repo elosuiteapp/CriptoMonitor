@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import type { User } from "@supabase/supabase-js";
 
 import type { Profile } from "../hooks/useProfile";
+import { useSubscription } from "../hooks/useSubscription";
 
 interface Props {
+  user: User;
   email: string | null;
-  planName: string | null;
   initialName: string;
   initialPhone: string;
   initialCpf: string;
@@ -13,10 +15,11 @@ interface Props {
   onSave: (fields: Partial<Profile>) => Promise<{ error: unknown }>;
 }
 
-/** Modal "Finalizar cadastro" — edita nome, telefone e CPF (gravados em profiles). */
+/** Modal "Seu perfil" — edita nome, telefone e CPF (gravados em profiles) e
+ *  mostra/gerencia a assinatura (status, vencimento, cancelamento). */
 export default function ProfileModal({
+  user,
   email,
-  planName,
   initialName,
   initialPhone,
   initialCpf,
@@ -57,7 +60,7 @@ export default function ProfileModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -77,7 +80,9 @@ export default function ProfileModal({
           </button>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
+        <SubscriptionPanel user={user} onNavigate={onClose} />
+
+        <form onSubmit={submit} className="mt-4 space-y-3">
           <label className="block">
             <span className="mb-1 block text-xs text-muted-foreground">Nome completo</span>
             <input
@@ -117,25 +122,14 @@ export default function ProfileModal({
             </span>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-muted-foreground">E-mail</span>
-              <input
-                disabled
-                value={email ?? ""}
-                className="w-full cursor-not-allowed truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
-              />
-            </label>
-            <div>
-              <span className="mb-1 block text-xs text-muted-foreground">Plano</span>
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
-                <span className="truncate text-foreground">{planName ?? "—"}</span>
-                <Link to="/pricing" onClick={onClose} className="shrink-0 text-xs text-primary hover:underline">
-                  Mudar
-                </Link>
-              </div>
-            </div>
-          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted-foreground">E-mail</span>
+            <input
+              disabled
+              value={email ?? ""}
+              className="w-full cursor-not-allowed truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+            />
+          </label>
 
           {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
           {done && <p className="text-sm text-emerald-600 dark:text-emerald-400">Perfil atualizado! ✓</p>}
@@ -158,6 +152,133 @@ export default function ProfileModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+
+/** Bloco de assinatura: plano, status, vencimento e cancelamento self-service. */
+function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () => void }) {
+  const { subscription, loading, cancel } = useSubscription(user);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const planName = subscription?.plan?.name ?? "Free";
+  const isPaid = Boolean(subscription?.plan && subscription.plan.slug !== "free");
+  const status = subscription?.status ?? "active";
+  const periodEnd = subscription?.current_period_end ?? null;
+  const canceling = Boolean(subscription?.cancel_at_period_end);
+
+  const statusBadge =
+    status === "past_due"
+      ? { label: "em atraso", cls: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400" }
+      : canceling
+        ? { label: "cancela ao fim", cls: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400" }
+        : { label: "ativa", cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400" };
+
+  async function doCancel() {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    const { data, error } = await cancel();
+    setBusy(false);
+    setConfirming(false);
+    if (error) {
+      setErr(error instanceof Error ? error.message : "Falha ao cancelar.");
+      return;
+    }
+    const d = data as { ok?: boolean; code?: string; message?: string; error?: string } | null;
+    if (d?.error) return setErr(d.error);
+    if (d?.code === "no_active") return setMsg(d.message ?? "Sem assinatura ativa.");
+    setMsg("Cancelamento agendado. Você mantém o acesso até o fim do período já pago.");
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/40 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assinatura</span>
+        {isPaid && (
+          <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] ${statusBadge.cls}`}>
+            {statusBadge.label}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="mt-2 text-sm text-muted-foreground">Carregando…</p>
+      ) : (
+        <>
+          <div className="mt-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-base font-bold text-foreground">Plano {planName}</span>
+          </div>
+
+          {!isPaid ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Você está no plano gratuito. Faça upgrade para liberar todos os recursos.
+            </p>
+          ) : canceling ? (
+            <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+              Não renova. Acesso garantido até <b>{fmtDate(periodEnd)}</b>.
+            </p>
+          ) : status === "past_due" ? (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Pagamento em atraso — regularize para manter o acesso.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Renova automaticamente em <b className="text-foreground">{fmtDate(periodEnd)}</b>.
+            </p>
+          )}
+
+          {msg && <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">{msg}</p>}
+          {err && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{err}</p>}
+
+          {confirming ? (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10">
+              <p className="text-xs text-rose-700 dark:text-rose-400">
+                Cancelar a assinatura? Você continua com acesso até <b>{fmtDate(periodEnd)}</b> e não será cobrado de novo.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={doCancel}
+                  disabled={busy}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? "Cancelando…" : "Sim, cancelar"}
+                </button>
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
+                >
+                  Voltar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Link
+                to="/pricing"
+                onClick={onNavigate}
+                className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+              >
+                {isPaid ? "Mudar plano" : "Ver planos"}
+              </Link>
+              {isPaid && status === "active" && !canceling && (
+                <button
+                  onClick={() => setConfirming(true)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Cancelar assinatura
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
