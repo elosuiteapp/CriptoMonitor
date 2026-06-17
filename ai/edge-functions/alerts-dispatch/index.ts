@@ -1,17 +1,19 @@
-// Edge Function: alerts-dispatch (PRD §9 Fase 5 — esqueleto)
-// Avalia os alertas ativos contra o snapshot mais recente e dispara por e-mail
-// (Resend, Pro) e WhatsApp (Evolution, Expert). Inclui alerta de virada de
-// regime de gamma.
+// Edge Function: alerts-dispatch (notificação in-app + Web Push)
+// Avalia os alertas ativos contra o snapshot mais recente. Quando um dispara:
+//   1) grava uma linha em `notifications` (in-app: sino, central, toast via Realtime);
+//   2) envia Web Push para os navegadores inscritos do usuário (chega com o app fechado).
 //
-// SEGURANÇA: por padrão roda em DRY_RUN (não envia nada — apenas registra o que
-// enviaria). Defina ALERTS_DRY_RUN=false para disparar de verdade.
+// Anti-spam: cada alerta tem um cooldown (last_triggered_at). Enquanto a condição
+// segue verdadeira, NÃO re-notifica antes da janela de silêncio expirar.
 //
-// Invocação: via cron (pg_cron / Supabase scheduled) com a service_role.
-// Secrets: RESEND_API_KEY, ALERTS_FROM_EMAIL, EVOLUTION_API_URL, EVOLUTION_API_KEY,
-//          EVOLUTION_INSTANCE, ALERTS_DRY_RUN.
+// Invocação: via cron (pg_cron + pg_net) a cada 5 min. Protegida por DISPATCH_SECRET
+// (header x-dispatch-secret). Deploy: supabase functions deploy alerts-dispatch --no-verify-jwt
+// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, DISPATCH_SECRET,
+//          ALERTS_COOLDOWN_MIN (opcional, default 30).
 import { createClient } from "npm:@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
-const DRY_RUN = (Deno.env.get("ALERTS_DRY_RUN") ?? "true") !== "false";
+const COOLDOWN_MIN = Number(Deno.env.get("ALERTS_COOLDOWN_MIN") ?? "30");
 
 interface AlertRow {
   id: string;
@@ -19,8 +21,14 @@ interface AlertRow {
   asset: string;
   metric: string; // 'price' | 'funding' | 'gamma_regime'
   condition: { op?: string; value?: number; equals?: string };
-  channel: "email" | "whatsapp";
+  last_triggered_at: string | null;
 }
+
+const METRIC_LABEL: Record<string, string> = {
+  price: "Preço",
+  funding: "Funding",
+  gamma_regime: "Regime de gamma",
+};
 
 /** Extrai o valor da métrica a partir do payload do snapshot. */
 function metricValue(metric: string, payload: Record<string, any>): number | string | null {
@@ -42,59 +50,71 @@ function triggered(alert: AlertRow, value: number | string | null): boolean {
   if (typeof value === "string") return c.equals != null && value === c.equals;
   if (c.value == null) return false;
   switch (c.op) {
-    case ">":
-      return value > c.value;
-    case "<":
-      return value < c.value;
-    case ">=":
-      return value >= c.value;
-    case "<=":
-      return value <= c.value;
-    default:
-      return false;
+    case ">": return value > c.value;
+    case "<": return value < c.value;
+    case ">=": return value >= c.value;
+    case "<=": return value <= c.value;
+    default: return false;
   }
 }
 
-async function sendEmail(to: string, subject: string, text: string) {
-  const key = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("ALERTS_FROM_EMAIL");
-  if (DRY_RUN || !key || !from) {
-    console.log(`[dry-run email] → ${to}: ${subject}`);
-    return;
+/** Texto legível do disparo (título + corpo). */
+function describe(alert: AlertRow, value: number | string): { title: string; body: string } {
+  const label = METRIC_LABEL[alert.metric] ?? alert.metric;
+  const c = alert.condition ?? {};
+  if (alert.metric === "gamma_regime") {
+    return {
+      title: `${alert.asset} · regime de gamma`,
+      body: `O regime de gamma do ${alert.asset} virou ${value}.`,
+    };
   }
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, text }),
-  });
+  const cond = `${c.op === "<" ? "abaixo de" : "acima de"} ${c.value}${alert.metric === "funding" ? "%" : ""}`;
+  const shown = alert.metric === "price" ? `US$ ${value}` : `${value}${alert.metric === "funding" ? "%" : ""}`;
+  return {
+    title: `${alert.asset} · ${label} ${cond}`,
+    body: `${label} do ${alert.asset} está em ${shown}.`,
+  };
 }
 
-async function sendWhatsApp(phone: string, text: string) {
-  const url = Deno.env.get("EVOLUTION_API_URL");
-  const key = Deno.env.get("EVOLUTION_API_KEY");
-  const instance = Deno.env.get("EVOLUTION_INSTANCE");
-  if (DRY_RUN || !url || !key || !instance) {
-    console.log(`[dry-run whatsapp] → ${phone}: ${text.slice(0, 60)}`);
-    return;
+Deno.serve(async (req) => {
+  // Autenticidade: só o cron (ou um admin com o segredo) pode acionar.
+  const secret = Deno.env.get("DISPATCH_SECRET");
+  if (secret && req.headers.get("x-dispatch-secret") !== secret) {
+    return new Response("forbidden", { status: 401 });
   }
-  await fetch(`${url}/message/sendText/${instance}`, {
-    method: "POST",
-    headers: { apikey: key, "Content-Type": "application/json" },
-    body: JSON.stringify({ number: phone, text }),
-  });
-}
 
-Deno.serve(async () => {
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
 
-  const { data: alerts } = await admin.from("alerts").select("*").eq("active", true);
-  if (!alerts?.length) return new Response(JSON.stringify({ evaluated: 0 }), { status: 200 });
+  // VAPID é opcional: sem ele, o in-app (notifications) ainda funciona; só não envia push.
+  const vapidPub = Deno.env.get("VAPID_PUBLIC_KEY");
+  const vapidPriv = Deno.env.get("VAPID_PRIVATE_KEY");
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:contato@backhub.com.br";
+  const pushReady = Boolean(vapidPub && vapidPriv);
+  if (pushReady) webpush.setVapidDetails(vapidSubject, vapidPub!, vapidPriv!);
 
-  // Cache de snapshots por ativo
+  const { data: alerts } = await admin
+    .from("alerts")
+    .select("id, user_id, asset, metric, condition, last_triggered_at")
+    .eq("active", true);
+  if (!alerts?.length) {
+    return new Response(JSON.stringify({ evaluated: 0 }), { status: 200 });
+  }
+
+  const now = Date.now();
+  const cooldownMs = COOLDOWN_MIN * 60 * 1000;
   const snapByAsset: Record<string, Record<string, any>> = {};
   let fired = 0;
+  let pushed = 0;
 
   for (const alert of alerts as AlertRow[]) {
+    // Cooldown: não re-notifica enquanto a janela de silêncio não expirou.
+    if (alert.last_triggered_at && now - new Date(alert.last_triggered_at).getTime() < cooldownMs) {
+      continue;
+    }
+
     if (!snapByAsset[alert.asset]) {
       const { data } = await admin
         .from("market_snapshot")
@@ -105,24 +125,53 @@ Deno.serve(async () => {
         .maybeSingle();
       snapByAsset[alert.asset] = data?.payload ?? {};
     }
+
     const value = metricValue(alert.metric, snapByAsset[alert.asset]);
     if (!triggered(alert, value)) continue;
 
-    const msg = `Crypto Monitor · ${alert.asset}: alerta de ${alert.metric} atingido (valor ${value}).`;
-    if (alert.channel === "email") {
-      const { data: profile } = await admin.from("profiles").select("id").eq("id", alert.user_id).maybeSingle();
-      const { data: authUser } = await admin.auth.admin.getUserById(alert.user_id);
-      const email = authUser?.user?.email;
-      if (email && profile) await sendEmail(email, `Alerta ${alert.asset}`, msg);
-    } else {
-      const { data: profile } = await admin.from("profiles").select("phone").eq("id", alert.user_id).maybeSingle();
-      if (profile?.phone) await sendWhatsApp(profile.phone, msg);
-    }
+    const { title, body } = describe(alert, value as number | string);
+
+    // 1) in-app — grava a notificação (dispara o Realtime no front)
+    await admin.from("notifications").insert({
+      user_id: alert.user_id,
+      alert_id: alert.id,
+      title,
+      body,
+      asset: alert.asset,
+      metric: alert.metric,
+      value: String(value),
+    });
+    // marca o cooldown
+    await admin.from("alerts").update({ last_triggered_at: new Date().toISOString() }).eq("id", alert.id);
     fired++;
+
+    // 2) Web Push — para todos os navegadores inscritos do usuário
+    if (pushReady) {
+      const { data: subs } = await admin
+        .from("push_subscriptions")
+        .select("id, endpoint, p256dh, auth")
+        .eq("user_id", alert.user_id);
+      const payload = JSON.stringify({ title, body, url: "/alerts", tag: `alert-${alert.id}` });
+      for (const s of subs ?? []) {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            payload,
+          );
+          pushed++;
+        } catch (err) {
+          // Inscrição expirada/cancelada → remove para não tentar de novo.
+          const code = (err as { statusCode?: number })?.statusCode;
+          if (code === 404 || code === 410) {
+            await admin.from("push_subscriptions").delete().eq("id", s.id);
+          }
+        }
+      }
+    }
   }
 
-  return new Response(JSON.stringify({ evaluated: alerts.length, fired, dry_run: DRY_RUN }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ evaluated: alerts.length, fired, pushed, push_ready: pushReady }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
 });

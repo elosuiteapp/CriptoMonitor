@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import Disclaimer from "../components/Disclaimer";
 import { useAuth } from "../hooks/useAuth";
 import { usePlan } from "../hooks/usePlan";
-import { useProfile } from "../hooks/useProfile";
 import { supabase } from "../lib/supabase";
 
 interface AlertRow {
@@ -12,7 +11,6 @@ interface AlertRow {
   asset: string;
   metric: string;
   condition: { op?: string; value?: number; equals?: string };
-  channel: string;
   active: boolean;
 }
 
@@ -25,7 +23,6 @@ const METRICS = [
 export default function Alerts() {
   const { user } = useAuth();
   const { plan } = usePlan(user?.id);
-  const { profile } = useProfile(user);
   const [rows, setRows] = useState<AlertRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,10 +33,11 @@ export default function Alerts() {
   const [op, setOp] = useState(">");
   const [value, setValue] = useState("");
   const [regime, setRegime] = useState("negative");
-  const [channel, setChannel] = useState("email");
 
-  const channels = plan?.alert_channels ?? [];
   const assets = plan?.assets ?? ["BTC"];
+  // Alertas seguem sendo um recurso de plano pago (Pro/Expert). A entrega agora é
+  // sempre no sistema (sino + pop-up) e, se o usuário permitir, push do navegador.
+  const canCreate = (plan?.alert_channels ?? []).length > 0;
 
   async function load() {
     const { data } = await supabase.from("alerts").select("*").order("created_at", { ascending: false });
@@ -51,17 +49,12 @@ export default function Alerts() {
   }, [user]);
 
   useEffect(() => {
-    if (channels.length && !channels.includes(channel)) setChannel(channels[0]);
     if (assets.length && !assets.includes(asset)) setAsset(assets[0]);
   }, [plan]);
 
   async function createAlert(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (phoneMissing) {
-      setError("Adicione seu telefone no perfil (menu do seu nome → Editar perfil) para receber alertas no WhatsApp.");
-      return;
-    }
     setBusy(true);
     try {
       // Funding é comparado contra derivatives.funding_rate, que está em PERCENT
@@ -75,7 +68,7 @@ export default function Alerts() {
         asset,
         metric,
         condition,
-        channel,
+        channel: "inapp",
       });
       if (error) throw error;
       setValue("");
@@ -92,10 +85,6 @@ export default function Alerts() {
     await load();
   }
 
-  const canCreate = channels.length > 0;
-  // WhatsApp só entrega se houver telefone no perfil — bloqueia antes de criar.
-  const phoneMissing = channel === "whatsapp" && !profile?.phone?.trim();
-
   return (
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
@@ -103,11 +92,13 @@ export default function Alerts() {
           ← Voltar ao cockpit
         </Link>
         <h1 className="mt-3 text-2xl font-bold text-foreground">Alertas</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Você é avisado no sistema (sino + pop-up na tela) e, se permitir, por notificação do navegador — mesmo com o app fechado.
+        </p>
 
         {!canCreate ? (
           <div className="mt-6 rounded-2xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
-            Alertas por e-mail estão disponíveis no <strong>Pro</strong> e WhatsApp no{" "}
-            <strong>Expert</strong>.{" "}
+            Alertas estão disponíveis nos planos <strong>Pro</strong> e <strong>Expert</strong>.{" "}
             <Link to="/pricing" className="text-primary hover:underline">
               Ver planos →
             </Link>
@@ -155,22 +146,8 @@ export default function Alerts() {
               </>
             )}
 
-            <label className="text-xs text-muted-foreground">
-              Canal
-              <select value={channel} onChange={(e) => setChannel(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
-                {channels.map((c) => (
-                  <option key={c} value={c}>{c === "email" ? "E-mail" : "WhatsApp"}</option>
-                ))}
-              </select>
-              {phoneMissing && (
-                <span className="mt-1 block text-[11px] text-amber-600 dark:text-amber-400">
-                  Sem telefone no perfil — adicione no menu do seu nome para usar o WhatsApp.
-                </span>
-              )}
-            </label>
-
-            <div className="flex items-end">
-              <button type="submit" disabled={busy || phoneMissing} className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <div className="flex items-end sm:col-span-2">
+              <button type="submit" disabled={busy} className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                 {busy ? "…" : "Criar alerta"}
               </button>
             </div>
@@ -185,8 +162,7 @@ export default function Alerts() {
             <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card dark:bg-card/60 px-4 py-3 text-sm">
               <span className="text-foreground">
                 <strong>{r.asset}</strong> · {r.metric}{" "}
-                {r.condition.equals ? `→ ${r.condition.equals}` : `${r.condition.op} ${r.condition.value}`}{" "}
-                <span className="text-muted-foreground">· {r.channel}</span>
+                {r.condition.equals ? `→ ${r.condition.equals}` : `${r.condition.op} ${r.condition.value}`}
               </span>
               <button onClick={() => remove(r.id)} className="text-xs text-rose-600 dark:text-rose-400 hover:underline">
                 Excluir

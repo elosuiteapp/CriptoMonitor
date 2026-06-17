@@ -19,6 +19,7 @@ import MetricCard from "../components/MetricCard";
 import ModuleSwitcher from "../components/ModuleSwitcher";
 import NewsBlock from "../components/NewsBlock";
 import OIDeltaCard from "../components/OIDeltaCard";
+import NotificationsBell from "../components/NotificationsBell";
 import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
 import SmartMoneyTab from "../components/SmartMoneyTab";
@@ -135,6 +136,7 @@ export default function Dashboard() {
             Plano {plan.name}
           </span>
           <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
+          {user && <NotificationsBell user={user} />}
           <Link to="/alerts" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
             Alertas
           </Link>
