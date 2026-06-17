@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     if (!plan) return new Response("plano inválido", { status: 400 });
     const periodEnd = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
     await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId).eq("status", "active");
-    await admin.from("subscriptions").insert({
+    const { data: subRow } = await admin.from("subscriptions").insert({
       user_id: userId,
       plan_id: plan.id,
       status: "active",
@@ -44,7 +44,23 @@ Deno.serve(async (req) => {
       gateway_customer_id: String(payment.customer ?? subscription.customer ?? ""),
       gateway_subscription_id: String(payment.subscription ?? subscription.id ?? ""),
       current_period_end: periodEnd,
-    });
+    }).select("id").single();
+
+    // Comissão de afiliado: se este usuário veio por indicação, credita a comissão
+    // referente a ESTE pagamento. Recorrente (cada mensalidade rende) e idempotente
+    // por payment.id — uma reentrega do webhook não credita duas vezes.
+    const paymentRef = String(payment.id ?? "");
+    const grossCents = Math.round(Number(payment.value ?? 0) * 100);
+    if (paymentRef && grossCents > 0) {
+      await admin.rpc("record_commission", {
+        p_user_id: userId,
+        p_subscription_id: subRow?.id ?? null,
+        p_gateway: "asaas",
+        p_payment_ref: paymentRef,
+        p_gross_cents: grossCents,
+        p_currency: "BRL",
+      });
+    }
     return new Response(JSON.stringify({ ok: true, user: userId, plan: planSlug }), { status: 200 });
   }
 
@@ -52,6 +68,10 @@ Deno.serve(async (req) => {
     await admin.from("subscriptions").update({ status: "past_due" }).eq("user_id", userId).eq("status", "active");
   } else if (cancel) {
     await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId).eq("status", "active");
+    // Estorno: reverte a comissão (ainda não paga) daquele pagamento, se houver.
+    if (event === "PAYMENT_REFUNDED" && payment.id) {
+      await admin.rpc("reverse_commission", { p_gateway: "asaas", p_payment_ref: String(payment.id) });
+    }
   }
   return new Response(JSON.stringify({ ok: true, event }), { status: 200 });
 });

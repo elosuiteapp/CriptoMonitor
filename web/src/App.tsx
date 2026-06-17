@@ -1,11 +1,13 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./hooks/useAuth";
+import { useReferralCapture } from "./hooks/useReferralCapture";
 import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Pricing from "./pages/Pricing";
+import AdminAffiliates from "./pages/admin/Affiliates";
 import AdminRoute from "./pages/admin/AdminRoute";
 import AdminAudit from "./pages/admin/Audit";
 import AdminOverview from "./pages/admin/Overview";
@@ -21,6 +23,7 @@ function Loading() {
 
 export default function App() {
   const { session, loading } = useAuth();
+  useReferralCapture(session);
   if (loading) return <Loading />;
 
   return (
@@ -38,6 +41,7 @@ export default function App() {
         <Route path="subscriptions" element={<AdminSubscriptions />} />
         <Route path="plans" element={<AdminPlans />} />
         <Route path="usage" element={<AdminUsage />} />
+        <Route path="affiliates" element={<AdminAffiliates />} />
         <Route path="system" element={<AdminSystem />} />
         <Route path="audit" element={<AdminAudit />} />
       </Route>

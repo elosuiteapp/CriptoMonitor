@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import ThemeToggle from "../ui/ThemeToggle";
 import {
+  IconAffiliate,
   IconAudit,
   IconBack,
   IconLogout,
@@ -20,6 +21,7 @@ const NAV = [
   { to: "/admin/subscriptions", label: "Assinaturas & Receita", icon: IconRevenue },
   { to: "/admin/plans", label: "Planos", icon: IconPlans },
   { to: "/admin/usage", label: "Uso & IA", icon: IconUsage },
+  { to: "/admin/affiliates", label: "Afiliados", icon: IconAffiliate },
   { to: "/admin/system", label: "Saúde do sistema", icon: IconSystem },
   { to: "/admin/audit", label: "Auditoria", icon: IconAudit },
 ];
