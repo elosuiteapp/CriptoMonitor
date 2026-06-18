@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
@@ -55,9 +56,11 @@ export default function ProfileModal({
   const fieldClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary";
 
-  return (
+  // Renderizado via portal no <body> para escapar do contexto de empilhamento do
+  // header (senão o gráfico/canvas fica por cima do modal). z alto cobre tudo.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       {/* Wrapper que centraliza verticalmente quando cabe e empurra com folga
@@ -164,7 +167,8 @@ export default function ProfileModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
