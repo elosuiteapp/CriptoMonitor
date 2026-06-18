@@ -120,6 +120,48 @@ export function readLiquidations(
   return { label: "Liquidações equilibradas nos dois lados", detail, level: "yellow" };
 }
 
+/** Risco de squeeze: cruza funding (FRAÇÃO), long/short e liquidações para apontar
+ *  qual lado alavancado está vulnerável a ser liquidado à força (a "armadilha"). */
+export function readSqueezeRisk(
+  funding: number | null | undefined, // fração (ex.: 0.0003 = +0,03%)
+  longShort: number | null | undefined,
+  liqLong: number | null | undefined,
+  liqShort: number | null | undefined,
+): Reading {
+  if (funding == null && longShort == null)
+    return { label: "Risco de squeeze indisponível", detail: "—", level: "neutral" };
+  const fr = funding ?? 0;
+  const r = longShort ?? 1;
+  const l = liqLong ?? 0;
+  const s = liqShort ?? 0;
+  const flushLong = l > s * 1.5; // longs já sendo liquidados
+  const flushShort = s > l * 1.5; // shorts já sendo liquidados
+  const detail = `funding ${fmtPct(fr * 100, 4)} · L/S ${r.toFixed(2)}`;
+
+  // Comprados lotados pagando funding caro → vulneráveis a squeeze de BAIXA.
+  if (fr > 0.0003 && r >= 1.5)
+    return {
+      label: flushLong
+        ? "Squeeze de BAIXA em curso — comprados lotados sendo liquidados"
+        : "Squeeze de BAIXA armando — comprados lotados pagando funding caro",
+      detail,
+      level: flushLong ? "red" : "yellow",
+    };
+  // Vendidos lotados pagando funding caro → vulneráveis a squeeze de ALTA.
+  if (fr < -0.0003 && r <= 0.67)
+    return {
+      label: flushShort
+        ? "Squeeze de ALTA em curso — vendidos lotados sendo liquidados"
+        : "Squeeze de ALTA armando — vendidos lotados pagando funding caro",
+      detail,
+      level: flushShort ? "red" : "yellow",
+    };
+  // Pressão de um lado só, sem lotação extrema.
+  if (fr > 0.0005) return { label: "Comprados pagando caro — risco de squeeze de baixa", detail, level: "yellow" };
+  if (fr < -0.0005) return { label: "Vendidos pagando caro — risco de squeeze de alta", detail, level: "yellow" };
+  return { label: "Sem armadilha de squeeze evidente", detail, level: "green" };
+}
+
 /** Regime de gamma (PRD §8.5). */
 export function readGammaRegime(regime: "positive" | "negative" | null | undefined): Reading {
   if (regime == null) return { label: "Regime indisponível", detail: "—", level: "neutral" };

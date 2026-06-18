@@ -20,7 +20,8 @@ const SYSTEM_PROMPT = [
   "Estrutura obrigatoria:",
   "1) Contexto macro - DXY/S&P/ouro/10Y e a correlacao 30d quando houver (vento a favor/contra).",
   "2) Fluxo varejo x institucional - varejo via perps/funding/CVD da Binance; institucional via spot da Coinbase. Use o PREMIO COINBASE (preco Coinbase menos Binance), a PARTICIPACAO INSTITUCIONAL (volume da Coinbase vs Binance+OKX) e o CVD da Coinbase comparado ao da Binance. Use o DELTA DE OI vs preco para ler novas posicoes (long/short).",
-  "3) Niveis de liquidez e opcoes - Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO BOOK como imas/suporte-resistencia, citando os precos.",
+  "3) Niveis de liquidez e opcoes - Call/Put Wall, Zero Gamma, Max Pain e as PAREDES DO BOOK como imas/suporte-resistencia, citando os precos. Use tambem o HIRO (options_flow_hiro): o delta-fluxo do hedge dos dealers de opcoes nos ultimos minutos (positivo = hedge comprador, negativo = vendedor); se diverge do preco (fluxo sobe mas preco cai), e sinal de cautela.",
+  "3c) Risco de squeeze - cruze funding + long/short + liquidacoes: comprados lotados pagando funding caro = risco de squeeze de BAIXA (liquidam se cai); vendidos lotados pagando = risco de squeeze de ALTA. Se as liquidacoes daquele lado ja correm, o squeeze esta em curso.",
   "3b) Estrutura de mercado (Smart Money Concepts) - quando a ESTRUTURA SMC for fornecida, use o vies por timeframe (1D e 4h), o ultimo evento (BOS = continuacao / CHoCH = possivel reversao), os order blocks de suporte/resistencia, os pools de liquidez (alvos magneticos) e a zona premium (caro) / discount (barato). DESTAQUE como ALTA CONFLUENCIA quando um order block ou pool de liquidez coincidir (preco proximo) com Call/Put Wall, Zero Gamma, Max Pain ou parede do book. Explique BOS/CHoCH/order block/liquidez em poucas palavras.",
   "4) Volatilidade e sentimento - Fear & Greed; opcoes: Put/Call, IV media e skew; e o painel de volatilidade quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se o curto 7d > 90d e backwardation, mercado pricing evento de curto prazo).",
   "5) Sintese - junte os sinais num quadro coerente.",
@@ -123,7 +124,7 @@ Deno.serve(async (req) => {
   const since15 = new Date(Date.now() - 15 * 60000).toISOString();
   const institutional: Record<string, unknown> = {};
   if (advanced) {
-    const [{ data: oi }, { data: walls }, { data: macroAssets }, { data: macroCorr }, { data: volRow }] =
+    const [{ data: oi }, { data: walls }, { data: macroAssets }, { data: macroCorr }, { data: volRow }, { data: hiro }] =
       await Promise.all([
         admin.from("v_oi_delta").select("oi_delta_4h, oi_delta_24h, price_delta_4h").eq("asset", ativo).maybeSingle(),
         admin.from("orderbook_walls").select("exchange, side, price, notional_usd").eq("asset", ativo)
@@ -132,12 +133,14 @@ Deno.serve(async (req) => {
         admin.from("macro_correlations").select("macro_symbol, corr_30d").eq("asset", ativo).order("ts", { ascending: false }).limit(12),
         admin.from("volatility_index").select("dvol, ivp_90d, rv_30d, iv_rv_spread, term_structure, ts")
           .eq("asset", ativo).order("ts", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("options_flow").select("net_delta_flow, trades_count, ts").eq("asset", ativo).order("ts", { ascending: false }).limit(6),
       ]);
     institutional.oi_delta = oi ?? null;
     institutional.order_book_walls = walls ?? [];
     institutional.macro = dedupeBy((macroAssets as Record<string, unknown>[]) ?? [], "symbol");
     institutional.macro_correlations = dedupeBy((macroCorr as Record<string, unknown>[]) ?? [], "macro_symbol");
     institutional.volatility = volRow ?? null;
+    institutional.options_flow_hiro = hiro ?? []; // proxy HIRO: delta-fluxo do hedge dos dealers (ultimos buckets de 5 min)
   }
 
   // Noticias recentes
@@ -167,7 +170,7 @@ Deno.serve(async (req) => {
     "Snapshot consolidado (JSON):",
     JSON.stringify(snap.payload),
     "",
-    "Camada institucional (OI delta, paredes do book, macro & correlacoes, volatilidade DVOL/IVP/IV-RV/term structure):",
+    "Camada institucional (OI delta, paredes do book, macro & correlacoes, volatilidade DVOL/IVP/IV-RV/term structure, HIRO em options_flow_hiro):",
     JSON.stringify(institutional),
     "",
     "Estrutura SMC (Smart Money Concepts, calculada dos candles 1D e 4h - vies, BOS/CHoCH, order blocks de suporte/resistencia, pools de liquidez, zona premium/discount, sweep recente):",

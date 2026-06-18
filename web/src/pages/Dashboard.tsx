@@ -48,6 +48,7 @@ import {
   readLiquidations,
   readLongShort,
   readOptionsPositioning,
+  readSqueezeRisk,
   readTvl,
   type Reading,
 } from "../lib/format";
@@ -262,6 +263,13 @@ export default function Dashboard() {
                 />
                 <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.longShort} />
                 <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.liquidations} />
+                <MetricCard
+                  title="Risco de squeeze"
+                  reading={readSqueezeRisk(d?.funding_rate == null ? null : d.funding_rate / 100, d?.long_short_ratio, d?.liq_long_usd, d?.liq_short_usd)}
+                  source="Coinalyze"
+                  timestamp={updatedAt}
+                  info={GLOSSARY.squeezeRisk}
+                />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
               </>
             ) : (

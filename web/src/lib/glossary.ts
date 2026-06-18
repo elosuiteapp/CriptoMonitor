@@ -5,6 +5,7 @@ export const GLOSSARY: Record<string, string> = {
   fundingOnchain: "Funding dos perpétuos on-chain (DEX). Mesma ideia do funding de CEX, mas no mercado descentralizado — bom pra comparar varejo CEX × DeFi.",
   cvd: "CVD (Cumulative Volume Delta): saldo entre compra e venda agressora (a mercado). Subindo = compradores no comando; caindo = vendedores.",
   longShort: "Long/Short ratio: proporção de posições compradas vs vendidas. Muito acima de 1 = excesso de comprados (risco de squeeze de baixa) e vice-versa.",
+  squeezeRisk: "Risco de squeeze: cruza funding + long/short + liquidações pra apontar o lado alavancado vulnerável. Comprados lotados pagando funding caro = risco de squeeze de BAIXA (são liquidados se o preço cai); vendidos lotados pagando = risco de squeeze de ALTA. Se as liquidações daquele lado já estão correndo, o squeeze está em curso.",
   liquidations: "Liquidações: posições alavancadas fechadas à força. Cascata de comprados empurra o preço pra baixo; de vendidos, pra cima.",
   institutionalBias: "Quem está no comando: institucional (Coinbase/spot) vs varejo (Binance/perps), via prêmio Coinbase, participação no volume e CVD agressor.",
   tvl: "TVL (Total Value Locked): valor total depositado nos protocolos DeFi da rede. Stablecoins entrando = capital novo chegando.",
