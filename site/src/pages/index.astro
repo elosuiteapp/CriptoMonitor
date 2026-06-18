@@ -1,0 +1,208 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import { SIGNUP_URL, PRICING, MARKETS } from "../consts";
+
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+const FEATURES = [
+  { icon: "📊", title: "Módulo Gamma", desc: "Regime de gamma, Zero Gamma, Max Pain e Call/Put Wall — os níveis institucionais, estilo SpotGamma." },
+  { icon: "🔥", title: "Heatmap de liquidação", desc: "Onde o preço tende a ser puxado: zonas-ímã de long (abaixo) e short (acima), por intensidade." },
+  { icon: "🏦", title: "Smart Money & On-chain", desc: "Estrutura SMC, fluxo institucional × varejo, risco de squeeze e leitura on-chain." },
+  { icon: "✨", title: "IA · O que está acontecendo?", desc: "A IA costura gamma, fluxo, volatilidade e notícias numa narrativa clara — em português." },
+  { icon: "🔔", title: "Alertas", desc: "Preço, funding ou regime: avisos no sistema e push do navegador, mesmo com o app fechado." },
+  { icon: "🌐", title: "Multi-mercado", desc: "Cripto agora; B3 (ações) e Forex chegando — um cockpit só para todos os mercados." },
+];
+
+const STEPS = [
+  { n: "1", title: "Crie sua conta grátis", desc: "Comece pelo cockpit do BTC e pela newsletter semanal, sem cartão." },
+  { n: "2", title: "Leia o mercado com clareza", desc: "Gamma, fluxo e liquidez traduzidos em semáforo — sem precisar ser quant." },
+  { n: "3", title: "Libere o cockpit completo", desc: "Assine Pro ou Expert para 20 ativos, camadas, alertas e Smart Money." },
+];
+---
+
+<Base>
+  <Nav />
+
+  <!-- Hero -->
+  <section class="glow relative overflow-hidden">
+    <div class="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 lg:grid-cols-2 lg:py-28">
+      <div>
+        <span class="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs text-muted">
+          <span class="h-1.5 w-1.5 rounded-full bg-up"></span> Dados institucionais, leitura simples
+        </span>
+        <h1 class="mt-5 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
+          O cockpit institucional<br /> dos <span class="text-primary">mercados</span>.
+        </h1>
+        <p class="mt-5 max-w-md text-lg text-muted">
+          OrbeView traduz gamma, smart money e fluxo de capital em uma leitura clara — para você
+          decidir com a visão de quem move o mercado. Cripto agora; ações (B3) e câmbio chegando.
+        </p>
+        <div class="mt-8 flex flex-wrap items-center gap-3">
+          <a href={SIGNUP_URL} class="rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary">
+            Criar conta grátis
+          </a>
+          <a href="/precos" class="rounded-lg border border-line px-5 py-3 text-sm font-semibold text-fg transition-colors hover:bg-card">
+            Ver planos
+          </a>
+        </div>
+        <p class="mt-3 text-xs text-muted">Grátis para sempre no plano Free · sem cartão</p>
+      </div>
+
+      <!-- Mock do cockpit (SVG) -->
+      <div class="relative">
+        <div class="rounded-2xl border border-line bg-card/80 p-4 shadow-2xl backdrop-blur">
+          <div class="mb-3 flex items-center justify-between text-xs text-muted">
+            <span class="font-semibold text-fg">BTC · Bitcoin</span>
+            <span class="num">US$ 64.378,06</span>
+          </div>
+          <svg viewBox="0 0 320 170" class="h-44 w-full" preserveAspectRatio="none">
+            <!-- faixa heat (zona short acima / long abaixo) -->
+            <rect x="0" y="18" width="320" height="26" fill="rgba(34,197,94,0.10)"></rect>
+            <rect x="0" y="128" width="320" height="26" fill="rgba(239,68,68,0.10)"></rect>
+            <!-- níveis -->
+            <line x1="0" y1="30" x2="320" y2="30" stroke="#22c55e" stroke-width="1" stroke-dasharray="4 4"></line>
+            <line x1="0" y1="86" x2="320" y2="86" stroke="#818cf8" stroke-width="1" stroke-dasharray="4 4"></line>
+            <line x1="0" y1="140" x2="320" y2="140" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 4"></line>
+            <!-- velas -->
+            <g stroke-width="5">
+              <line x1="20" y1="70" x2="20" y2="120" stroke="#22c55e"></line>
+              <line x1="40" y1="60" x2="40" y2="100" stroke="#22c55e"></line>
+              <line x1="60" y1="64" x2="60" y2="112" stroke="#ef4444"></line>
+              <line x1="80" y1="50" x2="80" y2="92" stroke="#22c55e"></line>
+              <line x1="100" y1="44" x2="100" y2="78" stroke="#22c55e"></line>
+              <line x1="120" y1="52" x2="120" y2="96" stroke="#ef4444"></line>
+              <line x1="140" y1="58" x2="140" y2="104" stroke="#ef4444"></line>
+              <line x1="160" y1="66" x2="160" y2="118" stroke="#22c55e"></line>
+              <line x1="180" y1="60" x2="180" y2="98" stroke="#22c55e"></line>
+              <line x1="200" y1="48" x2="200" y2="84" stroke="#22c55e"></line>
+              <line x1="220" y1="54" x2="220" y2="100" stroke="#ef4444"></line>
+              <line x1="240" y1="62" x2="240" y2="108" stroke="#ef4444"></line>
+              <line x1="260" y1="70" x2="260" y2="116" stroke="#22c55e"></line>
+              <line x1="280" y1="64" x2="280" y2="102" stroke="#22c55e"></line>
+              <line x1="300" y1="58" x2="300" y2="94" stroke="#ef4444"></line>
+            </g>
+          </svg>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="rounded-full border border-up/30 bg-up/10 px-2 py-0.5 text-[10px] text-up">Call Wall 80k</span>
+            <span class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">Zero Gamma 65,4k</span>
+            <span class="rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] text-down">Put Wall 60k</span>
+          </div>
+        </div>
+        <div class="pointer-events-none absolute -bottom-3 -right-3 -z-10 h-full w-full rounded-2xl border border-line/60"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Mercados -->
+  <section id="mercados" class="border-y border-line/70 bg-surface/30">
+    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-3 px-4 py-8 sm:gap-6">
+      <span class="text-sm text-muted">Um cockpit, vários mercados:</span>
+      {MARKETS.map((m) => (
+        <span class="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3.5 py-1.5 text-sm">
+          <span aria-hidden>{m.icon}</span>
+          <span class="font-medium">{m.label}</span>
+          <span class="text-[10px] uppercase tracking-wider text-muted">{m.note}</span>
+        </span>
+      ))}
+    </div>
+  </section>
+
+  <!-- Recursos -->
+  <section id="recursos" class="mx-auto max-w-6xl px-4 py-20">
+    <div class="mx-auto max-w-2xl text-center">
+      <h2 class="text-3xl font-bold tracking-tight">As ferramentas que faltavam pro varejo</h2>
+      <p class="mt-3 text-muted">O que antes só mesa institucional via — agora num semáforo que qualquer trader entende.</p>
+    </div>
+    <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {FEATURES.map((f) => (
+        <div class="rounded-2xl border border-line bg-card p-6 transition-colors hover:border-primary/40">
+          <div class="text-2xl" aria-hidden>{f.icon}</div>
+          <h3 class="mt-3 font-semibold">{f.title}</h3>
+          <p class="mt-1.5 text-sm text-muted">{f.desc}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Como funciona -->
+  <section class="border-y border-line/70 bg-surface/30">
+    <div class="mx-auto max-w-6xl px-4 py-20">
+      <div class="grid gap-10 md:grid-cols-3">
+        {STEPS.map((s) => (
+          <div>
+            <div class="grid h-9 w-9 place-items-center rounded-full bg-primary-strong text-sm font-bold text-white">{s.n}</div>
+            <h3 class="mt-4 text-lg font-semibold">{s.title}</h3>
+            <p class="mt-1.5 text-sm text-muted">{s.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Preços (teaser) -->
+  <section id="precos" class="mx-auto max-w-6xl px-4 py-20">
+    <div class="mx-auto max-w-2xl text-center">
+      <h2 class="text-3xl font-bold tracking-tight">Planos</h2>
+      <p class="mt-3 text-muted">Comece grátis. Suba quando quiser o cockpit completo. Anual com 30% OFF de lançamento.</p>
+    </div>
+    <div class="mt-12 grid gap-5 lg:grid-cols-3">
+      {PRICING.plans.map((p) => (
+        <div class={`rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
+          {p.highlight && <span class="mb-3 inline-block rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary">Mais popular</span>}
+          <h3 class="text-lg font-bold">{p.name}</h3>
+          <p class="mt-1 text-sm text-muted">{p.tagline}</p>
+          <div class="mt-4 flex items-baseline gap-1">
+            <span class="num text-3xl font-extrabold">{p.monthly === 0 ? "Grátis" : brl(p.monthly)}</span>
+            {p.monthly > 0 && <span class="text-sm text-muted">/mês</span>}
+          </div>
+          <ul class="mt-5 space-y-2 text-sm">
+            {p.features.map((f) => (
+              <li class="flex gap-2 text-muted"><span class="text-up">✓</span><span>{f}</span></li>
+            ))}
+          </ul>
+          <a href={SIGNUP_URL} class={`mt-6 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}>
+            {p.cta}
+          </a>
+        </div>
+      ))}
+    </div>
+    <p class="mt-6 text-center text-sm"><a href="/precos" class="text-primary hover:underline">Comparar planos em detalhe →</a></p>
+  </section>
+
+  <!-- Newsletter -->
+  <section id="newsletter" class="border-y border-line/70 bg-surface/30">
+    <div class="mx-auto max-w-2xl px-4 py-20 text-center">
+      <h2 class="text-3xl font-bold tracking-tight">A leitura semanal do mercado</h2>
+      <p class="mt-3 text-muted">
+        Toda semana, uma edição traduzindo o que a mesa institucional está vendo — gamma, fluxo e
+        liquidez. Grátis para quem tem conta.
+      </p>
+      <form class="mx-auto mt-8 flex max-w-md flex-col gap-3 sm:flex-row" action={SIGNUP_URL} method="get">
+        <input
+          type="email"
+          name="email"
+          required
+          placeholder="seu@email.com"
+          class="w-full rounded-lg border border-line bg-card px-4 py-3 text-sm text-fg outline-none transition-colors focus:border-primary"
+        />
+        <button type="submit" class="shrink-0 rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary">
+          Quero receber
+        </button>
+      </form>
+      <p class="mt-3 text-xs text-muted">Sem spam. Cancele quando quiser.</p>
+    </div>
+  </section>
+
+  <!-- CTA final -->
+  <section class="mx-auto max-w-6xl px-4 py-24 text-center">
+    <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Veja o mercado como a mesa vê.</h2>
+    <p class="mx-auto mt-3 max-w-md text-muted">Crie sua conta grátis e abra o cockpit do BTC agora.</p>
+    <a href={SIGNUP_URL} class="mt-8 inline-block rounded-lg bg-primary-strong px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary">
+      Começar grátis
+    </a>
+  </section>
+
+  <Footer />
+</Base>

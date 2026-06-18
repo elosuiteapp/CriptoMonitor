@@ -1,0 +1,58 @@
+---
+import { SIGNUP_URL } from "../consts";
+const year = 2026;
+---
+
+<footer class="border-t border-line/70 bg-surface/40">
+  <div class="mx-auto max-w-6xl px-4 py-12">
+    <div class="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+      <div class="max-w-sm">
+        <div class="flex items-center gap-2.5">
+          <span
+            class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-primary-strong to-primary text-sm font-bold text-white"
+            >OV</span
+          >
+          <span class="text-lg font-bold tracking-tight">OrbeView</span>
+        </div>
+        <p class="mt-3 text-sm text-muted">
+          O cockpit institucional dos mercados — cripto, ações (B3) e câmbio. Dados complexos
+          traduzidos em leitura clara.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-8 text-sm sm:grid-cols-3">
+        <div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Produto</div>
+          <ul class="space-y-2 text-muted">
+            <li><a href="/#recursos" class="transition-colors hover:text-fg">Recursos</a></li>
+            <li><a href="/precos" class="transition-colors hover:text-fg">Preços</a></li>
+            <li><a href="/#newsletter" class="transition-colors hover:text-fg">Newsletter</a></li>
+          </ul>
+        </div>
+        <div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Conta</div>
+          <ul class="space-y-2 text-muted">
+            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg">Criar conta</a></li>
+            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg">Entrar</a></li>
+          </ul>
+        </div>
+        <div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Legal</div>
+          <ul class="space-y-2 text-muted">
+            <li><a href="/termos" class="transition-colors hover:text-fg">Termos</a></li>
+            <li><a href="/privacidade" class="transition-colors hover:text-fg">Privacidade</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-10 border-t border-line/70 pt-6 text-xs text-muted">
+      <p>
+        As informações e leituras do OrbeView têm caráter <strong class="text-fg/80">informativo e
+        educacional</strong>. Não constituem recomendação de compra ou venda, nem aconselhamento
+        financeiro ou de investimento. Quem decide é sempre você.
+      </p>
+      <p class="mt-3">© {year} OrbeView. Todos os direitos reservados.</p>
+    </div>
+  </div>
+</footer>

@@ -1,0 +1,31 @@
+---
+import { SIGNUP_URL, LOGIN_URL } from "../consts";
+---
+
+<header class="sticky top-0 z-50 border-b border-line/70 bg-base/80 backdrop-blur-md">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+    <a href="/" class="flex items-center gap-2.5">
+      <span
+        class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-primary-strong to-primary text-sm font-bold text-white shadow-sm"
+        >OV</span
+      >
+      <span class="text-lg font-bold tracking-tight">OrbeView</span>
+    </a>
+
+    <div class="hidden items-center gap-7 text-sm text-muted md:flex">
+      <a href="/#recursos" class="transition-colors hover:text-fg">Recursos</a>
+      <a href="/#mercados" class="transition-colors hover:text-fg">Mercados</a>
+      <a href="/precos" class="transition-colors hover:text-fg">Preços</a>
+      <a href="/#newsletter" class="transition-colors hover:text-fg">Newsletter</a>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <a href={LOGIN_URL} class="hidden text-sm text-muted transition-colors hover:text-fg sm:block">Entrar</a>
+      <a
+        href={SIGNUP_URL}
+        class="rounded-lg bg-primary-strong px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary"
+        >Criar conta grátis</a
+      >
+    </div>
+  </nav>
+</header>
