@@ -23,8 +23,10 @@ export interface LiqGrid {
   priceBottom: number; // preço no fundo (bin nBins-1)
   refHigh: number; // maior high dos candles (preço in-range, para mapear coordenadas)
   refLow: number; // menor low dos candles (idem)
-  values: Float32Array; // index = col*nBins + bin
-  max: number;
+  longValues: Float32Array; // liq de LONGs por célula (zonas abaixo do preço) — index = col*nBins + bin
+  shortValues: Float32Array; // liq de SHORTs por célula (zonas acima do preço) — mesmo index
+  values: Float32Array; // long+short combinado (intensidade total) — usado p/ detectar ímãs
+  max: number; // maior (long+short) de uma célula, para normalizar a intensidade
 }
 
 // Alavancagens típicas e o peso relativo (alavancagem menor é mais comum → peso maior)
@@ -92,8 +94,9 @@ export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = []
     return b < 0 ? 0 : b >= nBins ? nBins - 1 : b;
   };
 
-  // depósitos de liquidação projetada por faixa de preço, e os candles que "tocam" cada faixa
-  const depByBin: { col: number; amount: number }[][] = Array.from({ length: nBins }, () => []);
+  // depósitos de liquidação projetada por faixa de preço (com o LADO: short=true para
+  // liq de shorts acima do preço), e os candles que "tocam" cada faixa
+  const depByBin: { col: number; amount: number; short: boolean }[][] = Array.from({ length: nBins }, () => []);
   const touchByBin: number[][] = Array.from({ length: nBins }, () => []);
   const oiFactor = makeOiFactor(oiSeries);
 
@@ -108,21 +111,24 @@ export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = []
     const weight = vol * oiFactor(c.time); // volume × OI relativo (quando há OI)
     for (const { L, w } of TIERS) {
       const amount = weight * w;
-      depByBin[binOf(c.close * (1 - 1 / L))].push({ col: i, amount }); // liq de longs (abaixo)
-      depByBin[binOf(c.close * (1 + 1 / L))].push({ col: i, amount }); // liq de shorts (acima)
+      depByBin[binOf(c.close * (1 - 1 / L))].push({ col: i, amount, short: false }); // liq de longs (abaixo)
+      depByBin[binOf(c.close * (1 + 1 / L))].push({ col: i, amount, short: true }); // liq de shorts (acima)
     }
   }
 
-  const values = new Float32Array(n * nBins);
+  const longValues = new Float32Array(n * nBins);
+  const shortValues = new Float32Array(n * nBins);
+  const values = new Float32Array(n * nBins); // long+short combinado
   let max = 0;
 
   for (let b = 0; b < nBins; b++) {
     const deps = depByBin[b];
     if (!deps.length) continue;
     const touches = touchByBin[b];
-    const diff = new Float64Array(n + 1);
+    const diffL = new Float64Array(n + 1);
+    const diffS = new Float64Array(n + 1);
 
-    for (const { col, amount } of deps) {
+    for (const { col, amount, short } of deps) {
       // consumo: primeiro candle (>col) cujo range tocou esta faixa de preço
       let end = n;
       let loI = 0;
@@ -136,39 +142,41 @@ export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = []
           loI = mid + 1;
         }
       }
+      const diff = short ? diffS : diffL;
       diff[col] += amount;
       diff[end] -= amount;
     }
 
-    let run = 0;
+    let runL = 0;
+    let runS = 0;
     for (let col = 0; col < n; col++) {
-      run += diff[col];
-      const v = run > 0 ? run : 0;
-      values[col * nBins + b] = v;
-      if (v > max) max = v;
+      runL += diffL[col];
+      runS += diffS[col];
+      const vl = runL > 0 ? runL : 0;
+      const vs = runS > 0 ? runS : 0;
+      const idx = col * nBins + b;
+      longValues[idx] = vl;
+      shortValues[idx] = vs;
+      const tot = vl + vs;
+      values[idx] = tot;
+      if (tot > max) max = tot;
     }
   }
 
   if (max <= 0) return null;
-  return { nCols: n, nBins, priceTop, priceBottom, refHigh: hi, refLow: lo, values, max };
+  return { nCols: n, nBins, priceTop, priceBottom, refHigh: hi, refLow: lo, longValues, shortValues, values, max };
 }
 
-// Paleta escuro → indigo → teal → lima → amarelo (intensidade do heatmap)
-const STOPS: [number, [number, number, number]][] = [
-  [0.0, [12, 16, 40]],
-  [0.25, [49, 46, 129]],
-  [0.5, [13, 148, 136]],
-  [0.75, [132, 204, 22]],
-  [1.0, [250, 204, 21]],
-];
+// ─── Cores por LADO: long (quente) × short (frio); intensidade = brilho ──────
+type Stops = [number, [number, number, number]][];
 
-export function liqColor(r: number): [number, number, number] {
-  const x = r < 0 ? 0 : r > 1 ? 1 : r;
-  for (let i = 1; i < STOPS.length; i++) {
-    if (x <= STOPS[i][0]) {
-      const [a0, c0] = STOPS[i - 1];
-      const [a1, c1] = STOPS[i];
-      const t = (x - a0) / (a1 - a0);
+function rampColor(stops: Stops, x: number): [number, number, number] {
+  const v = x < 0 ? 0 : x > 1 ? 1 : x;
+  for (let i = 1; i < stops.length; i++) {
+    if (v <= stops[i][0]) {
+      const [a0, c0] = stops[i - 1];
+      const [a1, c1] = stops[i];
+      const t = (v - a0) / (a1 - a0);
       return [
         Math.round(c0[0] + (c1[0] - c0[0]) * t),
         Math.round(c0[1] + (c1[1] - c0[1]) * t),
@@ -176,5 +184,39 @@ export function liqColor(r: number): [number, number, number] {
       ];
     }
   }
-  return STOPS[STOPS.length - 1][1];
+  return stops[stops.length - 1][1];
+}
+
+// Long (abaixo do preço) = quente: bordô → vermelho → laranja.
+const LONG_STOPS: Stops = [
+  [0.0, [40, 12, 12]],
+  [0.5, [220, 38, 38]],
+  [1.0, [251, 146, 60]],
+];
+// Short (acima do preço) = frio: teal escuro → teal → lima.
+const SHORT_STOPS: Stops = [
+  [0.0, [10, 38, 34]],
+  [0.5, [13, 148, 136]],
+  [1.0, [132, 204, 22]],
+];
+
+// Gradientes CSS prontos para a legenda (mesmas cores das rampas acima).
+export const LONG_GRADIENT = "linear-gradient(to right, rgb(40,12,12), rgb(220,38,38), rgb(251,146,60))";
+export const SHORT_GRADIENT = "linear-gradient(to right, rgb(10,38,34), rgb(13,148,136), rgb(132,204,22))";
+
+/**
+ * Cor de uma célula do heatmap: o LADO predominante (shortShare: 0 = tudo long,
+ * 1 = tudo short) define o matiz (long = quente/vermelho, short = frio/verde) e a
+ * `intensity` (0..1) define o brilho. Células mistas (perto do preço, onde as
+ * zonas se encontram) fazem blend suave entre as duas rampas.
+ */
+export function liqSideColor(shortShare: number, intensity: number): [number, number, number] {
+  const lo = rampColor(LONG_STOPS, intensity);
+  const sh = rampColor(SHORT_STOPS, intensity);
+  const s = shortShare < 0 ? 0 : shortShare > 1 ? 1 : shortShare;
+  return [
+    Math.round(lo[0] + (sh[0] - lo[0]) * s),
+    Math.round(lo[1] + (sh[1] - lo[1]) * s),
+    Math.round(lo[2] + (sh[2] - lo[2]) * s),
+  ];
 }

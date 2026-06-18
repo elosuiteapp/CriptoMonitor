@@ -16,7 +16,7 @@ import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
-import { buildLiquidationGrid, liqColor, type OiPoint } from "../lib/liquidationModel";
+import { buildLiquidationGrid, liqSideColor, LONG_GRADIENT, SHORT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import {
   computeVolumeProfile,
   fetchKlines,
@@ -275,14 +275,21 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     const img = octx.createImageData(grid.nCols, grid.nBins);
     for (let col = 0; col < grid.nCols; col++) {
       for (let bin = 0; bin < grid.nBins; bin++) {
-        const ratio = grid.values[col * grid.nBins + bin] / grid.max;
+        const idx = col * grid.nBins + bin;
+        const vl = grid.longValues[idx];
+        const vs = grid.shortValues[idx];
+        const tot = vl + vs;
+        const ratio = tot / grid.max;
         const px = (bin * grid.nCols + col) * 4;
         if (ratio < HEAT_FLOOR) {
           img.data[px + 3] = 0;
           continue;
         }
-        const r = (ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR); // reescala 0..1
-        const [cr, cg, cb] = liqColor(r);
+        // (C) compressão sqrt: revela as zonas médias (linear deixava 2-3 gigantes
+        // ofuscando o resto). (A) lado define o matiz; intensidade, o brilho.
+        const r = Math.sqrt((ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR));
+        const shortShare = tot > 0 ? vs / tot : 0;
+        const [cr, cg, cb] = liqSideColor(shortShare, r);
         img.data[px] = cr;
         img.data[px + 1] = cg;
         img.data[px + 2] = cb;
@@ -345,13 +352,19 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       }
       const bin = Math.floor(((grid.priceTop - price) / span) * grid.nBins);
       const col = Math.max(0, Math.min(grid.nCols - 1, Math.round(param.logical)));
-      const ratio = bin >= 0 && bin < grid.nBins ? grid.values[col * grid.nBins + bin] / grid.max : 0;
+      const inRange = bin >= 0 && bin < grid.nBins;
+      const idx = col * grid.nBins + bin;
+      const vl = inRange ? grid.longValues[idx] : 0;
+      const vs = inRange ? grid.shortValues[idx] : 0;
+      const tot = vl + vs;
+      const ratio = grid.max > 0 ? tot / grid.max : 0;
       if (ratio < 0.06) {
         tip.style.display = "none";
         return;
       }
+      const side = vs >= vl ? "shorts ↑" : "longs ↓";
       const word = ratio >= 0.66 ? "forte" : ratio >= 0.33 ? "média" : "fraca";
-      tip.textContent = `Liq. estimada · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
+      tip.textContent = `Liq. de ${side} · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
       tip.style.display = "block";
       tip.style.left = `${param.point.x + 12}px`;
       tip.style.top = `${param.point.y + 12}px`;
@@ -375,14 +388,17 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             Heatmap de liquidações · estimativa (modelo de alavancagem)
           </div>
-          {/* Legenda de intensidade (fraco → forte) */}
-          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 text-[9px] text-muted-foreground">
-            <span>fraco</span>
-            <span
-              className="h-2 w-24 rounded"
-              style={{ background: "linear-gradient(to right, rgb(12,16,40), rgb(49,46,129), rgb(13,148,136), rgb(132,204,22), rgb(250,204,21))" }}
-            />
-            <span>forte</span>
+          {/* Legenda por lado: vermelho = longs (abaixo), verde = shorts (acima);
+              brilho = intensidade da zona. */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-9 rounded" style={{ background: LONG_GRADIENT }} />
+              longs ↓
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-9 rounded" style={{ background: SHORT_GRADIENT }} />
+              shorts ↑
+            </span>
           </div>
           <div
             ref={heatTipRef}

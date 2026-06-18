@@ -1,6 +1,6 @@
 import type { IChartApi, ISeriesApi, Logical, MouseEventParams, Time } from "lightweight-charts";
 
-import { buildLiquidationGrid, liqColor, type OiPoint } from "./liquidationModel";
+import { buildLiquidationGrid, liqSideColor, type OiPoint } from "./liquidationModel";
 import type { Candle } from "./marketData";
 
 interface Params {
@@ -53,14 +53,20 @@ export function runLiquidationHeatmap(p: Params): () => void {
   const img = octx.createImageData(grid.nCols, grid.nBins);
   for (let col = 0; col < grid.nCols; col++) {
     for (let bin = 0; bin < grid.nBins; bin++) {
-      const ratio = grid.values[col * grid.nBins + bin] / grid.max;
+      const idx = col * grid.nBins + bin;
+      const vl = grid.longValues[idx];
+      const vs = grid.shortValues[idx];
+      const tot = vl + vs;
+      const ratio = tot / grid.max;
       const px = (bin * grid.nCols + col) * 4;
       if (ratio < HEAT_FLOOR) {
         img.data[px + 3] = 0;
         continue;
       }
-      const r = (ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR);
-      const [cr, cg, cb] = liqColor(r);
+      // (C) sqrt revela zonas médias; (A) lado define o matiz (long quente × short frio).
+      const r = Math.sqrt((ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR));
+      const shortShare = tot > 0 ? vs / tot : 0;
+      const [cr, cg, cb] = liqSideColor(shortShare, r);
       img.data[px] = cr;
       img.data[px + 1] = cg;
       img.data[px + 2] = cb;
@@ -120,13 +126,19 @@ export function runLiquidationHeatmap(p: Params): () => void {
     }
     const bin = Math.floor(((grid.priceTop - price) / span) * grid.nBins);
     const col = Math.max(0, Math.min(grid.nCols - 1, Math.round(param.logical)));
-    const ratio = bin >= 0 && bin < grid.nBins ? grid.values[col * grid.nBins + bin] / grid.max : 0;
+    const inRange = bin >= 0 && bin < grid.nBins;
+    const idx = col * grid.nBins + bin;
+    const vl = inRange ? grid.longValues[idx] : 0;
+    const vs = inRange ? grid.shortValues[idx] : 0;
+    const tot = vl + vs;
+    const ratio = grid.max > 0 ? tot / grid.max : 0;
     if (ratio < 0.06) {
       tip.style.display = "none";
       return;
     }
+    const side = vs >= vl ? "shorts ↑" : "longs ↓";
     const word = ratio >= 0.66 ? "forte" : ratio >= 0.33 ? "média" : "fraca";
-    tip.textContent = `Liq. estimada · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
+    tip.textContent = `Liq. de ${side} · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
     tip.style.display = "block";
     tip.style.left = `${param.point.x + 12}px`;
     tip.style.top = `${param.point.y + 12}px`;
