@@ -85,11 +85,12 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
   return (
     <div className="space-y-4">
-      {asset === "SOL" && (
+      {asset !== "BTC" && asset !== "ETH" && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs leading-snug text-amber-200/80">
-          <span className="font-semibold text-amber-300">⚠ Liquidez reduzida.</span> As opções de SOL vêm da Bybit
-          (mercado bem menor que o de BTC/ETH na Deribit). Os níveis — Zero Gamma, Max Pain, Put/Call Wall — são{" "}
-          <span className="font-medium text-amber-200">menos confiáveis</span> e devem ser lidos como referência, não como muro firme.
+          <span className="font-semibold text-amber-300">⚠ Liquidez reduzida.</span> As opções de {asset} vêm de um
+          mercado menor ({asset === "BNB" ? "Binance" : "Bybit"}, bem menor que o de BTC/ETH na Deribit). Os níveis —
+          Zero Gamma, Max Pain, Put/Call Wall — são <span className="font-medium text-amber-200">menos confiáveis</span>{" "}
+          e devem ser lidos como referência, não como muro firme.
         </div>
       )}
 
@@ -203,8 +204,8 @@ export default function GammaPanel({ gamma, asset }: Props) {
         )}
       </div>
 
-      {/* Fluxo de opções (proxy HIRO) — só BTC/ETH (fonte options_flow é Deribit) */}
-      {asset !== "SOL" && (
+      {/* Fluxo de opções (proxy HIRO) — BTC/ETH (Deribit) + SOL (Bybit); BNB não tem */}
+      {["BTC", "ETH", "SOL"].includes(asset) && (
         <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <span>Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min</span>

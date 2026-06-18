@@ -11,6 +11,7 @@ fração (0.54) → convertemos para % (×100) para casar com o motor (que faz i
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 import statistics
@@ -52,8 +53,66 @@ def _parse(symbol: str) -> dict | None:
     return {"strike": float(strike), "type": "call" if typ == "C" else "put", "expiry": expiry}
 
 
+def _abs_delta(s: float, k: float, t_years: float, sigma: float, is_call: bool) -> float:
+    """|delta| de Black-Scholes (r≈0); sigma em FRAÇÃO (ex.: 0.52). Usado no HIRO."""
+    if s <= 0 or k <= 0 or t_years <= 0 or sigma <= 0:
+        return 0.0
+    d1 = (math.log(s / k) + 0.5 * sigma * sigma * t_years) / (sigma * math.sqrt(t_years))
+    nd1 = 0.5 * (1.0 + math.erf(d1 / math.sqrt(2.0)))
+    return abs(nd1 if is_call else nd1 - 1.0)
+
+
 class BybitOptionsSource(BaseSource):
     name = "bybit_options"
+
+    async def _options_flow(self, http: httpx.AsyncClient, relay: str, asset: str, now: datetime) -> dict | None:
+        """HIRO da SOL: delta-fluxo do hedge dos dealers a partir dos TRADES de opções da
+        Bybit (relay kind=trades), no último bucket COMPLETO de 5 min ancorado na grade
+        (…:00,:05,…). Convenção SpotGamma: compra call/venda put → +; venda call/compra put → −.
+        Peso = |delta| (Black-Scholes) × tamanho. Ancorar na grade evita re-somar trades em
+        reinícios do worker (o upsert por (asset,ts) reescreve a mesma linha)."""
+        bucket_sec = 5 * 60
+        now_s = int(now.timestamp())
+        bucket_end_s = (now_s // bucket_sec) * bucket_sec
+        bucket_start_s = bucket_end_s - bucket_sec
+        bucket_end = datetime.fromtimestamp(bucket_end_s, tz=timezone.utc)
+        ts = to_iso(datetime.fromtimestamp(bucket_start_s, tz=timezone.utc))
+        start_ms, end_ms = bucket_start_s * 1000, bucket_end_s * 1000
+
+        trades: list[dict] = []
+        for attempt in range(1, 4):
+            try:
+                resp = await http.get(
+                    relay, params={"coin": asset, "kind": "trades"},
+                    headers={"x-region": "sa-east-1"}, timeout=25.0,
+                )
+                body = resp.json()
+                if resp.status_code == 200 and isinstance(body.get("list"), list):
+                    trades = body["list"]
+                    break
+            except Exception as exc:  # noqa: BLE001
+                log.warning("relay trades %s tent.%d erro: %s", asset, attempt, exc)
+            await asyncio.sleep(1.0)
+
+        net = 0.0
+        count = 0
+        for tr in trades:
+            t = tr.get("t")
+            if t is None or not (start_ms <= int(t) < end_ms):
+                continue
+            parsed = _parse(tr.get("s", ""))
+            spot, iv, amount, side = tr.get("ip"), tr.get("iv"), tr.get("q"), tr.get("side")
+            if not parsed or not spot or not iv or not amount:
+                continue
+            t_years = (parsed["expiry"] - bucket_end).total_seconds() / gamma.SECONDS_PER_YEAR
+            is_call = parsed["type"] == "call"
+            delta = _abs_delta(float(spot), parsed["strike"], t_years, float(iv), is_call)  # iv já é fração
+            is_buy = side == "Buy"
+            sign = (1 if is_buy else -1) if is_call else (-1 if is_buy else 1)
+            net += sign * delta * float(amount)
+            count += 1
+
+        return {"asset": asset, "net_delta_flow": round(net, 4), "trades_count": count, "ts": ts}
 
     async def fetch(self, http: httpx.AsyncClient, assets: list[str]) -> list[TableRows]:
         url = os.environ.get("SUPABASE_URL")
@@ -66,10 +125,18 @@ class BybitOptionsSource(BaseSource):
         opt_rows: list[dict] = []
         gp_rows: list[dict] = []
         vol_rows: list[dict] = []
+        flow_rows: list[dict] = []
 
         for asset in assets:
             if asset not in BYBIT_OPTION_ASSETS:
                 continue
+            # HIRO (fluxo de opções) — independente do gamma; um erro aqui nunca o bloqueia.
+            try:
+                flow = await self._options_flow(http, relay, asset, now)
+                if flow is not None:
+                    flow_rows.append(flow)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("options_flow %s (Bybit) falhou: %s", asset, exc)
             # Edge Functions executam no no mais proximo de QUEM CHAMA. O coletor esta
             # nos EUA (egress que a Bybit bloqueia). x-region=sa-east-1 forca a execucao
             # em Sao Paulo (egress que a Bybit aceita). Retry cobre transientes.
@@ -166,4 +233,5 @@ class BybitOptionsSource(BaseSource):
             TableRows("options_oi", opt_rows, "asset,strike,type,expiry,ts"),
             TableRows("gamma_profile", gp_rows, "asset,ts"),
             TableRows("volatility_index", vol_rows, "asset,ts"),
+            TableRows("options_flow", flow_rows, "asset,ts"),
         ]

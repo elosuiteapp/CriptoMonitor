@@ -54,7 +54,7 @@ import {
 import type { ChartType, Timeframe } from "../lib/marketData";
 import { GLOSSARY } from "../lib/glossary";
 
-const OPTION_ASSETS = ["BTC", "ETH", "SOL"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit via relay)
+const OPTION_ASSETS = ["BTC", "ETH", "SOL", "BNB"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit) + BNB (Binance), via relay
 const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
 
 export default function Dashboard() {
@@ -213,7 +213,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
-                {asset !== "SOL" && (
+                {asset !== "BNB" && (
                   <LockedCard title="Fluxo de opções (HIRO) — delta-fluxo do hedge" />
                 )}
               </div>
