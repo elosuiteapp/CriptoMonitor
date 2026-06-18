@@ -25,6 +25,11 @@ function MicrosoftIcon() {
   );
 }
 
+// Login social: Google ativo. Microsoft (Azure) fica OCULTO até configurarmos o
+// provider no Supabase — o código de signInWithMicrosoft segue pronto; basta virar
+// esta flag para true e habilitar o Azure (tenant `common`). Ver memória build-status.
+const SHOW_MICROSOFT_LOGIN = false;
+
 export default function Login() {
   const { signIn, signUp, signInWithGoogle, signInWithMicrosoft } = useAuth();
   const navigate = useNavigate();
@@ -121,14 +126,16 @@ export default function Login() {
             Entrar com Google
           </button>
 
-          <button
-            type="button"
-            onClick={() => signInWithMicrosoft()}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2 text-sm font-medium text-foreground hover:bg-muted"
-          >
-            <MicrosoftIcon />
-            Entrar com Microsoft <span className="text-xs text-muted-foreground">(Hotmail/Outlook)</span>
-          </button>
+          {SHOW_MICROSOFT_LOGIN && (
+            <button
+              type="button"
+              onClick={() => signInWithMicrosoft()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              <MicrosoftIcon />
+              Entrar com Microsoft <span className="text-xs text-muted-foreground">(Hotmail/Outlook)</span>
+            </button>
+          )}
         </form>
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
