@@ -16,7 +16,7 @@ import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
-import { buildLiquidationGrid, liqSideColor, LONG_GRADIENT, SHORT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
+import { buildLiquidationGrid, liqSideColor, liquidationMagnets, LONG_GRADIENT, SHORT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import {
   computeVolumeProfile,
   fetchKlines,
@@ -64,6 +64,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const magnetLinesRef = useRef<IPriceLine[]>([]); // linhas das zonas-ímã (camada Liquidações)
   const [error, setError] = useState<string | null>(null);
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -247,16 +248,46 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
+    const removeMagnets = () => {
+      for (const l of magnetLinesRef.current) {
+        try {
+          series.removePriceLine(l);
+        } catch {
+          /* a série pode ter sido descartada (troca de tipo de gráfico) */
+        }
+      }
+      magnetLinesRef.current = [];
+    };
 
     if (!canUseLayers || !layers.liquidations || candles.length < 10) {
       clear();
+      removeMagnets();
       return;
     }
 
     const grid = buildLiquidationGrid(candles, oiSeries ?? []);
     if (!grid) {
       clear();
+      removeMagnets();
       return;
+    }
+
+    // (B) Zonas-ímã: linha rotulada no bolsão mais forte acima (shorts ↑) e abaixo
+    // (longs ↓) do preço atual — os níveis para onde o preço tende a ser puxado.
+    removeMagnets();
+    const refPrice = candles[candles.length - 1]?.close;
+    if (typeof refPrice === "number") {
+      for (const m of liquidationMagnets(grid, refPrice)) {
+        const line = series.createPriceLine({
+          price: m.price,
+          color: m.side === "short" ? "#10b981" : "#ef4444",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: m.side === "short" ? "↑ shorts" : "↓ longs",
+        });
+        magnetLinesRef.current.push(line);
+      }
     }
 
     // canvas offscreen (nCols×nBins) com a paleta já aplicada → drawImage suaviza
@@ -375,6 +406,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       cancelAnimationFrame(raf);
       chart.unsubscribeCrosshairMove(onCrosshair);
       if (heatTipRef.current) heatTipRef.current.style.display = "none";
+      removeMagnets();
       clear();
     };
   }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType]);

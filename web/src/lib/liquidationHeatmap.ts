@@ -1,6 +1,7 @@
-import type { IChartApi, ISeriesApi, Logical, MouseEventParams, Time } from "lightweight-charts";
+import { LineStyle } from "lightweight-charts";
+import type { IChartApi, IPriceLine, ISeriesApi, Logical, MouseEventParams, Time } from "lightweight-charts";
 
-import { buildLiquidationGrid, liqSideColor, type OiPoint } from "./liquidationModel";
+import { buildLiquidationGrid, liqSideColor, liquidationMagnets, type OiPoint } from "./liquidationModel";
 import type { Candle } from "./marketData";
 
 interface Params {
@@ -37,6 +38,25 @@ export function runLiquidationHeatmap(p: Params): () => void {
   if (!grid) {
     clear();
     return clear;
+  }
+
+  // (B) Zonas-ímã: linha rotulada no bolsão mais forte acima (shorts ↑) e abaixo
+  // (longs ↓) do preço atual. Consistente com o cockpit.
+  const magnetLines: IPriceLine[] = [];
+  const refPrice = candles[candles.length - 1]?.close;
+  if (typeof refPrice === "number") {
+    for (const m of liquidationMagnets(grid, refPrice)) {
+      magnetLines.push(
+        series.createPriceLine({
+          price: m.price,
+          color: m.side === "short" ? "#10b981" : "#ef4444",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: m.side === "short" ? "↑ shorts" : "↓ longs",
+        }),
+      );
+    }
   }
 
   // Offscreen (nCols×nBins) com a paleta já aplicada → drawImage suaviza.
@@ -149,6 +169,13 @@ export function runLiquidationHeatmap(p: Params): () => void {
     cancelAnimationFrame(raf);
     chart.unsubscribeCrosshairMove(onCrosshair);
     if (tip) tip.style.display = "none";
+    for (const l of magnetLines) {
+      try {
+        series.removePriceLine(l);
+      } catch {
+        /* a série pode ter sido descartada */
+      }
+    }
     clear();
   };
 }

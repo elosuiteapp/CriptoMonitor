@@ -220,3 +220,52 @@ export function liqSideColor(shortShare: number, intensity: number): [number, nu
     Math.round(lo[2] + (sh[2] - lo[2]) * s),
   ];
 }
+
+// ─── Zonas-ímã (rótulos) ─────────────────────────────────────────────────────
+export interface LiqMagnet {
+  price: number;
+  side: "long" | "short";
+  intensity: number; // 0..1 relativo ao máximo da grade
+}
+
+/**
+ * Bolsões de liquidação mais fortes da coluna ATUAL (mais recente) do grid, acima e
+ * abaixo do preço de referência — as "zonas-ímã" para onde o preço tende a ser puxado.
+ * Devolve até `perSide` de cada lado (deduplicado por proximidade), ignorando zonas
+ * fracas (< `minIntensity`, alinhado ao piso do heatmap). O lado vem do dado real da
+ * célula (short domina acima, long abaixo).
+ */
+export function liquidationMagnets(
+  grid: LiqGrid,
+  refPrice: number,
+  perSide = 1,
+  minIntensity = 0.3,
+): LiqMagnet[] {
+  if (!Number.isFinite(refPrice) || grid.max <= 0) return [];
+  const col = grid.nCols - 1;
+  const span = grid.priceTop - grid.priceBottom;
+  const above: { price: number; tot: number; short: boolean }[] = [];
+  const below: { price: number; tot: number; short: boolean }[] = [];
+  for (let b = 0; b < grid.nBins; b++) {
+    const idx = col * grid.nBins + b;
+    const tot = grid.values[idx];
+    if (tot <= 0) continue;
+    const price = grid.priceTop - ((b + 0.5) / grid.nBins) * span;
+    const short = grid.shortValues[idx] >= grid.longValues[idx];
+    (price >= refPrice ? above : below).push({ price, tot, short });
+  }
+  const pick = (arr: { price: number; tot: number; short: boolean }[]): LiqMagnet[] => {
+    arr.sort((a, b) => b.tot - a.tot);
+    const out: LiqMagnet[] = [];
+    for (const e of arr) {
+      const intensity = e.tot / grid.max;
+      if (intensity < minIntensity) break; // ordenado desc → o resto é mais fraco
+      if (out.every((m) => Math.abs(m.price - e.price) > span * 0.02)) {
+        out.push({ price: e.price, side: e.short ? "short" : "long", intensity });
+        if (out.length >= perSide) break;
+      }
+    }
+    return out;
+  };
+  return [...pick(above), ...pick(below)];
+}
