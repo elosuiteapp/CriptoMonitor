@@ -203,14 +203,20 @@ export default function Dashboard() {
           {canUseLayers && layers.liquidations && <LiquidationsStrip data={series.liquidations} />}
         </section>
 
-        {/* Painel Gamma (BTC/ETH, Pro+) */}
+        {/* Painel Gamma (BTC/ETH/SOL, Pro+). Bloqueado, mostra os recursos do módulo
+            como teasers: Gamma e — só em BTC/ETH — o Fluxo de opções (HIRO). */}
         {isOptionAsset && (
           <section>
             <h2 className="mb-3 text-sm font-semibold text-foreground">Módulo Gamma (estilo SpotGamma)</h2>
             {advanced ? (
               <GammaPanel gamma={payload?.gamma ?? null} asset={asset} />
             ) : (
-              <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
+                {asset !== "SOL" && (
+                  <LockedCard title="Fluxo de opções (HIRO) — delta-fluxo do hedge" />
+                )}
+              </div>
             )}
           </section>
         )}
