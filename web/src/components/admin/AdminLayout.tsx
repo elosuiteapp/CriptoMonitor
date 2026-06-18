@@ -38,10 +38,10 @@ export default function AdminLayout() {
         <div className="flex items-center justify-between gap-2 px-4 py-4">
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-sm font-bold text-primary-foreground shadow-sm">
-              CM
+              OV
             </span>
             <div>
-              <div className="text-sm font-bold leading-tight text-foreground">Crypto Monitor</div>
+              <div className="text-sm font-bold leading-tight text-foreground">OrbeView</div>
               <div className="text-[11px] font-medium uppercase tracking-wider text-primary">Administração</div>
             </div>
           </div>

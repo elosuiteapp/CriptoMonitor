@@ -323,7 +323,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     setSmcAlert({ text: msg, tone: latest.tone });
     try {
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        new Notification("Crypto Monitor · Smart Money", { body: msg });
+        new Notification("OrbeView · Smart Money", { body: msg });
       }
     } catch {
       /* Notification indisponível */

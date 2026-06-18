@@ -1,4 +1,4 @@
-// Service worker do Crypto Monitor — recebe Web Push e mostra a notificação do
+// Service worker do OrbeView — recebe Web Push e mostra a notificação do
 // navegador, mesmo com o app fechado. Registrado em main.tsx.
 // O payload vem do alerts-dispatch: { title, body, url, tag }.
 
@@ -7,9 +7,9 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (_) {
-    data = { title: "Crypto Monitor", body: event.data ? event.data.text() : "" };
+    data = { title: "OrbeView", body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "Crypto Monitor";
+  const title = data.title || "OrbeView";
   const options = {
     body: data.body || "",
     tag: data.tag,

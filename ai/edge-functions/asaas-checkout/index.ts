@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       value,
       nextDueDate: today,
       cycle: asaasCycle,
-      description: `Crypto Monitor — ${plan.name} (${cycleLabel})`,
+      description: `OrbeView — ${plan.name} (${cycleLabel})`,
       externalReference: `${user.id}:${plan_slug}:${cycle}`,
     }),
   });

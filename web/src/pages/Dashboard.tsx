@@ -138,7 +138,7 @@ export default function Dashboard() {
       <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface/80 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-3">
           {user && <UserMenu user={user} planName={plan.name} onSignOut={signOut} />}
-          <span className="font-bold text-foreground">Crypto Monitor</span>
+          <span className="font-bold text-foreground">OrbeView</span>
           <span className="hidden h-5 w-px bg-border sm:block" />
           <ModuleSwitcher current={market} onChange={setMarket} isAdmin={isAdmin} />
           {market === "crypto" && (

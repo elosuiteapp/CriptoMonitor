@@ -68,7 +68,7 @@ export default function Login() {
     <div className="grid min-h-full place-items-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-foreground">Crypto Monitor</h1>
+          <h1 className="text-2xl font-bold text-foreground">OrbeView</h1>
           <p className="mt-1 text-sm text-muted-foreground">O cockpit de decisões do trader</p>
         </div>
 

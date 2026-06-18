@@ -15,7 +15,7 @@ const CORS = {
 const FALLBACK_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = [
-  "Voce e o copiloto de IA do Crypto Monitor, um cockpit de decisoes para traders de cripto.",
+  "Voce e o copiloto de IA do OrbeView, um cockpit de decisoes para traders de cripto.",
   "Responda em portugues brasileiro com acentuacao correta; ao usar termo tecnico (funding, OI, GEX, gamma, CVD, max pain, skew, Put/Call, DVOL, IVP, IV-RV, term structure), explique em poucas palavras.",
   "Estrutura obrigatoria:",
   "1) Contexto macro - DXY/S&P/ouro/10Y e a correlacao 30d quando houver (vento a favor/contra).",

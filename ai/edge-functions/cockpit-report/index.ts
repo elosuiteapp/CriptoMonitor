@@ -16,7 +16,7 @@ const FALLBACK_MODEL = "gemini-2.5-flash";
 
 // Prompt em ASCII (seguranca de deploy); o modelo responde em PT-BR com acentuacao.
 const SYSTEM_PROMPT = [
-  "Voce gera o Relatorio Diario do Crypto Monitor, um cockpit de decisoes para traders de cripto.",
+  "Voce gera o Relatorio Diario do OrbeView, um cockpit de decisoes para traders de cripto.",
   "Responda SEMPRE em portugues brasileiro com acentuacao correta. Ao usar termo tecnico (gamma, GEX, funding, OI, CVD, max pain, skew, Put/Call, DVOL, IV, RV), explique em poucas palavras.",
   "Produza o relatorio em markdown com EXATAMENTE estas secoes (use os titulos):",
   "## 1. Resumo das ultimas 24h - mudanca de preco, regime de gamma, fluxo varejo (Binance/perps) x institucional (Coinbase) e sentimento. No fluxo, cite o PREMIO COINBASE (preco Coinbase vs Binance), a PARTICIPACAO INSTITUCIONAL (volume Coinbase vs Binance+OKX) e o CVD da Coinbase comparado ao da Binance.",
