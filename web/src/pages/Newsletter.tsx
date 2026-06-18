@@ -29,8 +29,8 @@ export default function Newsletter() {
       <main className="mx-auto w-full max-w-3xl px-4 py-10">
         <h1 className="text-3xl font-extrabold tracking-tight">Newsletter</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A leitura semanal do mercado — gamma, fluxo e liquidez traduzidos. Edições <strong className="text-foreground">Free</strong> abertas
-          a todos; <strong className="text-foreground">Pro</strong> e <strong className="text-foreground">Expert</strong> liberam o arquivo completo.
+          A leitura semanal do mercado — gamma, fluxo e liquidez traduzidos. Edições completas liberadas
+          para <strong className="text-foreground">qualquer conta</strong>; gerada automaticamente pela IA toda semana.
         </p>
 
         {eds == null ? (
