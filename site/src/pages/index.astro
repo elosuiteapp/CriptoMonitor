@@ -41,10 +41,10 @@ const STEPS = [
           decidir com a visão de quem move o mercado. Cripto agora; ações (B3) e câmbio chegando.
         </p>
         <div class="mt-8 flex flex-wrap items-center gap-3">
-          <a href={SIGNUP_URL} class="rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary">
+          <a href={SIGNUP_URL} class="btn-glow rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary">
             Criar conta grátis
           </a>
-          <a href="/precos" class="rounded-lg border border-line px-5 py-3 text-sm font-semibold text-fg transition-colors hover:bg-card">
+          <a href="/precos" class="btn-glow rounded-lg border border-line px-5 py-3 text-sm font-semibold text-fg hover:bg-card">
             Ver planos
           </a>
         </div>
@@ -53,7 +53,7 @@ const STEPS = [
 
       <!-- Mock do cockpit (SVG) -->
       <div class="relative">
-        <div class="rounded-2xl border border-line bg-card/80 p-4 shadow-2xl backdrop-blur">
+        <div class="card-lift rounded-2xl border border-line bg-card/80 p-4 shadow-2xl backdrop-blur">
           <div class="mb-3 flex items-center justify-between text-xs text-muted">
             <span class="flex items-center gap-1.5 font-semibold text-fg"><span class="livedot"></span>BTC · Bitcoin</span>
             <span class="num">US$ 64.378,06</span>
@@ -101,7 +101,7 @@ const STEPS = [
     <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-3 px-4 py-8 sm:gap-6">
       <span class="text-sm text-muted">Um cockpit, vários mercados:</span>
       {MARKETS.map((m) => (
-        <span class="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3.5 py-1.5 text-sm">
+        <span class="chip-lift inline-flex items-center gap-2 rounded-full border border-line bg-card px-3.5 py-1.5 text-sm">
           <span aria-hidden>{m.icon}</span>
           <span class="font-medium">{m.label}</span>
           <span class="text-[10px] uppercase tracking-wider text-muted">{m.note}</span>
@@ -118,8 +118,8 @@ const STEPS = [
     </div>
     <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {FEATURES.map((f) => (
-        <div class="rounded-2xl border border-line bg-card p-6 transition-colors hover:border-primary/40">
-          <div class="text-2xl" aria-hidden>{f.icon}</div>
+        <div class="card-lift rounded-2xl border border-line bg-card p-6">
+          <div class="icon-pop text-2xl" aria-hidden>{f.icon}</div>
           <h3 class="mt-3 font-semibold">{f.title}</h3>
           <p class="mt-1.5 text-sm text-muted">{f.desc}</p>
         </div>
@@ -132,8 +132,8 @@ const STEPS = [
     <div class="mx-auto max-w-6xl px-4 py-20">
       <div class="grid gap-10 md:grid-cols-3">
         {STEPS.map((s) => (
-          <div>
-            <div class="grid h-9 w-9 place-items-center rounded-full bg-primary-strong text-sm font-bold text-white">{s.n}</div>
+          <div class="step">
+            <div class="step-num grid h-9 w-9 place-items-center rounded-full bg-primary-strong text-sm font-bold text-white">{s.n}</div>
             <h3 class="mt-4 text-lg font-semibold">{s.title}</h3>
             <p class="mt-1.5 text-sm text-muted">{s.desc}</p>
           </div>
@@ -150,7 +150,7 @@ const STEPS = [
     </div>
     <div class="mt-12 grid gap-5 lg:grid-cols-3">
       {PRICING.plans.map((p) => (
-        <div class={`rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
+        <div class={`card-lift rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
           {p.highlight && <span class="mb-3 inline-block rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary">Mais popular</span>}
           <h3 class="text-lg font-bold">{p.name}</h3>
           <p class="mt-1 text-sm text-muted">{p.tagline}</p>
@@ -191,7 +191,7 @@ const STEPS = [
   <section class="mx-auto max-w-6xl px-4 py-24 text-center">
     <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Veja o mercado como a mesa vê.</h2>
     <p class="mx-auto mt-3 max-w-md text-muted">Crie sua conta grátis e abra o cockpit do BTC agora.</p>
-    <a href={SIGNUP_URL} class="mt-8 inline-block rounded-lg bg-primary-strong px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary">
+    <a href={SIGNUP_URL} class="btn-glow mt-8 inline-block rounded-lg bg-primary-strong px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary">
       Começar grátis
     </a>
   </section>
@@ -222,6 +222,30 @@ const STEPS = [
     animation: pulse 1.8s ease-out infinite;
   }
 
+  /* Realce ao passar o mouse: cards/chips/botoes sobem e ganham brilho da marca */
+  .card-lift { transition: transform .35s cubic-bezier(.2, .7, .2, 1), box-shadow .35s ease, border-color .35s ease; }
+  .card-lift:hover {
+    transform: translateY(-6px);
+    border-color: rgba(129, 140, 248, .55);
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, .35), 0 24px 50px -18px rgba(99, 102, 241, .45);
+  }
+  .card-lift .icon-pop { transition: transform .35s cubic-bezier(.2, .7, .2, 1); }
+  .card-lift:hover .icon-pop { transform: translateY(-3px) scale(1.12); }
+
+  .chip-lift { transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
+  .chip-lift:hover {
+    transform: translateY(-3px);
+    border-color: rgba(129, 140, 248, .5);
+    box-shadow: 0 10px 22px -10px rgba(99, 102, 241, .5);
+  }
+
+  .btn-glow { transition: transform .22s ease, box-shadow .22s ease, background-color .2s ease; }
+  .btn-glow:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -10px rgba(99, 102, 241, .6); }
+  .btn-glow:active { transform: translateY(0); }
+
+  .step .step-num { transition: transform .3s ease, box-shadow .3s ease; }
+  .step:hover .step-num { transform: translateY(-3px) scale(1.08); box-shadow: 0 12px 26px -8px rgba(99, 102, 241, .6); }
+
   @keyframes tick { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.16); } }
   @keyframes flow { to { stroke-dashoffset: -16; } }
   @keyframes heat { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
@@ -235,5 +259,8 @@ const STEPS = [
     .mock-chart > line,
     .mock-chart > rect,
     .livedot { animation: none; }
+    .card-lift, .card-lift:hover, .card-lift .icon-pop, .card-lift:hover .icon-pop,
+    .chip-lift, .chip-lift:hover, .btn-glow, .btn-glow:hover, .btn-glow:active,
+    .step .step-num, .step:hover .step-num { transform: none; transition: none; }
   }
 </style>
