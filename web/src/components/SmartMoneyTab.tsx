@@ -467,19 +467,19 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           <span aria-hidden className="mt-px">🪙</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
-              On-chain · Liquidez em stablecoins (mercado)
-              <InfoTip text="Oferta total de stablecoins atreladas ao dólar — o 'dry powder' parado pronto pra entrar. Subindo = capital novo chegando ao mercado; caindo = capital saindo. Mercado-amplo (igual para todas as moedas). Fonte: DefiLlama." />
+              On-chain · Fluxo de capital (stablecoins) — netflow do mercado
+              <InfoTip text="Emissão líquida de stablecoins (USDT/USDC etc.) = capital entrando (cunhagem) ou saindo (resgate) de cripto. É o melhor proxy gratuito de 'netflow' do mercado: dry powder expandindo = combustível pra risco; encolhendo = risk-off. Market-wide (igual p/ todas as moedas). Fonte: DefiLlama." />
             </div>
             <div className="text-muted-foreground">
-              <span className="num text-foreground">{fmtUsd(stables.total)}</span> · 7d{" "}
-              <span className={`num ${stables.chg7d >= 0.3 ? "text-emerald-600 dark:text-emerald-400" : stables.chg7d <= -0.3 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
-                {fmtPct(stables.chg7d, 2)}
+              Total <span className="num text-foreground">{fmtUsd(stables.total)}</span> · 7d{" "}
+              <span className={`num ${stables.net7d >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                {stables.net7d >= 0 ? "+" : ""}{fmtUsd(stables.net7d)}
               </span>{" "}
-              · 30d{" "}
+              ({fmtPct(stables.chg7d, 2)}) · 30d{" "}
               <span className={`num ${stables.chg30d >= 0.3 ? "text-emerald-600 dark:text-emerald-400" : stables.chg30d <= -0.3 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
                 {fmtPct(stables.chg30d, 2)}
               </span>{" "}
-              · {stables.chg7d >= 0.3 ? "liquidez entrando (dry powder)" : stables.chg7d <= -0.3 ? "liquidez saindo" : "liquidez de lado"}
+              · {stables.chg7d >= 0.3 ? "capital entrando (combustível)" : stables.chg7d <= -0.3 ? "capital saindo (risk-off)" : "fluxo de lado"}
             </div>
           </div>
         </div>

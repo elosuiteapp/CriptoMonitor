@@ -69,6 +69,7 @@ export async function fetchNextUnlock(asset: string): Promise<UnlockEvent | null
 // ─── Stablecoins (dry powder) — sinal on-chain MARKET-WIDE (DefiLlama) ────────
 export interface StablecoinLiquidity {
   total: number; // oferta total de stablecoins atrelados ao USD (USD)
+  net7d: number; // emissão líquida em 7 dias (USD) — proxy de netflow do mercado
   chg7d: number; // variação % em 7 dias
   chg30d: number; // variação % em 30 dias
 }
@@ -87,6 +88,7 @@ async function _fetchStablecoins(): Promise<StablecoinLiquidity | null> {
     if (!now) return null;
     return {
       total: now,
+      net7d: d7 ? now - d7 : 0,
       chg7d: d7 ? ((now - d7) / d7) * 100 : 0,
       chg30d: d30 ? ((now - d30) / d30) * 100 : 0,
     };
