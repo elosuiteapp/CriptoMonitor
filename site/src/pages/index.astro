@@ -55,10 +55,10 @@ const STEPS = [
       <div class="relative">
         <div class="rounded-2xl border border-line bg-card/80 p-4 shadow-2xl backdrop-blur">
           <div class="mb-3 flex items-center justify-between text-xs text-muted">
-            <span class="font-semibold text-fg">BTC · Bitcoin</span>
+            <span class="flex items-center gap-1.5 font-semibold text-fg"><span class="livedot"></span>BTC · Bitcoin</span>
             <span class="num">US$ 64.378,06</span>
           </div>
-          <svg viewBox="0 0 320 170" class="h-44 w-full" preserveAspectRatio="none">
+          <svg viewBox="0 0 320 170" class="mock-chart h-44 w-full" preserveAspectRatio="none">
             <!-- faixa heat (zona short acima / long abaixo) -->
             <rect x="0" y="18" width="320" height="26" fill="rgba(34,197,94,0.10)"></rect>
             <rect x="0" y="128" width="320" height="26" fill="rgba(239,68,68,0.10)"></rect>
@@ -198,3 +198,42 @@ const STEPS = [
 
   <Footer />
 </Base>
+
+<style>
+  /* Mockup "ao vivo" da hero — movimento sutil. Respeita prefers-reduced-motion. */
+  .mock-chart g line {
+    animation: tick 2.8s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .mock-chart g line:nth-child(2n) { animation-duration: 3.4s; animation-delay: -0.6s; }
+  .mock-chart g line:nth-child(3n) { animation-duration: 2.3s; animation-delay: -1.1s; }
+  .mock-chart g line:nth-child(5n) { animation-delay: -1.7s; }
+  .mock-chart > line { animation: flow 2.6s linear infinite; }
+  .mock-chart > rect { animation: heat 4s ease-in-out infinite; }
+
+  .livedot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+    animation: pulse 1.8s ease-out infinite;
+  }
+
+  @keyframes tick { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.16); } }
+  @keyframes flow { to { stroke-dashoffset: -16; } }
+  @keyframes heat { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+    100% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mock-chart g line,
+    .mock-chart > line,
+    .mock-chart > rect,
+    .livedot { animation: none; }
+  }
+</style>
