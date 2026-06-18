@@ -77,15 +77,23 @@ Deno.serve(async (req) => {
     }
   } catch (_) { /* não bloqueia a nova assinatura */ }
 
-  // 2) Assinatura (cliente escolhe Pix/cartão na fatura). externalReference carrega
-  //    user.id:plan_slug:cycle para o webhook saber quem ativar, em qual plano e por
-  //    quanto tempo. Anual = 12 meses com 30% OFF de lançamento. Manter ANNUAL_DISCOUNT
-  //    em sincronia com o Pricing.tsx (preço exibido == preço cobrado).
+  // 2) Assinatura. externalReference carrega user.id:plan_slug:cycle para o webhook
+  //    saber quem ativar, em qual plano e por quanto tempo. Anual = 12 meses com 30%
+  //    OFF de lançamento. Manter ANNUAL_DISCOUNT em sincronia com o Pricing.tsx
+  //    (preço exibido == preço cobrado).
   const ANNUAL_DISCOUNT = 0.30;
   const monthly = plan.price_cents / 100;
   const value = cycle === "annual" ? Math.round(monthly * 12 * (1 - ANNUAL_DISCOUNT)) : monthly;
   const asaasCycle = cycle === "annual" ? "YEARLY" : "MONTHLY";
   const cycleLabel = cycle === "annual" ? "anual" : "mensal";
+
+  // Forma de pagamento por ciclo:
+  //   · MENSAL  → CREDIT_CARD apenas. Mensalidade é recorrência real e só o cartão
+  //     de crédito renova/cobra automaticamente; Pix/boleto exigiriam pagamento
+  //     manual a cada mês e a assinatura venceria (churn involuntário).
+  //   · ANUAL   → UNDEFINED (cliente escolhe Pix/boleto/cartão na fatura): a fricção
+  //     de renovação é uma vez por ano e o Pix tem taxa menor para o lojista.
+  const billingType = cycle === "annual" ? "UNDEFINED" : "CREDIT_CARD";
 
   const today = new Date().toISOString().slice(0, 10);
   const s = await fetch(`${BASE}/subscriptions`, {
@@ -93,7 +101,7 @@ Deno.serve(async (req) => {
     headers: ah,
     body: JSON.stringify({
       customer: customerId,
-      billingType: "UNDEFINED",
+      billingType,
       value,
       nextDueDate: today,
       cycle: asaasCycle,
