@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import signal
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -262,7 +263,16 @@ class Collector:
         log.info("── ciclo %s · %d fonte(s) · ativos=%s", ts, len(sources), ",".join(self.assets))
 
         async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}) as http:
-            results = await asyncio.gather(*(s.collect(http, self.assets) for s in sources))
+            raw = await asyncio.gather(
+                *(s.collect(http, self.assets) for s in sources), return_exceptions=True)
+        # Blindagem extra: se uma fonte LANÇAR (em vez de retornar ok=False), não derruba
+        # o ciclo nem perde as demais — vira warning e segue.
+        results: list[SourceResult] = []
+        for s, r in zip(sources, raw):
+            if isinstance(r, BaseException):
+                log.warning("fonte %s lançou exceção (ignorada): %s", s.name, r)
+                continue
+            results.append(r)
 
         # Upsert das tabelas de coleta (isolado por tabela: uma falha não aborta o ciclo)
         written = 0
@@ -332,16 +342,27 @@ async def _main_async(once: bool) -> None:
                       max_instances=1, coalesce=True)
     scheduler.start()
     log.info("scheduler iniciado · ciclo a cada %d min · Ctrl+C para sair", interval)
+
+    # Desligamento LIMPO: em SIGTERM/SIGINT (deploy/scale/parada do host) saímos com
+    # código 0, para a política ON_FAILURE do Railway não contar parada planejada como
+    # crash (e não consumir o orçamento de retries por churn de deploy).
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            pass  # Windows não suporta add_signal_handler
+
     try:
         # Primeiro ciclo imediato (nunca pode derrubar o worker). startup=True pula a
         # Coinalyze p/ o restart não estourar o rate limit dela fora da grade.
         await collector.run_cycle(startup=True)
     except Exception as exc:  # noqa: BLE001
         log.exception("primeiro ciclo falhou (worker segue rodando): %s", exc)
-    try:
-        await asyncio.Event().wait()
-    except (KeyboardInterrupt, SystemExit):
-        log.info("encerrando…")
+
+    await stop.wait()
+    log.info("sinal de parada recebido · encerrando limpo…")
 
 
 def main() -> None:
