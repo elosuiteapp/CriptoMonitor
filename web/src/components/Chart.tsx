@@ -430,8 +430,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     const sorted = [...walls].sort((a, b) => b.notional_usd - a.notional_usd);
     const picked: OrderbookWall[] = [];
     for (const w of sorted) {
-      if (picked.every((p) => Math.abs(p.price - w.price) / w.price > 0.0006)) picked.push(w);
-      if (picked.length >= 8) break;
+      if (picked.every((p) => Math.abs(p.price - w.price) / w.price > 0.0012)) picked.push(w);
+      if (picked.length >= 7) break;
     }
     const maxNot = picked[0]?.notional_usd || 1;
     const labelBid = isDark ? "#4ade80" : "#15803d";
@@ -460,27 +460,66 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       ctx.clearRect(0, 0, W, H);
 
       const plotRight = W - psw - 1; // borda direita da área de velas (antes do eixo)
-      const MAX_BAR = Math.min(160, (W - psw) * 0.34);
-      const BAR_H = 9;
+      const MAX_BAR = Math.min(150, (W - psw) * 0.3);
+      const BAR_H = 7;
+      const LABEL_GAP = 15; // distância mínima entre rótulos (anti-sobreposição)
       ctx.font = "600 10px system-ui, sans-serif";
       ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
 
-      for (let i = 0; i < picked.length; i++) {
-        const y = ys[i];
-        if (y == null || y < 2 || y > H - 2) continue;
-        const w = picked[i];
-        const len = Math.max(12, (w.notional_usd / maxNot) * MAX_BAR);
-        const x0 = plotRight - len;
+      // Paredes visíveis, ordenadas pelo Y real (preço). A barra fica no preço real;
+      // o RÓTULO é espalhado p/ não colar e ligado à barra por uma linha-guia.
+      const items = picked
+        .map((w, i) => ({ w, y: ys[i] as number | null }))
+        .filter((it): it is { w: OrderbookWall; y: number } => it.y != null && it.y >= 4 && it.y <= H - 4)
+        .sort((a, b) => a.y - b.y);
+      if (!items.length) return;
+
+      // Y dos rótulos: parte do Y real e empurra pra baixo mantendo um gap mínimo.
+      const labelYs: number[] = [];
+      let prev = -Infinity;
+      for (const it of items) {
+        const ly = Math.max(it.y, prev + LABEL_GAP);
+        labelYs.push(ly);
+        prev = ly;
+      }
+      // Se estourou embaixo, sobe o bloco todo p/ caber no gráfico.
+      const overflow = labelYs[labelYs.length - 1] - (H - 6);
+      if (overflow > 0) for (let k = 0; k < labelYs.length; k++) labelYs[k] = Math.max(8, labelYs[k] - overflow);
+
+      const labelX = plotRight - MAX_BAR - 12; // coluna fixa dos rótulos, à esquerda das barras
+
+      for (let i = 0; i < items.length; i++) {
+        const { w, y } = items[i];
+        const ly = labelYs[i];
         const isBid = w.side === "bid";
-        ctx.fillStyle = isBid ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)";
+        const len = Math.max(10, (w.notional_usd / maxNot) * MAX_BAR);
+        const x0 = plotRight - len;
+        const soft = isBid ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)";
+        const strong = isBid ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)";
+
+        // barra no PREÇO real (ancorada à direita)
+        ctx.fillStyle = soft;
         ctx.fillRect(x0, y - BAR_H / 2, len, BAR_H);
-        // face da parede (cap mais forte colado na borda direita)
-        ctx.fillStyle = isBid ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)";
+        ctx.fillStyle = strong;
         ctx.fillRect(plotRight - 2.5, y - BAR_H / 2, 2.5, BAR_H);
-        // rótulo (tamanho) à esquerda da barra
+
+        // linha-guia: do início da barra (preço real) até o rótulo espalhado
+        ctx.strokeStyle = soft;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x0, y);
+        ctx.lineTo(labelX + 5, ly);
+        ctx.stroke();
+
+        // rótulo com chip de fundo (legível por cima das velas)
+        const txt = fmtUsd(w.notional_usd);
+        const tw = ctx.measureText(txt).width;
+        const padX = 5;
+        ctx.fillStyle = isDark ? "rgba(10,11,16,0.82)" : "rgba(255,255,255,0.92)";
+        ctx.fillRect(labelX - tw - padX * 2, ly - 8, tw + padX * 2, 16);
         ctx.fillStyle = isBid ? labelBid : labelAsk;
-        ctx.fillText(fmtUsd(w.notional_usd), x0 - 4, y);
+        ctx.textAlign = "right";
+        ctx.fillText(txt, labelX - padX, ly);
       }
     };
 
