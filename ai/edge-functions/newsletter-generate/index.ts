@@ -20,24 +20,24 @@ const ASSETS = ["BTC", "ETH", "SOL"];
 
 // Prompt em ASCII (seguranca de deploy); o modelo responde em PT-BR com acentuacao.
 const SYSTEM_PROMPT = [
-  "Voce e o editor da newsletter SEMANAL do OrbeView, um cockpit institucional de cripto para traders de varejo.",
-  "Escreva uma edicao envolvente, clara e util, SEMPRE em portugues brasileiro com acentuacao correta.",
-  "Ao usar termo tecnico (gamma, GEX, Zero Gamma, Call/Put Wall, Max Pain, funding, OI, CVD, premio Coinbase, DXY, dominancia), explique em poucas palavras.",
-  "Responda APENAS com um JSON valido com estes campos: title, excerpt, cover_emoji, teaser_md, body_md.",
-  "- title: chamada curta e atraente da edicao (sem aspas, ~6-10 palavras).",
-  "- excerpt: 1 frase (max 160 caracteres) para SEO/preview.",
+  "Voce e analista-chefe da newsletter SEMANAL do OrbeView, um cockpit institucional de cripto. Escreve para traders de varejo que querem enxergar o mercado como a mesa institucional ve.",
+  "VOZ: analista senior - clara, perspicaz, direta e com personalidade. Zero enchecao de linguica, zero frases genericas. Em portugues brasileiro com acentuacao correta. Explique cada termo tecnico (gamma, GEX, Zero Gamma, Call/Put Wall, Max Pain, funding, OI, CVD, premio Coinbase, DXY, dominancia) em poucas palavras na primeira vez que aparecer.",
+  "PRINCIPIO CENTRAL: conecte os dados numa TESE coerente da semana; NAO liste metricas soltas. Em cada secao escolha os 2-3 numeros que realmente importam e explique O QUE ELES SIGNIFICAM em conjunto (a leitura, nao o dado cru). Negrito nos termos e niveis-chave.",
+  "Responda APENAS com um JSON valido com os campos: title, excerpt, cover_emoji, teaser_md, body_md.",
+  "- title: chamada forte e ESPECIFICA da semana (sem aspas, ~6-10 palavras); evite cliche.",
+  "- excerpt: 1 frase (max 160 caracteres) que vende a leitura, para SEO/preview.",
   "- cover_emoji: UM emoji que represente o tema.",
-  "- teaser_md: a ABERTURA publica (markdown) - 2 ou 3 paragrafos curtos + um topico de 'O que olhar', cortando ANTES da conclusao para dar gancho. Sem titulo grande.",
-  "- body_md: a edicao COMPLETA em markdown, com estas secoes (use os titulos):",
-  "    ## A semana em uma frase  (o quadro geral)",
-  "    ## O que aconteceu  (variacao de BTC/ETH/SOL e o regime de gamma)",
-  "    ## Onde esta o dinheiro  (Call/Put Wall, Zero Gamma, funding e fluxo institucional via premio Coinbase)",
-  "    ## Macro  (DXY, correlacoes, Fear & Greed, dominancia do BTC quando houver)",
-  "    ## O que observar na semana  (niveis-chave e cenarios NARRATIVOS e NAO direcionais)",
+  "- teaser_md: a ABERTURA publica (markdown): um lead afiado de 1-2 paragrafos + o bloco 'Resumo rapido', cortando ANTES do detalhamento para dar gancho. Sem titulo grande.",
+  "- body_md: a edicao COMPLETA em markdown, entre 500 e 800 palavras, com EXATAMENTE estas secoes e titulos:",
+  "    ## Resumo rapido  (3 bullets com as conclusoes da semana; comece cada um com o insight, nao com o numero)",
+  "    ## A semana em uma frase  (a tese central, afiada)",
+  "    ## O que aconteceu  (movimento de BTC/ETH/SOL e o regime de gamma - e POR QUE importa)",
+  "    ## Onde esta o dinheiro  (posicionamento institucional: gamma, funding, premio Coinbase, fluxo de ETF - a LEITURA, nao so os valores)",
+  "    ## Macro  (DXY, correlacoes, Fear & Greed, dominancia - como o macro empurra o cripto ESTA semana)",
+  "    ## O que observar na semana  (os 2-3 niveis-chave que decidem o vies, em bullets, e cenarios NARRATIVOS e NAO direcionais)",
   "    ## Aviso  (informativo/educacional, nao e recomendacao de compra/venda)",
   "FUNDING (unidades): use os valores de funding JA convertidos para percent que o prompt fornece; NUNCA multiplique o CEX por 100.",
-  "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
-  "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e NUNCA invente numeros.",
+  "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere'). NUNCA invente numeros: se um dado faltar, diga que esta indisponivel neste ciclo.",
 ].join("\n");
 
 const RESPONSE_SCHEMA = {
@@ -91,12 +91,13 @@ function gammaReliable(g: Record<string, unknown> | undefined): boolean {
 
 async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: 8192,
-    temperature: 0.7,
+    maxOutputTokens: 16384, // folga p/ o "thinking" do PRO + corpo de ~800 palavras
+    temperature: 0.75,
     responseMimeType: "application/json",
     responseSchema: RESPONSE_SCHEMA,
   };
-  if (model.includes("flash")) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  // Sem desativar o "thinking": a newsletter e semanal, entao priorizamos qualidade
+  // de sintese sobre latencia (vale tanto p/ o PRO quanto p/ o FLASH).
   return await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     {
@@ -200,8 +201,9 @@ Deno.serve(async (req) => {
     "Snapshots atuais por ativo (JSON):",
     JSON.stringify(snaps),
     "",
-    "Snapshot do BTC de ~7 dias atras (para a variacao da semana; pode faltar se o historico for curto):",
-    btcPrev ? JSON.stringify(btcPrev.payload) : "indisponivel (historico < 7 dias)",
+    btcPrev
+      ? "Snapshot do BTC de ~7 dias atras (use para a variacao REAL da semana):\n" + JSON.stringify(btcPrev.payload)
+      : "ATENCAO: historico de 7 dias INDISPONIVEL neste ciclo. NAO afirme variacao, maxima nem minima semanal de NENHUM ativo (nao diga que 'caiu de X', 'tocou Y' ou 'apos atingir Z'); descreva apenas o estado ATUAL (niveis, regime, posicionamento) e diga que a comparacao semanal entra quando o historico completar 7 dias.",
     "",
     "Macro (ativos + correlacoes 30d do BTC):",
     JSON.stringify({
@@ -213,17 +215,26 @@ Deno.serve(async (req) => {
     newsText,
   ].join("\n");
 
-  // Geracao (Gemini).
+  // Geracao (Gemini). Tenta o modelo PRO (melhor escrita); em erro transitorio (429/5xx)
+  // espera e tenta de novo; so entao cai para o FLASH. Guarda o erro do PRO p/ diagnostico.
   let usedModel = PRIMARY_MODEL;
-  let aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
-  if (!aiResp.ok && usedModel !== FALLBACK_MODEL) {
-    console.error(`modelo ${usedModel} falhou (${aiResp.status}) - fallback ${FALLBACK_MODEL}`);
+  let proError = "";
+  let aiResp = await callGemini(PRIMARY_MODEL, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
+  if (!aiResp.ok) {
+    proError = `${aiResp.status}: ${(await aiResp.text()).slice(0, 200)}`;
+    console.error(`PRO falhou - ${proError}`);
+    if (aiResp.status === 429 || aiResp.status >= 500) {
+      await new Promise((r) => setTimeout(r, 5000));
+      aiResp = await callGemini(PRIMARY_MODEL, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
+    }
+  }
+  if (!aiResp.ok) {
     usedModel = FALLBACK_MODEL;
-    aiResp = await callGemini(usedModel, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
+    aiResp = await callGemini(FALLBACK_MODEL, GEMINI_KEY, SYSTEM_PROMPT, userMsg);
   }
   if (!aiResp.ok) {
     const detail = await aiResp.text();
-    return json(502, { error: "Falha ao gerar newsletter", detail: detail.slice(0, 300) });
+    return json(502, { error: "Falha ao gerar newsletter", detail: detail.slice(0, 300), pro_error: proError });
   }
 
   const aiData = await aiResp.json();
@@ -260,5 +271,5 @@ Deno.serve(async (req) => {
   });
   if (insErr) return json(500, { error: "Falha ao gravar a edicao", detail: insErr.message });
 
-  return json(200, { ok: true, slug, title, model_used: usedModel });
+  return json(200, { ok: true, slug, title, model_used: usedModel, pro_error: usedModel === PRIMARY_MODEL ? null : proError });
 });
