@@ -2,26 +2,11 @@ import { useState } from "react";
 
 import { DEFAULT_MODULE, type ModuleId } from "../lib/modules";
 
-const KEY = "cm.market-module";
-
-/** Módulo de mercado ativo (Crypto/Forex), persistido em localStorage. */
+/** Módulo de mercado ativo (Crypto/B3/Forex). **NÃO é persistido de propósito**:
+ *  o app sempre ABRE na tela inicial (módulo Crypto). A troca de mercado vale só
+ *  durante a sessão e some no reload — junto com a aba (Cockpit) e a moeda (BTC),
+ *  que já iniciam no padrão. (Pedido do dono: sempre carregar a página inicial.) */
 export function useModule() {
-  const [current, setCurrent] = useState<ModuleId>(() => {
-    try {
-      return localStorage.getItem(KEY) === "forex" ? "forex" : DEFAULT_MODULE;
-    } catch {
-      return DEFAULT_MODULE;
-    }
-  });
-
-  function setModule(id: ModuleId) {
-    setCurrent(id);
-    try {
-      localStorage.setItem(KEY, id);
-    } catch {
-      /* localStorage indisponível — segue só em memória */
-    }
-  }
-
-  return { module: current, setModule };
+  const [current, setCurrent] = useState<ModuleId>(DEFAULT_MODULE);
+  return { module: current, setModule: setCurrent };
 }
