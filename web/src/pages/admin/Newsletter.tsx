@@ -39,7 +39,7 @@ export default function AdminNewsletter() {
     setBusy(true);
     setMsg(null);
     try {
-      const { data, error } = await supabase.functions.invoke("newsletter-generate", { body: { force: true } });
+      const { data, error } = await supabase.functions.invoke("newsletter-generate", { body: { force: true, publish: false } });
       if (error) {
         let detail = error.message;
         const ctx = (error as { context?: Response }).context;
@@ -50,7 +50,7 @@ export default function AdminNewsletter() {
         throw new Error(detail);
       }
       if (data?.skipped) setMsg({ kind: "ok", text: "Já havia uma edição recente — nada gerado." });
-      else setMsg({ kind: "ok", text: `Edição gerada: “${data?.title ?? "?"}” (${data?.model_used ?? "?"}).` });
+      else setMsg({ kind: "ok", text: `Rascunho criado: “${data?.title ?? "?"}”. Revise e publique abaixo. (${data?.model_used ?? "?"})` });
       await load();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao gerar a edição." });
@@ -82,8 +82,8 @@ export default function AdminNewsletter() {
         <div>
           <h1 className="text-xl font-bold text-foreground">Newsletter</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Geração automática toda <strong className="text-foreground">sexta-feira (~9h BRT)</strong> pela IA. Aqui você gera
-            uma edição na hora, publica/despublica ou exclui.
+            Geração automática toda <strong className="text-foreground">sexta-feira (~9h BRT)</strong> pela IA — já publicada.
+            Aqui você gera um <strong className="text-foreground">rascunho</strong> na hora para revisar antes de publicar.
           </p>
         </div>
         <button
@@ -91,7 +91,7 @@ export default function AdminNewsletter() {
           disabled={busy}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {busy ? "Gerando… (~20s)" : "✨ Gerar agora"}
+          {busy ? "Gerando… (~20s)" : "✨ Gerar rascunho"}
         </button>
       </div>
 

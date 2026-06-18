@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const force = body?.force === true;
+  const publish = body?.publish !== false; // default true (cron publica); admin envia false = rascunho
 
   // Autorizacao: cron (x-cron-key) OU admin (JWT).
   let authorized = false;
@@ -265,11 +266,11 @@ Deno.serve(async (req) => {
     body_md: bodyMd,
     cover_emoji: (parsed.cover_emoji ?? "\u{1F4CA}").trim().slice(0, 8) || "\u{1F4CA}",
     min_tier: "free",
-    published: true,
-    published_at: new Date().toISOString(),
+    published: publish,
+    published_at: publish ? new Date().toISOString() : null,
     auto_generated: true,
   });
   if (insErr) return json(500, { error: "Falha ao gravar a edicao", detail: insErr.message });
 
-  return json(200, { ok: true, slug, title, model_used: usedModel, pro_error: usedModel === PRIMARY_MODEL ? null : proError });
+  return json(200, { ok: true, slug, title, published: publish, model_used: usedModel, pro_error: usedModel === PRIMARY_MODEL ? null : proError });
 });
