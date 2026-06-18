@@ -163,7 +163,10 @@ const STEPS = [
               <li class="flex gap-2 text-muted"><span class="text-up">✓</span><span>{f}</span></li>
             ))}
           </ul>
-          <a href={SIGNUP_URL} class={`mt-6 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}>
+          <a
+            href={p.slug === "free" ? SIGNUP_URL : `${SIGNUP_URL}?plan=${p.slug}`}
+            class={`mt-6 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}
+          >
             {p.cta}
           </a>
         </div>

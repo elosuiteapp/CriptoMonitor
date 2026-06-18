@@ -37,7 +37,10 @@ const annual = (monthly: number) => Math.round(monthly * 12 * (1 - PRICING.annua
             </p>
           )}
 
-          <a href={SIGNUP_URL} class={`mt-5 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}>
+          <a
+            href={p.slug === "free" ? SIGNUP_URL : `${SIGNUP_URL}?plan=${p.slug}`}
+            class={`mt-5 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}
+          >
             {p.cta}
           </a>
 

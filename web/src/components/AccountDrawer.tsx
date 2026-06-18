@@ -13,6 +13,7 @@ const ANNUAL_DISCOUNT = 0.3; // sincronizar com Pricing/asaas-checkout
 interface Props {
   user: User;
   welcome?: boolean; // primeiro acesso (boas-vindas)
+  intentPlan?: "pro" | "expert"; // veio da landing querendo assinar este plano
   onClose: () => void;
 }
 
@@ -30,7 +31,7 @@ const fmtDate = (iso: string | null) =>
 
 /** Painel "Sua conta" — slide-over (direita) com PLANO (upgrade/checkout direto +
  *  troca/cancelamento) e PERFIL (nome, telefone, CPF). Substitui o ProfileModal. */
-export default function AccountDrawer({ user, welcome, onClose }: Props) {
+export default function AccountDrawer({ user, welcome, intentPlan, onClose }: Props) {
   const navigate = useNavigate();
   const { profile, save } = useProfile(user);
   const { subscription, loading: subLoading, cancel } = useSubscription(user);
@@ -174,6 +175,11 @@ export default function AccountDrawer({ user, welcome, onClose }: Props) {
               </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{subLoading ? "Carregando…" : statusLine}</p>
+            {intentPlan && !isPaid && (
+              <p className="mt-2 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
+                Você escolheu o {PLAN_NAME[intentPlan]} — é só confirmar abaixo.
+              </p>
+            )}
 
             {!isPaid ? (
               <>
@@ -196,7 +202,16 @@ export default function AccountDrawer({ user, welcome, onClose }: Props) {
                     const m = prices[u.slug];
                     const showAnnual = cycle === "annual" && m;
                     return (
-                      <div key={u.slug} className={`rounded-xl border p-4 ${u.tag ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-card dark:bg-card/60"}`}>
+                      <div
+                        key={u.slug}
+                        className={`rounded-xl border p-4 ${
+                          u.slug === intentPlan
+                            ? "border-primary bg-primary/[0.08] ring-2 ring-primary/40"
+                            : u.tag
+                              ? "border-primary/40 bg-primary/[0.06]"
+                              : "border-border bg-card dark:bg-card/60"
+                        }`}
+                      >
                         <div className="flex items-baseline justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-foreground">{PLAN_NAME[u.slug]}</span>

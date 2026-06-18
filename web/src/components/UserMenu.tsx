@@ -20,11 +20,28 @@ const WELCOME_KEY = "ov.welcome-seen";
 export default function UserMenu({ user, planName, onSignOut }: Props) {
   const { loading, avatarUrl, email, displayName, complete } = useProfile(user);
   const [open, setOpen] = useState(false);
-  const [account, setAccount] = useState<{ welcome: boolean } | null>(null);
+  const [account, setAccount] = useState<{ welcome: boolean; intent?: "pro" | "expert" } | null>(null);
   useEscapeKey(() => setOpen(false), open);
 
-  // Boas-vindas: 1º acesso de quem está no Free abre o painel uma vez.
   useEffect(() => {
+    // Veio da landing com intenção de assinar (?plan)? Abre o painel direto no plano.
+    let pending: string | null = null;
+    try {
+      pending = sessionStorage.getItem("ov.pending-plan");
+    } catch {
+      /* indisponível */
+    }
+    if (pending === "pro" || pending === "expert") {
+      try {
+        sessionStorage.removeItem("ov.pending-plan");
+        localStorage.setItem(WELCOME_KEY, "1"); // não duplica com as boas-vindas
+      } catch {
+        /* indisponível */
+      }
+      setAccount({ welcome: false, intent: pending });
+      return;
+    }
+    // Senão: boas-vindas no 1º acesso de quem está no Free (uma vez).
     if (planName !== "Free") return;
     try {
       if (!localStorage.getItem(WELCOME_KEY)) {
@@ -109,7 +126,9 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
         </>
       )}
 
-      {account && <AccountDrawer user={user} welcome={account.welcome} onClose={() => setAccount(null)} />}
+      {account && (
+        <AccountDrawer user={user} welcome={account.welcome} intentPlan={account.intent} onClose={() => setAccount(null)} />
+      )}
     </div>
   );
 }

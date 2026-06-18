@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { useAuth } from "./hooks/useAuth";
 import { useReferralCapture } from "./hooks/useReferralCapture";
@@ -24,7 +25,22 @@ function Loading() {
 
 export default function App() {
   const { session, loading } = useAuth();
+  const location = useLocation();
   useReferralCapture(session);
+
+  // Intenção de assinatura vinda da landing (?plan=pro|expert): guarda para abrir o
+  // checkout do plano logo após o login (sobrevive ao redirect do OAuth via sessionStorage).
+  useEffect(() => {
+    const plan = new URLSearchParams(location.search).get("plan");
+    if (plan === "pro" || plan === "expert") {
+      try {
+        sessionStorage.setItem("ov.pending-plan", plan);
+      } catch {
+        /* sessionStorage indisponível */
+      }
+    }
+  }, [location.search]);
+
   if (loading) return <Loading />;
 
   return (
