@@ -146,14 +146,15 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
-          {user && <NotificationsBell user={user} />}
           <Link
             to="/newsletter"
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary shadow-sm transition-colors duration-200 hover:border-primary/60 hover:bg-primary/10"
           >
+            <span aria-hidden>📰</span>
             Newsletter
           </Link>
+          <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
+          {user && <NotificationsBell user={user} />}
           <button
             onClick={() => setAlertsOpen(true)}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
