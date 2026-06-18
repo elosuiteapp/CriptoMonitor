@@ -132,9 +132,6 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
-            Plano {plan.name}
-          </span>
           <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
           {user && <NotificationsBell user={user} />}
           <Link to="/alerts" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
