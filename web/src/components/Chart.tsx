@@ -48,12 +48,15 @@ interface ChartProps {
   canUseLayers: boolean;
   walls?: OrderbookWall[];
   oiSeries?: OiPoint[];
+  // Emite o último preço (close do candle em formação, ao vivo via WS) para o pai —
+  // assim o preço do topo (PriceHeader) espelha EXATAMENTE o do gráfico, em tempo real.
+  onPrice?: (price: number) => void;
 }
 
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, oiSeries }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, oiSeries, onPrice }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -65,6 +68,19 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const { isDark } = useTheme();
+
+  // Espelhamento do preço ao vivo para o topo: ref evita re-subscrever o WS, e o
+  // throttle (~1s) evita re-render do Dashboard a cada tick.
+  const onPriceRef = useRef(onPrice);
+  onPriceRef.current = onPrice;
+  const lastEmitRef = useRef(0);
+  const emitPrice = (price: number | undefined, force = false) => {
+    if (typeof price !== "number" || !Number.isFinite(price)) return;
+    const now = Date.now();
+    if (!force && now - lastEmitRef.current < 1000) return;
+    lastEmitRef.current = now;
+    onPriceRef.current?.(price);
+  };
 
   // ─── Cria o chart uma vez ──────────────────────────────────────────────────
   useEffect(() => {
@@ -147,6 +163,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         chart.timeScale().fitContent();
         setVp(computeVolumeProfile(candles));
         setCandles(candles);
+        emitPrice(candles[candles.length - 1]?.close, true); // topo já casa com o gráfico
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
           if (chartType === "line" || chartType === "area") {
@@ -154,6 +171,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           } else {
             series.update(bar as never);
           }
+          emitPrice(bar.close); // mantém o topo em sincronia, ao vivo
         });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "falha ao carregar candles");

@@ -71,6 +71,8 @@ export default function Dashboard() {
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [tab, setTab] = useState<TabId>("cockpit");
   const [alertsOpen, setAlertsOpen] = useState(false);
+  // Preço ao vivo emitido pelo gráfico (WS) — o topo espelha o gráfico em tempo real.
+  const [livePrice, setLivePrice] = useState<number | null>(null);
   const [layers, setLayers] = useState<ActiveLayers>({
     gex: true,
     zeroGamma: true,
@@ -86,6 +88,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (plan && !plan.assets.includes(asset)) setAsset(plan.assets[0] ?? "BTC");
   }, [plan, asset]);
+
+  // Ao trocar de ativo, zera o preço ao vivo (cai no snapshot até o gráfico emitir
+  // o preço do novo ativo) — evita mostrar por um instante o preço do ativo anterior.
+  useEffect(() => {
+    setLivePrice(null);
+  }, [asset]);
 
   // Forex ainda é só para admin (preview). Se um não-admin tiver "forex" salvo
   // no localStorage, volta para Crypto assim que o papel for resolvido.
@@ -160,7 +168,7 @@ export default function Dashboard() {
           <ForexPlaceholder onBack={() => setMarket("crypto")} />
         ) : (
           <>
-        <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} />
+        <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} livePrice={livePrice} />
 
         <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
 
@@ -197,6 +205,7 @@ export default function Dashboard() {
             canUseLayers={canUseLayers}
             walls={walls}
             oiSeries={oiSeries}
+            onPrice={setLivePrice}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
           {canUseLayers && layers.cvd && (

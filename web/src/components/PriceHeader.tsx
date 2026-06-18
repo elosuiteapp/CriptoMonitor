@@ -8,12 +8,15 @@ interface Props {
   asset: string;
   payload: SnapshotPayload | null;
   updatedAt: string | null;
+  livePrice?: number | null; // preço ao vivo vindo do gráfico (WS) — espelha o gráfico
 }
 
-export default function PriceHeader({ asset, payload, updatedAt }: Props) {
+export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Props) {
   const binance = payload?.price?.binance;
   const coinbase = payload?.price?.coinbase;
-  const price = binance?.price ?? coinbase?.price ?? payload?.gamma?.spot_price ?? null;
+  // Prioriza o preço ao vivo do gráfico (mesma fonte → topo == gráfico, em tempo real);
+  // cai no snapshot do coletor enquanto o gráfico ainda não emitiu (ex.: trocou de ativo).
+  const price = livePrice ?? binance?.price ?? coinbase?.price ?? payload?.gamma?.spot_price ?? null;
   const when = updatedAt ? new Date(updatedAt).toLocaleString("pt-BR") : null;
 
   const [change24h, setChange24h] = useState<number | null>(null);
