@@ -37,12 +37,15 @@ export default function UserDetailModal({
     else {
       const d = data as AdminUserDetail;
       setDetail(d);
-      const active = d.subscriptions.find((s) => s.status === "active") ?? d.subscriptions[0];
-      if (active) {
-        setPlanSlug(active.plan_slug);
-        setStatusVal(active.status);
-        setPeriodEnd(active.current_period_end ? active.current_period_end.slice(0, 10) : "");
+      const active = d.subscriptions.find((s) => s.status === "active");
+      const ref = active ?? d.subscriptions[0];
+      if (ref) {
+        setPlanSlug(ref.plan_slug);
+        setPeriodEnd(ref.current_period_end ? ref.current_period_end.slice(0, 10) : "");
       }
+      // Sem assinatura ATIVA, o admin quase sempre quer ATIVAR um plano (upgrade/troca)
+      // → default "active". Se houver ativa, reflete o status real dela.
+      setStatusVal(active ? active.status : "active");
     }
     setLoading(false);
   }
@@ -158,6 +161,9 @@ export default function UserDetailModal({
                     Vence em (opcional)
                     <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={`mt-1 ${inputCls}`} />
                   </label>
+                  <p className="-mt-1 text-[11px] text-muted-foreground sm:col-span-3">
+                    Para liberar ou fazer <b>upgrade</b> de um plano, escolha o plano e deixe o status em <b>Ativa</b>. “Cancelada” derruba o acesso (volta para Free).
+                  </p>
                   <div className="sm:col-span-3 flex items-center gap-3">
                     <button type="submit" disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                       {busy ? "…" : "Salvar assinatura"}
