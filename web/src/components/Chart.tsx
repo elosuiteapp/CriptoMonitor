@@ -474,17 +474,35 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         .sort((a, b) => a.y - b.y);
       if (!items.length) return;
 
-      // Y dos rótulos: parte do Y real e empurra pra baixo mantendo um gap mínimo.
-      const labelYs: number[] = [];
-      let prev = -Infinity;
-      for (const it of items) {
-        const ly = Math.max(it.y, prev + LABEL_GAP);
-        labelYs.push(ly);
-        prev = ly;
+      // Y dos rótulos por LADO: VENDA (vermelho) abre PRA CIMA, COMPRA (verde) PRA BAIXO.
+      const meta = items.map((it, i) => ({ i, y: it.y, ask: it.w.side === "ask" }));
+      const labelYs = new Array<number>(items.length);
+
+      // Vermelho (venda): de baixo p/ cima, empurrando PRA CIMA.
+      const asks = meta.filter((m) => m.ask).sort((a, b) => b.y - a.y);
+      let pa = Infinity;
+      for (const m of asks) {
+        const ly = Math.min(m.y, pa - LABEL_GAP);
+        labelYs[m.i] = ly;
+        pa = ly;
       }
-      // Se estourou embaixo, sobe o bloco todo p/ caber no gráfico.
-      const overflow = labelYs[labelYs.length - 1] - (H - 6);
-      if (overflow > 0) for (let k = 0; k < labelYs.length; k++) labelYs[k] = Math.max(8, labelYs[k] - overflow);
+      if (asks.length) {
+        const top = Math.min(...asks.map((m) => labelYs[m.i]));
+        if (top < 8) for (const m of asks) labelYs[m.i] += 8 - top;
+      }
+
+      // Verde (compra): de cima p/ baixo, empurrando PRA BAIXO.
+      const bids = meta.filter((m) => !m.ask).sort((a, b) => a.y - b.y);
+      let pb = -Infinity;
+      for (const m of bids) {
+        const ly = Math.max(m.y, pb + LABEL_GAP);
+        labelYs[m.i] = ly;
+        pb = ly;
+      }
+      if (bids.length) {
+        const bot = Math.max(...bids.map((m) => labelYs[m.i]));
+        if (bot > H - 6) for (const m of bids) labelYs[m.i] -= bot - (H - 6);
+      }
 
       const labelX = plotRight - MAX_BAR - 12; // coluna fixa dos rótulos, à esquerda das barras
 
