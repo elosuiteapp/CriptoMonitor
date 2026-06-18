@@ -3,7 +3,7 @@ import Base from "../../layouts/Base.astro";
 import Nav from "../../components/Nav.astro";
 import Footer from "../../components/Footer.astro";
 import { listEditions, getEdition, fmtDate } from "../../lib/newsletter";
-import { SIGNUP_URL, SITE_URL } from "../../consts";
+import { SITE_URL, APP_URL } from "../../consts";
 import { marked } from "marked";
 
 export async function getStaticPaths() {
@@ -46,15 +46,15 @@ const jsonld = {
     <div class="relative mt-2">
       <div class="pointer-events-none h-20 -translate-y-full bg-gradient-to-b from-transparent to-base"></div>
       <div class="rounded-2xl border border-primary/30 bg-card p-6 text-center">
-        <p class="text-sm font-semibold">Continue lendo a edição completa</p>
+        <p class="text-sm font-semibold">Continue lendo no app</p>
         <p class="mx-auto mt-1 max-w-sm text-sm text-muted">
-          Crie sua conta grátis para ler as edições completas e receber a newsletter toda semana.
+          Entre ou crie sua conta grátis para ler a edição completa no OrbeView e receber a newsletter toda semana.
         </p>
         <a
-          href={SIGNUP_URL}
+          href={`${APP_URL}/newsletter/${ed.slug}`}
           class="mt-4 inline-block rounded-lg bg-primary-strong px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary"
         >
-          Ler completo · grátis
+          Ler edição completa →
         </a>
       </div>
     </div>

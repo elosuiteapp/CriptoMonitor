@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "./hooks/useAuth";
 import { useReferralCapture } from "./hooks/useReferralCapture";
@@ -7,6 +7,8 @@ import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import Newsletter from "./pages/Newsletter";
+import NewsletterEdition from "./pages/NewsletterEdition";
 import NotFound from "./pages/NotFound";
 import Pricing from "./pages/Pricing";
 import AdminAffiliates from "./pages/admin/Affiliates";
@@ -23,9 +25,24 @@ function Loading() {
   return <div className="grid h-full place-items-center text-muted-foreground">Carregando…</div>;
 }
 
+// Rota protegida acessada deslogado (ex.: deep-link da newsletter vindo do site):
+// guarda o destino e manda para o login; o App redireciona de volta após autenticar.
+function CaptureAndLogin() {
+  const location = useLocation();
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("ov.after-login", location.pathname + location.search);
+    } catch {
+      /* indisponível */
+    }
+  }, [location.pathname, location.search]);
+  return <Navigate to="/login" replace />;
+}
+
 export default function App() {
   const { session, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   useReferralCapture(session);
 
   // Intenção de assinatura vinda da landing (?plan=pro|expert): guarda para abrir o
@@ -41,12 +58,33 @@ export default function App() {
     }
   }, [location.search]);
 
+  // Após autenticar, volta ao destino guardado por uma rota protegida (deep-link).
+  useEffect(() => {
+    if (!session) return;
+    let next: string | null = null;
+    try {
+      next = sessionStorage.getItem("ov.after-login");
+    } catch {
+      /* indisponível */
+    }
+    if (next) {
+      try {
+        sessionStorage.removeItem("ov.after-login");
+      } catch {
+        /* indisponível */
+      }
+      navigate(next, { replace: true });
+    }
+  }, [session, navigate]);
+
   if (loading) return <Loading />;
 
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/newsletter" element={session ? <Newsletter /> : <CaptureAndLogin />} />
+      <Route path="/newsletter/:slug" element={session ? <NewsletterEdition /> : <CaptureAndLogin />} />
       <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
       <Route path="/analysis" element={session ? <Analysis /> : <Navigate to="/login" replace />} />
       <Route path="/alerts" element={session ? <Alerts /> : <Navigate to="/login" replace />} />
