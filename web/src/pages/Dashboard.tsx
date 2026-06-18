@@ -215,10 +215,18 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Painel de Volatilidade — BTC/ETH (Deribit, com DVOL) e SOL (Bybit, sem DVOL) */}
-        {isVolAsset && advanced && (
+        {/* Painel de Volatilidade — BTC/ETH (Deribit, com DVOL) e SOL (Bybit, sem DVOL).
+            Para Free aparece bloqueado (teaser), pro usuário saber que o recurso existe. */}
+        {isVolAsset && (
           <section>
-            <VolatilityPanel asset={asset} />
+            {advanced ? (
+              <VolatilityPanel asset={asset} />
+            ) : (
+              <>
+                <h2 className="mb-3 text-sm font-semibold text-foreground">Volatilidade (DVOL, IV, term structure)</h2>
+                <LockedCard title="Volatilidade — DVOL, IV Percentile e term structure" />
+              </>
+            )}
           </section>
         )}
 
