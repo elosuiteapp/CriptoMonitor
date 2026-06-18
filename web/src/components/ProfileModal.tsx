@@ -16,7 +16,8 @@ interface Props {
 }
 
 /** Modal "Seu perfil" — edita nome, telefone e CPF (gravados em profiles) e
- *  mostra/gerencia a assinatura (status, vencimento, cancelamento). */
+ *  mostra/gerencia a assinatura (plano atual, upgrade/downgrade, cancelamento).
+ *  Layout: cabeçalho e rodapé fixos; só o miolo rola (o "Salvar" nunca some). */
 export default function ProfileModal({
   user,
   email,
@@ -60,10 +61,11 @@ export default function ProfileModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        {/* Cabeçalho (fixo) */}
+        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div>
             <h2 className="text-lg font-bold text-foreground">Seu perfil</h2>
             <p className="text-xs text-muted-foreground">
@@ -80,77 +82,82 @@ export default function ProfileModal({
           </button>
         </div>
 
-        <SubscriptionPanel user={user} onNavigate={onClose} />
+        {/* Corpo (rola) */}
+        <div className="flex-1 overflow-y-auto p-5">
+          <SubscriptionPanel user={user} onNavigate={onClose} />
 
-        <form onSubmit={submit} className="mt-4 space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted-foreground">Nome completo</span>
-            <input
-              className={fieldClass}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Seu nome"
-            />
-          </label>
+          <form id="profile-form" onSubmit={submit} className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs text-muted-foreground">Nome completo</span>
+              <input
+                className={fieldClass}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Seu nome"
+              />
+            </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted-foreground">Telefone / WhatsApp</span>
-            <input
-              type="tel"
-              className={`num ${fieldClass}`}
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+55 11 99999-9999"
-            />
-            <span className="mt-1 block text-[11px] text-muted-foreground">
-              Usado para alertas por WhatsApp (plano Expert).
-            </span>
-          </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-muted-foreground">Telefone / WhatsApp</span>
+              <input
+                type="tel"
+                className={`num ${fieldClass}`}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+55 11 99999-9999"
+              />
+              <span className="mt-1 block text-[11px] text-muted-foreground">
+                Usado para alertas por WhatsApp (plano Expert).
+              </span>
+            </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted-foreground">CPF</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              className={`num ${fieldClass}`}
-              value={cpf}
-              onChange={(e) => setCpf(e.target.value)}
-              placeholder="000.000.000-00"
-            />
-            <span className="mt-1 block text-[11px] text-muted-foreground">
-              Necessário para pagamento em reais (Pix/cartão via Asaas).
-            </span>
-          </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-muted-foreground">CPF</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                className={`num ${fieldClass}`}
+                value={cpf}
+                onChange={(e) => setCpf(e.target.value)}
+                placeholder="000.000.000-00"
+              />
+              <span className="mt-1 block text-[11px] text-muted-foreground">
+                Necessário para pagamento em reais (Pix/cartão via Asaas).
+              </span>
+            </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs text-muted-foreground">E-mail</span>
-            <input
-              disabled
-              value={email ?? ""}
-              className="w-full cursor-not-allowed truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
-            />
-          </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-muted-foreground">E-mail</span>
+              <input
+                disabled
+                value={email ?? ""}
+                className="w-full cursor-not-allowed truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+              />
+            </label>
 
-          {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
-          {done && <p className="text-sm text-emerald-600 dark:text-emerald-400">Perfil atualizado! ✓</p>}
+            {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+            {done && <p className="text-sm text-emerald-600 dark:text-emerald-400">Perfil atualizado! ✓</p>}
+          </form>
+        </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Fechar
-            </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-            >
-              {busy ? "Salvando…" : "Salvar"}
-            </button>
-          </div>
-        </form>
+        {/* Rodapé (fixo) */}
+        <div className="flex justify-end gap-2 border-t border-border p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Fechar
+          </button>
+          <button
+            type="submit"
+            form="profile-form"
+            disabled={busy}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -159,7 +166,15 @@ export default function ProfileModal({
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 
-/** Bloco de assinatura: plano, status, vencimento e cancelamento self-service. */
+// Escada de planos (para o seletor de upgrade/downgrade).
+const TIERS: { slug: string; name: string; order: number }[] = [
+  { slug: "free", name: "Free", order: 0 },
+  { slug: "pro", name: "Pro", order: 1 },
+  { slug: "expert", name: "Expert", order: 2 },
+];
+
+/** Bloco de assinatura: plano atual, status/vencimento, troca de plano
+ *  (upgrade/downgrade) e cancelamento self-service. */
 function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () => void }) {
   const { subscription, loading, cancel } = useSubscription(user);
   const [busy, setBusy] = useState(false);
@@ -167,11 +182,14 @@ function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () =>
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const currentSlug = subscription?.plan?.slug ?? "free";
   const planName = subscription?.plan?.name ?? "Free";
-  const isPaid = Boolean(subscription?.plan && subscription.plan.slug !== "free");
+  const isPaid = currentSlug !== "free";
   const status = subscription?.status ?? "active";
   const periodEnd = subscription?.current_period_end ?? null;
   const canceling = Boolean(subscription?.cancel_at_period_end);
+  const currentOrder = TIERS.find((t) => t.slug === currentSlug)?.order ?? 0;
+  const canDowngradeFree = isPaid && status === "active" && !canceling;
 
   const statusBadge =
     status === "past_due"
@@ -194,7 +212,7 @@ function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () =>
     const d = data as { ok?: boolean; code?: string; message?: string; error?: string } | null;
     if (d?.error) return setErr(d.error);
     if (d?.code === "no_active") return setMsg(d.message ?? "Sem assinatura ativa.");
-    setMsg("Cancelamento agendado. Você mantém o acesso até o fim do período já pago.");
+    setMsg("Você voltará ao plano Free ao fim do período já pago — o acesso fica garantido até lá.");
   }
 
   return (
@@ -240,7 +258,7 @@ function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () =>
           {confirming ? (
             <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10">
               <p className="text-xs text-rose-700 dark:text-rose-400">
-                Cancelar a assinatura? Você continua com acesso até <b>{fmtDate(periodEnd)}</b> e não será cobrado de novo.
+                Rebaixar para o plano <b>Free</b>? Você continua com acesso até <b>{fmtDate(periodEnd)}</b> e não será cobrado de novo.
               </p>
               <div className="mt-2 flex gap-2">
                 <button
@@ -248,7 +266,7 @@ function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () =>
                   disabled={busy}
                   className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
                 >
-                  {busy ? "Cancelando…" : "Sim, cancelar"}
+                  {busy ? "Processando…" : "Sim, rebaixar"}
                 </button>
                 <button
                   onClick={() => setConfirming(false)}
@@ -259,22 +277,49 @@ function SubscriptionPanel({ user, onNavigate }: { user: User; onNavigate: () =>
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link
-                to="/pricing"
-                onClick={onNavigate}
-                className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
-              >
-                {isPaid ? "Mudar plano" : "Ver planos"}
-              </Link>
-              {isPaid && status === "active" && !canceling && (
-                <button
-                  onClick={() => setConfirming(true)}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  Cancelar assinatura
-                </button>
-              )}
+            <div className="mt-3">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Mudar de plano
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {TIERS.filter((tier) => tier.slug !== currentSlug).map((tier) => {
+                  const up = tier.order > currentOrder;
+                  // Rebaixar para Free = cancelar a assinatura (mantém acesso até o fim).
+                  if (tier.slug === "free") {
+                    return (
+                      <button
+                        key={tier.slug}
+                        onClick={() => setConfirming(true)}
+                        disabled={!canDowngradeFree}
+                        title={canDowngradeFree ? undefined : "Disponível com uma assinatura ativa"}
+                        className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <span>⬇ Rebaixar para <b>Free</b></span>
+                        <span className="text-muted-foreground">cancelar</span>
+                      </button>
+                    );
+                  }
+                  // Upgrade ou troca entre planos pagos → checkout em /pricing.
+                  return (
+                    <Link
+                      key={tier.slug}
+                      to="/pricing"
+                      onClick={onNavigate}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                        up
+                          ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                          : "border-border text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span>
+                        {up ? "⬆ Fazer upgrade para " : "⬇ Mudar para "}
+                        <b>{tier.name}</b>
+                      </span>
+                      <span className={up ? "text-primary/70" : "text-muted-foreground"}>{up ? "upgrade" : "downgrade"}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           )}
         </>

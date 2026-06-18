@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   const payment = (body as { payment?: Record<string, unknown> }).payment ?? {};
   const subscription = (body as { subscription?: Record<string, unknown> }).subscription ?? {};
   const extRef = String((payment.externalReference ?? subscription.externalReference ?? "") as string);
-  const [userId, planSlug = "pro"] = extRef.split(":");
+  const [userId, planSlug = "pro", cycle = "monthly"] = extRef.split(":");
   if (!userId) return new Response(JSON.stringify({ ignored: "sem externalReference" }), { status: 200 });
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -34,7 +34,9 @@ Deno.serve(async (req) => {
   if (activate) {
     const { data: plan } = await admin.from("plans").select("id").eq("slug", planSlug).single();
     if (!plan) return new Response("plano inválido", { status: 400 });
-    const periodEnd = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    // Anual renova em 1 ano; mensal em 30 dias. (externalReference: user:plano:ciclo)
+    const periodDays = cycle === "annual" ? 365 : 30;
+    const periodEnd = new Date(Date.now() + periodDays * 24 * 3600 * 1000).toISOString();
     await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId).eq("status", "active");
     const { data: subRow } = await admin.from("subscriptions").insert({
       user_id: userId,

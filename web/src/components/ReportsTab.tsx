@@ -12,9 +12,6 @@ interface ReportRow {
   created_at: string;
 }
 
-const modelLabel = (m: string) =>
-  m.includes("pro") ? "Gemini Pro" : m.includes("flash") ? "Gemini Flash" : m;
-
 // ─── Markdown leve (sem dependência): títulos, negrito, listas ────────────────
 function inline(s: string): ReactNode {
   return s.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
@@ -42,7 +39,7 @@ function MarkdownLite({ text }: { text: string }) {
   return <div>{out}</div>;
 }
 
-/** Aba "Relatórios" — relatórios diários do ativo (broadcast, gerados por Gemini).
+/** Aba "Relatórios" — relatórios diários do ativo (broadcast, gerados por IA).
  *  Gating via RLS: Pro+ vê os últimos 14; Free vê só a vitrine (>7 dias). Botão de
  *  geração manual aparece só no Expert (cron/entrega ficam para etapa futura). */
 export default function ReportsTab({ asset, plan, isExpert }: { asset: string; plan: Plan | null; isExpert: boolean }) {
@@ -100,7 +97,7 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Relatórios diários · {asset}</h2>
-          <p className="text-xs text-muted-foreground">Gerados pela IA (Gemini) a partir do snapshot, gamma, macro e notícias.</p>
+          <p className="text-xs text-muted-foreground">Gerados pela IA a partir do snapshot, gamma, macro e notícias.</p>
         </div>
         {isExpert && (
           <button
@@ -150,7 +147,6 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
                     <span className="num">{dt.toLocaleDateString("pt-BR")} · {dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
                   </span>
                   <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {modelLabel(r.model_used)}
                     <span>{isOpen ? "−" : "+"}</span>
                   </span>
                 </button>

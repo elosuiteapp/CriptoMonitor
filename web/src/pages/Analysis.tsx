@@ -113,7 +113,7 @@ export default function Analysis() {
             <>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{row.content}</p>
               <p className="mt-4 text-xs text-muted-foreground">
-                Modelo {row.model_used} · {new Date(row.created_at).toLocaleString("pt-BR")}
+                Análise de IA · {new Date(row.created_at).toLocaleString("pt-BR")}
               </p>
             </>
           ) : (

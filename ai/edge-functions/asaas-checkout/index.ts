@@ -30,8 +30,9 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (!user) return json(401, { error: "não autenticado" });
 
-  const { plan_slug } = await req.json().catch(() => ({ plan_slug: "" }));
+  const { plan_slug, cycle: cycleIn } = await req.json().catch(() => ({ plan_slug: "" }));
   if (!["pro", "expert"].includes(plan_slug)) return json(400, { error: "plano inválido" });
+  const cycle = cycleIn === "annual" ? "annual" : "monthly";
 
   const { data: plan } = await admin.from("plans").select("name, price_cents").eq("slug", plan_slug).single();
   if (!plan) return json(400, { error: "plano não encontrado" });
@@ -61,8 +62,31 @@ Deno.serve(async (req) => {
     customerId = (await c.json()).id;
   }
 
-  // 2) Assinatura mensal (cliente escolhe Pix/cartão na fatura). externalReference
-  //    carrega user.id:plan_slug para o webhook saber quem ativar e em qual plano.
+  // 1b) UMA assinatura por cliente: cancela assinaturas Asaas ativas anteriores antes
+  //     de abrir a nova. Sem isso, trocar de plano (upgrade/downgrade) deixaria a
+  //     assinatura antiga cobrando em paralelo (cobrança dupla).
+  try {
+    const ex = await fetch(`${BASE}/subscriptions?customer=${customerId}`, { headers: ah });
+    if (ex.ok) {
+      const list = (await ex.json())?.data ?? [];
+      for (const old of list) {
+        if (old?.id && old?.status === "ACTIVE") {
+          await fetch(`${BASE}/subscriptions/${old.id}`, { method: "DELETE", headers: ah });
+        }
+      }
+    }
+  } catch (_) { /* não bloqueia a nova assinatura */ }
+
+  // 2) Assinatura (cliente escolhe Pix/cartão na fatura). externalReference carrega
+  //    user.id:plan_slug:cycle para o webhook saber quem ativar, em qual plano e por
+  //    quanto tempo. Anual = 12 meses com 30% OFF de lançamento. Manter ANNUAL_DISCOUNT
+  //    em sincronia com o Pricing.tsx (preço exibido == preço cobrado).
+  const ANNUAL_DISCOUNT = 0.30;
+  const monthly = plan.price_cents / 100;
+  const value = cycle === "annual" ? Math.round(monthly * 12 * (1 - ANNUAL_DISCOUNT)) : monthly;
+  const asaasCycle = cycle === "annual" ? "YEARLY" : "MONTHLY";
+  const cycleLabel = cycle === "annual" ? "anual" : "mensal";
+
   const today = new Date().toISOString().slice(0, 10);
   const s = await fetch(`${BASE}/subscriptions`, {
     method: "POST",
@@ -70,11 +94,11 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       customer: customerId,
       billingType: "UNDEFINED",
-      value: plan.price_cents / 100,
+      value,
       nextDueDate: today,
-      cycle: "MONTHLY",
-      description: `Crypto Monitor — ${plan.name}`,
-      externalReference: `${user.id}:${plan_slug}`,
+      cycle: asaasCycle,
+      description: `Crypto Monitor — ${plan.name} (${cycleLabel})`,
+      externalReference: `${user.id}:${plan_slug}:${cycle}`,
     }),
   });
   if (!s.ok) return json(502, { error: "Falha ao criar assinatura Asaas", detail: (await s.text()).slice(0, 300) });
