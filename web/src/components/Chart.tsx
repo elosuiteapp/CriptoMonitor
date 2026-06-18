@@ -60,6 +60,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wallsCanvasRef = useRef<HTMLCanvasElement | null>(null); // barras de liquidez (Paredes do book)
   const heatTipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
@@ -219,17 +220,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       add(vp.vah, "rgba(56,189,248,0.45)", "VA High");
       add(vp.val, "rgba(56,189,248,0.45)", "VA Low");
     }
-    if (layers.orderbookWalls && walls?.length) {
-      const top = [...walls].sort((a, b) => b.notional_usd - a.notional_usd).slice(0, 6);
-      for (const w of top) {
-        add(
-          w.price,
-          w.side === "bid" ? "#16a34a" : "#dc2626",
-          `Parede ${w.side === "bid" ? "compra" : "venda"} ${fmtUsd(w.notional_usd)}`,
-        );
-      }
-    }
-  }, [gamma, layers, canUseLayers, chartType, vp, walls]);
+    // Paredes do book NÃO são mais price lines — viram BARRAS de liquidez (canvas,
+    // efeito próprio abaixo) para não poluir o eixo e mostrar o tamanho visualmente.
+  }, [gamma, layers, canUseLayers, chartType, vp]);
 
   // ─── Heatmap de liquidações (estimativa: modelo de alavancagem) ──────────────
   // Desenha numa <canvas> ATRÁS das velas (o fundo do chart é transparente, então
@@ -411,10 +404,114 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     };
   }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType]);
 
+  // ─── Paredes do book — barras de liquidez na borda direita ───────────────────
+  // Cada parede vira uma barra horizontal ancorada à direita; comprimento ∝ tamanho
+  // (notional). Verde = compra (suporte), vermelho = venda (resistência). Alinhada
+  // ao eixo de preço (priceToCoordinate) e repintada quando a escala muda.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const canvas = wallsCanvasRef.current;
+    const wrap = wrapRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!chart || !series || !canvas || !wrap || !ctx) return;
+
+    const clear = () => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    if (!canUseLayers || !layers.orderbookWalls || !walls?.length) {
+      clear();
+      return;
+    }
+
+    // Top paredes por tamanho, deduplicando preços muito colados (mantém a maior).
+    const sorted = [...walls].sort((a, b) => b.notional_usd - a.notional_usd);
+    const picked: OrderbookWall[] = [];
+    for (const w of sorted) {
+      if (picked.every((p) => Math.abs(p.price - w.price) / w.price > 0.0006)) picked.push(w);
+      if (picked.length >= 8) break;
+    }
+    const maxNot = picked[0]?.notional_usd || 1;
+    const labelBid = isDark ? "#4ade80" : "#15803d";
+    const labelAsk = isDark ? "#f87171" : "#b91c1c";
+
+    let raf = 0;
+    let lastSig = "";
+
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const W = wrap.clientWidth;
+      const H = wrap.clientHeight;
+      const psw = chart.priceScale("right").width();
+      const ys = picked.map((w) => series.priceToCoordinate(w.price));
+      const sig = `${W}x${H}|${psw}|${ys.join(",")}`;
+      if (sig === lastSig) return;
+      lastSig = sig;
+
+      if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        canvas.style.width = `${W}px`;
+        canvas.style.height = `${H}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+
+      const plotRight = W - psw - 1; // borda direita da área de velas (antes do eixo)
+      const MAX_BAR = Math.min(160, (W - psw) * 0.34);
+      const BAR_H = 9;
+      ctx.font = "600 10px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+
+      for (let i = 0; i < picked.length; i++) {
+        const y = ys[i];
+        if (y == null || y < 2 || y > H - 2) continue;
+        const w = picked[i];
+        const len = Math.max(12, (w.notional_usd / maxNot) * MAX_BAR);
+        const x0 = plotRight - len;
+        const isBid = w.side === "bid";
+        ctx.fillStyle = isBid ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)";
+        ctx.fillRect(x0, y - BAR_H / 2, len, BAR_H);
+        // face da parede (cap mais forte colado na borda direita)
+        ctx.fillStyle = isBid ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)";
+        ctx.fillRect(plotRight - 2.5, y - BAR_H / 2, 2.5, BAR_H);
+        // rótulo (tamanho) à esquerda da barra
+        ctx.fillStyle = isBid ? labelBid : labelAsk;
+        ctx.fillText(fmtUsd(w.notional_usd), x0 - 4, y);
+      }
+    };
+
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clear();
+    };
+  }, [walls, layers.orderbookWalls, canUseLayers, chartType, isDark]);
+
   return (
     <div ref={wrapRef} className="relative h-[360px] w-full">
       <canvas ref={heatCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
+      <canvas ref={wallsCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 2 }} />
+      {canUseLayers && layers.orderbookWalls && walls && walls.length > 0 && (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(34,197,94,0.7)" }} /> parede compra
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> parede venda
+          </span>
+          <span>· barra = tamanho</span>
+        </div>
+      )}
       {canUseLayers && layers.liquidations && (
         <>
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
