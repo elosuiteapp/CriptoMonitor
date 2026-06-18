@@ -57,15 +57,18 @@ export default function ProfileModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div
-        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Cabeçalho (fixo) */}
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-3.5">
+      {/* Wrapper que centraliza verticalmente quando cabe e empurra com folga
+          (py) quando não cabe — o FUNDO rola, então o topo nunca é cortado. */}
+      <div className="flex min-h-full items-center justify-center p-4 py-8">
+        <div
+          className="w-full max-w-2xl rounded-2xl border border-border bg-surface shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Cabeçalho */}
+          <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-3.5">
           <div>
             <h2 className="text-lg font-bold text-foreground">Seu perfil</h2>
             <p className="text-xs text-muted-foreground">
@@ -82,9 +85,9 @@ export default function ProfileModal({
           </button>
         </div>
 
-        {/* Corpo: 2 colunas no desktop (assinatura | formulário) — cabe tudo numa
-            tela só, sem rolar. Em telas baixas/celular, rola só aqui como fallback. */}
-        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 md:grid-cols-2">
+          {/* Corpo: 2 colunas no desktop (assinatura | formulário) — cabe tudo numa
+              tela só, sem rolagem interna; se a janela for muito baixa, o fundo rola. */}
+          <div className="grid gap-5 p-5 md:grid-cols-2">
           <SubscriptionPanel user={user} onNavigate={onClose} />
 
           <form id="profile-form" onSubmit={submit} className="space-y-3">
@@ -158,6 +161,7 @@ export default function ProfileModal({
           >
             {busy ? "Salvando…" : "Salvar"}
           </button>
+          </div>
         </div>
       </div>
     </div>
