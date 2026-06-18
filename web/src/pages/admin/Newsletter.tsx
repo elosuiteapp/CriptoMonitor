@@ -82,7 +82,7 @@ export default function AdminNewsletter() {
         <div>
           <h1 className="text-xl font-bold text-foreground">Newsletter</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Geração automática toda <strong className="text-foreground">segunda (~9h BRT)</strong> pela IA. Aqui você gera
+            Geração automática toda <strong className="text-foreground">sexta-feira (~9h BRT)</strong> pela IA. Aqui você gera
             uma edição na hora, publica/despublica ou exclui.
           </p>
         </div>
