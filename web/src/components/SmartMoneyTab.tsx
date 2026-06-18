@@ -18,6 +18,7 @@ import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type W
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
 import { GLOSSARY } from "../lib/glossary";
 import { supabase } from "../lib/supabase";
+import AIAnalysisButton from "./AIAnalysisButton";
 import InfoTip from "./InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
 import SmcAssetPicker from "./SmcAssetPicker";
@@ -403,6 +404,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             🔔 Radar{radarOn ? " ON" : ""}
           </button>
         </div>
+        {/* IA: leitura completa (SMC + institucional + HIRO + squeeze) via /analysis.
+            Só nos curados (que têm a camada institucional que a IA usa). */}
+        {isCurated && <AIAnalysisButton asset={smcAsset} />}
       </div>
 
       {/* Contexto de derivativos (Binance Futures): funding + OI — qualquer moeda com perp */}
