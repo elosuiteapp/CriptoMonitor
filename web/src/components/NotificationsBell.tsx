@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useNotifications, type NotificationRow } from "../hooks/useNotifications";
 import { usePush } from "../hooks/usePush";
 
@@ -28,6 +29,8 @@ export default function NotificationsBell({ user }: { user: User }) {
 
   const { items, unread, markAllRead } = useNotifications(user, pushToast);
   const push = usePush(user);
+
+  useEscapeKey(() => setOpen(false), open);
 
   return (
     <>

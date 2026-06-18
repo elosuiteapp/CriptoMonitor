@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import type { Profile } from "../hooks/useProfile";
 import { useSubscription } from "../hooks/useSubscription";
 
@@ -34,6 +35,8 @@ export default function ProfileModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  useEscapeKey(onClose);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

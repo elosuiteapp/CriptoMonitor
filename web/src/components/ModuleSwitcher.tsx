@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { MODULES, type ModuleId } from "../lib/modules";
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
  *  depois passa a exigir assinatura do plano Forex. */
 export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
   const [open, setOpen] = useState(false);
+  useEscapeKey(() => setOpen(false), open);
   const active = MODULES.find((m) => m.id === current) ?? MODULES[0];
 
   return (

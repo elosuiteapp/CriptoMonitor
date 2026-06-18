@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import AIAnalysisButton from "../components/AIAnalysisButton";
+import AlertsDrawer from "../components/AlertsDrawer";
 import AssetSelector from "../components/AssetSelector";
 import Chart, { type ActiveLayers } from "../components/Chart";
 import ChartTypeSelector from "../components/ChartTypeSelector";
@@ -69,6 +70,7 @@ export default function Dashboard() {
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [tab, setTab] = useState<TabId>("cockpit");
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [layers, setLayers] = useState<ActiveLayers>({
     gex: true,
     zeroGamma: true,
@@ -114,6 +116,9 @@ export default function Dashboard() {
   }
 
   const d = payload?.derivatives;
+  // Preço de referência do ativo aberto (mesma ordem do PriceHeader) — usado pelo
+  // painel de alertas para pré-preencher e oferecer atalhos relativos ao preço.
+  const spot = payload?.price?.binance?.price ?? payload?.price?.coinbase?.price ?? payload?.gamma?.spot_price ?? null;
   const macro = payload?.macro;
   const dex = payload?.dex_liquidity;
   const onchain = payload?.onchain_perps;
@@ -135,9 +140,12 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
           {user && <NotificationsBell user={user} />}
-          <Link to="/alerts" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
+          <button
+            onClick={() => setAlertsOpen(true)}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
             Alertas
-          </Link>
+          </button>
           {isAdmin && (
             <Link to="/admin" className="text-xs font-semibold text-primary transition-colors hover:text-primary/80">
               Admin
@@ -385,6 +393,18 @@ export default function Dashboard() {
       </main>
 
       <Disclaimer />
+
+      {user && alertsOpen && (
+        <AlertsDrawer
+          user={user}
+          plan={plan}
+          currentAsset={asset}
+          price={spot}
+          funding={payload?.derivatives?.funding_rate ?? null}
+          gamma={payload?.gamma ?? null}
+          onClose={() => setAlertsOpen(false)}
+        />
+      )}
     </div>
   );
 }

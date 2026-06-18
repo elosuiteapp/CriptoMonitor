@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useProfile } from "../hooks/useProfile";
 import Avatar from "./Avatar";
 import ProfileModal from "./ProfileModal";
@@ -17,6 +18,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
   const { profile, loading, save, avatarUrl, email, displayName, complete } = useProfile(user);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  useEscapeKey(() => setOpen(false), open);
 
   const firstName = displayName.split(/\s+/)[0];
 

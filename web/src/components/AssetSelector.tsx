@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import { ASSET_NAME, isInstitutional } from "../lib/format";
 import CoinIcon from "./CoinIcon";
 
@@ -20,6 +21,7 @@ interface Props {
  *  com cadeado e levam ao /pricing. */
 export default function AssetSelector({ current, allowed, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  useEscapeKey(() => setOpen(false), open);
 
   return (
     <div className="relative">
