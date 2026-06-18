@@ -77,6 +77,18 @@ function slugify(s: string): string {
     .slice(0, 60);
 }
 
+// Coerencia dos niveis de gamma: put wall <= spot <= call wall (com folga). Dados ralos
+// (ex.: SOL via relay Bybit) as vezes invertem os niveis; nesse caso a IA nao deve cita-los.
+function gammaReliable(g: Record<string, unknown> | undefined): boolean {
+  if (!g) return false;
+  const cw = Number(g.call_wall), pw = Number(g.put_wall), s = Number(g.spot_price);
+  if (!isFinite(s) || s <= 0) return false;
+  if (isFinite(cw) && isFinite(pw) && pw > cw) return false; // put acima do call (invertido)
+  if (isFinite(pw) && pw > s * 1.03) return false; // put wall acima do spot
+  if (isFinite(cw) && cw < s * 0.97) return false; // call wall abaixo do spot
+  return true;
+}
+
 async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: 8192,
@@ -149,6 +161,11 @@ Deno.serve(async (req) => {
   }
   if (!snaps.BTC) return json(503, { error: "Sem dados de mercado (BTC) para gerar a newsletter." });
 
+  // Ativos cujo gamma saiu incoerente neste ciclo (a IA nao deve citar os niveis deles).
+  const unreliableGamma = ASSETS.filter(
+    (a) => snaps[a] && !gammaReliable((snaps[a] as Record<string, unknown>).gamma as Record<string, unknown> | undefined),
+  );
+
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: btcPrev } = await admin
     .from("market_snapshot").select("payload, ts")
@@ -173,6 +190,9 @@ Deno.serve(async (req) => {
   const userMsg = [
     "Gere a edicao SEMANAL da newsletter de cripto a partir dos dados abaixo.",
     "Em cada snapshot: price.coinbase (institucional) vs price.binance/price.okx (varejo) tem volume e CVD; use o campo coinbase_premium.",
+    unreliableGamma.length
+      ? `ATENCAO: gamma POUCO CONFIAVEL neste ciclo para: ${unreliableGamma.join(", ")}. Para esses ativos NAO cite Call/Put Wall, Zero Gamma nem Max Pain; diga que os niveis estao indisponiveis/em revisao neste ciclo.`
+      : "Gamma consistente para todos os ativos neste ciclo.",
     "FUNDING do BTC ja convertido para PERCENT (use exatamente; nao multiplique de novo):",
     `- CEX agregado (Coinalyze, 8h): ${cexF == null ? "indisponivel" : cexF.toFixed(4) + "%"}`,
     `- Onchain (Hyperliquid, 1h): ${onchF == null ? "indisponivel" : (onchF * 100).toFixed(4) + "%"}`,
