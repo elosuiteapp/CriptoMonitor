@@ -4,7 +4,7 @@
 // por enquanto, só o admin consegue alternar. Quando o módulo Forex entrar, o
 // acesso passará a exigir assinatura do plano Forex (ver gating em ModuleSwitcher).
 
-export type ModuleId = "crypto" | "forex";
+export type ModuleId = "crypto" | "b3" | "forex";
 
 export interface MarketModule {
   id: ModuleId;
@@ -21,6 +21,13 @@ export const MODULES: MarketModule[] = [
     icon: "₿",
     description: "Bitcoin, altcoins, derivativos e on-chain",
     available: true,
+  },
+  {
+    id: "b3",
+    label: "B3 · Ações",
+    icon: "🇧🇷",
+    description: "Ações brasileiras (B3) — preço, volume e fluxo",
+    available: false,
   },
   {
     id: "forex",

@@ -8,7 +8,7 @@ import Chart, { type ActiveLayers } from "../components/Chart";
 import ChartTypeSelector from "../components/ChartTypeSelector";
 import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
-import ForexPlaceholder from "../components/ForexPlaceholder";
+import MarketPlaceholder from "../components/MarketPlaceholder";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
@@ -95,10 +95,10 @@ export default function Dashboard() {
     setLivePrice(null);
   }, [asset]);
 
-  // Forex ainda é só para admin (preview). Se um não-admin tiver "forex" salvo
-  // no localStorage, volta para Crypto assim que o papel for resolvido.
+  // Mercados ainda não liberados (B3, Forex) são preview só de admin. Se um não-admin
+  // tiver um deles salvo no localStorage, volta para Crypto quando o papel resolver.
   useEffect(() => {
-    if (market === "forex" && !adminLoading && !isAdmin) setMarket("crypto");
+    if (market !== "crypto" && !adminLoading && !isAdmin) setMarket("crypto");
   }, [market, adminLoading, isAdmin]);
 
   const { payload, updatedAt } = useSnapshot(asset, plan);
@@ -164,8 +164,8 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
-        {market === "forex" ? (
-          <ForexPlaceholder onBack={() => setMarket("crypto")} />
+        {market !== "crypto" ? (
+          <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
           <>
         <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} livePrice={livePrice} />
