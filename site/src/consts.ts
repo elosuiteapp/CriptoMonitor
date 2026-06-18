@@ -1,6 +1,5 @@
-// Constantes do site público. APP_URL aponta para o cockpit (app).
-// TODO(domínio): trocar APP_URL para https://app.orbeview.com quando o DNS estiver pronto.
-export const APP_URL = "https://cripto-monitor-rosy.vercel.app";
+// Constantes do site público. APP_URL aponta para o cockpit (app), no domínio próprio.
+export const APP_URL = "https://app.orbeview.com";
 export const SITE_URL = "https://orbeview.com";
 
 export const SIGNUP_URL = `${APP_URL}/login`;
