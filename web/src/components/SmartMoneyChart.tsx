@@ -14,7 +14,7 @@ import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
-import { type OiPoint } from "../lib/liquidationModel";
+import { LONG_GRADIENT, SHORT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import { subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
@@ -465,13 +465,17 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             Heatmap de liquidações · estimativa (modelo de alavancagem)
           </div>
-          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 text-[9px] text-muted-foreground">
-            <span>fraco</span>
-            <span
-              className="h-2 w-24 rounded"
-              style={{ background: "linear-gradient(to right, rgb(12,16,40), rgb(49,46,129), rgb(13,148,136), rgb(132,204,22), rgb(250,204,21))" }}
-            />
-            <span>forte</span>
+          {/* Legenda por lado: vermelho = longs (abaixo), verde = shorts (acima);
+              brilho = intensidade da zona. (Igual ao cockpit.) */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-9 rounded" style={{ background: LONG_GRADIENT }} />
+              longs ↓
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-9 rounded" style={{ background: SHORT_GRADIENT }} />
+              shorts ↑
+            </span>
           </div>
           <div
             ref={heatTipRef}
