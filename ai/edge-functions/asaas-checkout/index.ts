@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
   if (cpf.length !== 11 && cpf.length !== 14) {
     return json(200, {
       code: "cpf_required",
-      error: "Informe seu CPF no perfil (menu do seu nome → Finalizar cadastro) para assinar em reais.",
+      error: "Informe seu CPF no perfil (menu do seu nome → Editar perfil) para assinar em reais.",
     });
   }
 
