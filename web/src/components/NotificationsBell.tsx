@@ -5,6 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useNotifications, type NotificationRow } from "../hooks/useNotifications";
 import { usePush } from "../hooks/usePush";
+import { playAlertSound } from "../lib/sound";
 
 const fmtTime = (iso: string) => {
   const d = new Date(iso);
@@ -23,11 +24,12 @@ export default function NotificationsBell({ user }: { user: User }) {
   const navigate = useNavigate();
 
   const pushToast = useCallback((n: NotificationRow) => {
+    playAlertSound(); // aviso sonoro quando um alerta dispara com o app aberto
     setToasts((prev) => [...prev, n]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 6500);
   }, []);
 
-  const { items, unread, markAllRead } = useNotifications(user, pushToast);
+  const { items, unread, markAllRead, clearAll } = useNotifications(user, pushToast);
   const push = usePush(user);
 
   useEscapeKey(() => setOpen(false), open);
@@ -52,13 +54,20 @@ export default function NotificationsBell({ user }: { user: User }) {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
             <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
-              <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
                 <span className="text-sm font-semibold text-foreground">Notificações</span>
-                {unread > 0 && (
-                  <button onClick={markAllRead} className="text-[11px] text-primary hover:underline">
-                    Marcar todas como lidas
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {unread > 0 && (
+                    <button onClick={markAllRead} className="text-[11px] text-primary hover:underline">
+                      Marcar lidas
+                    </button>
+                  )}
+                  {items.length > 0 && (
+                    <button onClick={clearAll} className="text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline">
+                      Limpar
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="max-h-80 overflow-y-auto">

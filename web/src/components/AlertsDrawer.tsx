@@ -13,6 +13,7 @@ interface AlertRow {
   metric: string;
   condition: { op?: string; value?: number; equals?: string };
   active: boolean;
+  last_triggered_at: string | null;
 }
 
 interface Props {
@@ -59,6 +60,31 @@ function gammaLevels(g: GammaData | null): { name: string; value: number }[] {
     }
   }
   return out.sort((a, b) => b.value - a.value);
+}
+
+/** Estado visual do alerta: verde = ativo aguardando, laranja = já atingido,
+ *  cinza = pausado. Baseado em `active` + `last_triggered_at`. */
+function alertStatus(r: AlertRow): { label: string; box: string; dot: string; text: string } {
+  if (!r.active)
+    return {
+      label: "pausado",
+      box: "border-border bg-card opacity-60 dark:bg-card/60",
+      dot: "bg-muted-foreground/50",
+      text: "text-muted-foreground",
+    };
+  if (r.last_triggered_at)
+    return {
+      label: "atingido",
+      box: "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+      dot: "bg-amber-500",
+      text: "text-amber-700 dark:text-amber-400",
+    };
+  return {
+    label: "ativo",
+    box: "border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
+    dot: "bg-emerald-500",
+    text: "text-emerald-700 dark:text-emerald-400",
+  };
 }
 
 /** Texto legível de um alerta para a lista ("preço acima de US$ 66.000"). */
@@ -355,30 +381,34 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
           <h3 className="mt-6 text-sm font-semibold text-foreground">Seus alertas</h3>
           <div className="mt-3 space-y-2">
             {rows.length === 0 && <p className="text-sm text-muted-foreground">Nenhum alerta criado ainda.</p>}
-            {rows.map((r) => (
-              <div
-                key={r.id}
-                className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                  editingId === r.id ? "border-primary bg-primary/5" : "border-border bg-card dark:bg-card/60"
-                } ${r.active ? "" : "opacity-60"}`}
-              >
-                <span className="text-foreground">
-                  <strong>{r.asset}</strong> · {describe(r)}
-                  {!r.active && <span className="ml-1 text-[11px] text-muted-foreground">(pausado)</span>}
-                </span>
-                <div className="mt-1.5 flex items-center gap-3 text-[11px]">
-                  <button onClick={() => toggleActive(r)} className="text-muted-foreground transition-colors hover:text-foreground">
-                    {r.active ? "Pausar" : "Reativar"}
-                  </button>
-                  <button onClick={() => startEdit(r)} className="text-primary hover:underline">
-                    Editar
-                  </button>
-                  <button onClick={() => remove(r.id)} className="text-rose-600 hover:underline dark:text-rose-400">
-                    Excluir
-                  </button>
+            {rows.map((r) => {
+              const st = alertStatus(r);
+              const boxCls = editingId === r.id ? "border-primary bg-primary/5" : st.box;
+              return (
+                <div key={r.id} className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${boxCls}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-foreground">
+                      <strong>{r.asset}</strong> · {describe(r)}
+                    </span>
+                    <span className={`inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${st.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                      {st.label}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-3 text-[11px]">
+                    <button onClick={() => toggleActive(r)} className="text-muted-foreground transition-colors hover:text-foreground">
+                      {r.active ? "Pausar" : "Reativar"}
+                    </button>
+                    <button onClick={() => startEdit(r)} className="text-primary hover:underline">
+                      Editar
+                    </button>
+                    <button onClick={() => remove(r.id)} className="text-rose-600 hover:underline dark:text-rose-400">
+                      Excluir
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </aside>

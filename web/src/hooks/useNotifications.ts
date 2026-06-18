@@ -73,5 +73,12 @@ export function useNotifications(user: User | null, onNew?: (n: NotificationRow)
     await supabase.from("notifications").update({ read_at: now }).in("id", ids);
   }, [user, items]);
 
-  return { items, loading, unread, reload: load, markAllRead };
+  // Limpa o histórico do sino (apaga todas as notificações do usuário).
+  const clearAll = useCallback(async () => {
+    if (!user) return;
+    setItems([]);
+    await supabase.from("notifications").delete().eq("user_id", user.id);
+  }, [user]);
+
+  return { items, loading, unread, reload: load, markAllRead, clearAll };
 }
