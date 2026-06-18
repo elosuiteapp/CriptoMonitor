@@ -1,0 +1,64 @@
+---
+import Base from "../../layouts/Base.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import { listEditions, getEdition, fmtDate } from "../../lib/newsletter";
+import { SIGNUP_URL, SITE_URL } from "../../consts";
+import { marked } from "marked";
+
+export async function getStaticPaths() {
+  const editions = await listEditions();
+  return editions.map((e) => ({ params: { slug: e.slug } }));
+}
+
+const { slug } = Astro.params;
+const ed = await getEdition(slug as string);
+if (!ed) return Astro.redirect("/newsletter");
+
+const teaserHtml = marked.parse(ed.teaser_md || "") as string;
+const url = new URL(`/newsletter/${ed.slug}`, SITE_URL).href;
+const jsonld = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: ed.title,
+  description: ed.excerpt,
+  datePublished: ed.published_at,
+  author: { "@type": "Organization", name: "OrbeView" },
+  publisher: { "@type": "Organization", name: "OrbeView" },
+  mainEntityOfPage: url,
+};
+---
+
+<Base title={`${ed.title} — OrbeView`} description={ed.excerpt}>
+  <Nav />
+  <article class="mx-auto max-w-3xl px-4 py-16">
+    <a href="/newsletter" class="text-sm text-muted transition-colors hover:text-fg">← Newsletter</a>
+    <div class="mt-4 flex items-center gap-2 text-xs text-muted">
+      <span aria-hidden>{ed.cover_emoji ?? "📰"}</span>
+      <span>{fmtDate(ed.published_at)}</span>
+    </div>
+    <h1 class="mt-3 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">{ed.title}</h1>
+    <p class="mt-4 text-lg text-muted">{ed.excerpt}</p>
+
+    <div class="prose-news mt-8" set:html={teaserHtml}></div>
+
+    <!-- Paywall (SEO indexa o teaser; conteúdo completo no app) -->
+    <div class="relative mt-2">
+      <div class="pointer-events-none h-20 -translate-y-full bg-gradient-to-b from-transparent to-base"></div>
+      <div class="rounded-2xl border border-primary/30 bg-card p-6 text-center">
+        <p class="text-sm font-semibold">Continue lendo a edição completa</p>
+        <p class="mx-auto mt-1 max-w-sm text-sm text-muted">
+          Crie sua conta grátis para ler as edições completas e receber a newsletter toda semana.
+        </p>
+        <a
+          href={SIGNUP_URL}
+          class="mt-4 inline-block rounded-lg bg-primary-strong px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary"
+        >
+          Ler completo · grátis
+        </a>
+      </div>
+    </div>
+  </article>
+  <Footer />
+  <script type="application/ld+json" set:html={JSON.stringify(jsonld)} is:inline></script>
+</Base>

@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
+import NewsletterForm from "../components/NewsletterForm.astro";
 import { SIGNUP_URL, PRICING, MARKETS } from "../consts";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -179,19 +180,7 @@ const STEPS = [
         Toda semana, uma edição traduzindo o que a mesa institucional está vendo — gamma, fluxo e
         liquidez. Grátis para quem tem conta.
       </p>
-      <form class="mx-auto mt-8 flex max-w-md flex-col gap-3 sm:flex-row" action={SIGNUP_URL} method="get">
-        <input
-          type="email"
-          name="email"
-          required
-          placeholder="seu@email.com"
-          class="w-full rounded-lg border border-line bg-card px-4 py-3 text-sm text-fg outline-none transition-colors focus:border-primary"
-        />
-        <button type="submit" class="shrink-0 rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary">
-          Quero receber
-        </button>
-      </form>
-      <p class="mt-3 text-xs text-muted">Sem spam. Cancele quando quiser.</p>
+      <div class="mt-8"><NewsletterForm /></div>
     </div>
   </section>
 

@@ -1,0 +1,64 @@
+---
+// Inscrição na newsletter = cria conta Free via magic-link (Supabase OTP) + registra
+// o assinante. 100% client-side com a anon key. Sem servidor.
+---
+
+<form id="nl-form" class="mx-auto flex max-w-md flex-col gap-3 sm:flex-row">
+  <input
+    id="nl-email"
+    name="email"
+    type="email"
+    required
+    autocomplete="email"
+    placeholder="seu@email.com"
+    class="w-full rounded-lg border border-line bg-card px-4 py-3 text-sm text-fg outline-none transition-colors focus:border-primary"
+  />
+  <button
+    id="nl-btn"
+    type="submit"
+    class="shrink-0 rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary disabled:opacity-60"
+  >
+    Quero receber
+  </button>
+</form>
+<p id="nl-msg" class="mt-3 text-xs text-muted">Sem spam. Cancele quando quiser.</p>
+
+<script>
+  import { supabase } from "../lib/supabase";
+  import { APP_URL } from "../consts";
+
+  const form = document.getElementById("nl-form") as HTMLFormElement | null;
+  const emailEl = document.getElementById("nl-email") as HTMLInputElement | null;
+  const btn = document.getElementById("nl-btn") as HTMLButtonElement | null;
+  const msg = document.getElementById("nl-msg");
+
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!msg) return;
+    const email = (emailEl?.value || "").trim().toLowerCase();
+    if (!email) return;
+    if (!supabase) {
+      msg.textContent = "Cadastro temporariamente indisponível. Tente em instantes.";
+      return;
+    }
+    if (btn) btn.disabled = true;
+    msg.textContent = "Enviando…";
+    try {
+      await supabase
+        .from("newsletter_subscribers")
+        .upsert({ email, source: "site" }, { onConflict: "email", ignoreDuplicates: true });
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true, emailRedirectTo: APP_URL },
+      });
+      if (error) throw error;
+      msg.textContent =
+        "Pronto! Enviamos um link pro seu e-mail — confirme para ativar sua conta grátis e receber a newsletter.";
+      form.reset();
+    } catch (_err) {
+      msg.textContent = "Não foi possível inscrever agora. Tente novamente em instantes.";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+</script>

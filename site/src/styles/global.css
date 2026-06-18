@@ -36,3 +36,42 @@ body {
     radial-gradient(60% 50% at 50% 0%, rgba(99, 102, 241, 0.18), transparent 70%),
     radial-gradient(40% 40% at 85% 10%, rgba(34, 197, 94, 0.08), transparent 70%);
 }
+
+/* conteúdo de markdown (newsletter, termos) */
+.prose-news {
+  color: var(--color-muted);
+  line-height: 1.75;
+}
+.prose-news h2 {
+  margin: 1.6rem 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-fg);
+}
+.prose-news h3 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.prose-news p {
+  margin: 0.75rem 0;
+}
+.prose-news strong {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.prose-news ul {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.prose-news li {
+  margin: 0.3rem 0;
+}
+.prose-news a {
+  color: var(--color-primary);
+}
+.prose-news a:hover {
+  text-decoration: underline;
+}
