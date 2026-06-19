@@ -101,6 +101,11 @@ function buildSynthesis(corr: Record<string, CorrVal>, asset: string): string | 
     if (vix <= -0.3) parts.push(`cai quando o medo aumenta (VIX ${fmtCorr(vix)})`);
     else if (vix >= 0.3) parts.push(`sobe junto com o VIX (${fmtCorr(vix)}), o que é incomum`);
   }
+  const jpy = corr["USDJPY"]?.c30;
+  if (jpy != null) {
+    if (jpy >= 0.3) parts.push(`risco-on com o iene fraco (USD/JPY ${fmtCorr(jpy)})`);
+    else if (jpy <= -0.3) parts.push(`sobe quando o iene fortalece (USD/JPY ${fmtCorr(jpy)})`);
+  }
 
   if (!parts.length) return null;
   return `${asset}: ${parts.join("; ")}. Em dias de CPI/FOMC o macro costuma dominar — veja o calendário.`;
@@ -134,10 +139,15 @@ const MACRO_HELP: Record<string, string> = {
   GOLD: "Ouro — reserva de valor clássica. Correlação direta (+) sugere a moeda sendo tratada como 'ouro digital' / proteção.",
   US10Y: "Juro de 10 anos dos EUA (custo do dinheiro). Juros subindo pressionam ativos de risco — correlação inversa (−) é comum.",
   VIX: "VIX — índice do medo do mercado. Correlação inversa forte (−) = a moeda cai quando o pânico aumenta.",
+  USDJPY: "USD/JPY (iene). Sobe quando o iene enfraquece — 'carry trade' ligado, risco-on; quedas bruscas costumam vir com risco-off global.",
+  NIKKEI: "Nikkei 225 — bolsa do Japão. Termômetro da sessão asiática; correlação alta (+) = perfil risco-on.",
+  HSI: "Hang Seng — bolsa de Hong Kong. Sensível à China e ao PBOC; correlação alta (+) = risco-on asiático.",
+  DAX: "DAX — bolsa da Alemanha. Termômetro de risco europeu; correlação alta (+) = risco-on.",
+  EURUSD: "EUR/USD — euro vs dólar. Sobe quando o dólar cai; correlação direta (+) com cripto é comum (inverso do DXY).",
 };
 
 
-const KEY_FREE = ["NASDAQ", "DXY", "VIX"]; // "vento macro" liberado no Free (risco, dólar, medo)
+const KEY_FREE = ["NASDAQ", "DXY", "VIX", "USDJPY"]; // "vento macro" no Free: risco, dólar, medo, carry (iene)
 
 /** Camada institucional do Macro — vitrine de upgrade para o Free. */
 function MacroUpgradeCard() {

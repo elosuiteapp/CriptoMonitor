@@ -30,6 +30,11 @@ _MACRO = [
     ("GOLD", "Ouro", "GC=F"),
     ("US10Y", "Treasury 10 anos", "^TNX"),
     ("VIX", "VIX (índice do medo)", "^VIX"),
+    ("USDJPY", "Iene (USD/JPY)", "USDJPY=X"),   # carry trade — gatilho de risco-off
+    ("NIKKEI", "Nikkei 225", "^N225"),          # sessão asiática (Japão)
+    ("HSI", "Hang Seng", "^HSI"),               # China / PBOC
+    ("DAX", "DAX (Alemanha)", "^GDAXI"),        # risco europeu
+    ("EURUSD", "Euro (EUR/USD)", "EURUSD=X"),   # euro vs dólar (inverso do DXY)
 ]
 _CRYPTO_SYMBOL = {
     "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT", "BNB": "BNBUSDT",
