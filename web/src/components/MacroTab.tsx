@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { fmtPct } from "../lib/format";
 import { supabase } from "../lib/supabase";
@@ -136,8 +137,34 @@ const MACRO_HELP: Record<string, string> = {
 };
 
 
-/** Aba "Macro & Correlações" (PRD §8.7 / §8.8.3) — Pro+. */
-export default function MacroTab({ asset }: { asset: string }) {
+const KEY_FREE = ["NASDAQ", "DXY", "VIX"]; // "vento macro" liberado no Free (risco, dólar, medo)
+
+/** Camada institucional do Macro — vitrine de upgrade para o Free. */
+function MacroUpgradeCard() {
+  return (
+    <div className="rounded-2xl border border-primary/30 bg-primary/[0.06] p-5">
+      <div className="flex items-center gap-2">
+        <span className="text-lg" aria-hidden>🔒</span>
+        <h3 className="text-sm font-semibold text-foreground">Camada institucional · Pro</h3>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Liquidez &amp; Direção (DeFi)</strong> — stablecoins (dry powder), volume DEX e fees</span></li>
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Posicionamento institucional</strong> — CME/CFTC (asset managers × hedge funds)</span></li>
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Matriz completa de correlações</strong> — S&amp;P 500, Ouro, Treasury 10a e mais</span></li>
+      </ul>
+      <Link
+        to="/pricing"
+        className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+      >
+        Desbloquear no Pro →
+      </Link>
+    </div>
+  );
+}
+
+/** Aba "Macro & Correlações" (PRD §8.7 / §8.8.3). Versão leve liberada no Free
+ *  (síntese + 3 correlações-chave + calendário); camada institucional só no Pro. */
+export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }) {
   const [macro, setMacro] = useState<MacroAssetRow[]>([]);
   const [corr, setCorr] = useState<Record<string, CorrVal>>({});
   const [events, setEvents] = useState<EconEvent[] | null>(null);
@@ -252,6 +279,7 @@ export default function MacroTab({ asset }: { asset: string }) {
     if (cb == null) return -1;
     return Math.abs(cb) - Math.abs(ca);
   });
+  const visibleMacro = pro ? sortedMacro : sortedMacro.filter((m) => KEY_FREE.includes(m.symbol));
 
   return (
     <section className="space-y-4">
@@ -264,8 +292,8 @@ export default function MacroTab({ asset }: { asset: string }) {
         </div>
       )}
 
-      {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME */}
-      {(liquidity || cot) && (
+      {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME — Pro */}
+      {pro && (liquidity || cot) && (
         <div className="space-y-3">
           {liquidity && <LiquidityDirectionPanel liquidity={liquidity} macro={macroRow} updatedAt={liqTs} />}
           {cot && <CotCard cot={cot} />}
@@ -285,7 +313,7 @@ export default function MacroTab({ asset }: { asset: string }) {
           </div>
         )}
 
-        {sortedMacro.map((m) => (
+        {visibleMacro.map((m) => (
           <div key={m.symbol} className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
             <div className="flex items-baseline justify-between">
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -303,6 +331,8 @@ export default function MacroTab({ asset }: { asset: string }) {
           </div>
         ))}
       </div>
+
+      {!pro && <MacroUpgradeCard />}
 
       {/* Como ler este painel */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4 text-xs text-muted-foreground">

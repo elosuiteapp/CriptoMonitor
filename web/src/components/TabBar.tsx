@@ -9,7 +9,7 @@ interface Props {
 
 const TABS: { id: TabId; label: string; need: "free" | "pro" | "expert" }[] = [
   { id: "cockpit", label: "Cockpit Principal", need: "free" },
-  { id: "macro", label: "Macro & Correlações", need: "pro" },
+  { id: "macro", label: "Macro & Correlações", need: "free" }, // aberta no Free (versão leve); Pro destrava a camada institucional dentro
   { id: "smart", label: "Smart Money & On-chain", need: "expert" },
   { id: "reports", label: "Relatórios", need: "free" }, // conteúdo gated por RLS/plano
 ];

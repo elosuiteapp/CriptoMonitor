@@ -179,12 +179,7 @@ export default function Dashboard() {
 
         <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
 
-        {tab === "macro" &&
-          (advanced ? (
-            <MacroTab asset={asset} />
-          ) : (
-            <LockedTab title="Macro & Correlações" plan="Pro" />
-          ))}
+        {tab === "macro" && <MacroTab asset={asset} pro={advanced} />}
         {tab === "smart" &&
           (canSmart ? (
             <SmartMoneyTab asset={asset} />
