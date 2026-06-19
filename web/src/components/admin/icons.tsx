@@ -132,6 +132,13 @@ export const IconNewsletter = (p: P) => (
   </svg>
 );
 
+export const IconSocial = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m3 11 18-5v12L3 14v-3z" />
+    <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+  </svg>
+);
+
 export const IconBack = (p: P) => (
   <svg {...base(p)}>
     <line x1="19" y1="12" x2="5" y2="12" />

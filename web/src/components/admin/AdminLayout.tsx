@@ -11,6 +11,7 @@ import {
   IconOverview,
   IconPlans,
   IconRevenue,
+  IconSocial,
   IconSystem,
   IconUsage,
   IconUsers,
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/admin/usage", label: "Uso & IA", icon: IconUsage },
   { to: "/admin/affiliates", label: "Afiliados", icon: IconAffiliate },
   { to: "/admin/newsletter", label: "Newsletter", icon: IconNewsletter },
+  { to: "/admin/social", label: "Social", icon: IconSocial },
   { to: "/admin/system", label: "Saúde do sistema", icon: IconSystem },
   { to: "/admin/audit", label: "Auditoria", icon: IconAudit },
 ];
