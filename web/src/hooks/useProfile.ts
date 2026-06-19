@@ -53,7 +53,7 @@ export function useProfile(user: User | null) {
     [user],
   );
 
-  // Dados vindos do provedor OAuth (Google manda avatar; Microsoft manda nome).
+  // Dados vindos do provedor OAuth (Google manda avatar/nome).
   const meta = (user?.user_metadata ?? {}) as Record<string, unknown>;
   const avatarUrl = (meta.avatar_url ?? meta.picture ?? null) as string | null;
   const email = user?.email ?? null;

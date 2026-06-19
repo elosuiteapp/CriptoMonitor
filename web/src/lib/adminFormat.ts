@@ -14,7 +14,6 @@ export const fmtCompact = (n: number | null | undefined) =>
 
 /** Rótulo amigável do gateway de pagamento. */
 export const GATEWAY_LABEL: Record<string, string> = {
-  mercadopago: "Mercado Pago",
   asaas: "Asaas",
   paddle: "Paddle",
   manual: "Manual",
@@ -24,7 +23,6 @@ export const gatewayLabel = (g: string | null | undefined) =>
 
 /** Cor de marca por gateway (para barras/badges). */
 export const GATEWAY_COLOR: Record<string, string> = {
-  mercadopago: "#00b1ea",
   asaas: "#1565ff",
   paddle: "#ffd230",
   manual: "#64748b",

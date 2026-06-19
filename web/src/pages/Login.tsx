@@ -14,22 +14,6 @@ function GoogleIcon() {
   );
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden className="shrink-0">
-      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
-      <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
-      <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
-      <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
-    </svg>
-  );
-}
-
-// Login social: Google ativo. Microsoft (Azure) fica OCULTO até configurarmos o
-// provider no Supabase — o código de signInWithMicrosoft segue pronto; basta virar
-// esta flag para true e habilitar o Azure (tenant `common`). Ver memória build-status.
-const SHOW_MICROSOFT_LOGIN = false;
-
 // Site público (landing). Quando o domínio estiver no ar: https://orbeview.com.
 const LANDING_URL = "https://orbeview.com";
 
@@ -44,7 +28,7 @@ const fieldCls =
   "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary";
 
 export default function Login() {
-  const { signIn, signUp, signInWithGoogle, signInWithMicrosoft } = useAuth();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -177,17 +161,6 @@ export default function Login() {
             <GoogleIcon />
             Entrar com Google
           </button>
-
-          {SHOW_MICROSOFT_LOGIN && (
-            <button
-              type="button"
-              onClick={() => signInWithMicrosoft()}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              <MicrosoftIcon />
-              Entrar com Microsoft <span className="text-xs text-muted-foreground">(Hotmail/Outlook)</span>
-            </button>
-          )}
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === "signin" ? (

@@ -32,13 +32,6 @@ export function useAuth() {
       }),
     signInWithGoogle: () =>
       supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } }),
-    // Microsoft (Azure) cobre Hotmail/Outlook/Live. Exige o provider Azure habilitado no
-    // Supabase com tenant "common" p/ aceitar contas pessoais (ver passos de config).
-    signInWithMicrosoft: () =>
-      supabase.auth.signInWithOAuth({
-        provider: "azure",
-        options: { scopes: "email", redirectTo: window.location.origin },
-      }),
     signOut: () => supabase.auth.signOut(),
   };
 }
