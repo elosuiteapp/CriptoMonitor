@@ -21,6 +21,7 @@ interface EconEvent {
   title: string;
   date: string;
   impact: string;
+  country: string;
   forecast: string | null;
   previous: string | null;
 }
@@ -128,6 +129,23 @@ function fmtEvtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+// Calendário: bandeira por moeda + estrelas por impacto (1=baixo, 2=médio, 3=alto).
+const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", JPY: "🇯🇵", CNY: "🇨🇳", GBP: "🇬🇧" };
+const impactStars = (impact: string) => (impact === "High" ? 3 : impact === "Medium" ? 2 : 1);
+const impactLabel = (impact: string) => (impact === "High" ? "alto" : impact === "Medium" ? "médio" : "baixo");
+
+function Stars({ impact }: { impact: string }) {
+  const n = impactStars(impact);
+  const color = impact === "High" ? "text-rose-500" : "text-amber-500";
+  return (
+    <span className="shrink-0 tracking-tighter" title={`Impacto ${impactLabel(impact)}`}>
+      {[1, 2, 3].map((i) => (
+        <span key={i} className={i <= n ? color : "text-muted-foreground/30"}>★</span>
+      ))}
+    </span>
+  );
 }
 
 // Explicação por referência (tooltip no ⓘ de cada card)
@@ -367,7 +385,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
       {/* Calendário econômico */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Calendário econômico (EUA)</h3>
+          <h3 className="text-sm font-semibold text-foreground">Calendário econômico (global)</h3>
           <span className="text-[11px] text-muted-foreground">eventos que mexem com o macro</span>
         </div>
         {events == null && <p className="mt-3 text-xs text-muted-foreground">Carregando…</p>}
@@ -380,7 +398,8 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
             return (
               <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-xs">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${e.impact === "High" ? "bg-rose-500" : "bg-amber-500"}`} />
+                  <span className="shrink-0 text-sm leading-none" title={e.country} aria-hidden>{FLAG[e.country] ?? "🏳"}</span>
+                  <Stars impact={e.impact} />
                   <span className="truncate text-foreground">{e.title}</span>
                   {cd && (
                     <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
@@ -400,7 +419,9 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
             );
           })}
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">Fonte: ForexFactory · USD, alto/médio impacto.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">
+          Fonte: ForexFactory · EUA (alto/médio) + Japão, Euro e China (alto). ★★★ alto · ★★ médio.
+        </p>
       </div>
 
       <p className="text-xs text-muted-foreground">
