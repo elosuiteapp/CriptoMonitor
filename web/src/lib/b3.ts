@@ -90,10 +90,11 @@ export async function fetchB3Overview(): Promise<B3Overview | null> {
   }
 }
 
-/** Candles diários (3 meses) de qualquer ativo da B3 (IBOV/dólar/ações). */
-export async function fetchB3Chart(ticker: string): Promise<B3Candle[]> {
+/** Candles de qualquer ativo da B3 (IBOV/dólar/ações) no timeframe pedido
+ *  (15m/1h/4h/1d/1w/1M). 4h é agregado de 1h no servidor. */
+export async function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[]> {
   try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "chart", ticker } });
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "chart", ticker, tf } });
     if (error || !data) return [];
     return ((data as { candles?: B3Candle[] }).candles ?? []).filter((c) => Number.isFinite(c.close));
   } catch {

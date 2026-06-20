@@ -37,6 +37,26 @@ const GLOBALS: [string, string][] = [
   ["VIX", "^VIX"],
 ];
 
+// Timeframe → (intervalo, janela) do Yahoo. 4h não existe no Yahoo → agrega 1h.
+const TF_MAP: Record<string, { interval: string; range: string; agg?: number }> = {
+  "15m": { interval: "15m", range: "5d" },
+  "1h": { interval: "60m", range: "1mo" },
+  "4h": { interval: "60m", range: "3mo", agg: 4 },
+  "1d": { interval: "1d", range: "1y" },
+  "1w": { interval: "1wk", range: "5y" },
+  "1M": { interval: "1mo", range: "max" },
+};
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
+function aggregate(c: Candle[], n: number): Candle[] {
+  const out: Candle[] = [];
+  for (let i = 0; i < c.length; i += n) {
+    const g = c.slice(i, i + n);
+    if (!g.length) continue;
+    out.push({ time: g[0].time, open: g[0].open, high: Math.max(...g.map((x) => x.high)), low: Math.min(...g.map((x) => x.low)), close: g[g.length - 1].close, volume: g.reduce((s, x) => s + (x.volume || 0), 0) });
+  }
+  return out;
+}
+
 const Y = "https://query1.finance.yahoo.com/v8/finance/chart/";
 // deno-lint-ignore no-explicit-any
 async function yahoo(symbol: string, range: string, interval: string): Promise<any> {
@@ -122,12 +142,14 @@ Deno.serve(async (req) => {
 
   if (body.mode === "chart" && body.ticker) {
     const sym = TMAP[String(body.ticker)] ?? String(body.ticker);
-    const res = (await yahoo(sym, "3mo", "1d"))?.chart?.result?.[0];
+    const tf = TF_MAP[String(body.tf)] ?? TF_MAP["1d"];
+    const res = (await yahoo(sym, tf.range, tf.interval))?.chart?.result?.[0];
     const ts: number[] = res?.timestamp ?? [];
     const q = res?.indicators?.quote?.[0] ?? {};
-    const candles = ts
+    let candles = ts
       .map((t, i) => ({ time: t, open: q.open?.[i], high: q.high?.[i], low: q.low?.[i], close: q.close?.[i], volume: q.volume?.[i] }))
       .filter((c) => c.close != null);
+    if (tf.agg) candles = aggregate(candles as Candle[], tf.agg);
     return json({ candles });
   }
 

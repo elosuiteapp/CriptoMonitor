@@ -1,45 +1,110 @@
 import { useEffect, useRef } from "react";
 
-import { createChart, type UTCTimestamp } from "lightweight-charts";
+import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 
+import { useTheme } from "../../hooks/useTheme";
 import type { B3Candle } from "../../lib/b3";
+import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
+import { ema } from "../../lib/indicators/ta";
+import type { ChartType } from "../../lib/marketData";
 
-/** Gráfico de candles da B3 (Lightweight Charts) — preço diário, sem camadas. */
-export default function B3Chart({ candles }: { candles: B3Candle[] }) {
-  const ref = useRef<HTMLDivElement>(null);
+const UP = "#10b981";
+const DOWN = "#f43f5e";
+const EMAS = [
+  { p: 9, color: "#eab308" },
+  { p: 21, color: "#3b82f6" },
+  { p: 50, color: "#a855f7" },
+];
 
+interface Props {
+  candles: B3Candle[];
+  chartType: ChartType;
+  showEma: boolean;
+  showVolume: boolean;
+}
+
+/** Gráfico da B3 — reusa o tema/comportamento do gráfico cripto (Lightweight Charts):
+ *  tipos (velas/barras/linha/área), indicadores (EMA 9/21/50) e volume. Sem WS (B3 atrasado). */
+export default function B3Chart({ candles, chartType, showEma, showVolume }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const { isDark } = useTheme();
+
+  // cria o chart uma vez
   useEffect(() => {
-    const el = ref.current;
-    if (!el || candles.length < 2) return;
-    const dark = document.documentElement.classList.contains("dark");
+    const el = wrapRef.current;
+    if (!el) return;
+    const c = chartAxisColors(isDark);
     const chart = createChart(el, {
-      width: el.clientWidth,
-      height: 320,
-      layout: { background: { color: "transparent" }, textColor: dark ? "#9aa0ae" : "#475569", fontFamily: "Inter, sans-serif" },
-      grid: { vertLines: { visible: false }, horzLines: { color: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)" } },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: false },
+      autoSize: true,
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: c.text, fontFamily: "system-ui, sans-serif" },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      crosshair: { mode: CrosshairMode.Normal },
+      localization: chartLocalization,
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border, timeVisible: true, tickMarkFormatter: chartTickFormatter },
     });
-    const series = chart.addCandlestickSeries({
-      upColor: "#10b981",
-      downColor: "#f43f5e",
-      wickUpColor: "#10b981",
-      wickDownColor: "#f43f5e",
-      borderVisible: false,
-    });
-    series.setData(
-      [...candles]
-        .sort((a, b) => a.time - b.time)
-        .map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })),
-    );
-    chart.timeScale().fitContent();
-    const onResize = () => chart.applyOptions({ width: el.clientWidth });
-    window.addEventListener("resize", onResize);
+    chartRef.current = chart;
     return () => {
-      window.removeEventListener("resize", onResize);
       chart.remove();
+      chartRef.current = null;
     };
-  }, [candles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return <div ref={ref} className="w-full" />;
+  // recolore ao trocar de tema
+  useEffect(() => {
+    const c = chartAxisColors(isDark);
+    chartRef.current?.applyOptions({
+      layout: { textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+  }, [isDark]);
+
+  // (re)desenha série + indicadores
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const sorted = [...candles].sort((a, b) => a.time - b.time);
+    // deno-lint-ignore no-explicit-any
+    const created: ISeriesApi<any>[] = [];
+
+    const price =
+      chartType === "candles"
+        ? chart.addCandlestickSeries({ upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false })
+        : chartType === "bars"
+          ? chart.addBarSeries({ upColor: UP, downColor: DOWN })
+          : chartType === "line"
+            ? chart.addLineSeries({ color: "#6366f1", lineWidth: 2 })
+            : chart.addAreaSeries({ lineColor: "#6366f1", topColor: "rgba(99,102,241,0.4)", bottomColor: "rgba(99,102,241,0.02)" });
+    if (chartType === "line" || chartType === "area") price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) as never);
+    else price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })) as never);
+    created.push(price);
+
+    if (showEma && sorted.length > 12) {
+      const closes = sorted.map((c) => c.close);
+      for (const e of EMAS) {
+        const vals = ema(closes, e.p);
+        const ls = chart.addLineSeries({ color: e.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        ls.setData(sorted.map((c, i) => ({ time: c.time as UTCTimestamp, value: vals[i] })) as never);
+        created.push(ls);
+      }
+    }
+
+    if (showVolume) {
+      const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
+      chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+      vol.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume || 0, color: c.close >= c.open ? "rgba(16,185,129,0.45)" : "rgba(244,63,94,0.45)" })) as never);
+      created.push(vol);
+    }
+
+    chart.timeScale().fitContent();
+    return () => {
+      for (const s of created) chart.removeSeries(s);
+    };
+  }, [candles, chartType, showEma, showVolume]);
+
+  return <div ref={wrapRef} className="h-[360px] w-full" />;
 }
