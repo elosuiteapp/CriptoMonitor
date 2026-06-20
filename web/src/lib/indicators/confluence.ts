@@ -110,6 +110,7 @@ export function computeMarketRead(
   intra?: Candle[],
   oiDeltaPct?: number | null,
   bookImbalance?: number | null,
+  macro?: { vixChg: number; dxyChg: number; us10yChg: number } | null,
 ): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
@@ -315,6 +316,21 @@ export function computeMarketRead(
     });
   }
 
+  // ── Contexto: MARÉ MACRO (risk-on/off via VIX/DXY/juros; não vota no viés) ──
+  let macroGate: number | null = null;
+  if (macro) {
+    macroGate = ((macro.vixChg < 0 ? 1 : -1) + (macro.dxyChg < 0 ? 1 : -1) + (macro.us10yChg < 0 ? 1 : -1)) / 3;
+    axes.push({
+      key: "macro",
+      label: "Maré macro (VIX/DXY/juros)",
+      group: "caráter",
+      dir: 0,
+      strength: clamp01(Math.abs(macroGate)),
+      available: true,
+      detail: `${macroGate > 0.2 ? "Risk-on — vento a favor de risco" : macroGate < -0.2 ? "Risk-off — vento contra" : "Neutro"} · VIX ${macro.vixChg >= 0 ? "↑" : "↓"} · DXY ${macro.dxyChg >= 0 ? "↑" : "↓"} · juros 10Y ${macro.us10yChg >= 0 ? "↑" : "↓"}`,
+    });
+  }
+
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
   const directional = [
     { dir: trendDir, str: trendStr, w: 0.28, avail: haveTrend },
@@ -370,6 +386,14 @@ export function computeMarketRead(
       divergences.push("Alta com book vendedor — parede de liquidez à venda acima pode segurar o movimento.");
     else if (bias < 0 && bookImbalance > 0)
       divergences.push("Queda com book comprador — liquidez de compra abaixo pode amortecer a queda.");
+  }
+
+  // Divergência viés × maré macro (risk-on/off contra o movimento).
+  if (macroGate != null && wsum && bias !== 0) {
+    if (bias < 0 && macroGate > 0.3)
+      divergences.push("Viés de baixa, mas a maré macro é risk-on (VIX/juros caindo) — pode limitar a queda.");
+    else if (bias > 0 && macroGate < -0.3)
+      divergences.push("Viés de alta contra maré macro risk-off (DXY/juros subindo) — vento contra.");
   }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────

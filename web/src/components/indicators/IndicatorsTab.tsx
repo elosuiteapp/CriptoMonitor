@@ -96,6 +96,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   const [c4h, setC4h] = useState<Candle[]>([]);
   const [c1h, setC1h] = useState<Candle[]>([]);
   const [oiDelta, setOiDelta] = useState<number | null>(null);
+  const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -127,11 +128,34 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
       } catch {
         /* OI é opcional */
       }
+      // Maré macro (VIX/DXY/juros via macro_assets — risk-on/off). Opcional.
+      let macroCtx: { vixChg: number; dxyChg: number; us10yChg: number } | null = null;
+      try {
+        const { data } = await supabase
+          .from("macro_assets")
+          .select("symbol, change_7d, ts")
+          .in("symbol", ["VIX", "DXY", "US10Y"])
+          .order("ts", { ascending: false })
+          .limit(30);
+        const rows = (data ?? []) as Array<{ symbol: string; change_7d: number | null; ts: string }>;
+        if (rows.length) {
+          const latestTs = rows[0].ts;
+          const at = rows.filter((r) => r.ts === latestTs);
+          const g = (s: string) => Number(at.find((r) => r.symbol === s)?.change_7d);
+          const vix = g("VIX");
+          const dxy = g("DXY");
+          const us10y = g("US10Y");
+          if ([vix, dxy, us10y].every((v) => Number.isFinite(v))) macroCtx = { vixChg: vix, dxyChg: dxy, us10yChg: us10y };
+        }
+      } catch {
+        /* macro opcional */
+      }
       if (!alive) return;
       setC1d(d);
       setC4h(h4);
       setC1h(h1);
       setOiDelta(oi);
+      setMacro(macroCtx);
       setLoading(false);
     })();
     return () => {
@@ -147,8 +171,8 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   }, [imbalance]);
 
   const read = useMemo(
-    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance),
-    [c1d, payload, c4h, oiDelta, bookImbalance],
+    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro),
+    [c1d, payload, c4h, oiDelta, bookImbalance, macro],
   );
   const leans: TfLean[] = useMemo(
     () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
