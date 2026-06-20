@@ -167,7 +167,11 @@ export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = []
   return { nCols: n, nBins, priceTop, priceBottom, refHigh: hi, refLow: lo, longValues, shortValues, values, max };
 }
 
-// ─── Cores por LADO: long (quente) × short (frio); intensidade = brilho ──────
+// ─── Cor por INTENSIDADE (paleta única "térmica", âmbar) ─────────────────────
+// escuro/quente → laranja-queimado → laranja → âmbar → amarelo. O LADO
+// (long/short) é comunicado pelas zonas-ímã rotuladas (verde/vermelho) e pelo
+// tooltip — não pelo preenchimento. Uma cor só deixa o fundo limpo e faz as
+// linhas verde/vermelho das zonas saltarem por cima (mais legível).
 type Stops = [number, [number, number, number]][];
 
 function rampColor(stops: Stops, x: number): [number, number, number] {
@@ -187,38 +191,21 @@ function rampColor(stops: Stops, x: number): [number, number, number] {
   return stops[stops.length - 1][1];
 }
 
-// Long (abaixo do preço) = quente: bordô → vermelho → laranja.
-const LONG_STOPS: Stops = [
-  [0.0, [40, 12, 12]],
-  [0.5, [220, 38, 38]],
-  [1.0, [251, 146, 60]],
-];
-// Short (acima do preço) = frio: teal escuro → teal → lima.
-const SHORT_STOPS: Stops = [
-  [0.0, [10, 38, 34]],
-  [0.5, [13, 148, 136]],
-  [1.0, [132, 204, 22]],
+const INTENSITY_STOPS: Stops = [
+  [0.0, [26, 14, 10]],
+  [0.3, [122, 46, 18]],
+  [0.6, [234, 115, 23]],
+  [0.8, [245, 158, 11]],
+  [1.0, [253, 224, 71]],
 ];
 
-// Gradientes CSS prontos para a legenda (mesmas cores das rampas acima).
-export const LONG_GRADIENT = "linear-gradient(to right, rgb(40,12,12), rgb(220,38,38), rgb(251,146,60))";
-export const SHORT_GRADIENT = "linear-gradient(to right, rgb(10,38,34), rgb(13,148,136), rgb(132,204,22))";
+// Gradiente CSS pronto para a legenda (mesmas cores da rampa acima).
+export const HEAT_GRADIENT =
+  "linear-gradient(to right, rgb(26,14,10), rgb(122,46,18), rgb(234,115,23), rgb(245,158,11), rgb(253,224,71))";
 
-/**
- * Cor de uma célula do heatmap: o LADO predominante (shortShare: 0 = tudo long,
- * 1 = tudo short) define o matiz (long = quente/vermelho, short = frio/verde) e a
- * `intensity` (0..1) define o brilho. Células mistas (perto do preço, onde as
- * zonas se encontram) fazem blend suave entre as duas rampas.
- */
-export function liqSideColor(shortShare: number, intensity: number): [number, number, number] {
-  const lo = rampColor(LONG_STOPS, intensity);
-  const sh = rampColor(SHORT_STOPS, intensity);
-  const s = shortShare < 0 ? 0 : shortShare > 1 ? 1 : shortShare;
-  return [
-    Math.round(lo[0] + (sh[0] - lo[0]) * s),
-    Math.round(lo[1] + (sh[1] - lo[1]) * s),
-    Math.round(lo[2] + (sh[2] - lo[2]) * s),
-  ];
+/** Cor de uma célula do heatmap pela `intensity` (0..1): fraco escuro → forte amarelo. */
+export function heatColor(intensity: number): [number, number, number] {
+  return rampColor(INTENSITY_STOPS, intensity);
 }
 
 // ─── Zonas-ímã (rótulos) ─────────────────────────────────────────────────────
@@ -260,7 +247,7 @@ export function liquidationMagnets(
     for (const e of arr) {
       const intensity = e.tot / grid.max;
       if (intensity < minIntensity) break; // ordenado desc → o resto é mais fraco
-      if (out.every((m) => Math.abs(m.price - e.price) > span * 0.02)) {
+      if (out.every((m) => Math.abs(m.price - e.price) > span * 0.03)) {
         out.push({ price: e.price, side: e.short ? "short" : "long", intensity });
         if (out.length >= perSide) break;
       }

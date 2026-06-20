@@ -1,7 +1,7 @@
 import { LineStyle } from "lightweight-charts";
 import type { IChartApi, IPriceLine, ISeriesApi, Logical, MouseEventParams, Time } from "lightweight-charts";
 
-import { buildLiquidationGrid, liqSideColor, liquidationMagnets, type OiPoint } from "./liquidationModel";
+import { buildLiquidationGrid, heatColor, liquidationMagnets, type OiPoint } from "./liquidationModel";
 import type { Candle } from "./marketData";
 
 interface Params {
@@ -40,16 +40,18 @@ export function runLiquidationHeatmap(p: Params): () => void {
     return clear;
   }
 
-  // (B) Zonas-ímã: linha rotulada no bolsão mais forte acima (shorts ↑) e abaixo
-  // (longs ↓) do preço atual. Consistente com o cockpit.
+  // (B) Zonas-ímã: até 3 bolsões mais fortes acima (shorts ↑) e 3 abaixo (longs ↓)
+  // do preço atual; opacidade da linha ∝ força da zona. Consistente com o cockpit.
   const magnetLines: IPriceLine[] = [];
   const refPrice = candles[candles.length - 1]?.close;
   if (typeof refPrice === "number") {
-    for (const m of liquidationMagnets(grid, refPrice)) {
+    for (const m of liquidationMagnets(grid, refPrice, 3, 0.25)) {
+      const base = m.side === "short" ? "16,185,129" : "239,68,68";
+      const alpha = (0.4 + 0.6 * Math.min(1, m.intensity)).toFixed(2);
       magnetLines.push(
         series.createPriceLine({
           price: m.price,
-          color: m.side === "short" ? "#10b981" : "#ef4444",
+          color: `rgba(${base},${alpha})`,
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
@@ -83,10 +85,9 @@ export function runLiquidationHeatmap(p: Params): () => void {
         img.data[px + 3] = 0;
         continue;
       }
-      // (C) sqrt revela zonas médias; (A) lado define o matiz (long quente × short frio).
+      // (C) sqrt revela zonas médias; cor = intensidade (paleta térmica única).
       const r = Math.sqrt((ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR));
-      const shortShare = tot > 0 ? vs / tot : 0;
-      const [cr, cg, cb] = liqSideColor(shortShare, r);
+      const [cr, cg, cb] = heatColor(r);
       img.data[px] = cr;
       img.data[px + 1] = cg;
       img.data[px + 2] = cb;

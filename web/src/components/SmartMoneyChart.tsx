@@ -14,7 +14,7 @@ import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
-import { LONG_GRADIENT, SHORT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
+import { HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import { subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
@@ -465,15 +465,19 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             Heatmap de liquidações · estimativa (modelo de alavancagem)
           </div>
-          {/* Legenda por lado: vermelho = longs (abaixo), verde = shorts (acima);
-              brilho = intensidade da zona. (Igual ao cockpit.) */}
-          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+          {/* Legenda: o fundo (térmico) = intensidade; as linhas das zonas = lado. (Igual ao cockpit.) */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              <span className="h-2 w-9 rounded" style={{ background: LONG_GRADIENT }} />
+              fraco
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT }} />
+              forte
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#ef4444" }} />
               longs ↓
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-2 w-9 rounded" style={{ background: SHORT_GRADIENT }} />
+              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#10b981" }} />
               shorts ↑
             </span>
           </div>
