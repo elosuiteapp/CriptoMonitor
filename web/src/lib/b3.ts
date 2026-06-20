@@ -29,6 +29,56 @@ export interface B3Overview {
   macro: B3Macro;
 }
 
+export interface B3Asset {
+  symbol: string;
+  name: string;
+  kind: "index" | "currency" | "stock";
+}
+/** Universo do módulo B3 (índice, dólar e ações líquidas) — alimenta o seletor. */
+export const B3_ASSETS: B3Asset[] = [
+  { symbol: "IBOV", name: "Ibovespa", kind: "index" },
+  { symbol: "USD/BRL", name: "Dólar", kind: "currency" },
+  { symbol: "PETR4", name: "Petrobras PN", kind: "stock" },
+  { symbol: "VALE3", name: "Vale ON", kind: "stock" },
+  { symbol: "ITUB4", name: "Itaú PN", kind: "stock" },
+  { symbol: "BBDC4", name: "Bradesco PN", kind: "stock" },
+  { symbol: "BBAS3", name: "Banco do Brasil", kind: "stock" },
+  { symbol: "B3SA3", name: "B3 ON", kind: "stock" },
+  { symbol: "WEGE3", name: "WEG ON", kind: "stock" },
+  { symbol: "ABEV3", name: "Ambev ON", kind: "stock" },
+  { symbol: "PRIO3", name: "PRIO ON", kind: "stock" },
+  { symbol: "ELET3", name: "Eletrobras ON", kind: "stock" },
+  { symbol: "RENT3", name: "Localiza ON", kind: "stock" },
+  { symbol: "MGLU3", name: "Magazine Luiza", kind: "stock" },
+];
+
+export interface B3Global {
+  symbol: string;
+  price: number | null;
+  changePct: number | null;
+}
+export interface B3Corr {
+  ref: string;
+  c30: number | null;
+  c90: number | null;
+}
+export interface B3MacroData {
+  globals: B3Global[];
+  correlations: B3Corr[];
+  macro: B3Macro;
+}
+
+/** Macro global + correlações do IBOV + macro BR (aba Macro & Correlações da B3). */
+export async function fetchB3Macro(): Promise<B3MacroData | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "macro" } });
+    if (error || !data) return null;
+    return data as B3MacroData;
+  } catch {
+    return null;
+  }
+}
+
 /** Watchlist (IBOV + dólar + ações) + macro BR. */
 export async function fetchB3Overview(): Promise<B3Overview | null> {
   try {

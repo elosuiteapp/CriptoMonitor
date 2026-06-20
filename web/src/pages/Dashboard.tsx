@@ -10,6 +10,7 @@ import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
 import MarketPlaceholder from "../components/MarketPlaceholder";
 import B3Module from "../components/b3/B3Module";
+import B3AssetSelector from "../components/b3/B3AssetSelector";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
@@ -73,6 +74,7 @@ export default function Dashboard() {
 
   const allowed = plan?.assets ?? ["BTC"];
   const [asset, setAsset] = useState("BTC");
+  const [b3Asset, setB3Asset] = useState("PETR4");
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [tab, setTab] = useState<TabId>("cockpit");
@@ -159,6 +161,7 @@ export default function Dashboard() {
           {market === "crypto" && (
             <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
           )}
+          {market === "b3" && <B3AssetSelector current={b3Asset} onChange={setB3Asset} />}
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -187,7 +190,7 @@ export default function Dashboard() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         {market === "b3" ? (
-          <B3Module />
+          <B3Module asset={b3Asset} onAsset={setB3Asset} />
         ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (

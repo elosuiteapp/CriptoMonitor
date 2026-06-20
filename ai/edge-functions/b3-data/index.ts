@@ -1,10 +1,8 @@
 // Edge Function: b3-data (proxy grátis da B3 — Yahoo + BCB, sem token, sem CORS)
-// Módulo B3 admin-only. Proxy read-only (sem gravar nada): contorna o CORS/limite do
-// browser pro Yahoo e BCB. Dois modos no body:
-//   { mode: "overview" } -> watchlist (IBOV, dólar, ações) + macro BR (Selic/IPCA/câmbio)
-//   { mode: "chart", ticker: "PETR4" } -> candles diários (3 meses) do ativo
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
+// Módulo B3 admin-only. Proxy read-only. Modos no body:
+//   { mode: "overview" }            -> watchlist (IBOV, dólar, ações) + macro BR
+//   { mode: "chart", ticker }       -> candles diários (3 meses)
+//   { mode: "macro" }               -> macro global + correlações do IBOV + macro BR
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -12,7 +10,6 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 
-// label, símbolo Yahoo, tipo
 const SYMS: [string, string, string][] = [
   ["IBOV", "^BVSP", "index"],
   ["USD/BRL", "USDBRL=X", "currency"],
@@ -30,9 +27,19 @@ const SYMS: [string, string, string][] = [
   ["MGLU3", "MGLU3.SA", "stock"],
 ];
 const TMAP: Record<string, string> = Object.fromEntries(SYMS.map(([l, s]) => [l, s]));
+// Referências globais p/ correlação com o IBOV.
+const GLOBALS: [string, string][] = [
+  ["S&P 500", "^GSPC"],
+  ["Nasdaq", "^IXIC"],
+  ["Dólar", "USDBRL=X"],
+  ["Ouro", "GC=F"],
+  ["Petróleo (Brent)", "BZ=F"],
+  ["VIX", "^VIX"],
+];
 
 const Y = "https://query1.finance.yahoo.com/v8/finance/chart/";
-async function yahoo(symbol: string, range: string, interval: string): Promise<Record<string, unknown> | null> {
+// deno-lint-ignore no-explicit-any
+async function yahoo(symbol: string, range: string, interval: string): Promise<any> {
   try {
     const r = await fetch(`${Y}${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!r.ok) return null;
@@ -43,13 +50,11 @@ async function yahoo(symbol: string, range: string, interval: string): Promise<R
 }
 // deno-lint-ignore no-explicit-any
 function quoteOf(j: any, label: string, kind: string) {
-  const res = j?.chart?.result?.[0];
-  const m = res?.meta;
+  const m = j?.chart?.result?.[0]?.meta;
   if (!m || m.regularMarketPrice == null) return null;
   const prev = m.chartPreviousClose ?? m.previousClose ?? null;
-  const price = m.regularMarketPrice;
-  const changePct = prev ? ((price - prev) / prev) * 100 : null;
-  return { symbol: label, kind, name: m.shortName ?? label, price, changePct, volume: m.regularMarketVolume ?? null, prevClose: prev };
+  const changePct = prev ? ((m.regularMarketPrice - prev) / prev) * 100 : null;
+  return { symbol: label, kind, name: m.shortName ?? label, price: m.regularMarketPrice, changePct, volume: m.regularMarketVolume ?? null };
 }
 async function bcb(code: number): Promise<number | null> {
   try {
@@ -62,6 +67,54 @@ async function bcb(code: number): Promise<number | null> {
     return null;
   }
 }
+// deno-lint-ignore no-explicit-any
+function closeMap(j: any): Record<string, number> {
+  const res = j?.chart?.result?.[0];
+  const ts: number[] = res?.timestamp ?? [];
+  const cl: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
+  const map: Record<string, number> = {};
+  for (let i = 0; i < ts.length; i++) if (cl[i] != null) map[new Date(ts[i] * 1000).toISOString().slice(0, 10)] = cl[i] as number;
+  return map;
+}
+function alignedReturns(a: Record<string, number>, b: Record<string, number>): [number[], number[]] {
+  const dates = Object.keys(a).filter((d) => d in b).sort();
+  const ra: number[] = [];
+  const rb: number[] = [];
+  for (let i = 1; i < dates.length; i++) {
+    const a0 = a[dates[i - 1]];
+    const a1 = a[dates[i]];
+    const b0 = b[dates[i - 1]];
+    const b1 = b[dates[i]];
+    if (a0 && b0) {
+      ra.push((a1 - a0) / a0);
+      rb.push((b1 - b0) / b0);
+    }
+  }
+  return [ra, rb];
+}
+function pearson(a: number[], b: number[]): number | null {
+  const n = Math.min(a.length, b.length);
+  if (n < 5) return null;
+  let sa = 0;
+  let sb = 0;
+  for (let i = 0; i < n; i++) {
+    sa += a[i];
+    sb += b[i];
+  }
+  const ma = sa / n;
+  const mb = sb / n;
+  let cov = 0;
+  let va = 0;
+  let vb = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - ma;
+    const db = b[i] - mb;
+    cov += da * db;
+    va += da * da;
+    vb += db * db;
+  }
+  return va && vb ? cov / Math.sqrt(va * vb) : null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -69,15 +122,33 @@ Deno.serve(async (req) => {
 
   if (body.mode === "chart" && body.ticker) {
     const sym = TMAP[String(body.ticker)] ?? String(body.ticker);
-    const j = await yahoo(sym, "3mo", "1d");
-    // deno-lint-ignore no-explicit-any
-    const res = (j as any)?.chart?.result?.[0];
+    const res = (await yahoo(sym, "3mo", "1d"))?.chart?.result?.[0];
     const ts: number[] = res?.timestamp ?? [];
     const q = res?.indicators?.quote?.[0] ?? {};
     const candles = ts
       .map((t, i) => ({ time: t, open: q.open?.[i], high: q.high?.[i], low: q.low?.[i], close: q.close?.[i], volume: q.volume?.[i] }))
       .filter((c) => c.close != null);
     return json({ candles });
+  }
+
+  if (body.mode === "macro") {
+    const refs: [string, string][] = [["IBOV", "^BVSP"], ...GLOBALS];
+    const fetched = await Promise.all(refs.map(async ([l, s]) => [l, await yahoo(s, "6mo", "1d")] as [string, unknown]));
+    const byLabel: Record<string, { map: Record<string, number>; price: number | null; changePct: number | null }> = {};
+    for (const [l, j] of fetched) {
+      // deno-lint-ignore no-explicit-any
+      const m = (j as any)?.chart?.result?.[0]?.meta;
+      const prev = m?.chartPreviousClose ?? m?.previousClose ?? null;
+      byLabel[l] = { map: closeMap(j), price: m?.regularMarketPrice ?? null, changePct: prev && m?.regularMarketPrice != null ? ((m.regularMarketPrice - prev) / prev) * 100 : null };
+    }
+    const ibov = byLabel["IBOV"]?.map ?? {};
+    const correlations = GLOBALS.map(([l]) => {
+      const [ra, rb] = alignedReturns(ibov, byLabel[l]?.map ?? {});
+      return { ref: l, c30: pearson(ra.slice(-30), rb.slice(-30)), c90: pearson(ra.slice(-90), rb.slice(-90)) };
+    });
+    const globals = GLOBALS.map(([l]) => ({ symbol: l, price: byLabel[l]?.price ?? null, changePct: byLabel[l]?.changePct ?? null }));
+    const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
+    return json({ globals, correlations, macro: { selic, ipca, usd_brl: usd } });
   }
 
   // overview: watchlist + macro BR
