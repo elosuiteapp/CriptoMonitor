@@ -7,18 +7,18 @@ import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import { Cell, fmtAssetPrice, fmtBRL, fmtBig, fmtNum, fmtPct, fmtVol, selicAA, toneCls } from "./B3Shared";
 
-function WatchCard({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
+/** Linha da tabela de desempenho (preço + retorno dia/semana/15d/30d). */
+function PerfRow({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
+  const cell = (v: number | null | undefined) => <td className={`num px-3 py-2 text-right ${toneCls(v ?? null)}`}>{fmtPct(v ?? null)}</td>;
   return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col items-start rounded-xl border px-3 py-2 text-left transition-colors ${
-        active ? "border-primary bg-primary/10" : "border-border hover:bg-muted dark:bg-card/40"
-      }`}
-    >
-      <span className="text-xs font-semibold text-foreground">{q.symbol}</span>
-      <span className="num text-sm text-foreground">{fmtNum(q.price, q.kind === "index" ? 0 : 2)}</span>
-      <span className={`num text-[11px] font-medium ${toneCls(q.changePct)}`}>{fmtPct(q.changePct)}</span>
-    </button>
+    <tr onClick={onClick} className={`cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted ${active ? "bg-primary/10" : ""}`}>
+      <td className="px-3 py-2 font-semibold text-foreground">{q.symbol}</td>
+      <td className="num px-3 py-2 text-right text-foreground">{fmtNum(q.price, q.kind === "index" ? 0 : 2)}</td>
+      {cell(q.changePct)}
+      {cell(q.w1)}
+      {cell(q.d15)}
+      {cell(q.d30)}
+    </tr>
   );
 }
 
@@ -72,7 +72,6 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === asset) ?? null, [ov, asset]);
   const ibov = ov?.quotes.find((q) => q.symbol === "IBOV");
   const dollar = ov?.quotes.find((q) => q.symbol === "USD/BRL");
-  const stocks = ov?.quotes.filter((q) => q.kind === "stock") ?? [];
 
   if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
   if (!ov) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
@@ -87,18 +86,6 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <Cell label="Dólar (USD/BRL)" value={fmtNum(dollar?.price ?? null)} sub={fmtPct(dollar?.changePct ?? null)} tone={dollar?.changePct} />
           <Cell label="Selic (a.a.)" value={selicAA(ov.macro.selic) != null ? `${selicAA(ov.macro.selic)!.toFixed(2)}%` : "—"} sub="taxa básica" />
           <Cell label="IPCA (mês)" value={ov.macro.ipca != null ? `${ov.macro.ipca.toFixed(2)}%` : "—"} sub="inflação" />
-        </div>
-      </div>
-
-      {/* Watchlist */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Ações</h3>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-          {ibov && <WatchCard q={ibov} active={asset === "IBOV"} onClick={() => onAsset("IBOV")} />}
-          {dollar && <WatchCard q={dollar} active={asset === "USD/BRL"} onClick={() => onAsset("USD/BRL")} />}
-          {stocks.map((q) => (
-            <WatchCard key={q.symbol} q={q} active={asset === q.symbol} onClick={() => onAsset(q.symbol)} />
-          ))}
         </div>
       </div>
 
@@ -142,6 +129,31 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           {fund.range52 && <Cell label="Faixa 52 sem." value={fund.range52} />}
         </div>
       )}
+
+      {/* Watchlist com desempenho por período */}
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Ações · desempenho</h3>
+        <div className="overflow-x-auto rounded-2xl border border-border bg-card dark:bg-card/60">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2 text-left font-medium">Ativo</th>
+                <th className="px-3 py-2 text-right font-medium">Preço</th>
+                <th className="px-3 py-2 text-right font-medium">Dia</th>
+                <th className="px-3 py-2 text-right font-medium">Semana</th>
+                <th className="px-3 py-2 text-right font-medium">15 dias</th>
+                <th className="px-3 py-2 text-right font-medium">30 dias</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ov.quotes.map((q) => (
+                <PerfRow key={q.symbol} q={q} active={asset === q.symbol} onClick={() => onAsset(q.symbol)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">Clique numa linha para abrir o ativo. Retornos por período (dia/semana/15/30 dias corridos).</p>
+      </div>
 
       <p className="text-[11px] text-muted-foreground">Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via brapi.dev.</p>
     </div>

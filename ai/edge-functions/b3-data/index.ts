@@ -70,11 +70,33 @@ async function yahoo(symbol: string, range: string, interval: string): Promise<a
 }
 // deno-lint-ignore no-explicit-any
 function quoteOf(j: any, label: string, kind: string) {
-  const m = j?.chart?.result?.[0]?.meta;
+  const res = j?.chart?.result?.[0];
+  const m = res?.meta;
   if (!m || m.regularMarketPrice == null) return null;
-  const prev = m.chartPreviousClose ?? m.previousClose ?? null;
-  const changePct = prev ? ((m.regularMarketPrice - prev) / prev) * 100 : null;
-  return { symbol: label, kind, name: m.shortName ?? label, price: m.regularMarketPrice, changePct, volume: m.regularMarketVolume ?? null };
+  const ts: number[] = res?.timestamp ?? [];
+  const cl: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
+  const series: [number, number][] = [];
+  for (let i = 0; i < ts.length; i++) if (cl[i] != null) series.push([ts[i], cl[i] as number]);
+  const last = m.regularMarketPrice;
+  const nowSec = series.length ? series[series.length - 1][0] : 0;
+  // fechamento ao/antes de N dias corridos atrás (retorno por período).
+  const ago = (days: number): number | null => {
+    const t = nowSec - days * 86400;
+    for (let i = series.length - 1; i >= 0; i--) if (series[i][0] <= t) return series[i][1];
+    return null;
+  };
+  const pct = (from: number | null) => (from && Number.isFinite(from) ? ((last - from) / from) * 100 : null);
+  return {
+    symbol: label,
+    kind,
+    name: m.shortName ?? label,
+    price: last,
+    changePct: pct(ago(1)),
+    volume: m.regularMarketVolume ?? null,
+    w1: pct(ago(7)),
+    d15: pct(ago(15)),
+    d30: pct(ago(30)),
+  };
 }
 async function bcb(code: number): Promise<number | null> {
   try {
@@ -211,7 +233,7 @@ Deno.serve(async (req) => {
   }
 
   // overview: watchlist + macro BR
-  const quotes = (await Promise.all(SYMS.map(async ([l, s, k]) => quoteOf(await yahoo(s, "5d", "1d"), l, k)))).filter(Boolean);
+  const quotes = (await Promise.all(SYMS.map(async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k)))).filter(Boolean);
   const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
   return json({ quotes, macro: { selic, ipca, usd_brl: usd } });
 });

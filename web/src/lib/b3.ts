@@ -8,8 +8,11 @@ export interface B3Quote {
   kind: "index" | "currency" | "stock";
   name: string;
   price: number | null;
-  changePct: number | null;
+  changePct: number | null; // dia
   volume: number | null;
+  w1?: number | null; // 7 dias
+  d15?: number | null; // 15 dias
+  d30?: number | null; // 30 dias
 }
 export interface B3Candle {
   time: number; // epoch (s) — formato Lightweight Charts
