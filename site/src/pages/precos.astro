@@ -23,7 +23,7 @@ const annual = (monthly: number) => Math.round(monthly * 12 * (1 - PRICING.annua
     <div class="mt-12 grid items-start gap-5 lg:grid-cols-3">
       {PRICING.plans.map((p) => (
         <div class={`rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
-          {p.highlight && <span class="mb-3 inline-block rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary">Mais popular</span>}
+          {p.highlight && <span class="mb-3 inline-block rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary">Mais popular</span>}
           <h2 class="text-xl font-bold">{p.name}</h2>
           <p class="mt-1 text-sm text-muted">{p.tagline}</p>
 
