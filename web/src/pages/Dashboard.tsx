@@ -15,6 +15,7 @@ import LayerToggles from "../components/LayerToggles";
 import LiquidationsStrip from "../components/LiquidationsStrip";
 import LockedCard from "../components/LockedCard";
 import LockedTab from "../components/LockedTab";
+import IndicatorsTab from "../components/indicators/IndicatorsTab";
 import MacroTab from "../components/MacroTab";
 import MetricCard from "../components/MetricCard";
 import ModuleSwitcher from "../components/ModuleSwitcher";
@@ -191,6 +192,12 @@ export default function Dashboard() {
         <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
 
         {tab === "macro" && <MacroTab asset={asset} pro={advanced} />}
+        {tab === "indicadores" &&
+          (canSmart ? (
+            <IndicatorsTab asset={asset} payload={payload ?? null} />
+          ) : (
+            <LockedTab title="Leitura do Mercado" plan="Expert" />
+          ))}
         {tab === "smart" &&
           (canSmart ? (
             <SmartMoneyTab asset={asset} />
