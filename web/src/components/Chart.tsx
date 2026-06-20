@@ -265,22 +265,47 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       return;
     }
 
-    // (B) Zonas-ímã: até 3 bolsões mais fortes acima (shorts ↑) e 3 abaixo (longs ↓)
-    // do preço atual — os níveis para onde o preço tende a ser puxado. A opacidade
-    // da linha sobe com a força da zona (a mais forte fica sólida; as menores, suaves).
+    // (B) Zonas-ímã: até 3 bolsões mais fortes acima (shorts ↑) e 3 abaixo (longs ↓).
+    // Opacidade da linha ∝ força da zona. CONFLUÊNCIA (◎ + linha sólida): a zona cai
+    // em cima de um nível de outra camada (Call/Put Wall, Zero Gamma, Max Pain, POC
+    // ou parede do book) → vários mecanismos no mesmo preço = nível de alta
+    // probabilidade. Vale mesmo com a camada desligada (a confluência é real).
     removeMagnets();
+    const lv = gammaLevels(gamma);
+    const confLevels: { price: number; name: string }[] = [];
+    const pushLv = (price: number | null | undefined, name: string) => {
+      if (price != null && Number.isFinite(price)) confLevels.push({ price, name });
+    };
+    pushLv(lv.callWall, "Call Wall");
+    pushLv(lv.putWall, "Put Wall");
+    pushLv(lv.zeroGamma, "Zero Gamma");
+    pushLv(lv.maxPain, "Max Pain");
+    if (vp) pushLv(vp.poc, "POC");
+    for (const w of [...(walls ?? [])].sort((a, b) => b.notional_usd - a.notional_usd).slice(0, 6)) {
+      pushLv(w.price, "parede do book");
+    }
+    const confluenceOf = (price: number): string | null => {
+      let best: { name: string; dist: number } | null = null;
+      for (const l of confLevels) {
+        const dist = Math.abs(l.price - price);
+        if (dist <= price * 0.01 && (!best || dist < best.dist)) best = { name: l.name, dist };
+      }
+      return best?.name ?? null;
+    };
     const refPrice = candles[candles.length - 1]?.close;
     if (typeof refPrice === "number") {
       for (const m of liquidationMagnets(grid, refPrice, 3, 0.25)) {
+        const conf = confluenceOf(m.price);
         const base = m.side === "short" ? "16,185,129" : "239,68,68";
-        const alpha = (0.4 + 0.6 * Math.min(1, m.intensity)).toFixed(2);
+        const alpha = conf ? "1" : (0.4 + 0.6 * Math.min(1, m.intensity)).toFixed(2);
+        const sideTitle = m.side === "short" ? "↑ shorts" : "↓ longs";
         const line = series.createPriceLine({
           price: m.price,
           color: `rgba(${base},${alpha})`,
           lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
+          lineStyle: conf ? LineStyle.Solid : LineStyle.Dotted,
           axisLabelVisible: true,
-          title: m.side === "short" ? "↑ shorts" : "↓ longs",
+          title: conf ? `◎ ${sideTitle} · ${conf}` : sideTitle,
         });
         magnetLinesRef.current.push(line);
       }
@@ -404,7 +429,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       removeMagnets();
       clear();
     };
-  }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType]);
+  }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType, gamma, vp, walls]);
 
   // ─── Paredes do book — barras de liquidez na borda direita ───────────────────
   // Cada parede vira uma barra horizontal ancorada à direita; comprimento ∝ tamanho
