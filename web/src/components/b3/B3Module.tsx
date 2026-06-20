@@ -1,10 +1,10 @@
 import { useState } from "react";
 
 import B3CockpitTab from "./B3CockpitTab";
-import B3FluxoTab from "./B3FluxoTab";
 import B3LeituraTab from "./B3LeituraTab";
 import B3MacroTab from "./B3MacroTab";
 import B3ReportsTab from "./B3ReportsTab";
+import B3SmartMoneyTab from "./B3SmartMoneyTab";
 import B3TabBar, { type B3TabId } from "./B3TabBar";
 
 /** Plataforma B3 (admin-only) — mesmo modelo do cripto (abas), contexto B3.
@@ -25,7 +25,7 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
       <B3TabBar tab={tab} onTab={setTab} />
 
       {tab === "cockpit" && <B3CockpitTab asset={asset} onAsset={onAsset} />}
-      {tab === "fluxo" && <B3FluxoTab />}
+      {tab === "fluxo" && <B3SmartMoneyTab asset={asset} />}
       {tab === "leitura" && <B3LeituraTab asset={asset} />}
       {tab === "macro" && <B3MacroTab />}
       {tab === "reports" && <B3ReportsTab />}
