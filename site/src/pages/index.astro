@@ -8,6 +8,7 @@ import { SIGNUP_URL, PRICING, MARKETS } from "../consts";
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const FEATURES = [
+  { icon: "🧭", tier: "Expert", title: "Leitura do Mercado", desc: "Tendência, fluxo institucional, posicionamento e liquidez sintetizados num só viés — com convicção, divergências e alvos. A leitura do agora, exclusiva do Expert." },
   { icon: "📊", tier: "Pro", title: "Módulo Gamma", desc: "Regime de gamma, Zero Gamma, Max Pain e Call/Put Wall — os níveis institucionais, estilo SpotGamma." },
   { icon: "🌊", tier: "Pro", title: "Fluxo e alavancagem", desc: "O lado do varejo especulativo: funding, CVD, long/short, liquidações e risco de squeeze — onde o dinheiro alavancado se acumula e quando ele vira combustível de movimento." },
   { icon: "🌐", tier: "Pro", title: "Macro & Correlações", desc: "Correlação com DXY, Nasdaq, ouro e VIX, liquidez DeFi e calendário econômico global." },

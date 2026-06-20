@@ -46,6 +46,7 @@ export const PRICING = {
       tagline: "Inteligência institucional",
       features: [
         "Tudo do Pro +",
+        "Leitura do Mercado: viés, convicção e alvos numa síntese só (exclusivo)",
         "Institucional × varejo: quem compra à vista vs quem alavanca (ETFs, opções e liquidez do book)",
         "Camadas avançadas no gráfico: CVD, funding, pressão do book e heatmap",
         "Smart Money & On-chain · qualquer moeda",
@@ -107,6 +108,13 @@ export const MARKETS = [
 // Matriz de comparação detalhada (Free × Pro × Expert) para a página /precos.
 // Em cada célula: true = ✓ incluído, false = — não incluído, string = detalhe/limite.
 export const COMPARISON = [
+  {
+    group: "Leitura do Mercado (síntese exclusiva)",
+    rows: [
+      { label: "Leitura sintetizada: viés + convicção + regime + divergências", free: false, pro: false, expert: true },
+      { label: "Alvos de liquidez (pra onde o preço é puxado)", free: false, pro: false, expert: true },
+    ],
+  },
   {
     group: "Ativos e dados",
     rows: [
