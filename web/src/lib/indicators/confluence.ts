@@ -186,7 +186,7 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
       dir: posDir,
       strength: posStr,
       available: true,
-      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(3)}% (${funding >= 0 ? "longs pagam" : "shorts pagam"})${ls != null ? ` · L/S ${ls.toFixed(2)}` : ""}`,
+      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(4)}% (${funding >= 0 ? "longs pagam" : "shorts pagam"})${ls != null ? ` · L/S ${ls.toFixed(2)}` : ""}`,
     });
     if (Math.abs(funding) > 0.03)
       divergences.push(
@@ -256,6 +256,14 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
       trendDir > 0
         ? "Preço em alta, mas o fluxo institucional não acompanha — rali pode ser de varejo/alavancagem."
         : "Preço em baixa, mas o institucional não confirma a venda — possível absorção de fundo.",
+    );
+
+  // Divergência tendência × momento (ex.: baixa estrutural com repique de curto prazo).
+  if (haveTrend && haveMom && trendDir !== 0 && momDir !== 0 && trendDir !== momDir)
+    divergences.push(
+      trendDir < 0
+        ? "Tendência de baixa, mas o momento de curto prazo virou pra cima — possível repique/contra-tendência."
+        : "Tendência de alta, mas o momento de curto prazo enfraquece — atenção a uma correção.",
     );
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────
