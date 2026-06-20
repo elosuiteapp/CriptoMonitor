@@ -107,7 +107,8 @@ export interface OrderbookWall {
 }
 
 export interface OrderbookImbalance {
-  bid_near_usd: number; // bids dentro de ±0,5% do preço (Binance+Coinbase)
+  exchange: string; // 'binance' (varejo) | 'coinbase' (institucional)
+  bid_near_usd: number; // bids dentro de ±0,5% do preço
   ask_near_usd: number;
   bid_wide_usd: number; // dentro de ±2%
   ask_wide_usd: number;

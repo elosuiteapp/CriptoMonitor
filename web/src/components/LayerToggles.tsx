@@ -22,6 +22,7 @@ const ITEMS: Item[] = [
   { key: "orderbookWalls", label: "Paredes do book", color: "bg-amber-500", desc: "Grandes ordens no livro (Binance+Coinbase): paredes de compra = suporte, de venda = resistência." },
   { key: "funding", label: "Funding", color: "bg-sky-500", desc: "Taxa de financiamento dos perpétuos: positiva = comprados pagam (otimismo alavancado), negativa = vendidos pagam." },
   { key: "cvd", label: "CVD", color: "bg-emerald-500", desc: "Cumulative Volume Delta: fluxo agressor líquido (compras a mercado − vendas a mercado). Varejo (Binance+OKX) × institucional (Coinbase)." },
+  { key: "bookPressure", label: "Pressão do book", color: "bg-teal-500", desc: "Pressão do book no tempo: liquidez parada bid − ask perto do preço (±2%, todas as fontes). Verde = book comprador (mais compra), vermelho = vendedor. Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois." },
   { key: "liquidations", label: "Liquidações (heatmap + barras)", color: "bg-rose-500", desc: "Heatmap estimado de zonas de liquidação (magnet zones, modelo de alavancagem) + barras de liquidações realizadas embaixo." },
 ];
 

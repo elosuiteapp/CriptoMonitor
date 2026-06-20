@@ -35,6 +35,7 @@ import { useCvd } from "../hooks/useCvd";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
+import { useBookPressureSeries } from "../hooks/useBookPressureSeries";
 import { useOrderbookImbalance } from "../hooks/useOrderbookImbalance";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
@@ -83,6 +84,7 @@ export default function Dashboard() {
     orderbookWalls: false,
     funding: false,
     cvd: false,
+    bookPressure: false,
     liquidations: false,
   });
 
@@ -110,6 +112,7 @@ export default function Dashboard() {
   const oiSeries = useOpenInterest(asset, plan);
   // Volume Delta / CVD por candle (klines da Binance) — só quando a camada CVD liga.
   const cvdSeries = useCvd(asset, timeframe, (plan?.chart_layers ?? false) && layers.cvd);
+  const bookSeries = useBookPressureSeries(asset, plan, (plan?.chart_layers ?? false) && layers.bookPressure);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
   const canSmart = plan?.smart_money ?? false;
@@ -219,6 +222,9 @@ export default function Dashboard() {
               <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
             </>
           )}
+          {canUseLayers && layers.bookPressure && (
+            <CvdSubchart data={bookSeries} title="Pressão do book · todas as fontes (bid − ask, ±2%)" />
+          )}
           {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
           {canUseLayers && layers.liquidations && <LiquidationsStrip data={series.liquidations} />}
         </section>
@@ -293,7 +299,7 @@ export default function Dashboard() {
                   info={GLOSSARY.squeezeRisk}
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
-                <OrderbookImbalanceCard data={imbalance} timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
+                <OrderbookImbalanceCard data={imbalance.varejo} title="Pressão do book · varejo" source="Binance" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
               </>
             ) : (
               <>
@@ -330,6 +336,7 @@ export default function Dashboard() {
                   source="Prêmio + Participação + CVD (Coinbase × Binance+OKX)"
                   timestamp={updatedAt}
                 />
+                <OrderbookImbalanceCard data={imbalance.institucional} title="Pressão do book · institucional" source="Coinbase" institutional timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
                 {defi && (
                   <MetricCard institutional title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} info={GLOSSARY.tvl} />
                 )}

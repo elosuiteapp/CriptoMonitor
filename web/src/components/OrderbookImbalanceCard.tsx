@@ -5,6 +5,9 @@ import Card from "./ui/Card";
 
 interface Props {
   data: OrderbookImbalance | null;
+  title?: string;
+  source?: string;
+  institutional?: boolean;
   timestamp?: string | null;
   info?: string;
 }
@@ -19,7 +22,14 @@ const fmtUsd = (n: number) => {
 /** Gauge "pressão do book": liquidez parada (bid × ask) perto do preço, em duas
  *  faixas (±0,5% e ±2%). Verde = compra (suporte), vermelho = venda (resistência).
  *  Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois. */
-export default function OrderbookImbalanceCard({ data, timestamp, info }: Props) {
+export default function OrderbookImbalanceCard({
+  data,
+  title = "Pressão do book (bid × ask)",
+  source = "Binance + Coinbase",
+  institutional = false,
+  timestamp,
+  info,
+}: Props) {
   const wideTot = data ? data.bid_wide_usd + data.ask_wide_usd : 0;
   const bidPct = wideTot > 0 ? data!.bid_wide_usd / wideTot : 0.5;
   const wideImb = wideTot > 0 ? (data!.bid_wide_usd - data!.ask_wide_usd) / wideTot : 0;
@@ -44,9 +54,9 @@ export default function OrderbookImbalanceCard({ data, timestamp, info }: Props)
       : "text-muted-foreground";
 
   return (
-    <Card className="p-4 transition-all duration-200 hover:border-foreground/10 hover:shadow-card-hover">
+    <Card highlight={institutional} className="p-4 transition-all duration-200 hover:border-foreground/10 hover:shadow-card-hover">
       <div className="section-title flex items-center gap-1.5">
-        Pressão do book (bid × ask)
+        {title}
         {info && <InfoTip text={info} />}
       </div>
 
@@ -79,7 +89,14 @@ export default function OrderbookImbalanceCard({ data, timestamp, info }: Props)
       )}
 
       <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>Fonte: Binance + Coinbase</span>
+        <span className="flex items-center gap-1.5">
+          {institutional && (
+            <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-primary">
+              Institucional
+            </span>
+          )}
+          <span>Fonte: {source}</span>
+        </span>
         <span className="num">{relativeTime(timestamp)}</span>
       </div>
     </Card>
