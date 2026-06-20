@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { computeMarketRead, type AxisSignal, type LiquidityTarget } from "../../lib/indicators/confluence";
+import { computeMarketRead, timeframeLean, type AxisSignal, type LiquidityTarget, type TfLean } from "../../lib/indicators/confluence";
 import { fmtPrice } from "../../lib/format";
 import { fetchKlines, type Candle } from "../../lib/marketData";
 import type { SnapshotPayload } from "../../lib/types";
@@ -12,21 +12,27 @@ interface Props {
 
 const toneText = (tone: "bull" | "bear" | "neutral") =>
   tone === "bull" ? "text-emerald-500" : tone === "bear" ? "text-rose-500" : "text-muted-foreground";
-
 const dirText = (dir: number) => (dir > 0 ? "text-emerald-500" : dir < 0 ? "text-rose-500" : "text-muted-foreground");
 const dirGlyph = (dir: number) => (dir > 0 ? "▲" : dir < 0 ? "▼" : "—");
 
-/** Barra de viés -100..+100 com marcador na posição atual. */
-function BiasBar({ value }: { value: number }) {
-  const pct = ((Math.max(-100, Math.min(100, value)) + 100) / 200) * 100;
+/** Gauge semicircular do viés (-100..+100): arcos vermelho/neutro/verde + agulha. */
+function BiasGauge({ value, tone }: { value: number; tone: "bull" | "bear" | "neutral" }) {
+  const v = Math.max(-100, Math.min(100, value));
+  const a = ((90 - v * 0.9) * Math.PI) / 180;
+  const cx = 110;
+  const cy = 110;
+  const r = 78;
+  const nx = cx + r * Math.cos(a);
+  const ny = cy - r * Math.sin(a);
+  const needle = tone === "bull" ? "#10b981" : tone === "bear" ? "#f43f5e" : "#94a3b8";
   return (
-    <div className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-rose-500/40 via-muted to-emerald-500/40">
-      <div className="absolute top-1/2 h-px w-full bg-border" />
-      <div
-        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow"
-        style={{ left: `${pct}%` }}
-      />
-    </div>
+    <svg viewBox="0 0 220 124" className="h-28 w-56">
+      <path d="M 32 110 A 78 78 0 0 1 71 42.5" fill="none" stroke="#f43f5e" strokeOpacity="0.55" strokeWidth="10" strokeLinecap="round" />
+      <path d="M 71 42.5 A 78 78 0 0 1 149 42.5" fill="none" stroke="currentColor" className="text-muted" strokeWidth="10" strokeLinecap="round" />
+      <path d="M 149 42.5 A 78 78 0 0 1 188 110" fill="none" stroke="#10b981" strokeOpacity="0.55" strokeWidth="10" strokeLinecap="round" />
+      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={needle} strokeWidth="3" strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r="5" fill={needle} />
+    </svg>
   );
 }
 
@@ -53,10 +59,19 @@ function AxisRow({ a }: { a: AxisSignal }) {
   );
 }
 
-function TargetRow({ t }: { t: LiquidityTarget }) {
+function TargetRow({ t, current }: { t: LiquidityTarget; current?: boolean }) {
+  if (current) {
+    return (
+      <div className="flex items-center gap-2 py-1.5">
+        <span className="h-px flex-1 bg-primary/40" />
+        <span className="num rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">◀ preço atual {fmtPrice(t.price)}</span>
+        <span className="h-px flex-1 bg-primary/40" />
+      </div>
+    );
+  }
   return (
-    <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
-      <span className={`w-5 shrink-0 text-center ${t.dir === "up" ? "text-emerald-500" : "text-rose-500"}`} aria-hidden>
+    <div className="flex items-center gap-3 py-1.5">
+      <span className={`w-4 shrink-0 text-center ${t.dir === "up" ? "text-emerald-500" : "text-rose-500"}`} aria-hidden>
         {t.dir === "up" ? "▲" : "▼"}
       </span>
       <span className="num w-24 shrink-0 text-sm font-semibold text-foreground">{fmtPrice(t.price)}</span>
@@ -72,20 +87,26 @@ function TargetRow({ t }: { t: LiquidityTarget }) {
   );
 }
 
-/** Aba "Leitura do Mercado" (Expert) — leitura sintetizada do estado do ativo. */
+/** Aba "Leitura do Mercado" (Expert) — leitura sintetizada e multi-timeframe. */
 export default function IndicatorsTab({ asset, payload }: Props) {
-  const [candles, setCandles] = useState<Candle[]>([]);
+  const [c1d, setC1d] = useState<Candle[]>([]);
+  const [c4h, setC4h] = useState<Candle[]>([]);
+  const [c1h, setC1h] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchKlines(asset, "1d", 365)
-      .then((c) => {
-        if (alive) setCandles(c);
-      })
-      .catch(() => {
-        if (alive) setCandles([]);
+    Promise.all([
+      fetchKlines(asset, "1d", 365).catch(() => [] as Candle[]),
+      fetchKlines(asset, "4h", 300).catch(() => [] as Candle[]),
+      fetchKlines(asset, "1h", 300).catch(() => [] as Candle[]),
+    ])
+      .then(([d, h4, h1]) => {
+        if (!alive) return;
+        setC1d(d);
+        setC4h(h4);
+        setC1h(h1);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -95,15 +116,22 @@ export default function IndicatorsTab({ asset, payload }: Props) {
     };
   }, [asset]);
 
-  const read = useMemo(() => computeMarketRead(candles, payload), [candles, payload]);
+  const read = useMemo(() => computeMarketRead(c1d, payload, c4h), [c1d, payload, c4h]);
+  const leans: TfLean[] = useMemo(
+    () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
+    [c1d, c4h, c1h],
+  );
+  const aligned = leans.every((l) => l.dir > 0) || leans.every((l) => l.dir < 0);
+  const sortedTargets = useMemo(() => [...read.targets].sort((a, b) => b.price - a.price), [read.targets]);
+  const firstBelow = sortedTargets.findIndex((t) => read.price != null && t.price < read.price);
 
   return (
     <section className="space-y-4">
       <div>
         <h2 className="text-lg font-bold text-foreground">Leitura do Mercado · {asset}</h2>
         <p className="text-xs text-muted-foreground">
-          Tendência, fluxo institucional, posicionamento e liquidez sintetizados em uma leitura só — com as forças por trás
-          dela à mostra. Leitura do agora, não previsão.
+          Tendência, fluxo institucional, opções, posicionamento e liquidez sintetizados em uma leitura só — multi-timeframe,
+          com as forças à mostra e o que mudaria a leitura. Leitura do agora, não previsão.
         </p>
       </div>
 
@@ -115,16 +143,23 @@ export default function IndicatorsTab({ asset, payload }: Props) {
         </div>
       ) : (
         <>
-          {/* Hero — viés + convicção + regime */}
+          {/* Hero — gauge + viés + convicção + regime + multi-timeframe */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Viés do mercado</span>
-                <div className={`text-4xl font-bold leading-none ${toneText(read.regime.tone)}`}>
-                  {read.bias > 0 ? "+" : ""}
-                  {read.bias}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <BiasGauge value={read.bias} tone={read.regime.tone} />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-1 text-center">
+                    <span className={`text-2xl font-bold ${toneText(read.regime.tone)}`}>
+                      {read.bias > 0 ? "+" : ""}
+                      {read.bias}
+                    </span>
+                  </div>
                 </div>
-                <p className="mt-2 max-w-md text-sm font-medium text-foreground">{read.regime.label}</p>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Viés do mercado</span>
+                  <p className="mt-1 max-w-xs text-sm font-medium text-foreground">{read.regime.label}</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Convicção</span>
@@ -134,12 +169,18 @@ export default function IndicatorsTab({ asset, payload }: Props) {
                 </span>
               </div>
             </div>
-            <BiasBar value={read.bias} />
-            <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
-              <span>Baixa</span>
-              <span>Neutro</span>
-              <span>Alta</span>
+
+            {/* Multi-timeframe */}
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Estrutura</span>
+              {leans.map((l) => (
+                <span key={l.tf} className="rounded-full border border-border px-2.5 py-1 text-xs">
+                  <span className="font-semibold text-foreground">{l.tf}</span> <span className={dirText(l.dir)}>{dirGlyph(l.dir)} {l.label}</span>
+                </span>
+              ))}
+              <span className="text-[11px] text-muted-foreground">{aligned ? "· alinhada nos 3 prazos" : "· prazos divergentes (transição)"}</span>
             </div>
+
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground">
                 Caráter: <span className="font-semibold text-foreground">{read.character}</span>
@@ -151,6 +192,14 @@ export default function IndicatorsTab({ asset, payload }: Props) {
               )}
             </div>
           </div>
+
+          {/* O que muda a leitura (falsificador) */}
+          {read.falsifier && (
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+              <h3 className="mb-1 text-sm font-semibold text-primary">🎯 O que muda a leitura</h3>
+              <p className="text-sm text-foreground">{read.falsifier}</p>
+            </div>
+          )}
 
           {/* Divergências e riscos */}
           {read.divergences.length > 0 && (
@@ -180,23 +229,28 @@ export default function IndicatorsTab({ asset, payload }: Props) {
             </p>
           </div>
 
-          {/* Alvos de liquidez */}
-          {read.targets.length > 0 && (
+          {/* Mapa de alvos de liquidez (escada de preço) */}
+          {sortedTargets.length > 0 && (
             <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-              <h3 className="mb-1 text-sm font-semibold text-foreground">Alvos de liquidez · pra onde o preço é puxado</h3>
+              <h3 className="mb-2 text-sm font-semibold text-foreground">Mapa de liquidez · pra onde o preço é puxado</h3>
               <div>
-                {read.targets.map((t) => (
-                  <TargetRow key={t.label} t={t} />
+                {sortedTargets.map((t, i) => (
+                  <div key={t.label}>
+                    {i === firstBelow && read.price != null && <TargetRow t={{ ...t, price: read.price }} current />}
+                    <TargetRow t={t} />
+                  </div>
                 ))}
+                {firstBelow === -1 && read.price != null && <TargetRow t={{ ...sortedTargets[0], price: read.price }} current />}
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Ímãs estruturais (paredes de opções, Max Pain, Zero Gamma, POC) ordenados por proximidade do preço atual.
+                Ímãs estruturais — paredes de opções, Max Pain, Zero Gamma, POC e bolsões de liquidação — ordenados por preço em
+                torno do atual.
               </p>
             </div>
           )}
 
           <p className="text-[11px] text-muted-foreground">
-            Leitura sintetizada de dados de fluxo, posicionamento e liquidez. Informação para análise, não constitui
+            Leitura sintetizada de dados de fluxo, opções, posicionamento e liquidez. Informação para análise, não constitui
             recomendação de operação.
           </p>
         </>

@@ -4,6 +4,7 @@
 // regime nomeado + divergências + alvos de liquidez. Determinístico e auditável:
 // cada eixo expõe sua direção, força e o porquê. NÃO é previsão — é leitura do agora.
 
+import { buildLiquidationGrid, liquidationMagnets } from "../liquidationModel";
 import type { Candle } from "../marketData";
 import { computeVolumeProfile } from "../marketData";
 import type { SnapshotPayload } from "../types";
@@ -11,14 +12,40 @@ import { adx, atr, ema, last, macd, percentileRank, rsi } from "./ta";
 
 export type Dir = -1 | 0 | 1;
 
+const fmtUsd0 = (n: number) =>
+  "US$ " + (n >= 1000 ? Math.round(n).toLocaleString("pt-BR") : n.toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+
 export interface AxisSignal {
   key: string;
   label: string;
-  group: "tendência" | "momento" | "fluxo" | "posição" | "caráter";
+  group: "tendência" | "momento" | "fluxo" | "posição" | "opções" | "caráter";
   dir: Dir; // -1 baixa, 0 neutro, +1 alta
   strength: number; // 0..1
   detail: string;
   available: boolean;
+}
+
+export interface TfLean {
+  tf: string;
+  dir: Dir;
+  label: string;
+}
+
+/** Viés estrutural rápido de um timeframe (EMA20/50 + MACD) — usado p/ a leitura
+ *  multi-timeframe (alinhamento entre prazos = convicção; conflito = transição). */
+export function timeframeLean(tf: string, candles: Candle[]): TfLean {
+  const closes = candles.map((c) => c.close);
+  if (closes.length < 55) return { tf, dir: 0, label: "—" };
+  const e20 = last(ema(closes, 20));
+  const e50 = last(ema(closes, 50));
+  const price = closes[closes.length - 1];
+  const hist = last(macd(closes).hist);
+  let v = 0;
+  v += price > e50 ? 1 : -1;
+  v += e20 > e50 ? 1 : -1;
+  v += hist > 0 ? 1 : -1;
+  const dir: Dir = v >= 2 ? 1 : v <= -2 ? -1 : 0;
+  return { tf, dir, label: dir > 0 ? "alta" : dir < 0 ? "baixa" : "lateral" };
 }
 
 export interface LiquidityTarget {
@@ -40,6 +67,8 @@ export interface MarketRead {
   axes: AxisSignal[];
   divergences: string[];
   targets: LiquidityTarget[];
+  falsifier: string | null;
+  levels: { ema50: number | null; ema200: number | null };
   price: number | null;
   hasData: boolean;
 }
@@ -75,7 +104,7 @@ function rsiDivergence(closes: number[], rsiArr: number[], look = 20): string | 
   return null;
 }
 
-export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | null): MarketRead {
+export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | null, intra?: Candle[]): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
     closes[closes.length - 1] ?? payload?.gamma?.spot_price ?? payload?.price?.binance?.price ?? null;
@@ -198,6 +227,30 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
     axes.push({ key: "position", label: "Posição alavancada", group: "posição", dir: 0, strength: 0, available: false, detail: "Indisponível" });
   }
 
+  // ── Eixo OPÇÕES (put/call + skew) — expectativa do desk de opções ───────
+  const pcr = payload?.gamma?.put_call_ratio ?? null;
+  const skew = payload?.gamma?.iv_skew ?? null;
+  const iv = payload?.gamma?.avg_iv ?? null;
+  const haveOpt = pcr != null;
+  let optDir: Dir = 0;
+  let optStr = 0;
+  if (haveOpt && pcr != null) {
+    // put/call > 1 = mais proteção (puts) → viés defensivo; < 1 = apetite por calls.
+    optDir = pcr > 1.05 ? -1 : pcr < 0.95 ? 1 : 0;
+    optStr = clamp01(Math.abs(pcr - 1) / 0.5);
+    axes.push({
+      key: "options",
+      label: "Opções (put/call + skew)",
+      group: "opções",
+      dir: optDir,
+      strength: optStr,
+      available: true,
+      detail: `Put/Call ${pcr.toFixed(2)}${skew != null ? ` · skew ${skew >= 0 ? "+" : ""}${skew.toFixed(1)}%` : ""}${iv != null ? ` · IV ${iv.toFixed(0)}%` : ""}`,
+    });
+  } else {
+    axes.push({ key: "options", label: "Opções (put/call + skew)", group: "opções", dir: 0, strength: 0, available: false, detail: "Indisponível neste ativo" });
+  }
+
   // ── CARÁTER (ADX + ATR percentil + regime de gamma) ─────────────────────
   const adxv = adx(candles, 14);
   const atrArr = atr(candles, 14);
@@ -230,10 +283,11 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
 
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
   const directional = [
-    { dir: trendDir, str: trendStr, w: 0.3, avail: haveTrend },
-    { dir: momDir, str: momStr, w: 0.22, avail: haveMom },
-    { dir: flowDir, str: flowStr, w: 0.3, avail: haveFlow },
-    { dir: posDir, str: posStr, w: 0.18, avail: havePos },
+    { dir: trendDir, str: trendStr, w: 0.28, avail: haveTrend },
+    { dir: momDir, str: momStr, w: 0.2, avail: haveMom },
+    { dir: flowDir, str: flowStr, w: 0.27, avail: haveFlow },
+    { dir: posDir, str: posStr, w: 0.15, avail: havePos },
+    { dir: optDir, str: optStr, w: 0.1, avail: haveOpt },
   ];
   let num = 0;
   let wsum = 0;
@@ -313,8 +367,31 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
   pushT(g?.zero_gamma_level, "Zero Gamma");
   const vp = computeVolumeProfile(candles.slice(-30));
   pushT(vp?.poc, "POC 30d");
+  // Ímãs de LIQUIDAÇÃO (reusa o modelo do heatmap): bolsão de shorts acima / longs
+  // abaixo. Usa velas intraday (4H) quando disponíveis → zonas próximas e acionáveis.
+  const liqGrid = buildLiquidationGrid((intra && intra.length >= 30 ? intra : candles).slice(-120));
+  if (liqGrid && price != null) {
+    for (const mg of liquidationMagnets(liqGrid, price, 1, 0.35))
+      pushT(mg.price, mg.side === "short" ? "Liquidação de shorts ↑" : "Liquidação de longs ↓");
+  }
   for (const t of targets) t.strength = clamp01(1 - Math.abs(t.distPct) / 15);
   targets.sort((a, b) => b.strength - a.strength);
+
+  // ── "O que muda a leitura" (falsificador): o nível-gatilho do lado oposto ──
+  let falsifier: string | null = null;
+  if (price != null && wsum) {
+    const levelList: { p: number; name: string }[] = targets.map((t) => ({ p: t.price, name: t.label }));
+    if (Number.isFinite(e50)) levelList.push({ p: e50, name: "EMA50" });
+    if (Number.isFinite(e200)) levelList.push({ p: e200, name: "EMA200" });
+    const above = levelList.filter((l) => l.p > price).sort((a, b) => a.p - b.p)[0];
+    const below = levelList.filter((l) => l.p < price).sort((a, b) => b.p - a.p)[0];
+    if (bias < 0 && above)
+      falsifier = `A leitura de baixa enfraquece se romper acima de ${above.name} (${fmtUsd0(above.p)} · +${(((above.p - price) / price) * 100).toFixed(1)}%).`;
+    else if (bias > 0 && below)
+      falsifier = `A leitura de alta enfraquece se perder ${below.name} (${fmtUsd0(below.p)} · ${(((below.p - price) / price) * 100).toFixed(1)}%).`;
+    else if (above && below)
+      falsifier = `Define o lado: alta acima de ${above.name} (${fmtUsd0(above.p)}), baixa abaixo de ${below.name} (${fmtUsd0(below.p)}).`;
+  }
 
   return {
     bias,
@@ -326,7 +403,9 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
     regime,
     axes,
     divergences,
-    targets: targets.slice(0, 5),
+    targets: targets.slice(0, 6),
+    falsifier,
+    levels: { ema50: Number.isFinite(e50) ? e50 : null, ema200: Number.isFinite(e200) ? e200 : null },
     price,
     hasData: wsum > 0,
   };
