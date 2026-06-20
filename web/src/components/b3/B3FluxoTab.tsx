@@ -15,6 +15,11 @@ export default function B3FluxoTab() {
         <p>Na cripto isto seria on-chain. Na B3, o equivalente de "qualidade" é o <strong className="text-foreground">dividendo</strong>: dividend yield, histórico de proventos, datas-com e ranking de pagadoras.</p>
         <p className="text-[11px]">Fonte: brapi.dev (com token grátis) + dadosdemercado.</p>
       </ComingSoon>
+
+      <ComingSoon icon="🎯" title="Gamma & Opções (GEX) — o trunfo do cripto na B3">
+        <p>O mesmo cockpit de gamma do cripto, aplicado às opções líquidas da B3 (PETR4, VALE3, IBOV): <strong className="text-foreground">Call/Put Wall, Zero Gamma, Max Pain</strong> e exposição a gama por strike.</p>
+        <p className="text-[11px]">Requer fonte paga de opções (OpLab — gregas + open interest por strike). A ligar assim que o acesso estiver disponível.</p>
+      </ComingSoon>
     </div>
   );
 }

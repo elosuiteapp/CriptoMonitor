@@ -62,10 +62,24 @@ export interface B3Corr {
   c30: number | null;
   c90: number | null;
 }
+export interface B3Focus {
+  year: number;
+  ipca: number | null;
+  selic: number | null;
+  pib: number | null;
+  cambio: number | null;
+}
+export interface B3Adr {
+  name: string;
+  ticker: string;
+  premiumPct: number; // ADR (USD×PTAX) vs ação local
+}
 export interface B3MacroData {
   globals: B3Global[];
   correlations: B3Corr[];
   macro: B3Macro;
+  focus?: B3Focus | null;
+  adrs?: B3Adr[];
 }
 
 /** Macro global + correlações do IBOV + macro BR (aba Macro & Correlações da B3). */

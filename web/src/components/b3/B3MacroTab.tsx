@@ -77,6 +77,38 @@ export default function B3MacroTab() {
         </div>
       </div>
 
+      {/* Expectativas (Focus) */}
+      {d.focus && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Expectativas do mercado · Focus {d.focus.year}</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Cell label="IPCA (ano)" value={d.focus.ipca != null ? `${d.focus.ipca.toFixed(2)}%` : "—"} sub="inflação esperada" />
+            <Cell label="Selic (fim de ano)" value={d.focus.selic != null ? `${d.focus.selic.toFixed(2)}%` : "—"} sub="expectativa" />
+            <Cell label="PIB" value={d.focus.pib != null ? `${d.focus.pib.toFixed(2)}%` : "—"} sub="crescimento" />
+            <Cell label="Câmbio (fim de ano)" value={d.focus.cambio != null ? `R$ ${d.focus.cambio.toFixed(2)}` : "—"} sub="dólar esperado" />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Mediana das projeções do mercado — Boletim Focus (BCB).</p>
+        </div>
+      )}
+
+      {/* ADRs — prêmio/desconto */}
+      {d.adrs && d.adrs.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">ADRs · prêmio/desconto vs ação local</h3>
+          <p className="mb-2 text-[11px] text-muted-foreground">Termômetro do estrangeiro: ADR em prêmio = demanda lá fora · desconto = saída.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {d.adrs.map((a) => (
+              <Cell
+                key={a.ticker}
+                label={`${a.name} (${a.ticker})`}
+                value={<span className={toneCls(a.premiumPct)}>{`${a.premiumPct >= 0 ? "+" : ""}${a.premiumPct.toFixed(2)}%`}</span>}
+                sub={a.premiumPct >= 0 ? "prêmio (NYSE)" : "desconto (NYSE)"}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Macro global */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Mercado global</h3>

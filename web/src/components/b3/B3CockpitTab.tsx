@@ -3,10 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchB3Chart, fetchB3Fundamentals, fetchB3Overview, type B3Candle, type B3Fund, type B3Overview, type B3Quote } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
+import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import { Cell, fmtAssetPrice, fmtBRL, fmtBig, fmtNum, fmtPct, fmtVol, selicAA, toneCls } from "./B3Shared";
-
-const toggleCls = (on: boolean) => `rounded-md px-2.5 py-1 text-xs font-medium transition ${on ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`;
 
 function WatchCard({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
   return (
@@ -118,14 +117,10 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
         <div className="mt-3 space-y-2">
           <ChartTypeSelector chartType={chartType} onChartType={setChartType} timeframe={timeframe} onTimeframe={setTimeframe} />
-          <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-            <button onClick={() => setShowEma((v) => !v)} className={toggleCls(showEma)}>
-              Médias (EMA 9/21/50)
-            </button>
-            <button onClick={() => setShowVolume((v) => !v)} className={toggleCls(showVolume)}>
-              Volume
-            </button>
-          </div>
+          <PillRow label="Indicadores:">
+            <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 períodos — tendência e suportes/resistências dinâmicos." />
+            <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc="Volume negociado por período (barras na base do gráfico)." />
+          </PillRow>
           {chartLoading ? (
             <div className="h-[360px] animate-pulse rounded-xl bg-muted/40" />
           ) : candles.length < 2 ? (

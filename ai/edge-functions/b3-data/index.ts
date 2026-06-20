@@ -136,6 +136,42 @@ function pearson(a: number[], b: number[]): number | null {
   return va && vb ? cov / Math.sqrt(va * vb) : null;
 }
 
+// Boletim Focus (BCB Olinda) — expectativas de mercado para o ano corrente.
+async function focus(): Promise<Record<string, number | null> | null> {
+  const yr = new Date().getFullYear();
+  const url = `https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais?$top=200&$orderby=Data desc&$format=json&$filter=DataReferencia eq '${yr}'`;
+  try {
+    const r = await fetch(encodeURI(url), { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return null;
+    const rows = ((await r.json())?.value ?? []) as Array<{ Indicador: string; Mediana: number }>;
+    const pick = (ind: string) => rows.find((x) => x.Indicador === ind)?.Mediana ?? null; // 1º = mais recente (ordenado desc)
+    return { year: yr, ipca: pick("IPCA"), selic: pick("Selic"), pib: pick("PIB Total"), cambio: pick("Câmbio") };
+  } catch {
+    return null;
+  }
+}
+
+// ADRs na NYSE × ação local → prêmio/desconto (termômetro do estrangeiro). Ratio 1:1.
+const ADRS: [string, string, string][] = [
+  ["Vale", "VALE", "VALE3.SA"],
+  ["Itaú", "ITUB", "ITUB4.SA"],
+  ["Bradesco", "BBD", "BBDC4.SA"],
+  ["Ambev", "ABEV", "ABEV3.SA"],
+];
+async function adrPremiums(usdBrl: number | null): Promise<Array<{ name: string; ticker: string; premiumPct: number }>> {
+  if (!usdBrl) return [];
+  const out: Array<{ name: string; ticker: string; premiumPct: number }> = [];
+  await Promise.all(
+    ADRS.map(async ([name, adr, local]) => {
+      const [ja, jl] = await Promise.all([yahoo(adr, "1d", "1d"), yahoo(local, "1d", "1d")]);
+      const pa = ja?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      const pl = jl?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (pa && pl) out.push({ name, ticker: local.replace(".SA", ""), premiumPct: ((pa * usdBrl) / pl - 1) * 100 });
+    }),
+  );
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
@@ -169,8 +205,9 @@ Deno.serve(async (req) => {
       return { ref: l, c30: pearson(ra.slice(-30), rb.slice(-30)), c90: pearson(ra.slice(-90), rb.slice(-90)) };
     });
     const globals = GLOBALS.map(([l]) => ({ symbol: l, price: byLabel[l]?.price ?? null, changePct: byLabel[l]?.changePct ?? null }));
-    const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
-    return json({ globals, correlations, macro: { selic, ipca, usd_brl: usd } });
+    const usdSpot = byLabel["Dólar"]?.price ?? null;
+    const [selic, ipca, usd, focusData, adrs] = await Promise.all([bcb(11), bcb(433), bcb(1), focus(), adrPremiums(usdSpot)]);
+    return json({ globals, correlations, macro: { selic, ipca, usd_brl: usd }, focus: focusData, adrs });
   }
 
   // overview: watchlist + macro BR
