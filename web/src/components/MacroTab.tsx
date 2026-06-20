@@ -7,6 +7,7 @@ import type { MacroData, MarketLiquidityData } from "../lib/types";
 import CotCard, { type CotRow } from "./CotCard";
 import InfoTip from "./InfoTip";
 import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
+import MacroGlobalPanel from "./MacroGlobalPanel";
 
 interface MacroAssetRow {
   symbol: string;
@@ -319,6 +320,9 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           {synthesis}
         </div>
       )}
+
+      {/* Maré de liquidez macro (FRED): net liquidity do Fed + condições financeiras — Pro */}
+      {pro && <MacroGlobalPanel />}
 
       {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME — Pro */}
       {pro && (liquidity || cot) && (

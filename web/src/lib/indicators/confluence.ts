@@ -110,7 +110,7 @@ export function computeMarketRead(
   intra?: Candle[],
   oiDeltaPct?: number | null,
   bookImbalance?: number | null,
-  macro?: { vixChg: number; dxyChg: number; us10yChg: number } | null,
+  macro?: { vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null,
 ): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
@@ -319,15 +319,26 @@ export function computeMarketRead(
   // ── Contexto: MARÉ MACRO (risk-on/off via VIX/DXY/juros; não vota no viés) ──
   let macroGate: number | null = null;
   if (macro) {
-    macroGate = ((macro.vixChg < 0 ? 1 : -1) + (macro.dxyChg < 0 ? 1 : -1) + (macro.us10yChg < 0 ? 1 : -1)) / 3;
+    let votes = (macro.vixChg < 0 ? 1 : -1) + (macro.dxyChg < 0 ? 1 : -1) + (macro.us10yChg < 0 ? 1 : -1);
+    let n = 3;
+    if (macro.nlChg != null) {
+      votes += macro.nlChg >= 0 ? 1 : -1; // maré de liquidez do Fed (FRED)
+      n += 1;
+    }
+    if (macro.nfci != null) {
+      votes += macro.nfci < 0 ? 1 : -1; // condições financeiras (NFCI)
+      n += 1;
+    }
+    macroGate = votes / n;
+    const tide = macro.nlChg != null ? ` · liquidez Fed ${macro.nlChg >= 0 ? "↑" : "↓"}` : "";
     axes.push({
       key: "macro",
-      label: "Maré macro (VIX/DXY/juros)",
+      label: "Maré macro (liquidez/VIX/juros)",
       group: "caráter",
       dir: 0,
       strength: clamp01(Math.abs(macroGate)),
       available: true,
-      detail: `${macroGate > 0.2 ? "Risk-on — vento a favor de risco" : macroGate < -0.2 ? "Risk-off — vento contra" : "Neutro"} · VIX ${macro.vixChg >= 0 ? "↑" : "↓"} · DXY ${macro.dxyChg >= 0 ? "↑" : "↓"} · juros 10Y ${macro.us10yChg >= 0 ? "↑" : "↓"}`,
+      detail: `${macroGate > 0.2 ? "Risk-on — vento a favor de risco" : macroGate < -0.2 ? "Risk-off — vento contra" : "Neutro"} · VIX ${macro.vixChg >= 0 ? "↑" : "↓"} · DXY ${macro.dxyChg >= 0 ? "↑" : "↓"} · juros ${macro.us10yChg >= 0 ? "↑" : "↓"}${tide}`,
     });
   }
 

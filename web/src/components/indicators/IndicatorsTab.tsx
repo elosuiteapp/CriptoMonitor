@@ -96,7 +96,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   const [c4h, setC4h] = useState<Candle[]>([]);
   const [c1h, setC1h] = useState<Candle[]>([]);
   const [oiDelta, setOiDelta] = useState<number | null>(null);
-  const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number } | null>(null);
+  const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -129,7 +129,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
         /* OI é opcional */
       }
       // Maré macro (VIX/DXY/juros via macro_assets — risk-on/off). Opcional.
-      let macroCtx: { vixChg: number; dxyChg: number; us10yChg: number } | null = null;
+      let macroCtx: { vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null = null;
       try {
         const { data } = await supabase
           .from("macro_assets")
@@ -146,6 +146,17 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
           const dxy = g("DXY");
           const us10y = g("US10Y");
           if ([vix, dxy, us10y].every((v) => Number.isFinite(v))) macroCtx = { vixChg: vix, dxyChg: dxy, us10yChg: us10y };
+        }
+        // Maré de liquidez do Fed (FRED via macro_global) — junta na maré macro.
+        const { data: mg } = await supabase
+          .from("macro_global")
+          .select("nl_chg_30d_pct, nfci")
+          .order("ts", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (macroCtx && mg) {
+          macroCtx.nlChg = (mg as { nl_chg_30d_pct: number | null }).nl_chg_30d_pct;
+          macroCtx.nfci = (mg as { nfci: number | null }).nfci;
         }
       } catch {
         /* macro opcional */
