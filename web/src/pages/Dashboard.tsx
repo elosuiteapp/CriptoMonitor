@@ -194,7 +194,7 @@ export default function Dashboard() {
         {tab === "macro" && <MacroTab asset={asset} pro={advanced} />}
         {tab === "indicadores" &&
           (canSmart ? (
-            <IndicatorsTab asset={asset} payload={payload ?? null} />
+            <IndicatorsTab asset={asset} payload={payload ?? null} plan={plan} />
           ) : (
             <LockedTab title="Leitura do Mercado" plan="Expert" />
           ))}

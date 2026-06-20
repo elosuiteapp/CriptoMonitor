@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 
 import { computeMarketRead, timeframeLean, type AxisSignal, type LiquidityTarget, type TfLean } from "../../lib/indicators/confluence";
 import { fmtPrice } from "../../lib/format";
+import { useOrderbookImbalance } from "../../hooks/useOrderbookImbalance";
 import { fetchKlines, type Candle } from "../../lib/marketData";
-import type { SnapshotPayload } from "../../lib/types";
+import { supabase } from "../../lib/supabase";
+import type { Plan, SnapshotPayload } from "../../lib/types";
 
 interface Props {
   asset: string;
   payload: SnapshotPayload | null;
+  plan: Plan;
 }
 
 const toneText = (tone: "bull" | "bear" | "neutral") =>
@@ -88,35 +91,65 @@ function TargetRow({ t, current }: { t: LiquidityTarget; current?: boolean }) {
 }
 
 /** Aba "Leitura do Mercado" (Expert) — leitura sintetizada e multi-timeframe. */
-export default function IndicatorsTab({ asset, payload }: Props) {
+export default function IndicatorsTab({ asset, payload, plan }: Props) {
   const [c1d, setC1d] = useState<Candle[]>([]);
   const [c4h, setC4h] = useState<Candle[]>([]);
   const [c1h, setC1h] = useState<Candle[]>([]);
+  const [oiDelta, setOiDelta] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([
-      fetchKlines(asset, "1d", 365).catch(() => [] as Candle[]),
-      fetchKlines(asset, "4h", 300).catch(() => [] as Candle[]),
-      fetchKlines(asset, "1h", 300).catch(() => [] as Candle[]),
-    ])
-      .then(([d, h4, h1]) => {
-        if (!alive) return;
-        setC1d(d);
-        setC4h(h4);
-        setC1h(h1);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+    (async () => {
+      const [d, h4, h1] = await Promise.all([
+        fetchKlines(asset, "1d", 365).catch(() => [] as Candle[]),
+        fetchKlines(asset, "4h", 300).catch(() => [] as Candle[]),
+        fetchKlines(asset, "1h", 300).catch(() => [] as Candle[]),
+      ]);
+      // OI-delta 24h (tabela derivatives — convicção do movimento). Opcional.
+      let oi: number | null = null;
+      try {
+        const { data } = await supabase
+          .from("derivatives")
+          .select("open_interest, ts")
+          .eq("asset", asset)
+          .order("ts", { ascending: false })
+          .limit(300);
+        const rows = (data ?? []) as Array<{ open_interest: number | null; ts: string }>;
+        if (rows.length) {
+          const now = Number(rows[0].open_interest);
+          const cutoff = Date.now() - 24 * 3600 * 1000;
+          const old = rows.find((r) => new Date(r.ts).getTime() <= cutoff);
+          const oldOi = old ? Number(old.open_interest) : NaN;
+          if (Number.isFinite(now) && Number.isFinite(oldOi) && oldOi > 0) oi = ((now - oldOi) / oldOi) * 100;
+        }
+      } catch {
+        /* OI é opcional */
+      }
+      if (!alive) return;
+      setC1d(d);
+      setC4h(h4);
+      setC1h(h1);
+      setOiDelta(oi);
+      setLoading(false);
+    })();
     return () => {
       alive = false;
     };
   }, [asset]);
 
-  const read = useMemo(() => computeMarketRead(c1d, payload, c4h), [c1d, payload, c4h]);
+  const imbalance = useOrderbookImbalance(asset, plan);
+  const bookImbalance = useMemo(() => {
+    const bid = (imbalance.varejo?.bid_wide_usd ?? 0) + (imbalance.institucional?.bid_wide_usd ?? 0);
+    const ask = (imbalance.varejo?.ask_wide_usd ?? 0) + (imbalance.institucional?.ask_wide_usd ?? 0);
+    return bid + ask > 0 ? (bid - ask) / (bid + ask) : null;
+  }, [imbalance]);
+
+  const read = useMemo(
+    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance),
+    [c1d, payload, c4h, oiDelta, bookImbalance],
+  );
   const leans: TfLean[] = useMemo(
     () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
     [c1d, c4h, c1h],

@@ -104,7 +104,13 @@ function rsiDivergence(closes: number[], rsiArr: number[], look = 20): string | 
   return null;
 }
 
-export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | null, intra?: Candle[]): MarketRead {
+export function computeMarketRead(
+  candles: Candle[],
+  payload: SnapshotPayload | null,
+  intra?: Candle[],
+  oiDeltaPct?: number | null,
+  bookImbalance?: number | null,
+): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
     closes[closes.length - 1] ?? payload?.gamma?.spot_price ?? payload?.price?.binance?.price ?? null;
@@ -281,6 +287,34 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
       : "Histórico insuficiente",
   });
 
+  // ── Contexto: OPEN INTEREST 24h (convicção do movimento; não vota no viés) ──
+  if (oiDeltaPct != null && Number.isFinite(oiDeltaPct)) {
+    const up = oiDeltaPct > 0;
+    axes.push({
+      key: "oi",
+      label: "Open Interest (24h)",
+      group: "posição",
+      dir: 0,
+      strength: clamp01(Math.abs(oiDeltaPct) / 10),
+      available: true,
+      detail: `OI ${up ? "+" : ""}${oiDeltaPct.toFixed(1)}% em 24h — ${up ? "posições novas entrando" : "posições saindo (desalavancagem)"}`,
+    });
+  }
+
+  // ── Contexto: PRESSÃO DO BOOK (liquidez passiva ±2%; não vota no viés) ──────
+  if (bookImbalance != null && Number.isFinite(bookImbalance)) {
+    const buy = bookImbalance > 0;
+    axes.push({
+      key: "book",
+      label: "Pressão do book",
+      group: "fluxo",
+      dir: 0,
+      strength: clamp01(Math.abs(bookImbalance) / 0.4),
+      available: true,
+      detail: `Book ${Math.abs(bookImbalance) < 0.05 ? "equilibrado" : buy ? "comprador" : "vendedor"} (${bookImbalance >= 0 ? "+" : ""}${(bookImbalance * 100).toFixed(0)}% ±2%) — liquidez parada`,
+    });
+  }
+
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
   const directional = [
     { dir: trendDir, str: trendStr, w: 0.28, avail: haveTrend },
@@ -319,6 +353,24 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
         ? "Tendência de baixa, mas o momento de curto prazo virou pra cima — possível repique/contra-tendência."
         : "Tendência de alta, mas o momento de curto prazo enfraquece — atenção a uma correção.",
     );
+
+  // Divergência preço × Open Interest (a "convicção do movimento").
+  if (oiDeltaPct != null && Number.isFinite(oiDeltaPct) && Math.abs(oiDeltaPct) > 1.5 && wsum && bias !== 0) {
+    if (bias > 0 && oiDeltaPct < 0)
+      divergences.push("Alta com OI caindo — short-covering, não demanda nova: o rali tende a perder força.");
+    else if (bias < 0 && oiDeltaPct < 0)
+      divergences.push("Queda com OI caindo — desalavancagem/liquidação: a baixa pode estar se exaurindo.");
+    else if (bias < 0 && oiDeltaPct > 0)
+      divergences.push("Queda com OI subindo — shorts novos entrando: pressão real, mas munição para um short squeeze.");
+  }
+
+  // Divergência viés × pressão do book (liquidez passiva contra o movimento).
+  if (bookImbalance != null && Number.isFinite(bookImbalance) && Math.abs(bookImbalance) > 0.2 && wsum && bias !== 0) {
+    if (bias > 0 && bookImbalance < 0)
+      divergences.push("Alta com book vendedor — parede de liquidez à venda acima pode segurar o movimento.");
+    else if (bias < 0 && bookImbalance > 0)
+      divergences.push("Queda com book comprador — liquidez de compra abaixo pode amortecer a queda.");
+  }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────
   let regime: MarketRead["regime"];
@@ -367,6 +419,8 @@ export function computeMarketRead(candles: Candle[], payload: SnapshotPayload | 
   pushT(g?.zero_gamma_level, "Zero Gamma");
   const vp = computeVolumeProfile(candles.slice(-30));
   pushT(vp?.poc, "POC 30d");
+  pushT(vp?.vah, "VAH · topo do valor");
+  pushT(vp?.val, "VAL · base do valor");
   // Ímãs de LIQUIDAÇÃO (reusa o modelo do heatmap): bolsão de shorts acima / longs
   // abaixo. Usa velas intraday (4H) quando disponíveis → zonas próximas e acionáveis.
   const liqGrid = buildLiquidationGrid((intra && intra.length >= 30 ? intra : candles).slice(-120));
