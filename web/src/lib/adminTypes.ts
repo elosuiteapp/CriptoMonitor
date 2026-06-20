@@ -25,6 +25,8 @@ export interface AdminOverview {
   subs_canceled: number;
   subs_canceled_30d: number;
   subs_past_due: number;
+  comp_active: number;
+  comp_value_cents: number;
   mrr_cents: number;
   arr_cents: number;
   mrr_usd_cents: number;
@@ -92,6 +94,8 @@ export interface AdminUserDetail {
     gateway: string | null;
     gateway_customer_id: string | null;
     gateway_subscription_id: string | null;
+    comp: boolean;
+    comp_reason: string | null;
     plan_slug: string;
     plan_name: string;
     price_cents: number;

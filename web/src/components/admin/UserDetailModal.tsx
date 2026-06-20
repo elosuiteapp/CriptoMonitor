@@ -25,6 +25,8 @@ export default function UserDetailModal({
   const [planSlug, setPlanSlug] = useState("free");
   const [statusVal, setStatusVal] = useState("active");
   const [periodEnd, setPeriodEnd] = useState("");
+  const [comp, setComp] = useState(false);
+  const [compReason, setCompReason] = useState("admin");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -42,6 +44,8 @@ export default function UserDetailModal({
       if (ref) {
         setPlanSlug(ref.plan_slug);
         setPeriodEnd(ref.current_period_end ? ref.current_period_end.slice(0, 10) : "");
+        setComp(ref.comp ?? false);
+        if (ref.comp_reason) setCompReason(ref.comp_reason);
       }
       // Sem assinatura ATIVA, o admin quase sempre quer ATIVAR um plano (upgrade/troca)
       // → default "active". Se houver ativa, reflete o status real dela.
@@ -70,6 +74,8 @@ export default function UserDetailModal({
       p_plan_slug: planSlug,
       p_status: statusVal,
       p_period_end: periodEnd ? new Date(periodEnd).toISOString() : null,
+      p_comp: comp,
+      p_comp_reason: comp ? compReason : null,
     });
     setBusy(false);
     if (error) setActionError(error.message);
@@ -161,8 +167,28 @@ export default function UserDetailModal({
                     Vence em (opcional)
                     <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={`mt-1 ${inputCls}`} />
                   </label>
+                  {/* Cortesia: libera o plano sem entrar na receita (admin, afiliado, equipe…) */}
+                  <div className="rounded-lg border border-border bg-muted/40 p-3 sm:col-span-3">
+                    <label className="flex items-center gap-2 text-sm text-foreground">
+                      <input type="checkbox" checked={comp} onChange={(e) => setComp(e.target.checked)} className="h-4 w-4 accent-primary" />
+                      Cortesia <span className="text-xs text-muted-foreground">— acesso liberado, <b>não conta como receita</b> (MRR)</span>
+                    </label>
+                    {comp && (
+                      <label className="mt-2 block text-xs text-muted-foreground">
+                        Motivo
+                        <select value={compReason} onChange={(e) => setCompReason(e.target.value)} className={`mt-1 sm:max-w-xs ${inputCls}`}>
+                          <option value="admin">Admin / interno</option>
+                          <option value="affiliate">Afiliado</option>
+                          <option value="team">Equipe</option>
+                          <option value="partner">Parceiro</option>
+                          <option value="other">Outro</option>
+                        </select>
+                      </label>
+                    )}
+                  </div>
                   <p className="-mt-1 text-[11px] text-muted-foreground sm:col-span-3">
                     Para liberar ou fazer <b>upgrade</b> de um plano, escolha o plano e deixe o status em <b>Ativa</b>. “Cancelada” derruba o acesso (volta para Free).
+                    Marque <b>Cortesia</b> para liberar sem cobrar (sua conta, afiliados, equipe) — não soma no faturamento.
                   </p>
                   <div className="sm:col-span-3 flex items-center gap-3">
                     <button type="submit" disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
@@ -186,7 +212,7 @@ export default function UserDetailModal({
                     <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                       <span className="flex items-center gap-2 text-foreground">
                         {s.plan_name} · <span className="num">{fmtBRL(s.price_cents)}</span>/mês
-                        <GatewayBadge gateway={s.gateway} />
+                        {s.comp ? <Badge tone="accent">cortesia</Badge> : <GatewayBadge gateway={s.gateway} />}
                       </span>
                       <span className="flex items-center gap-3 text-xs text-muted-foreground">
                         <StatusBadge status={s.status} />

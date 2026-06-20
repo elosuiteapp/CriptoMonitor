@@ -38,6 +38,16 @@ export default function Subscriptions() {
         <StatCard label="Churn 30d" value={fmtPct1(churn)} sub={`${fmtInt(o.subs_canceled_30d)} canc. / ${fmtInt(o.subs_canceled)} total`} tone={churn > 0.1 ? "bad" : undefined} />
       </div>
 
+      {o.comp_active > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
+          <span className="rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">cortesia</span>
+          <span className="text-foreground"><b className="num">{fmtInt(o.comp_active)}</b> {o.comp_active === 1 ? "conta cortesia ativa" : "contas cortesia ativas"}</span>
+          <span className="text-muted-foreground">
+            ≈ <span className="num">{fmtBRL(o.comp_value_cents)}</span>/mês liberados sem cobrança (admin, afiliados, equipe) — <b>fora do MRR</b> acima.
+          </span>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Receita por plano */}
         <Card className="p-4">

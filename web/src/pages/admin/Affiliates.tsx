@@ -19,6 +19,9 @@ type Affiliate = {
   pending_cents: number;
   paid_cents: number;
   lifetime_cents: number;
+  account_user_id: string | null;
+  account_plan: string | null;
+  account_comp: boolean;
 };
 
 type Detail = {
@@ -198,6 +201,24 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
     }
   }
 
+  // Cortesia: libera o app (Expert) para a CONTA do afiliado, sem cobrança e sem
+  // entrar na receita. Exige que o afiliado tenha conta com o e-mail cadastrado.
+  async function toggleComp() {
+    const grant = !a.account_comp;
+    const verb = grant ? "conceder cortesia Expert a" : "remover a cortesia de";
+    if (!confirm(`Confirma ${verb} ${a.name}? ${grant ? "A conta dele passa a ter acesso completo sem cobrança." : "A conta volta para o plano Free."}`)) return;
+    setBusy(true);
+    setErr(null);
+    const { error } = await supabase.rpc("admin_set_affiliate_comp", { p_affiliate_id: a.id, p_grant: grant, p_plan_slug: "expert" });
+    setBusy(false);
+    if (error) setErr(error.message);
+    else {
+      setMsg(grant ? "Cortesia concedida." : "Cortesia removida.");
+      onChanged();
+      setTimeout(() => setMsg(null), 2500);
+    }
+  }
+
   return (
     <Card className="p-5" hover>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -205,6 +226,7 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
           <div className="flex items-center gap-2">
             <SectionTitle hint={`${a.commission_percent}% por venda`}>{a.name}</SectionTitle>
             <Badge tone={a.status === "active" ? "green" : "neutral"}>{a.status === "active" ? "ativo" : "desativado"}</Badge>
+            {a.account_comp && <Badge tone="accent">cortesia {a.account_plan ?? "expert"}</Badge>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">{a.code}</code>
@@ -241,6 +263,27 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
         <button onClick={() => setEditing((v) => !v)} className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted">
           {editing ? "Cancelar edição" : "Editar"}
         </button>
+        {a.account_user_id ? (
+          <button
+            onClick={toggleComp}
+            disabled={busy}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-40 ${
+              a.account_comp
+                ? "border border-border text-foreground hover:bg-muted"
+                : "bg-primary text-primary-foreground hover:opacity-90"
+            }`}
+          >
+            {a.account_comp ? "Remover cortesia" : "Conceder cortesia"}
+          </button>
+        ) : (
+          <button
+            disabled
+            title="O afiliado precisa ter conta no app com o e-mail cadastrado para receber cortesia."
+            className="cursor-not-allowed rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground opacity-60"
+          >
+            Cortesia (sem conta)
+          </button>
+        )}
         {a.pix_key && <span className="text-xs text-muted-foreground">Pix: <span className="text-foreground">{a.pix_key}</span></span>}
         {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}
       </div>
