@@ -67,42 +67,58 @@ export default function B3Chart({ candles, chartType, showEma, showVolume }: Pro
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const sorted = [...candles].sort((a, b) => a.time - b.time);
+    // dedup por time + ordena asc — lightweight-charts EXIGE tempos únicos e crescentes
+    // (Yahoo às vezes repete o último timestamp → setData lança e derruba a tela).
+    const map = new Map<number, B3Candle>();
+    for (const c of candles) if (Number.isFinite(c.time) && Number.isFinite(c.close)) map.set(c.time, c);
+    const sorted = [...map.values()].sort((a, b) => a.time - b.time);
     // deno-lint-ignore no-explicit-any
     const created: ISeriesApi<any>[] = [];
 
-    const price =
-      chartType === "candles"
-        ? chart.addCandlestickSeries({ upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false })
-        : chartType === "bars"
-          ? chart.addBarSeries({ upColor: UP, downColor: DOWN })
-          : chartType === "line"
-            ? chart.addLineSeries({ color: "#6366f1", lineWidth: 2 })
-            : chart.addAreaSeries({ lineColor: "#6366f1", topColor: "rgba(99,102,241,0.4)", bottomColor: "rgba(99,102,241,0.02)" });
-    if (chartType === "line" || chartType === "area") price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) as never);
-    else price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })) as never);
-    created.push(price);
+    try {
+      const price =
+        chartType === "candles"
+          ? chart.addCandlestickSeries({ upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false })
+          : chartType === "bars"
+            ? chart.addBarSeries({ upColor: UP, downColor: DOWN })
+            : chartType === "line"
+              ? chart.addLineSeries({ color: "#6366f1", lineWidth: 2 })
+              : chart.addAreaSeries({ lineColor: "#6366f1", topColor: "rgba(99,102,241,0.4)", bottomColor: "rgba(99,102,241,0.02)" });
+      if (chartType === "line" || chartType === "area") price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) as never);
+      else price.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })) as never);
+      created.push(price);
 
-    if (showEma && sorted.length > 12) {
-      const closes = sorted.map((c) => c.close);
-      for (const e of EMAS) {
-        const vals = ema(closes, e.p);
-        const ls = chart.addLineSeries({ color: e.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-        ls.setData(sorted.map((c, i) => ({ time: c.time as UTCTimestamp, value: vals[i] })) as never);
-        created.push(ls);
+      if (showEma && sorted.length > 12) {
+        const closes = sorted.map((c) => c.close);
+        for (const e of EMAS) {
+          const vals = ema(closes, e.p);
+          const ls = chart.addLineSeries({ color: e.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+          ls.setData(sorted.map((c, i) => ({ time: c.time as UTCTimestamp, value: vals[i] })) as never);
+          created.push(ls);
+        }
       }
+
+      if (showVolume) {
+        const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
+        chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+        vol.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume || 0, color: c.close >= c.open ? "rgba(16,185,129,0.45)" : "rgba(244,63,94,0.45)" })) as never);
+        created.push(vol);
+      }
+
+      chart.timeScale().fitContent();
+    } catch {
+      /* dados inválidos neste ciclo — não derruba a tela */
     }
 
-    if (showVolume) {
-      const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
-      chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
-      vol.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume || 0, color: c.close >= c.open ? "rgba(16,185,129,0.45)" : "rgba(244,63,94,0.45)" })) as never);
-      created.push(vol);
-    }
-
-    chart.timeScale().fitContent();
     return () => {
-      for (const s of created) chart.removeSeries(s);
+      // só remove se o chart AINDA é o atual (na desmontagem o effect de criação já
+      // chamou chart.remove() → removeSeries lançaria "Object is disposed" → tela preta).
+      if (chartRef.current !== chart) return;
+      try {
+        for (const s of created) chart.removeSeries(s);
+      } catch {
+        /* chart já descartado */
+      }
     };
   }, [candles, chartType, showEma, showVolume]);
 
