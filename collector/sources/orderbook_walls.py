@@ -33,6 +33,9 @@ _COINBASE_PROD = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD",
                   "AVAX": "AVAX-USD", "LINK": "LINK-USD", "DOT": "DOT-USD", "LTC": "LTC-USD",
                   "AAVE": "AAVE-USD", "UNI": "UNI-USD", "LDO": "LDO-USD", "ARB": "ARB-USD",
                   "ATOM": "ATOM-USD", "PEPE": "PEPE-USD"}
+# OKX entra no "varejo" (junto da Binance); só majors e geo pode bloquear no Railway → best-effort.
+_OKX = "https://www.okx.com/api/v5/market/books"
+_OKX_SYM = {"BTC": "BTC-USDT", "ETH": "ETH-USDT", "SOL": "SOL-USDT"}
 
 # passo do bucket de preço e notional mínimo (USD) por ativo
 _STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5, "BNB": 1.0}
@@ -118,6 +121,21 @@ class OrderbookWallsSource(BaseSource):
                     rows += _walls(book["asks"], "ask", "coinbase", asset, mid, ts)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("book coinbase %s falhou: %s", asset, exc)
+
+            # OKX (varejo) — só majors; geo pode bloquear no Railway, daí degrada sozinho.
+            osym = _OKX_SYM.get(asset)
+            if osym:
+                try:
+                    r = await http.get(_OKX, params={"instId": osym, "sz": 400}, timeout=15.0)
+                    r.raise_for_status()
+                    data = r.json().get("data", [])
+                    if data and data[0].get("bids") and data[0].get("asks"):
+                        book = data[0]
+                        mid = _accumulate(asset, "okx", book)
+                        rows += _walls(book["bids"], "bid", "okx", asset, mid, ts)
+                        rows += _walls(book["asks"], "ask", "okx", asset, mid, ts)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("book okx %s falhou: %s", asset, exc)
 
         # Pressão do book: soma de bid × ask perto do preço (±0,5% e ±2%), agregando
         # as exchanges. Vira o gauge "book comprador × vendedor" (cruzar com CVD).

@@ -299,7 +299,7 @@ export default function Dashboard() {
                   info={GLOSSARY.squeezeRisk}
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
-                <OrderbookImbalanceCard data={imbalance.varejo} title="Pressão do book · varejo" source="Binance" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
+                <OrderbookImbalanceCard data={imbalance.varejo} title="Pressão do book · varejo" source="Binance + OKX" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
               </>
             ) : (
               <>
