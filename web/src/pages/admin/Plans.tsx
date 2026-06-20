@@ -7,7 +7,7 @@ import { fmtBRL, fmtUSD } from "../../lib/adminFormat";
 import type { PlanRow } from "../../lib/adminTypes";
 
 const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC"];
-const ALL_CHANNELS = ["email", "whatsapp"];
+const ALL_CHANNELS = ["inapp", "email"];
 
 export default function Plans() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
@@ -167,7 +167,7 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
           <div className="mt-2 flex flex-wrap gap-2">
             {ALL_CHANNELS.map((c) => (
               <Chip key={c} active={channels.includes(c)} onClick={() => toggle(channels, setChannels, c)}>
-                {c === "email" ? "E-mail" : "WhatsApp"}
+                {c === "inapp" ? "In-app + push" : c === "email" ? "E-mail" : c}
               </Chip>
             ))}
           </div>

@@ -114,6 +114,10 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
   const [regime, setRegime] = useState("negative");
 
   const canCreate = (plan.alert_channels ?? []).length > 0;
+  const isExpert = plan.slug === "expert";
+  // Opt-in de e-mail (só Expert) — guardado em profiles.email_alerts.
+  const [emailAlerts, setEmailAlerts] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
   // Preço/funding/níveis de referência só valem para o ativo que está aberto no cockpit.
   const isCurrent = asset === currentAsset;
   const levels = useMemo(() => (isCurrent ? gammaLevels(gamma) : []), [isCurrent, gamma]);
@@ -135,6 +139,26 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
   useEffect(() => {
     load();
   }, []);
+
+  // Carrega o opt-in de e-mail atual (só faz sentido no Expert).
+  useEffect(() => {
+    if (!isExpert) return;
+    supabase
+      .from("profiles")
+      .select("email_alerts")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setEmailAlerts(Boolean((data as { email_alerts?: boolean } | null)?.email_alerts)));
+  }, [isExpert, user.id]);
+
+  async function toggleEmailAlerts() {
+    const next = !emailAlerts;
+    setEmailAlerts(next);
+    setEmailBusy(true);
+    const { error } = await supabase.from("profiles").update({ email_alerts: next }).eq("id", user.id);
+    if (error) setEmailAlerts(!next); // reverte se falhar
+    setEmailBusy(false);
+  }
 
   // Pré-preenche o valor com o preço/funding atual do ativo aberto (só quando vazio
   // e fora do modo edição) — o usuário só empurra pra cima/baixo. `value` fica fora
@@ -244,6 +268,33 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* Opt-in de e-mail: toggle no Expert, vitrine de upgrade no Pro. */}
+          {isExpert ? (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 dark:bg-card/60">
+              <span className="text-sm text-foreground">
+                Receber alertas por e-mail
+                <span className="mt-0.5 block text-xs text-muted-foreground">Enviado para {user.email}</span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={emailAlerts}
+                aria-label="Receber alertas por e-mail"
+                disabled={emailBusy}
+                onClick={toggleEmailAlerts}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${emailAlerts ? "bg-primary" : "bg-muted"}`}
+              >
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${emailAlerts ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+          ) : canCreate ? (
+            <a
+              href="/pricing"
+              className="mb-4 flex items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-xs text-primary transition-colors hover:bg-primary/10"
+            >
+              ✉️ Receba alertas também por e-mail no plano Expert →
+            </a>
+          ) : null}
           {!canCreate ? (
             <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground dark:bg-card/60">
               Alertas estão disponíveis nos planos <strong>Pro</strong> e <strong>Expert</strong>.{" "}
