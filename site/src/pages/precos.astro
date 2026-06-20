@@ -2,7 +2,7 @@
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
-import { SIGNUP_URL, PRICING } from "../consts";
+import { SIGNUP_URL, PRICING, COMPARISON } from "../consts";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const annual = (monthly: number) => Math.round(monthly * 12 * (1 - PRICING.annualDiscount));
@@ -51,6 +51,49 @@ const annual = (monthly: number) => Math.round(monthly * 12 * (1 - PRICING.annua
           </ul>
         </div>
       ))}
+    </div>
+
+    <!-- Comparativo detalhado, recurso por recurso -->
+    <div class="mt-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-2xl font-bold tracking-tight">Compare recurso por recurso</h2>
+        <p class="mt-2 text-sm text-muted">Exatamente o que cada plano abre — sem letra miúda.</p>
+      </div>
+      <div class="mt-8 overflow-x-auto rounded-2xl border border-line">
+        <table class="w-full min-w-[680px] border-collapse text-sm">
+          <thead>
+            <tr class="bg-card">
+              <th class="px-4 py-3 text-left font-semibold">Recurso</th>
+              <th class="px-3 py-3 text-center font-semibold">Free</th>
+              <th class="bg-primary/[0.06] px-3 py-3 text-center font-semibold text-primary">Pro</th>
+              <th class="px-3 py-3 text-center font-semibold">Expert</th>
+            </tr>
+          </thead>
+          <tbody>
+            {COMPARISON.map((g) => (
+              <Fragment>
+                <tr>
+                  <td colspan="4" class="bg-surface/50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{g.group}</td>
+                </tr>
+                {g.rows.map((r) => (
+                  <tr class="border-t border-line/50">
+                    <td class="px-4 py-2.5 text-muted">{r.label}</td>
+                    <td class="px-3 py-2.5 text-center">
+                      {typeof r.free === "boolean" ? (r.free ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="text-fg">{r.free}</span>}
+                    </td>
+                    <td class="bg-primary/[0.06] px-3 py-2.5 text-center">
+                      {typeof r.pro === "boolean" ? (r.pro ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="font-medium text-fg">{r.pro}</span>}
+                    </td>
+                    <td class="px-3 py-2.5 text-center">
+                      {typeof r.expert === "boolean" ? (r.expert ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="text-fg">{r.expert}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <p class="mx-auto mt-10 max-w-xl text-center text-xs text-muted">

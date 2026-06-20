@@ -53,7 +53,7 @@ const COPY: Record<Locale, {
     plans: {
       free: { name: "Free", features: ["Somente Bitcoin (BTC)", "Preço + Fear & Greed atualizados a cada 1h", "1 análise de IA por dia", "Sem alertas e sem histórico"] },
       pro: { name: "Pro", tag: "Mais popular", features: ["20 ativos em tempo real (5 min)", "Gamma, opções e volatilidade · Macro & Correlações completo", "Cockpit de varejo: funding, CVD, long/short, liquidações e squeeze", "Camadas de opções no gráfico · 10 análises de IA/dia", "Alertas in-app e push · histórico de 30 dias"] },
-      expert: { name: "Expert", features: ["Tudo do Pro", "Camada institucional: viés Coinbase, ETFs spot, hedge de opções e book institucional", "Camadas avançadas no gráfico: CVD, funding, pressão do book e heatmap de liquidações", "Smart Money & On-chain · 100 moedas", "Relatórios diários · 30 análises de IA/dia · histórico completo"] },
+      expert: { name: "Expert", features: ["Tudo do Pro", "Institucional × varejo: quem compra à vista vs quem alavanca (ETFs, opções e liquidez do book)", "Camadas avançadas no gráfico: CVD, funding, pressão do book e heatmap de liquidações", "Smart Money & On-chain · 100 moedas", "Relatórios diários · 30 análises de IA/dia · histórico completo"] },
     },
   },
   en: {
@@ -79,7 +79,7 @@ const COPY: Record<Locale, {
     plans: {
       free: { name: "Free", features: ["Bitcoin (BTC) only", "Price + Fear & Greed, updated hourly", "1 AI analysis per day", "No alerts, no history"] },
       pro: { name: "Pro", tag: "Most popular", features: ["20 assets in real time (5 min)", "Gamma, options & volatility · full Macro & Correlations", "Retail cockpit: funding, CVD, long/short, liquidations & squeeze", "Options layers on the chart · 10 AI analyses/day", "In-app & push alerts · 30-day history"] },
-      expert: { name: "Expert", features: ["Everything in Pro", "Institutional layer: Coinbase bias, spot ETFs, options hedge & institutional book", "Advanced chart layers: CVD, funding, book pressure & liquidation heatmap", "Smart Money & On-chain · 100 coins", "Daily reports · 30 AI analyses/day · full history"] },
+      expert: { name: "Expert", features: ["Everything in Pro", "Institutional vs retail: spot buyers vs leverage (ETFs, options & book liquidity)", "Advanced chart layers: CVD, funding, book pressure & liquidation heatmap", "Smart Money & On-chain · 100 coins", "Daily reports · 30 AI analyses/day · full history"] },
     },
   },
 };
