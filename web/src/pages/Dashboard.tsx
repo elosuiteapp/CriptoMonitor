@@ -59,6 +59,7 @@ import {
 } from "../lib/format";
 import type { ChartType, Timeframe } from "../lib/marketData";
 import { GLOSSARY } from "../lib/glossary";
+import { cockpitSynthesis } from "../lib/cockpitSynthesis";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL", "BNB"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit) + BNB (Binance), via relay
 const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
@@ -143,6 +144,7 @@ export default function Dashboard() {
   const dex = payload?.dex_liquidity;
   const onchain = payload?.onchain_perps;
   const defi = payload?.defi_health;
+  const cockpitRead = cockpitSynthesis(payload ?? null, asset);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -208,6 +210,12 @@ export default function Dashboard() {
 
         {tab === "cockpit" && (
           <>
+        {advanced && cockpitRead && (
+          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3 text-sm text-foreground">
+            <span className="mr-1.5" aria-hidden>🧭</span>
+            {cockpitRead}
+          </div>
+        )}
         {/* Gráfico com camadas */}
         <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
           <ChartTypeSelector

@@ -18,6 +18,27 @@ const toneText = (tone: "bull" | "bear" | "neutral") =>
 const dirText = (dir: number) => (dir > 0 ? "text-emerald-500" : dir < 0 ? "text-rose-500" : "text-muted-foreground");
 const dirGlyph = (dir: number) => (dir > 0 ? "▲" : dir < 0 ? "▼" : "—");
 
+/** Mini-gráfico da evolução do viés ao longo do tempo (histórico do market_read). */
+function BiasSparkline({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const w = 112;
+  const h = 26;
+  const pts = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h / 2 - (Math.max(-100, Math.min(100, v)) / 100) * (h / 2 - 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const up = data[data.length - 1] >= 0;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-6 w-28" preserveAspectRatio="none">
+      <line x1="0" y1={h / 2} x2={w} y2={h / 2} className="stroke-border" strokeWidth="0.5" strokeDasharray="2 2" />
+      <polyline points={pts} fill="none" stroke={up ? "#10b981" : "#f43f5e"} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** Gauge semicircular do viés (-100..+100): arcos vermelho/neutro/verde + agulha. */
 function BiasGauge({ value, tone }: { value: number; tone: "bull" | "bear" | "neutral" }) {
   const v = Math.max(-100, Math.min(100, value));
@@ -97,6 +118,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   const [c1h, setC1h] = useState<Candle[]>([]);
   const [oiDelta, setOiDelta] = useState<number | null>(null);
   const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null>(null);
+  const [biasHist, setBiasHist] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -161,12 +183,26 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
       } catch {
         /* macro opcional */
       }
+      // Histórico do viés p/ sparkline (market_read — Fase 2). Opcional.
+      let bh: number[] = [];
+      try {
+        const { data } = await supabase
+          .from("market_read")
+          .select("bias, ts")
+          .eq("asset", asset)
+          .order("ts", { ascending: false })
+          .limit(48);
+        bh = ((data ?? []) as Array<{ bias: number }>).map((r) => Number(r.bias)).filter((v) => Number.isFinite(v)).reverse();
+      } catch {
+        /* opcional */
+      }
       if (!alive) return;
       setC1d(d);
       setC4h(h4);
       setC1h(h1);
       setOiDelta(oi);
       setMacro(macroCtx);
+      setBiasHist(bh);
       setLoading(false);
     })();
     return () => {
@@ -235,6 +271,12 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
                 <span className="text-[11px] text-muted-foreground">
                   {read.agree} de {read.voting} forças
                 </span>
+                {biasHist.length >= 2 && (
+                  <div className="mt-1.5 flex flex-col items-end">
+                    <BiasSparkline data={biasHist} />
+                    <span className="text-[10px] text-muted-foreground">evolução do viés</span>
+                  </div>
+                )}
               </div>
             </div>
 
