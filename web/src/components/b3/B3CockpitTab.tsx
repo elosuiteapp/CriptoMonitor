@@ -111,7 +111,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             <div className="num text-3xl font-bold text-foreground">{selQuote ? fmtAssetPrice(asset, selQuote.price) : "—"}</div>
           </div>
           <span className={`text-sm font-semibold ${toneCls(selQuote?.changePct)}`}>
-            {fmtPct(selQuote?.changePct ?? null)} · dia{selQuote?.volume != null ? ` · vol ${fmtVol(selQuote.volume)}` : ""}
+            {fmtPct(selQuote?.changePct ?? null)} · dia{selQuote?.volume ? ` · vol ${fmtVol(selQuote.volume)}` : ""}
           </span>
         </div>
 
@@ -119,7 +119,9 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <ChartTypeSelector chartType={chartType} onChartType={setChartType} timeframe={timeframe} onTimeframe={setTimeframe} />
           <PillRow label="Indicadores:">
             <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 períodos — tendência e suportes/resistências dinâmicos." />
-            <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc="Volume negociado por período (barras na base do gráfico)." />
+            {asset !== "USD/BRL" && (
+              <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc="Volume negociado por período (barras na base do gráfico)." />
+            )}
           </PillRow>
           {chartLoading ? (
             <div className="h-[360px] animate-pulse rounded-xl bg-muted/40" />

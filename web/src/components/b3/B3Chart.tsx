@@ -98,7 +98,8 @@ export default function B3Chart({ candles, chartType, showEma, showVolume }: Pro
         }
       }
 
-      if (showVolume) {
+      // Volume só quando há dado (pares de moeda como USD/BRL vêm sem volume no Yahoo).
+      if (showVolume && sorted.some((c) => (c.volume || 0) > 0)) {
         const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
         chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
         vol.setData(sorted.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume || 0, color: c.close >= c.open ? "rgba(16,185,129,0.45)" : "rgba(244,63,94,0.45)" })) as never);
