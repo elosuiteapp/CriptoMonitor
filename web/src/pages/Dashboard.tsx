@@ -110,13 +110,18 @@ export default function Dashboard() {
   const walls = useOrderbookWalls(asset, plan);
   const imbalance = useOrderbookImbalance(asset, plan);
   const oiSeries = useOpenInterest(asset, plan);
-  // Volume Delta / CVD por candle (klines da Binance) — só quando a camada CVD liga.
-  const cvdSeries = useCvd(asset, timeframe, (plan?.chart_layers ?? false) && layers.cvd);
-  const bookSeries = useBookPressureSeries(asset, plan, (plan?.chart_layers ?? false) && layers.bookPressure);
   const advanced = plan?.advanced_metrics ?? false;
   const isExpert = plan?.slug === "expert";
   const canSmart = plan?.smart_money ?? false;
   const canUseLayers = plan?.chart_layers ?? false;
+  // Camadas avançadas de fluxo (CVD, funding, pressão do book, heatmap de liquidações)
+  // são exclusivas do Expert. As camadas de estrutura de opções ficam no Pro.
+  const effectiveLayers: ActiveLayers = isExpert
+    ? layers
+    : { ...layers, funding: false, cvd: false, bookPressure: false, liquidations: false };
+  // Volume Delta / CVD e Pressão do book por candle — só quando a camada liga (Expert).
+  const cvdSeries = useCvd(asset, timeframe, canUseLayers && effectiveLayers.cvd);
+  const bookSeries = useBookPressureSeries(asset, plan, canUseLayers && effectiveLayers.bookPressure);
   const isOptionAsset = OPTION_ASSETS.includes(asset);
   const isVolAsset = VOL_ASSETS.includes(asset);
 
@@ -209,24 +214,24 @@ export default function Dashboard() {
             timeframe={timeframe}
             chartType={chartType}
             gamma={payload?.gamma ?? null}
-            layers={layers}
+            layers={effectiveLayers}
             canUseLayers={canUseLayers}
             walls={walls}
             oiSeries={oiSeries}
             onPrice={setLivePrice}
           />
-          <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} />
-          {canUseLayers && layers.cvd && (
+          <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} isExpert={isExpert} />
+          {canUseLayers && effectiveLayers.cvd && (
             <>
               <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD (Binance · ${timeframe.toUpperCase()})`} />
               <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
             </>
           )}
-          {canUseLayers && layers.bookPressure && (
+          {canUseLayers && effectiveLayers.bookPressure && (
             <CvdSubchart data={bookSeries} title="Pressão do book · todas as fontes (bid − ask, ±2%)" />
           )}
-          {canUseLayers && layers.funding && <FundingStrip data={series.funding} />}
-          {canUseLayers && layers.liquidations && <LiquidationsStrip data={series.liquidations} />}
+          {canUseLayers && effectiveLayers.funding && <FundingStrip data={series.funding} />}
+          {canUseLayers && effectiveLayers.liquidations && <LiquidationsStrip data={series.liquidations} />}
         </section>
 
         {/* Painel Gamma (BTC/ETH/SOL, Pro+). Bloqueado, mostra os recursos do módulo
@@ -318,7 +323,7 @@ export default function Dashboard() {
             <span className="h-px flex-1 bg-primary/25" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {advanced ? (
+            {isExpert ? (
               <>
                 <MetricCard
                   institutional
@@ -399,8 +404,11 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <LockedCard institutional title="Viés Institucional × Varejo" />
-                <LockedCard institutional title="Macro do mercado" />
+                <LockedCard institutional plan="Expert" title="Viés Institucional × Varejo" />
+                <LockedCard institutional plan="Expert" title="Pressão do book · institucional" />
+                <LockedCard institutional plan="Expert" title="ETFs spot · fluxo institucional" />
+                <LockedCard institutional plan="Expert" title="Macro do mercado · dominância e mcap" />
+                <LockedCard institutional plan="Expert" title="Hedge institucional (opções)" />
               </>
             )}
           </div>
