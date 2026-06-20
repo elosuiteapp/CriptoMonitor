@@ -63,12 +63,35 @@ def _walls(levels, side, exchange, asset, mid, ts) -> list[dict]:
     return rows[:_TOP]
 
 
+def _band_notional(levels, mid: float, frac: float) -> float:
+    """Soma o notional (USD) das ordens dentro de ±frac do mid (preço × qty)."""
+    total = 0.0
+    for lvl in levels:
+        price = float(lvl[0])
+        qty = float(lvl[1])
+        if mid > 0 and abs(price - mid) / mid <= frac:
+            total += price * qty
+    return total
+
+
 class OrderbookWallsSource(BaseSource):
     name = "orderbook_walls"
 
     async def fetch(self, http: httpx.AsyncClient, assets: list[str]) -> list[TableRows]:
         ts = to_iso(now_utc())
         rows: list[dict] = []
+        imbalance: dict[str, dict] = {}
+
+        def _accumulate(asset: str, book: dict) -> float:
+            mid = (float(book["bids"][0][0]) + float(book["asks"][0][0])) / 2
+            imb = imbalance.setdefault(
+                asset, {"bid_near": 0.0, "ask_near": 0.0, "bid_wide": 0.0, "ask_wide": 0.0})
+            imb["bid_near"] += _band_notional(book["bids"], mid, 0.005)
+            imb["ask_near"] += _band_notional(book["asks"], mid, 0.005)
+            imb["bid_wide"] += _band_notional(book["bids"], mid, 0.02)
+            imb["ask_wide"] += _band_notional(book["asks"], mid, 0.02)
+            return mid
+
         for asset in assets:
             # Binance
             sym = _BINANCE_SYM.get(asset)
@@ -77,7 +100,7 @@ class OrderbookWallsSource(BaseSource):
                     r = await http.get(_BINANCE, params={"symbol": sym, "limit": 1000}, timeout=20.0)
                     r.raise_for_status()
                     book = r.json()
-                    mid = (float(book["bids"][0][0]) + float(book["asks"][0][0])) / 2
+                    mid = _accumulate(asset, book)
                     rows += _walls(book["bids"], "bid", "binance", asset, mid, ts)
                     rows += _walls(book["asks"], "ask", "binance", asset, mid, ts)
                 except Exception as exc:  # noqa: BLE001
@@ -90,10 +113,22 @@ class OrderbookWallsSource(BaseSource):
                     r = await http.get(_COINBASE.format(p=prod), timeout=20.0)
                     r.raise_for_status()
                     book = r.json()
-                    mid = (float(book["bids"][0][0]) + float(book["asks"][0][0])) / 2
+                    mid = _accumulate(asset, book)
                     rows += _walls(book["bids"], "bid", "coinbase", asset, mid, ts)
                     rows += _walls(book["asks"], "ask", "coinbase", asset, mid, ts)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("book coinbase %s falhou: %s", asset, exc)
 
-        return [TableRows("orderbook_walls", rows, "asset,exchange,side,price,ts")]
+        # Pressão do book: soma de bid × ask perto do preço (±0,5% e ±2%), agregando
+        # as exchanges. Vira o gauge "book comprador × vendedor" (cruzar com CVD).
+        imb_rows = [
+            {"asset": a, "bid_near_usd": v["bid_near"], "ask_near_usd": v["ask_near"],
+             "bid_wide_usd": v["bid_wide"], "ask_wide_usd": v["ask_wide"], "ts": ts}
+            for a, v in imbalance.items()
+            if (v["bid_wide"] + v["ask_wide"]) > 0
+        ]
+
+        return [
+            TableRows("orderbook_walls", rows, "asset,exchange,side,price,ts"),
+            TableRows("orderbook_imbalance", imb_rows, "asset,ts"),
+        ]

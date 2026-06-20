@@ -48,7 +48,7 @@ _USER_AGENT = "CryptoMonitor/1.0 (+collector)"
 # liquidations e news com tempo próprio) e o options_flow, que já ancora seu ts no bucket.
 _GRID_TS_TABLES = frozenset({
     "prices_cex", "derivatives", "gamma_profile", "options_oi", "volatility_index",
-    "onchain_perps", "dex_liquidity", "defi_health", "orderbook_walls",
+    "onchain_perps", "dex_liquidity", "defi_health", "orderbook_walls", "orderbook_imbalance",
     "macro", "macro_assets", "macro_correlations", "market_snapshot",
     "etf_flows", "market_liquidity",
 })

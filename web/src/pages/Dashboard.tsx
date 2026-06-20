@@ -20,6 +20,7 @@ import MetricCard from "../components/MetricCard";
 import ModuleSwitcher from "../components/ModuleSwitcher";
 import NewsBlock from "../components/NewsBlock";
 import OIDeltaCard from "../components/OIDeltaCard";
+import OrderbookImbalanceCard from "../components/OrderbookImbalanceCard";
 import NotificationsBell from "../components/NotificationsBell";
 import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
@@ -34,6 +35,7 @@ import { useCvd } from "../hooks/useCvd";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
+import { useOrderbookImbalance } from "../hooks/useOrderbookImbalance";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
 import { useSeries } from "../hooks/useSeries";
@@ -104,6 +106,7 @@ export default function Dashboard() {
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
   const walls = useOrderbookWalls(asset, plan);
+  const imbalance = useOrderbookImbalance(asset, plan);
   const oiSeries = useOpenInterest(asset, plan);
   // Volume Delta / CVD por candle (klines da Binance) — só quando a camada CVD liga.
   const cvdSeries = useCvd(asset, timeframe, (plan?.chart_layers ?? false) && layers.cvd);
@@ -290,6 +293,7 @@ export default function Dashboard() {
                   info={GLOSSARY.squeezeRisk}
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
+                <OrderbookImbalanceCard data={imbalance} timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
               </>
             ) : (
               <>

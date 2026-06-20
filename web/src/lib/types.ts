@@ -106,6 +106,14 @@ export interface OrderbookWall {
   notional_usd: number;
 }
 
+export interface OrderbookImbalance {
+  bid_near_usd: number; // bids dentro de ±0,5% do preço (Binance+Coinbase)
+  ask_near_usd: number;
+  bid_wide_usd: number; // dentro de ±2%
+  ask_wide_usd: number;
+  ts: string;
+}
+
 export interface NewsItem {
   title: string;
   source: string | null;
