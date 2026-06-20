@@ -1,12 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { B3_FREE_TICKERS, B3_HAS_TOKEN, B3_WATCHLIST, fetchB3Quote, type B3Quote } from "../../lib/b3";
+import { fetchB3Chart, fetchB3Fundamentals, fetchB3Overview, type B3Candle, type B3Fund, type B3Overview, type B3Quote } from "../../lib/b3";
 import B3Chart from "./B3Chart";
 
-const LABEL: Record<string, string> = { "^BVSP": "IBOV" };
-const label = (t: string) => LABEL[t] ?? t;
-
-const fmtBRL = (n: number | null) => (n == null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 }));
+const fmtBRL = (n: number | null, dec = 2) => (n == null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: dec }));
+const fmtNum = (n: number | null, dec = 2) => (n == null ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
+const fmtPct = (n: number | null) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`);
 const fmtBig = (n: number | null) => {
   if (n == null) return "—";
   if (n >= 1e12) return `R$ ${(n / 1e12).toFixed(2)} tri`;
@@ -20,10 +19,13 @@ const fmtVol = (n: number | null) => {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} mi`;
   return n.toLocaleString("pt-BR");
 };
+const toneCls = (n: number | null | undefined) => (n == null ? "text-muted-foreground" : n >= 0 ? "text-emerald-500" : "text-rose-500");
+// Selic diária (BCB série 11) → efetiva anual aproximada.
+const selicAA = (daily: number | null) => (daily == null ? null : (Math.pow(1 + daily / 100, 252) - 1) * 100);
 
-function Card({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function MacroCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+    <div className="rounded-xl border border-border/70 bg-background/40 p-2.5">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="num mt-0.5 text-sm font-semibold text-foreground">{value}</div>
       {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
@@ -31,97 +33,141 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-/** Módulo B3 (admin-only, em construção). Cockpit de ações via brapi.dev:
- *  gráfico + cotação + fundamentos. IBOV/dólar/todas as ações com VITE_BRAPI_TOKEN. */
+function WatchCard({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-start rounded-xl border px-3 py-2 text-left transition-colors ${
+        active ? "border-primary bg-primary/10" : "border-border hover:bg-muted dark:bg-card/40"
+      }`}
+    >
+      <span className="text-xs font-semibold text-foreground">{q.symbol}</span>
+      <span className="num text-sm text-foreground">{q.kind === "currency" ? fmtNum(q.price) : fmtNum(q.price, q.kind === "index" ? 0 : 2)}</span>
+      <span className={`num text-[11px] font-medium ${toneCls(q.changePct)}`}>{fmtPct(q.changePct)}</span>
+    </button>
+  );
+}
+
+/** Módulo B3 (admin-only). Watchlist (IBOV/dólar/ações) + macro BR + gráfico + fundamentos.
+ *  Dados via edge b3-data (Yahoo+BCB, grátis). Isolado do módulo cripto. */
 export default function B3Module() {
-  const tickers = B3_HAS_TOKEN ? B3_WATCHLIST : B3_FREE_TICKERS;
-  const [selected, setSelected] = useState(tickers[0]);
-  const [q, setQ] = useState<B3Quote | null>(null);
+  const [ov, setOv] = useState<B3Overview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState("PETR4");
+  const [candles, setCandles] = useState<B3Candle[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [fund, setFund] = useState<B3Fund | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    fetchB3Quote(selected).then((r) => {
+    fetchB3Overview().then((o) => {
       if (!alive) return;
-      setQ(r);
+      setOv(o);
       setLoading(false);
     });
     return () => {
       alive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setChartLoading(true);
+    setFund(null);
+    fetchB3Chart(selected).then((c) => {
+      if (alive) {
+        setCandles(c);
+        setChartLoading(false);
+      }
+    });
+    fetchB3Fundamentals(selected).then((f) => alive && setFund(f));
+    return () => {
+      alive = false;
+    };
   }, [selected]);
 
-  const up = (q?.changePct ?? 0) >= 0;
+  const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === selected) ?? null, [ov, selected]);
+  const ibov = ov?.quotes.find((q) => q.symbol === "IBOV");
+  const dollar = ov?.quotes.find((q) => q.symbol === "USD/BRL");
+  const stocks = ov?.quotes.filter((q) => q.kind === "stock") ?? [];
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
-            🇧🇷 B3 · Ações
-            <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
-          </h2>
-          <p className="text-xs text-muted-foreground">Cockpit da bolsa brasileira — preço, fundamentos e candles. Em construção.</p>
-        </div>
-      </div>
-
-      {/* Seletor de ativos */}
-      <div className="flex flex-wrap gap-1.5">
-        {tickers.map((t) => (
-          <button
-            key={t}
-            onClick={() => setSelected(t)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              selected === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {label(t)}
-          </button>
-        ))}
+      <div>
+        <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
+          🇧🇷 B3 · Ações
+          <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
+        </h2>
+        <p className="text-xs text-muted-foreground">Bolsa brasileira — índice, dólar, ações, macro e fundamentos. Em construção (fluxo de investidor a caminho).</p>
       </div>
 
       {loading ? (
-        <div className="h-80 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
-      ) : !q ? (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
-          Não consegui carregar {label(selected)} pela brapi.{" "}
-          {!B3_HAS_TOKEN && "Sem token, só PETR4/VALE3/ITUB4/MGLU3 estão disponíveis."}
-        </div>
+        <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
+      ) : !ov ? (
+        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>
       ) : (
         <>
-          {/* Cabeçalho de preço */}
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <span className="text-sm font-semibold text-foreground">{label(q.symbol)}</span>
-                <span className="ml-2 text-xs text-muted-foreground">{q.name}</span>
-                <div className="num text-3xl font-bold text-foreground">{fmtBRL(q.price)}</div>
-              </div>
-              <span className={`text-sm font-semibold ${up ? "text-emerald-500" : "text-rose-500"}`}>
-                {up ? "▲" : "▼"} {q.changePct != null ? `${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%` : "—"} · dia
-              </span>
+          {/* Macro BR + índice/dólar */}
+          <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Macro BR & mercado</h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <MacroCell label="IBOV" value={fmtNum(ibov?.price ?? null, 0)} sub={fmtPct(ibov?.changePct ?? null)} />
+              <MacroCell label="Dólar (USD/BRL)" value={fmtNum(dollar?.price ?? null)} sub={fmtPct(dollar?.changePct ?? null)} />
+              <MacroCell label="Selic (a.a.)" value={selicAA(ov.macro.selic) != null ? `${selicAA(ov.macro.selic)!.toFixed(2)}%` : "—"} sub="taxa básica" />
+              <MacroCell label="IPCA (mês)" value={ov.macro.ipca != null ? `${ov.macro.ipca.toFixed(2)}%` : "—"} sub="inflação" />
             </div>
           </div>
 
-          {/* Gráfico */}
-          <div className="rounded-2xl border border-border bg-card p-2 dark:bg-card/60">
-            <B3Chart candles={q.candles} />
+          {/* Watchlist de ações */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Ações</h3>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+              {ibov && <WatchCard q={ibov} active={selected === "IBOV"} onClick={() => setSelected("IBOV")} />}
+              {dollar && <WatchCard q={dollar} active={selected === "USD/BRL"} onClick={() => setSelected("USD/BRL")} />}
+              {stocks.map((q) => (
+                <WatchCard key={q.symbol} q={q} active={selected === q.symbol} onClick={() => setSelected(q.symbol)} />
+              ))}
+            </div>
           </div>
 
-          {/* Fundamentos */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            <Card label="P/L" value={q.pe != null ? q.pe.toFixed(1) : "—"} sub="preço / lucro" />
-            <Card label="LPA" value={q.eps != null ? fmtBRL(q.eps) : "—"} sub="lucro por ação" />
-            <Card label="Valor de mercado" value={fmtBig(q.marketCap)} />
-            <Card label="Volume (dia)" value={fmtVol(q.volume)} />
-            <Card label="Máx/Mín (dia)" value={`${fmtBRL(q.low)} – ${fmtBRL(q.high)}`} />
-            {q.fiftyTwoWeekRange && <Card label="Faixa 52 semanas" value={q.fiftyTwoWeekRange} />}
+          {/* Ativo selecionado: cabeçalho + gráfico + fundamentos */}
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <span className="text-sm font-semibold text-foreground">{selected}</span>
+                {selQuote?.name && selQuote.name !== selected && <span className="ml-2 text-xs text-muted-foreground">{selQuote.name}</span>}
+                <div className="num text-3xl font-bold text-foreground">
+                  {selQuote ? (selected === "USD/BRL" ? fmtBRL(selQuote.price, 4) : selected === "IBOV" ? fmtNum(selQuote.price, 0) : fmtBRL(selQuote.price)) : "—"}
+                </div>
+              </div>
+              <span className={`text-sm font-semibold ${toneCls(selQuote?.changePct)}`}>
+                {fmtPct(selQuote?.changePct ?? null)} · dia{selQuote?.volume != null ? ` · vol ${fmtVol(selQuote.volume)}` : ""}
+              </span>
+            </div>
+
+            {chartLoading ? (
+              <div className="mt-3 h-72 animate-pulse rounded-xl bg-muted/40" />
+            ) : candles.length < 2 ? (
+              <div className="mt-3 grid h-72 place-items-center text-sm text-muted-foreground">Sem candles para {selected}.</div>
+            ) : (
+              <div className="mt-3">
+                <B3Chart candles={candles} />
+              </div>
+            )}
           </div>
+
+          {/* Fundamentos (ações com dado da brapi) */}
+          {fund && (fund.pe != null || fund.marketCap != null) && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <MacroCell label="P/L" value={fund.pe != null ? fund.pe.toFixed(1) : "—"} sub="preço / lucro" />
+              <MacroCell label="LPA" value={fund.eps != null ? fmtBRL(fund.eps) : "—"} sub="lucro por ação" />
+              <MacroCell label="Valor de mercado" value={fmtBig(fund.marketCap)} />
+              {fund.range52 && <MacroCell label="Faixa 52 sem." value={fund.range52} />}
+            </div>
+          )}
 
           <p className="text-[11px] text-muted-foreground">
-            Fonte: brapi.dev. {B3_HAS_TOKEN ? "" : "Defina VITE_BRAPI_TOKEN (grátis em brapi.dev) para liberar IBOV, dólar e todas as ações. "}
-            Próximo: macro BR (Selic/IPCA/câmbio via BCB) e fluxo de investidor (dadosdemercado).
+            Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via brapi.dev. Próximo: fluxo de investidor (estrangeiro) e Boletim Focus via dadosdemercado.
           </p>
         </>
       )}
