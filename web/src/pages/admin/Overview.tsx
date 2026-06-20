@@ -6,6 +6,8 @@ import { fmtBRL, fmtInt, fmtPct1, fmtUSD, GATEWAY_COLOR, gatewayLabel } from "..
 import type { AdminOverview, SignupPoint, UsagePoint } from "../../lib/adminTypes";
 
 const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e" };
+// Abaixo desta base paga, churn/LTV viram ruído (cancelamentos de teste) → mostramos "—".
+const MIN_PAID_BASE = 10;
 
 export default function Overview() {
   const { data: o, loading, error } = useAdminRpc<AdminOverview>("admin_overview");
@@ -15,7 +17,9 @@ export default function Overview() {
   if (error) return <ErrorBox message={error} />;
   if (loading || !o) return <Empty>Carregando métricas…</Empty>;
 
-  const churn = o.subs_active + o.subs_canceled_30d > 0 ? o.subs_canceled_30d / (o.subs_active + o.subs_canceled_30d) : 0;
+  // Churn só com base PAGA mínima (ignora free/cortesia e amostra pequena → "—").
+  const paidBase = o.subs_paid_active + o.subs_paid_canceled_30d;
+  const churn = paidBase >= MIN_PAID_BASE ? o.subs_paid_canceled_30d / paidBase : null;
   const arpu = o.subs_paid_active > 0 ? o.mrr_cents / o.subs_paid_active : 0;
   const maxPlan = Math.max(...o.plan_distribution.map((p) => p.count), 1);
   const gw = o.gateway_distribution ?? [];
@@ -31,19 +35,27 @@ export default function Overview() {
         <StatCard label="ARPU (média / pagante)" value={fmtBRL(arpu)} sub={`${fmtInt(o.subs_paid_active)} pagantes`} icon={<IconTrendUp />} />
         <StatCard
           label="Churn 30d"
-          value={fmtPct1(churn)}
-          sub={`${fmtInt(o.subs_canceled_30d)} cancelamentos`}
-          tone={churn > 0.1 ? "bad" : churn > 0 ? "warn" : "good"}
+          value={churn === null ? "—" : fmtPct1(churn)}
+          sub={churn === null ? "amostra pequena" : `${fmtInt(o.subs_paid_canceled_30d)} cancel. pagos`}
+          tone={churn === null ? undefined : churn > 0.1 ? "bad" : churn > 0 ? "warn" : "good"}
         />
       </div>
 
       {/* KPIs de usuários / engajamento */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Usuários totais" value={fmtInt(o.users_total)} sub={`+${fmtInt(o.users_today)} hoje · +${fmtInt(o.users_7d)} 7d`} icon={<IconUsers />} />
-        <StatCard label="Assinaturas ativas" value={fmtInt(o.subs_active)} sub={`${fmtInt(o.subs_paid_active)} pagas · ${fmtInt(o.subs_past_due)} em atraso`} />
+        <StatCard label="Assinaturas ativas" value={fmtInt(o.subs_active)} sub={`${fmtInt(o.subs_paid_active)} pagas · ${fmtInt(o.subs_free_active)} free · ${fmtInt(o.comp_active)} cortesia · ${fmtInt(o.subs_past_due)} atraso`} />
         <StatCard label="Análises de IA (30d)" value={fmtInt(o.ai_30d)} sub={`${fmtInt(o.ai_today)} hoje · ${fmtInt(o.ai_total)} total`} icon={<IconCpu />} />
         <StatCard label="Alertas ativos" value={fmtInt(o.alerts_active)} icon={<IconAlert />} />
       </div>
+
+      {o.comp_active > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
+          <span className="rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">cortesia</span>
+          <span className="text-foreground"><b className="num">{fmtInt(o.comp_active)}</b> {o.comp_active === 1 ? "conta cortesia ativa" : "contas cortesia ativas"}</span>
+          <span className="text-muted-foreground">≈ <span className="num">{fmtBRL(o.comp_value_cents)}</span>/mês liberados sem cobrança — <b>fora do MRR</b>.</span>
+        </div>
+      )}
 
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-2">

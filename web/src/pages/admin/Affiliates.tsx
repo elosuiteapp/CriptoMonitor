@@ -42,6 +42,7 @@ export default function Affiliates() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState("");
 
   async function load() {
     setError(null);
@@ -56,6 +57,8 @@ export default function Affiliates() {
 
   const totalPending = (rows ?? []).reduce((s, a) => s + a.pending_cents, 0);
   const totalActiveCustomers = (rows ?? []).reduce((s, a) => s + a.customers_active, 0);
+  const term = q.trim().toLowerCase();
+  const filtered = (rows ?? []).filter((a) => !term || [a.code, a.name, a.email].some((s) => (s ?? "").toLowerCase().includes(term)));
 
   return (
     <div className="space-y-5">
@@ -83,13 +86,23 @@ export default function Affiliates() {
 
       {creating && <CreateForm onDone={() => { setCreating(false); load(); }} />}
 
+      {rows && rows.length > 0 && (
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar por código, nome ou e-mail…"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary"
+        />
+      )}
+
       {error && <ErrorBox message={error} />}
       {!rows && <Skeleton rows={4} />}
       {rows && rows.length === 0 && (
         <Empty>Nenhum afiliado ainda. Clique em “Novo afiliado” para criar o primeiro.</Empty>
       )}
+      {rows && rows.length > 0 && filtered.length === 0 && <Empty>Nenhum afiliado para “{q}”.</Empty>}
 
-      {rows?.map((a) => (
+      {filtered.map((a) => (
         <AffiliateCard
           key={a.id}
           a={a}
@@ -176,6 +189,24 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkInput, setLinkInput] = useState("");
+
+  async function linkAccount() {
+    if (!linkInput.trim()) return;
+    setBusy(true);
+    setErr(null);
+    const { error } = await supabase.rpc("admin_link_affiliate_user", { p_affiliate_id: a.id, p_query: linkInput.trim() });
+    setBusy(false);
+    if (error) setErr(error.message);
+    else {
+      setMsg("Conta vinculada.");
+      setLinking(false);
+      setLinkInput("");
+      onChanged();
+      setTimeout(() => setMsg(null), 2500);
+    }
+  }
 
   async function copyLink() {
     try {
@@ -277,16 +308,31 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
           </button>
         ) : (
           <button
-            disabled
-            title="O afiliado precisa ter conta no app com o e-mail cadastrado para receber cortesia."
-            className="cursor-not-allowed rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground opacity-60"
+            onClick={() => setLinking((v) => !v)}
+            title="Vincular o afiliado a uma conta do app para poder conceder cortesia."
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
           >
-            Cortesia (sem conta)
+            {linking ? "Cancelar" : "Vincular conta"}
           </button>
         )}
         {a.pix_key && <span className="text-xs text-muted-foreground">Pix: <span className="text-foreground">{a.pix_key}</span></span>}
         {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}
       </div>
+
+      {linking && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">
+          <input
+            value={linkInput}
+            onChange={(e) => setLinkInput(e.target.value)}
+            placeholder="e-mail ou ID da conta no app"
+            className="min-w-[240px] flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-primary"
+          />
+          <button onClick={linkAccount} disabled={busy || !linkInput.trim()} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-40">
+            {busy ? "…" : "Vincular"}
+          </button>
+          <span className="text-xs text-muted-foreground">depois disso o botão de cortesia aparece.</span>
+        </div>
+      )}
       {err && <div className="mt-3"><ErrorBox message={err} /></div>}
 
       {editing && <EditForm a={a} onDone={() => { setEditing(false); onChanged(); }} />}

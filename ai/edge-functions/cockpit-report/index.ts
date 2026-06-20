@@ -170,9 +170,16 @@ Deno.serve(async (req) => {
   const content = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
   if (!content) return json(502, { error: "Resposta vazia do modelo" });
 
+  // Custo estimado pelos tokens do Gemini (preço USD/1M; saída inclui "thinking").
+  const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
+  const inTok = Number(um.promptTokenCount ?? 0);
+  const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
+  const price = usedModel.includes("pro") ? { in: 1.25, out: 10 } : { in: 0.3, out: 2.5 };
   const { error: insErr } = await admin.from("ai_analysis").insert({
     user_id: null, asset: ativo, model_used: usedModel, content,
     snapshot_ref: snap.id, report_type: "daily", auto_generated: true,
+    input_tokens: inTok, output_tokens: outTok,
+    cost_usd_micros: Math.round(inTok * price.in + outTok * price.out),
   });
   if (insErr) return json(500, { error: "Falha ao gravar relatorio", detail: insErr.message });
 

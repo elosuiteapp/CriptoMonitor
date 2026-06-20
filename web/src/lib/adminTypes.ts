@@ -22,8 +22,10 @@ export interface AdminOverview {
   users_30d: number;
   subs_active: number;
   subs_paid_active: number;
+  subs_free_active: number;
   subs_canceled: number;
   subs_canceled_30d: number;
+  subs_paid_canceled_30d: number;
   subs_past_due: number;
   comp_active: number;
   comp_value_cents: number;
@@ -53,6 +55,17 @@ export interface UsagePoint {
 export interface ModelUsage {
   model_used: string;
   analyses: number;
+}
+
+export interface AiCosts {
+  cost_today_micros: number;
+  cost_30d_micros: number;
+  cost_total_micros: number;
+  tokens_in_30d: number;
+  tokens_out_30d: number;
+  by_model: { model_used: string; analyses: number; in_tokens: number; out_tokens: number; cost_micros: number }[];
+  top_users: { email: string; analyses: number; cost_micros: number }[];
+  daily_30d: { day: string; cost_micros: number }[];
 }
 
 export interface AdminUserRow {
@@ -86,6 +99,7 @@ export interface AdminUserDetail {
     cpf: string | null;
     role: string;
   };
+  referral: { code: string; name: string } | null;
   subscriptions: Array<{
     id: string;
     status: string;

@@ -130,6 +130,11 @@ Deno.serve(async (req) => {
   if (!GEMINI_KEY) return json(500, { error: "GEMINI_API_KEY nao configurada" });
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
+  // Observabilidade: registra cada execucao (cron ou manual) em automation_runs.
+  const logRun = async (status: string, model: string | null, detail: Record<string, unknown>) => {
+    try { await admin.from("automation_runs").insert({ job: "social", status, model, detail }); } catch (_e) { /* best-effort */ }
+  };
+
   const body = await req.json().catch(() => ({}));
   const preview = body?.preview === true;
   const force = body?.force === true;
@@ -156,13 +161,17 @@ Deno.serve(async (req) => {
 
   // Cron so posta com auto-post ligado.
   if (!preview && !force && (secrets["social_autopost"] ?? "off") !== "on") {
+    await logRun("skipped", null, { reason: "auto-post desligado" });
     return json(200, { skipped: "auto-post desligado" });
   }
 
   // Dados do BTC (+ ETH/SOL para contexto).
   const { data: snap } = await admin
     .from("market_snapshot").select("payload").eq("asset", "BTC").order("ts", { ascending: false }).limit(1).maybeSingle();
-  if (!snap) return json(503, { error: "sem dados de mercado (BTC)" });
+  if (!snap) {
+    if (!preview) await logRun("error", null, { error: "sem dados de mercado (BTC)" });
+    return json(503, { error: "sem dados de mercado (BTC)" });
+  }
   const btc = (snap.payload ?? {}) as Record<string, unknown>;
   const gamma = (btc.gamma ?? {}) as Record<string, unknown>;
   const reliable = gammaReliable(gamma);
@@ -196,18 +205,29 @@ Deno.serve(async (req) => {
     usedModel = FALLBACK_MODEL;
     aiResp = await callGemini(FALLBACK_MODEL, GEMINI_KEY, userMsg);
   }
-  if (!aiResp.ok) return json(502, { error: "falha na IA", detail: (await aiResp.text()).slice(0, 300) });
+  if (!aiResp.ok) {
+    const d = (await aiResp.text()).slice(0, 300);
+    if (!preview) await logRun("error", usedModel, { error: "falha na IA", detail: d });
+    return json(502, { error: "falha na IA", detail: d });
+  }
   const aiData = await aiResp.json();
+  const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
+  const inTok = Number(um.promptTokenCount ?? 0);
+  const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
   const raw = (aiData.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("").trim();
   let parsed: { tweet?: string; telegram_text?: string };
   try {
     parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, ""));
   } catch {
+    if (!preview) await logRun("error", usedModel, { error: "IA nao retornou JSON", detail: raw.slice(0, 200) });
     return json(502, { error: "IA nao retornou JSON", detail: raw.slice(0, 300) });
   }
   const tweet = (parsed.tweet ?? "").trim();
   const telegram = (parsed.telegram_text ?? "").trim();
-  if (tweet.length < 10 || telegram.length < 10) return json(502, { error: "conteudo insuficiente" });
+  if (tweet.length < 10 || telegram.length < 10) {
+    if (!preview) await logRun("error", usedModel, { error: "conteudo insuficiente" });
+    return json(502, { error: "conteudo insuficiente" });
+  }
 
   if (preview) return json(200, { preview: true, tweet, telegram_text: telegram, model_used: usedModel });
 
@@ -239,5 +259,11 @@ Deno.serve(async (req) => {
     tweet, telegram_md: telegram, posted_x: postedX, posted_telegram: postedTelegram, result,
   });
 
+  // ok se publicou em ao menos um canal; senao 'error' (sinaliza falha de publicacao no painel).
+  await logRun(postedTelegram || postedX ? "ok" : "error", usedModel, {
+    posted_telegram: postedTelegram, posted_x: postedX,
+    tweet_len: tweet.length, over_limit: tweet.length > 280,
+    in_tokens: inTok, out_tokens: outTok, result,
+  });
   return json(200, { ok: true, posted_telegram: postedTelegram, posted_x: postedX, model_used: usedModel, result });
 });

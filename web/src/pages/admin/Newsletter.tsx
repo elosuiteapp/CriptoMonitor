@@ -14,12 +14,34 @@ interface Edition {
   created_at: string;
 }
 
+interface Run {
+  id: number;
+  status: "ok" | "error" | "skipped";
+  model: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+}
+
 const TIER_LABEL: Record<string, string> = { free: "Free", pro: "Pro", expert: "Expert" };
+
+const RUN_TONE: Record<string, string> = {
+  ok: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  error: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+  skipped: "bg-muted text-muted-foreground",
+};
+
+function runSummary(status: string, d: Record<string, unknown> | null): string {
+  if (!d) return status;
+  if (status === "error") return String(d.error ?? "erro");
+  if (status === "skipped") return String(d.reason ?? "ignorado");
+  return d.title ? `“${d.title}”` : String(d.slug ?? "ok");
+}
 
 /** Admin · Newsletter — gerar uma edição na hora (IA), publicar/despublicar e excluir.
  *  A geração semanal automática roda por cron (segunda 9h BRT); aqui é o controle manual. */
 export default function AdminNewsletter() {
   const [rows, setRows] = useState<Edition[] | null>(null);
+  const [runs, setRuns] = useState<Run[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -29,6 +51,13 @@ export default function AdminNewsletter() {
       .select("id, slug, title, min_tier, published, published_at, auto_generated, created_at")
       .order("created_at", { ascending: false });
     setRows((data as Edition[] | null) ?? []);
+    const { data: r } = await supabase
+      .from("automation_runs")
+      .select("id, status, model, detail, created_at")
+      .eq("job", "newsletter")
+      .order("created_at", { ascending: false })
+      .limit(8);
+    setRuns((r as Run[] | null) ?? []);
   }, []);
 
   useEffect(() => {
@@ -104,6 +133,29 @@ export default function AdminNewsletter() {
           }`}
         >
           {msg.text}
+        </div>
+      )}
+
+      {runs && runs.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground">Execuções da automação</h2>
+            <span className="text-xs text-muted-foreground">geração automática: sexta ~9h BRT</span>
+          </div>
+          <div className="space-y-1.5">
+            {runs.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${RUN_TONE[r.status]}`}>
+                  {r.status === "ok" ? "ok" : r.status === "error" ? "erro" : "ignorado"}
+                </span>
+                <span className="text-muted-foreground">
+                  {new Date(r.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </span>
+                {r.model && <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.model}</span>}
+                <span className="text-foreground">{runSummary(r.status, r.detail)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

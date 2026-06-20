@@ -6,10 +6,17 @@ import { supabase } from "../../lib/supabase";
 import { fmtDateTime } from "../../lib/adminFormat";
 import type { AuditRow } from "../../lib/adminTypes";
 
+const PAGE = 200;
+
 const ACTION_LABEL: Record<string, string> = {
   set_role: "Alterou papel",
   set_subscription: "Alterou assinatura",
   update_plan: "Editou plano",
+  create_affiliate: "Criou afiliado",
+  update_affiliate: "Editou afiliado",
+  mark_commissions_paid: "Pagou comissões",
+  set_affiliate_comp: "Cortesia de afiliado",
+  link_affiliate_user: "Vinculou conta a afiliado",
 };
 
 // Rótulos amigáveis para as chaves do detalhe (jsonb).
@@ -24,11 +31,19 @@ const KEY_LABEL: Record<string, string> = {
   ai_model: "modelo IA",
   smart_money: "smart money",
   assets: "ativos",
+  comp: "cortesia",
+  comp_reason: "motivo",
+  grant: "concedeu",
+  user_id: "usuário",
+  amount_cents: "valor R$",
+  percent: "comissão %",
+  code: "código",
+  email: "e-mail",
 };
 
 function fmtVal(key: string, v: unknown): string {
   if (v == null) return "—";
-  if ((key === "price_cents" || key === "price_usd_cents") && typeof v === "number") {
+  if ((key === "price_cents" || key === "price_usd_cents" || key === "amount_cents") && typeof v === "number") {
     const sym = key === "price_usd_cents" ? "US$ " : "R$ ";
     return sym + (v / 100).toFixed(2);
   }
@@ -42,39 +57,68 @@ export default function Audit() {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("");
+  const [adminFilter, setAdminFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [limit, setLimit] = useState(PAGE);
 
   useEffect(() => {
+    setRows(null);
     supabase
       .from("admin_audit_log")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(200)
+      .limit(limit)
       .then(({ data, error }) => {
         if (error) setError(error.message);
         else setRows(data as AuditRow[]);
       });
-  }, []);
+  }, [limit]);
 
-  const shown = useMemo(() => (rows ?? []).filter((r) => !filter || r.action === filter), [rows, filter]);
+  const shown = useMemo(
+    () =>
+      (rows ?? []).filter(
+        (r) =>
+          (!filter || r.action === filter) &&
+          (!adminFilter || r.admin_email === adminFilter) &&
+          (!dateFrom || r.created_at >= dateFrom),
+      ),
+    [rows, filter, adminFilter, dateFrom],
+  );
   const actions = useMemo(() => Array.from(new Set((rows ?? []).map((r) => r.action))), [rows]);
+  const admins = useMemo(() => Array.from(new Set((rows ?? []).map((r) => r.admin_email).filter(Boolean))) as string[], [rows]);
 
   if (error) return <ErrorBox message={error} />;
 
   const selectCls = "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary";
+  const canLoadMore = rows != null && rows.length === limit;
 
   return (
     <div className="space-y-5">
       <PageHeader
         icon={<IconAudit />}
         title="Auditoria"
-        subtitle="Últimas ações administrativas registradas."
+        subtitle="Ações administrativas registradas."
         actions={
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} className={selectCls}>
-            <option value="">Todas as ações</option>
-            {actions.map((a) => (
-              <option key={a} value={a}>{ACTION_LABEL[a] ?? a}</option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={filter} onChange={(e) => setFilter(e.target.value)} className={selectCls}>
+              <option value="">Todas as ações</option>
+              {actions.map((a) => (
+                <option key={a} value={a}>{ACTION_LABEL[a] ?? a}</option>
+              ))}
+            </select>
+            <select value={adminFilter} onChange={(e) => setAdminFilter(e.target.value)} className={selectCls}>
+              <option value="">Todos os admins</option>
+              {admins.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={selectCls} title="A partir de" />
+            {(filter || adminFilter || dateFrom) && (
+              <button onClick={() => { setFilter(""); setAdminFilter(""); setDateFrom(""); }} className="text-xs text-muted-foreground hover:text-foreground">
+                Limpar
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -126,6 +170,14 @@ export default function Audit() {
         {rows && shown.length === 0 && <Empty>Nenhuma ação registrada.</Empty>}
         {!rows && <Skeleton rows={6} />}
       </Card>
+
+      {canLoadMore && (
+        <div className="flex justify-center">
+          <button onClick={() => setLimit((l) => l + PAGE)} className="rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted">
+            Carregar mais
+          </button>
+        </div>
+      )}
     </div>
   );
 }

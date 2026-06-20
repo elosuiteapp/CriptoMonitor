@@ -15,6 +15,7 @@ export default function Users() {
   const [search, setSearch] = useState<string | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -23,6 +24,7 @@ export default function Users() {
     p_search: search,
     p_plan: plan,
     p_status: status,
+    p_role: role,
     p_limit: PAGE_SIZE,
     p_offset: page * PAGE_SIZE,
   };
@@ -43,6 +45,7 @@ export default function Users() {
     setSearch(null);
     setPlan(null);
     setStatus(null);
+    setRole(null);
     setPage(0);
   }
 
@@ -54,6 +57,7 @@ export default function Users() {
         p_search: search,
         p_plan: plan,
         p_status: status,
+        p_role: role,
         p_limit: 100000,
         p_offset: 0,
       });
@@ -119,10 +123,15 @@ export default function Users() {
           <option value="past_due">Em atraso</option>
           <option value="canceled">Cancelada</option>
         </select>
+        <select value={role ?? ""} onChange={(e) => { setRole(e.target.value || null); setPage(0); }} className={selectCls}>
+          <option value="">Todos os papéis</option>
+          <option value="admin">Admin</option>
+          <option value="user">Usuário</option>
+        </select>
         <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90">
           Buscar
         </button>
-        {(search || plan || status) && (
+        {(search || plan || status || role) && (
           <button type="button" onClick={reset} className="text-xs text-muted-foreground hover:text-foreground">
             Limpar
           </button>

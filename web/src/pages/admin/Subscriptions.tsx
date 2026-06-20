@@ -6,6 +6,8 @@ import { fmtBRL, fmtInt, fmtPct1, fmtUSD, GATEWAY_COLOR, gatewayLabel } from "..
 import type { AdminOverview } from "../../lib/adminTypes";
 
 const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e" };
+// Abaixo desta base paga, churn/LTV viram ruído (cancelamentos de teste) → mostramos "—".
+const MIN_PAID_BASE = 10;
 
 export default function Subscriptions() {
   const { data: o, loading, error } = useAdminRpc<AdminOverview>("admin_overview");
@@ -13,9 +15,11 @@ export default function Subscriptions() {
   if (error) return <ErrorBox message={error} />;
   if (loading || !o) return <Empty>Carregando receita…</Empty>;
 
-  const churn = o.subs_active + o.subs_canceled_30d > 0 ? o.subs_canceled_30d / (o.subs_active + o.subs_canceled_30d) : 0;
+  // Churn/LTV só com base PAGA mínima (ignora free/cortesia e amostra pequena → "—").
+  const paidBase = o.subs_paid_active + o.subs_paid_canceled_30d;
+  const churn = paidBase >= MIN_PAID_BASE ? o.subs_paid_canceled_30d / paidBase : null;
   const arpu = o.subs_paid_active > 0 ? o.mrr_cents / o.subs_paid_active : 0;
-  const ltv = churn > 0 ? arpu / churn : 0; // LTV ≈ ARPU / churn mensal
+  const ltv = churn && churn > 0 ? arpu / churn : null; // LTV ≈ ARPU / churn mensal
   const totalMrr = o.mrr_cents || 1;
   const maxMrr = Math.max(...o.plan_distribution.map((p) => p.mrr_cents), 1);
   const gw = o.gateway_distribution ?? [];
@@ -28,14 +32,14 @@ export default function Subscriptions() {
         <StatCard label="MRR (reais)" value={fmtBRL(o.mrr_cents)} sub={`ARR ${fmtBRL(o.arr_cents)}`} tone="good" icon={<IconMoney />} />
         <StatCard label="MRR (dólar)" value={fmtUSD(o.mrr_usd_cents)} sub={`ARR ${fmtUSD(o.arr_usd_cents)}`} icon={<IconMoney />} />
         <StatCard label="ARPU" value={fmtBRL(arpu)} sub={`${fmtInt(o.subs_paid_active)} pagantes`} icon={<IconTrendUp />} />
-        <StatCard label="LTV estimado" value={ltv > 0 ? fmtBRL(ltv) : "—"} sub={churn > 0 ? "ARPU ÷ churn" : "sem churn"} />
+        <StatCard label="LTV estimado" value={ltv === null ? "—" : fmtBRL(ltv)} sub={churn === null ? "base pequena" : "ARPU ÷ churn"} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Assinaturas ativas" value={fmtInt(o.subs_active)} />
         <StatCard label="Pagas ativas" value={fmtInt(o.subs_paid_active)} tone="good" />
         <StatCard label="Em atraso" value={fmtInt(o.subs_past_due)} tone={o.subs_past_due > 0 ? "warn" : undefined} />
-        <StatCard label="Churn 30d" value={fmtPct1(churn)} sub={`${fmtInt(o.subs_canceled_30d)} canc. / ${fmtInt(o.subs_canceled)} total`} tone={churn > 0.1 ? "bad" : undefined} />
+        <StatCard label="Churn 30d" value={churn === null ? "—" : fmtPct1(churn)} sub={churn === null ? "amostra pequena" : `${fmtInt(o.subs_paid_canceled_30d)} cancel. pagos`} tone={churn === null ? undefined : churn > 0.1 ? "bad" : undefined} />
       </div>
 
       {o.comp_active > 0 && (

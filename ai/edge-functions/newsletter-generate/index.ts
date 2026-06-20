@@ -122,6 +122,11 @@ Deno.serve(async (req) => {
   if (!GEMINI_KEY) return json(500, { error: "GEMINI_API_KEY nao configurada" });
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
+  // Observabilidade: registra cada execucao (cron ou manual) em automation_runs.
+  const logRun = async (status: string, model: string | null, detail: Record<string, unknown>) => {
+    try { await admin.from("automation_runs").insert({ job: "newsletter", status, model, detail }); } catch (_e) { /* best-effort */ }
+  };
+
   const body = await req.json().catch(() => ({}));
   const force = body?.force === true;
   const publish = body?.publish !== false; // default true (cron publica); admin envia false = rascunho
@@ -150,7 +155,10 @@ Deno.serve(async (req) => {
     const { data: recent } = await admin
       .from("newsletter_editions").select("slug")
       .eq("auto_generated", true).gte("published_at", sixDaysAgo).limit(1).maybeSingle();
-    if (recent) return json(200, { skipped: true, reason: "edicao recente ja existe", slug: recent.slug });
+    if (recent) {
+      await logRun("skipped", null, { reason: "edicao recente ja existe", slug: recent.slug });
+      return json(200, { skipped: true, reason: "edicao recente ja existe", slug: recent.slug });
+    }
   }
 
   // Dados da semana.
@@ -235,21 +243,27 @@ Deno.serve(async (req) => {
   }
   if (!aiResp.ok) {
     const detail = await aiResp.text();
+    await logRun("error", usedModel, { error: "falha na IA", detail: detail.slice(0, 200), pro_error: proError });
     return json(502, { error: "Falha ao gerar newsletter", detail: detail.slice(0, 300), pro_error: proError });
   }
 
   const aiData = await aiResp.json();
+  const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
+  const inTok = Number(um.promptTokenCount ?? 0);
+  const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
   const parts = aiData.candidates?.[0]?.content?.parts ?? [];
   const raw = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
   let parsed: { title?: string; excerpt?: string; cover_emoji?: string; teaser_md?: string; body_md?: string };
   try {
     parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, ""));
   } catch {
+    await logRun("error", usedModel, { error: "resposta nao e JSON valido", detail: raw.slice(0, 200) });
     return json(502, { error: "Resposta da IA nao e JSON valido", detail: raw.slice(0, 300) });
   }
   const title = (parsed.title ?? "").trim();
   const bodyMd = (parsed.body_md ?? "").trim();
   if (title.length < 5 || bodyMd.length < 200) {
+    await logRun("error", usedModel, { error: "conteudo insuficiente", title_len: title.length, body_len: bodyMd.length });
     return json(502, { error: "Conteudo gerado insuficiente; nada publicado." });
   }
 
@@ -269,8 +283,13 @@ Deno.serve(async (req) => {
     published: publish,
     published_at: publish ? new Date().toISOString() : null,
     auto_generated: true,
+    model_used: usedModel,
   });
-  if (insErr) return json(500, { error: "Falha ao gravar a edicao", detail: insErr.message });
+  if (insErr) {
+    await logRun("error", usedModel, { error: "falha ao gravar a edicao", detail: insErr.message });
+    return json(500, { error: "Falha ao gravar a edicao", detail: insErr.message });
+  }
 
+  await logRun("ok", usedModel, { slug, title, published: publish, in_tokens: inTok, out_tokens: outTok });
   return json(200, { ok: true, slug, title, published: publish, model_used: usedModel, pro_error: usedModel === PRIMARY_MODEL ? null : proError });
 });

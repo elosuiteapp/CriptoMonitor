@@ -30,6 +30,17 @@ export default function UserDetailModal({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [idCopied, setIdCopied] = useState(false);
+
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(userId);
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 1500);
+    } catch {
+      /* clipboard indisponível */
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -116,9 +127,15 @@ export default function UserDetailModal({
           <div>
             <h2 className="text-lg font-bold text-foreground">{detail?.profile.email ?? "Usuário"}</h2>
             {detail && (
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{detail.profile.full_name ?? "sem nome"}</span>
                 {detail.profile.role === "admin" && <Badge tone="accent">admin</Badge>}
+                <button onClick={copyId} className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-foreground transition-colors hover:bg-muted" title="Copiar ID do usuário">
+                  {idCopied ? "id copiado!" : `id: ${userId.slice(0, 8)}…`}
+                </button>
+                {detail.referral && (
+                  <span>· veio de <b className="text-foreground">{detail.referral.name}</b> <span className="font-mono">({detail.referral.code})</span></span>
+                )}
               </div>
             )}
           </div>
