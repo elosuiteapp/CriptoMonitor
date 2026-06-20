@@ -9,6 +9,7 @@ import ChartTypeSelector from "../components/ChartTypeSelector";
 import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
 import MarketPlaceholder from "../components/MarketPlaceholder";
+import B3Module from "../components/b3/B3Module";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
@@ -185,7 +186,9 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
-        {market !== "crypto" ? (
+        {market === "b3" ? (
+          <B3Module />
+        ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
           <>
