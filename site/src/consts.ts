@@ -57,10 +57,51 @@ export const PRICING = {
   ],
 };
 
+// Mercados do switcher da home. `live` define se já está no ar (Crypto) ou "em breve"
+// (B3/Forex). Cada um traz suas peculiaridades — o painel troca ao clicar na aba.
 export const MARKETS = [
-  { icon: "₿", label: "Crypto", note: "no ar" },
-  { icon: "🇧🇷", label: "B3 · Ações", note: "em breve" },
-  { icon: "💱", label: "Forex", note: "em breve" },
+  {
+    id: "crypto",
+    icon: "₿",
+    label: "Crypto",
+    note: "no ar",
+    live: true,
+    tagline: "O cockpit institucional de cripto — 24 horas por dia.",
+    points: [
+      "Gamma e opções (BTC, ETH, SOL) no estilo SpotGamma",
+      "Fluxo de varejo × institucional, funding e liquidações",
+      "Smart Money & On-chain: SMC, unlocks e stablecoins",
+      "Mercado 24/7, sem pregão — leitura em tempo real",
+    ],
+  },
+  {
+    id: "b3",
+    icon: "🇧🇷",
+    label: "B3 · Ações",
+    note: "em breve",
+    live: false,
+    tagline: "A bolsa brasileira com a leitura de quem move o fluxo.",
+    points: [
+      "Gamma e opções de ações e índice (PETR, VALE, IBOV)",
+      "Fluxo de estrangeiro e institucional × pessoa física",
+      "Pregão, leilão de abertura/fechamento e after-market",
+      "Proventos, dividendos e datas-com no radar",
+    ],
+  },
+  {
+    id: "forex",
+    icon: "💱",
+    label: "Forex",
+    note: "em breve",
+    live: false,
+    tagline: "Câmbio global lido pelas mãos fortes.",
+    points: [
+      "Pares principais e o dólar (DXY) como bússola",
+      "Sessões Ásia / Londres / Nova York e a liquidez de cada uma",
+      "Juros, carry trade e diferencial de taxas",
+      "Calendário macro (Fed, Copom, payroll) integrado",
+    ],
+  },
 ];
 
 // Matriz de comparação detalhada (Free × Pro × Expert) para a página /precos.
