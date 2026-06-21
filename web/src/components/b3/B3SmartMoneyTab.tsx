@@ -11,12 +11,15 @@ import { PillRow, TogglePill } from "../TogglePill";
 import { Cell, ComingSoon, toneCls } from "./B3Shared";
 
 const TFS: { id: Timeframe; label: string }[] = [
+  { id: "15m", label: "15M" },
+  { id: "1h", label: "1H" },
   { id: "4h", label: "4h" },
   { id: "1d", label: "1D" },
   { id: "1w", label: "1S" },
+  { id: "1M", label: "1M" },
 ];
-const TF_LABEL: Record<string, string> = { "4h": "4h", "1d": "1D", "1w": "1S", "1M": "1Mês", "1h": "1h" };
-const HIGHER_TF: Partial<Record<Timeframe, Timeframe>> = { "4h": "1d", "1d": "1w", "1w": "1M" };
+const TF_LABEL: Record<string, string> = { "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1D", "1w": "1S", "1M": "1Mês" };
+const HIGHER_TF: Partial<Record<Timeframe, Timeframe>> = { "15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M" };
 
 // Camadas que funcionam na B3 (matemática de candles). CVD e Liquidações ficam de fora
 // (precisam de fluxo agressor / open interest — sem fonte grátis na B3).
