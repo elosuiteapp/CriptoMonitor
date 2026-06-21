@@ -68,7 +68,28 @@ export const B3_ASSETS: B3Asset[] = [
   { symbol: "CMIG4", name: "Cemig PN", kind: "stock" },
   { symbol: "VBBR3", name: "Vibra ON", kind: "stock" },
   { symbol: "MGLU3", name: "Magazine Luiza", kind: "stock" },
+  { symbol: "TAEE11", name: "Taesa", kind: "stock" },
+  { symbol: "BBSE3", name: "BB Seguridade", kind: "stock" },
+  { symbol: "CXSE3", name: "Caixa Seguridade", kind: "stock" },
+  { symbol: "VIVT3", name: "Vivo (Telefônica)", kind: "stock" },
+  { symbol: "CPLE6", name: "Copel PNB", kind: "stock" },
+  { symbol: "KLBN11", name: "Klabin", kind: "stock" },
 ];
+
+/** Setor de cada ação (curado) — alimenta o filtro/comparador setorial do screener. */
+export const B3_SECTORS: Record<string, string> = {
+  ITUB4: "Bancos", BBDC4: "Bancos", BBAS3: "Bancos", BPAC11: "Bancos",
+  ITSA4: "Seguros & Financeiro", B3SA3: "Seguros & Financeiro", BBSE3: "Seguros & Financeiro", CXSE3: "Seguros & Financeiro",
+  PETR4: "Petróleo & Gás", PETR3: "Petróleo & Gás", PRIO3: "Petróleo & Gás", UGPA3: "Petróleo & Gás", VBBR3: "Petróleo & Gás", CSAN3: "Petróleo & Gás",
+  VALE3: "Mineração & Siderurgia", GGBR4: "Mineração & Siderurgia",
+  EQTL3: "Energia & Saneamento", CMIG4: "Energia & Saneamento", SBSP3: "Energia & Saneamento", TAEE11: "Energia & Saneamento", CPLE6: "Energia & Saneamento",
+  ABEV3: "Consumo & Varejo", LREN3: "Consumo & Varejo", MGLU3: "Consumo & Varejo", RENT3: "Consumo & Varejo", RADL3: "Consumo & Varejo",
+  RDOR3: "Saúde",
+  WEGE3: "Indústria & Logística", RAIL3: "Indústria & Logística",
+  SUZB3: "Papel & Celulose", KLBN11: "Papel & Celulose",
+  VIVT3: "Telecom",
+};
+export const b3Sector = (symbol: string): string => B3_SECTORS[symbol] ?? "Outros";
 
 export interface B3Global {
   symbol: string;
@@ -134,25 +155,52 @@ export async function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[
   }
 }
 
-// ── Fundamentos via brapi (grátis: PETR4/VALE3/ITUB4/MGLU3; token p/ o resto) ──
-const BRAPI = "https://brapi.dev/api";
-const BTOK = (import.meta.env.VITE_BRAPI_TOKEN as string | undefined) || "";
-
+// ── Fundamentos via Fundamentus (1 request traz a bolsa toda, grátis, server-side) ──
 export interface B3Fund {
-  pe: number | null; // P/L
-  eps: number | null; // LPA
-  marketCap: number | null;
-  range52: string | null;
+  price: number | null;
+  pl: number | null; // P/L
+  pvp: number | null; // P/VP
+  dy: number | null; // Dividend Yield (%)
+  evEbitda: number | null;
+  mrgEbit: number | null; // margem EBIT (%)
+  mrgLiq: number | null; // margem líquida (%)
+  liqCorr: number | null; // liquidez corrente
+  roic: number | null; // ROIC (%)
+  roe: number | null; // ROE (%)
+  liq2m: number | null; // liquidez média 2 meses (R$/dia)
+  patrimLiq: number | null; // patrimônio líquido (R$)
+  divLiqPatrim: number | null; // dívida líquida / patrimônio
+  crescRec5a: number | null; // crescimento da receita em 5 anos (%)
 }
-export async function fetchB3Fundamentals(ticker: string): Promise<B3Fund | null> {
-  if (ticker.startsWith("^") || ticker.includes("/")) return null; // índice/dólar não têm
+export type B3Funds = Record<string, B3Fund>;
+
+/** Fundamentos de TODAS as ações do universo (P/L, P/VP, DY, ROE…) numa só chamada. */
+export async function fetchB3FundamentalsAll(): Promise<B3Funds> {
   try {
-    const res = await fetch(`${BRAPI}/quote/${encodeURIComponent(ticker)}?fundamental=true${BTOK ? `&token=${BTOK}` : ""}`);
-    if (!res.ok) return null;
-    const r = (await res.json())?.results?.[0];
-    if (!r) return null;
-    return { pe: r.priceEarnings ?? null, eps: r.earningsPerShare ?? null, marketCap: r.marketCap ?? null, range52: r.fiftyTwoWeekRange ?? null };
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals" } });
+    if (error || !data) return {};
+    return ((data as { funds?: B3Funds }).funds ?? {}) as B3Funds;
   } catch {
-    return null;
+    return {};
+  }
+}
+
+export interface B3Dividend {
+  date: number; // epoch (s)
+  amount: number; // R$ por ação
+}
+export interface B3DividendsData {
+  price: number | null;
+  dividends: B3Dividend[];
+}
+/** Histórico de proventos de um ativo (Yahoo events=div). */
+export async function fetchB3Dividends(ticker: string, range = "5y"): Promise<B3DividendsData> {
+  if (ticker.startsWith("^") || ticker.includes("/")) return { price: null, dividends: [] };
+  try {
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "dividends", ticker, range } });
+    if (error || !data) return { price: null, dividends: [] };
+    return data as B3DividendsData;
+  } catch {
+    return { price: null, dividends: [] };
   }
 }

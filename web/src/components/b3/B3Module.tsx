@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import ErrorBoundary from "../ErrorBoundary";
 import B3CockpitTab from "./B3CockpitTab";
+import B3DividendsTab from "./B3DividendsTab";
 import B3LeituraTab from "./B3LeituraTab";
 import B3MacroTab from "./B3MacroTab";
 import B3ReportsTab from "./B3ReportsTab";
@@ -27,6 +28,7 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
 
       <ErrorBoundary key={tab} label="o módulo B3">
         {tab === "cockpit" && <B3CockpitTab asset={asset} onAsset={onAsset} />}
+        {tab === "dividendos" && <B3DividendsTab asset={asset} onAsset={onAsset} />}
         {tab === "fluxo" && <B3SmartMoneyTab asset={asset} />}
         {tab === "leitura" && <B3LeituraTab asset={asset} />}
         {tab === "macro" && <B3MacroTab />}

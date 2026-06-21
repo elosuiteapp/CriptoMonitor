@@ -20,8 +20,9 @@ const SYSTEM_PROMPT = [
   "## 2. Macro Brasil — Selic, IPCA e as expectativas do Boletim Focus (IPCA/Selic/PIB/câmbio do ano).",
   "## 3. Cenário externo — S&P 500/Nasdaq, commodities (ouro, petróleo Brent), VIX e as correlações do IBOV (com S&P, dólar, VIX etc.).",
   "## 4. Fluxo estrangeiro — leitura dos ADRs (prêmio/desconto vs ação local) como termômetro do capital externo (prêmio = demanda lá fora; desconto = saída).",
-  "## 5. Cenários — base e alternativo, NARRATIVO e NÃO direcional (ex.: 'se o IBOV sustentar X o tom segue; se perder Y tende a enfraquecer'). Sem alvo de preço.",
-  "## 6. Aviso — informativo/educacional, não é recomendação de compra/venda nem aconselhamento; a decisão é sempre do usuário.",
+  "## 5. Destaques fundamentalistas — comente valuation (P/L, P/VP), qualidade (ROE) e as melhores pagadoras de dividendos (DY) entre as ações; cite 3 a 5 nomes que se destacam.",
+  "## 6. Cenários — base e alternativo, NARRATIVO e NÃO direcional (ex.: 'se o IBOV sustentar X o tom segue; se perder Y tende a enfraquecer'). Sem alvo de preço.",
+  "## 7. Aviso — informativo/educacional, não é recomendação de compra/venda nem aconselhamento; a decisão é sempre do usuário.",
   "Use APENAS os dados fornecidos; se algo faltar, diga que está indisponível e NUNCA invente números.",
   "Proibido: recomendar compra/venda, prever preço-alvo, usar linguagem de certeza (prefira 'tende a', 'sugere').",
 ].join("\n");
@@ -53,8 +54,14 @@ async function callGemini(model: string, key: string, system: string, user: stri
 
 // deno-lint-ignore no-explicit-any
 async function generateReport(admin: any, geminiKey: string, supaUrl: string, serviceKey: string) {
-  const [ov, macro] = await Promise.all([b3data(supaUrl, serviceKey, "overview"), b3data(supaUrl, serviceKey, "macro")]);
+  const [ov, macro, fundResp] = await Promise.all([b3data(supaUrl, serviceKey, "overview"), b3data(supaUrl, serviceKey, "macro"), b3data(supaUrl, serviceKey, "fundamentals")]);
   if (!ov && !macro) return { ok: false, error: "sem dados da B3" };
+
+  // Fundamentos compactos (valuation + qualidade) e top pagadoras de dividendos.
+  // deno-lint-ignore no-explicit-any
+  const funds = (fundResp?.funds ?? {}) as Record<string, any>;
+  const fundArr = Object.entries(funds).map(([sym, f]) => ({ sym, pl: f.pl, pvp: f.pvp, dy: f.dy, roe: f.roe }));
+  const topDy = fundArr.filter((f) => f.dy != null).sort((a, b) => (b.dy ?? 0) - (a.dy ?? 0)).slice(0, 8);
 
   const userMsg = [
     "Gere o Relatório Diário do pregão da B3 de hoje a partir dos dados abaixo.",
@@ -70,6 +77,10 @@ async function generateReport(admin: any, geminiKey: string, supaUrl: string, se
     JSON.stringify(macro?.correlations ?? []),
     "ADRs prêmio/desconto vs ação local (premiumPct):",
     JSON.stringify(macro?.adrs ?? []),
+    "Fundamentos das ações (pl=P/L, pvp=P/VP, dy=Dividend Yield %, roe=ROE %):",
+    JSON.stringify(fundArr),
+    "Maiores pagadoras de dividendos (por DY %):",
+    JSON.stringify(topDy),
   ].join("\n");
 
   let usedModel = PRIMARY_MODEL;

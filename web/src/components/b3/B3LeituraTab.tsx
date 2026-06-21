@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchB3Chart, fetchB3Fundamentals, fetchB3Macro, type B3Fund, type B3MacroData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FundamentalsAll, fetchB3Macro, type B3Fund, type B3MacroData } from "../../lib/b3";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { BiasGauge, biasTone, toneText } from "./B3Shared";
 
@@ -54,10 +54,31 @@ function computeRead(asset: string, closes: number[], macro: B3MacroData | null,
 
   let fundScore = 0;
   let hasFund = false;
-  if (fund && fund.pe != null && fund.pe > 0) {
-    hasFund = true;
-    fundScore = fund.pe < 10 ? 30 : fund.pe < 15 ? 12 : fund.pe < 25 ? -5 : -25;
-    axes.push({ key: "fund", label: "Valuation", score: fundScore, note: `P/L ${fund.pe.toFixed(1)} — ${fund.pe < 12 ? "barato" : fund.pe > 25 ? "caro" : "neutro"}` });
+  if (fund) {
+    let s = 0;
+    let n = 0;
+    if (fund.pl != null && fund.pl > 0) {
+      s += fund.pl < 8 ? 35 : fund.pl < 15 ? 12 : fund.pl < 25 ? -8 : -28;
+      n++;
+    }
+    if (fund.pvp != null && fund.pvp > 0) {
+      s += fund.pvp < 1 ? 30 : fund.pvp < 2 ? 10 : fund.pvp < 4 ? -8 : -22;
+      n++;
+    }
+    if (fund.roe != null) {
+      s += fund.roe >= 20 ? 30 : fund.roe >= 12 ? 15 : fund.roe >= 6 ? 0 : -20;
+      n++;
+    }
+    if (fund.dy != null) {
+      s += fund.dy >= 8 ? 25 : fund.dy >= 5 ? 12 : fund.dy >= 2 ? 4 : 0;
+      n++;
+    }
+    if (n > 0) {
+      hasFund = true;
+      fundScore = clamp(s);
+      const bits = [fund.pl != null ? `P/L ${fund.pl.toFixed(1)}` : null, fund.pvp != null ? `P/VP ${fund.pvp.toFixed(2)}` : null, fund.roe != null ? `ROE ${fund.roe.toFixed(0)}%` : null, fund.dy != null ? `DY ${fund.dy.toFixed(1)}%` : null].filter(Boolean);
+      axes.push({ key: "fund", label: "Qualidade & Valuation", score: fundScore, note: bits.join(" · ") });
+    }
   }
 
   const bias = Math.round(hasFund ? clamp(0.35 * trend + 0.25 * mom + 0.25 * macroScore + 0.15 * fundScore) : clamp(0.42 * trend + 0.32 * mom + 0.26 * macroScore));
@@ -97,9 +118,9 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3Fundamentals(asset)]).then(([candles, macro, fund]) => {
+    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3FundamentalsAll()]).then(([candles, macro, funds]) => {
       if (!alive) return;
-      setRead(computeRead(asset, candles.map((c) => c.close), macro, fund));
+      setRead(computeRead(asset, candles.map((c) => c.close), macro, funds[asset] ?? null));
       setLoading(false);
     });
     return () => {

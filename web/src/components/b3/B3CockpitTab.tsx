@@ -1,39 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3Fundamentals, fetchB3Overview, type B3Candle, type B3Fund, type B3Overview, type B3Quote } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FundamentalsAll, fetchB3Overview, type B3Candle, type B3Funds, type B3Overview } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
-import { B3AssetIcon, Cell, fmtAssetPrice, fmtBRL, fmtBig, fmtNum, fmtPct, fmtVol, selicAA, toneCls } from "./B3Shared";
+import B3Screener from "./B3Screener";
+import { Cell, fmtAssetPrice, fmtBig, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
 
-/** Linha da tabela de desempenho (preço + retorno dia/semana/15d/30d). */
-function PerfRow({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
-  const cell = (v: number | null | undefined) => <td className={`num px-3 py-2 text-right ${toneCls(v ?? null)}`}>{fmtPct(v ?? null)}</td>;
-  return (
-    <tr onClick={onClick} className={`cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted ${active ? "bg-primary/10" : ""}`}>
-      <td className="px-3 py-2 font-semibold text-foreground">
-        <span className="flex items-center gap-2">
-          <B3AssetIcon symbol={q.symbol} kind={q.kind} />
-          {q.symbol}
-        </span>
-      </td>
-      <td className="num px-3 py-2 text-right text-foreground">{fmtNum(q.price, q.kind === "index" ? 0 : 2)}</td>
-      {cell(q.changePct)}
-      {cell(q.w1)}
-      {cell(q.d15)}
-      {cell(q.d30)}
-    </tr>
-  );
-}
-
-/** Cockpit Principal da B3: macro BR + watchlist + gráfico + fundamentos do ativo. */
+/** Cockpit Principal da B3: macro BR + ativo + gráfico + fundamentos completos + screener. */
 export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
   const [ov, setOv] = useState<B3Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [candles, setCandles] = useState<B3Candle[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
-  const [fund, setFund] = useState<B3Fund | null>(null);
+  const [funds, setFunds] = useState<B3Funds>({});
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [showEma, setShowEma] = useState(true);
@@ -46,19 +27,11 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       setOv(o);
       setLoading(false);
     });
+    fetchB3FundamentalsAll().then((f) => alive && setFunds(f));
     return () => {
       alive = false;
     };
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    setFund(null);
-    fetchB3Fundamentals(asset).then((f) => alive && setFund(f));
-    return () => {
-      alive = false;
-    };
-  }, [asset]);
 
   useEffect(() => {
     let alive = true;
@@ -75,6 +48,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   }, [asset, timeframe]);
 
   const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === asset) ?? null, [ov, asset]);
+  const fund = funds[asset] ?? null;
   const ibov = ov?.quotes.find((q) => q.symbol === "IBOV");
   const dollar = ov?.quotes.find((q) => q.symbol === "USD/BRL");
 
@@ -103,7 +77,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             <div className="num text-3xl font-bold text-foreground">{selQuote ? fmtAssetPrice(asset, selQuote.price) : "—"}</div>
           </div>
           <span className={`text-sm font-semibold ${toneCls(selQuote?.changePct)}`}>
-            {fmtPct(selQuote?.changePct ?? null)} · dia{selQuote?.volume ? ` · vol ${fmtVol(selQuote.volume)}` : ""}
+            {fmtPct(selQuote?.changePct ?? null)} · dia
           </span>
         </div>
 
@@ -125,42 +99,32 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       </div>
 
-      {/* Fundamentos */}
-      {fund && (fund.pe != null || fund.marketCap != null) && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Cell label="P/L" value={fund.pe != null ? fund.pe.toFixed(1) : "—"} sub="preço / lucro" />
-          <Cell label="LPA" value={fund.eps != null ? fmtBRL(fund.eps) : "—"} sub="lucro por ação" />
-          <Cell label="Valor de mercado" value={fmtBig(fund.marketCap)} />
-          {fund.range52 && <Cell label="Faixa 52 sem." value={fund.range52} />}
+      {/* Fundamentos completos do ativo */}
+      {fund && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Fundamentos · {asset}</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <Cell label="P/L" value={fund.pl != null ? fund.pl.toFixed(1) : "—"} sub="preço / lucro" />
+            <Cell label="P/VP" value={fmtMult(fund.pvp)} sub="preço / patrimônio" />
+            <Cell label="Dividend Yield" value={<span className={fund.dy != null && fund.dy >= 6 ? "text-emerald-500" : "text-foreground"}>{fmtPctRaw(fund.dy)}</span>} sub="proventos 12m" />
+            <Cell label="ROE" value={<span className={fund.roe != null && fund.roe >= 15 ? "text-emerald-500" : "text-foreground"}>{fmtPctRaw(fund.roe)}</span>} sub="retorno s/ patrimônio" />
+            <Cell label="ROIC" value={fmtPctRaw(fund.roic)} sub="retorno s/ capital" />
+            <Cell label="Margem líquida" value={fmtPctRaw(fund.mrgLiq)} sub="lucro / receita" />
+            <Cell label="Margem EBIT" value={fmtPctRaw(fund.mrgEbit)} sub="operacional" />
+            <Cell label="EV/EBITDA" value={fmtMult(fund.evEbitda)} sub="valor da firma" />
+            <Cell label="Dív.Líq/PL" value={fund.divLiqPatrim != null ? fund.divLiqPatrim.toFixed(2) : "—"} sub="endividamento" tone={fund.divLiqPatrim != null ? -fund.divLiqPatrim : null} />
+            <Cell label="Cresc. Rec. (5a)" value={<span className={toneCls(fund.crescRec5a)}>{fmtPctRaw(fund.crescRec5a)}</span>} sub="receita 5 anos" />
+            <Cell label="Liq. corrente" value={fund.liqCorr != null ? fund.liqCorr.toFixed(2) : "—"} sub="caixa / dívida CP" />
+            <Cell label="Patrimônio líq." value={fmtBig(fund.patrimLiq)} />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. Verde = DY≥6% / ROE≥15% / crescimento positivo.</p>
         </div>
       )}
 
-      {/* Watchlist com desempenho por período */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Ações · desempenho</h3>
-        <div className="overflow-x-auto rounded-2xl border border-border bg-card dark:bg-card/60">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2 text-left font-medium">Ativo</th>
-                <th className="px-3 py-2 text-right font-medium">Preço</th>
-                <th className="px-3 py-2 text-right font-medium">Dia</th>
-                <th className="px-3 py-2 text-right font-medium">Semana</th>
-                <th className="px-3 py-2 text-right font-medium">15 dias</th>
-                <th className="px-3 py-2 text-right font-medium">30 dias</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ov.quotes.map((q) => (
-                <PerfRow key={q.symbol} q={q} active={asset === q.symbol} onClick={() => onAsset(q.symbol)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-1.5 text-[11px] text-muted-foreground">Clique numa linha para abrir o ativo. Retornos por período (dia/semana/15/30 dias corridos).</p>
-      </div>
+      {/* Screener — watchlist com fundamentos, filtro por setor e ordenação */}
+      <B3Screener quotes={ov.quotes} funds={funds} asset={asset} onAsset={onAsset} />
 
-      <p className="text-[11px] text-muted-foreground">Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via brapi.dev.</p>
+      <p className="text-[11px] text-muted-foreground">Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via Fundamentus.</p>
     </div>
   );
 }

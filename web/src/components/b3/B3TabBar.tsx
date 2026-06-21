@@ -1,7 +1,8 @@
-export type B3TabId = "cockpit" | "fluxo" | "leitura" | "macro" | "reports";
+export type B3TabId = "cockpit" | "dividendos" | "fluxo" | "leitura" | "macro" | "reports";
 
 const TABS: { id: B3TabId; label: string }[] = [
   { id: "cockpit", label: "Cockpit Principal" },
+  { id: "dividendos", label: "Dividendos" },
   { id: "fluxo", label: "Fluxo & Smart Money" },
   { id: "leitura", label: "Leitura do Mercado" },
   { id: "macro", label: "Macro & Correlações" },

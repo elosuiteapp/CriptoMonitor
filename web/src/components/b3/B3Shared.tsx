@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 export const fmtBRL = (n: number | null, dec = 2) => (n == null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: dec }));
 export const fmtNum = (n: number | null, dec = 2) => (n == null ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
 export const fmtPct = (n: number | null) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`);
+/** Percentual já em base 100 (ex.: DY 7,65), sem sinal de "+". */
+export const fmtPctRaw = (n: number | null, dec = 2) => (n == null ? "—" : `${n.toFixed(dec)}%`);
+/** Múltiplo (P/L, P/VP, EV/EBITDA…) — 2 casas, sem unidade. */
+export const fmtMult = (n: number | null) => (n == null ? "—" : `${n.toFixed(2)}×`);
 export const fmtBig = (n: number | null) => {
   if (n == null) return "—";
   if (n >= 1e12) return `R$ ${(n / 1e12).toFixed(2)} tri`;

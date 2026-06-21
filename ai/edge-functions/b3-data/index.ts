@@ -1,8 +1,10 @@
-// Edge Function: b3-data (proxy grátis da B3 — Yahoo + BCB, sem token, sem CORS)
+// Edge Function: b3-data (proxy grátis da B3 — Yahoo + BCB + Fundamentus, sem token, sem CORS)
 // Módulo B3 admin-only. Proxy read-only. Modos no body:
 //   { mode: "overview" }            -> watchlist (IBOV, dólar, ações) + macro BR
 //   { mode: "chart", ticker }       -> candles diários (3 meses)
 //   { mode: "macro" }               -> macro global + correlações do IBOV + macro BR
+//   { mode: "fundamentals" }        -> fundamentos das ações (P/L, P/VP, DY, ROE… via Fundamentus)
+//   { mode: "dividends", ticker }   -> histórico de proventos (Yahoo events=div)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -39,6 +41,13 @@ const SYMS: [string, string, string][] = [
   ["CMIG4", "CMIG4.SA", "stock"],
   ["VBBR3", "VBBR3.SA", "stock"],
   ["MGLU3", "MGLU3.SA", "stock"],
+  // Pagadoras clássicas de dividendos (reforçam a aba de proventos).
+  ["TAEE11", "TAEE11.SA", "stock"],
+  ["BBSE3", "BBSE3.SA", "stock"],
+  ["CXSE3", "CXSE3.SA", "stock"],
+  ["VIVT3", "VIVT3.SA", "stock"],
+  ["CPLE6", "CPLE6.SA", "stock"],
+  ["KLBN11", "KLBN11.SA", "stock"],
 ];
 const TMAP: Record<string, string> = Object.fromEntries(SYMS.map(([l, s]) => [l, s]));
 // Referências globais p/ correlação com o IBOV.
@@ -84,9 +93,10 @@ async function mapLimit<T, R>(arr: T[], limit: number, fn: (x: T) => Promise<R>)
 
 const Y = "https://query1.finance.yahoo.com/v8/finance/chart/";
 // deno-lint-ignore no-explicit-any
-async function yahoo(symbol: string, range: string, interval: string): Promise<any> {
+async function yahoo(symbol: string, range: string, interval: string, events = false): Promise<any> {
   try {
-    const r = await fetch(`${Y}${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`, { headers: { "User-Agent": "Mozilla/5.0" } });
+    const ev = events ? "&events=div" : "";
+    const r = await fetch(`${Y}${encodeURIComponent(symbol)}?interval=${interval}&range=${range}${ev}`, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!r.ok) return null;
     return await r.json();
   } catch {
@@ -219,6 +229,56 @@ async function adrPremiums(usdBrl: number | null): Promise<Array<{ name: string;
   return out;
 }
 
+// ── Fundamentos via Fundamentus (resultado.php — 1 request traz a bolsa toda) ──
+// Número no formato BR ("1.234,56" / "7,65%" / "-") → number | null.
+function parseBR(s: string | undefined): number | null {
+  if (s == null) return null;
+  const t = s.trim().replace(/%/g, "");
+  if (t === "" || t === "-") return null;
+  const n = Number(t.replace(/\./g, "").replace(/,/g, "."));
+  return Number.isFinite(n) ? n : null;
+}
+interface Fund {
+  price: number | null; pl: number | null; pvp: number | null; dy: number | null;
+  evEbitda: number | null; mrgEbit: number | null; mrgLiq: number | null; liqCorr: number | null;
+  roic: number | null; roe: number | null; liq2m: number | null; patrimLiq: number | null;
+  divLiqPatrim: number | null; crescRec5a: number | null;
+}
+// Colunas do resultado.php (fd-column-N): 0=Papel 1=Cotação 2=P/L 3=P/VP 4=PSR 5=Div.Yield
+// 6=P/Ativo 7=P/CapGiro 8=P/EBIT 9=P/AtivCircLiq 10=EV/EBIT 11=EV/EBITDA 12=MrgBruta
+// 13=MrgEbit 14=Mrg.Líq 15=LiqCorr 16=ROIC 17=ROE 18=Liq2meses 19=PatrimLíq 20=DívLíq/Patrim 21=CrescRec5a
+async function fundamentals(only: Set<string>): Promise<Record<string, Fund>> {
+  try {
+    const r = await fetch("https://www.fundamentus.com.br/resultado.php", { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return {};
+    const buf = await r.arrayBuffer();
+    let html: string;
+    try {
+      html = new TextDecoder("iso-8859-1").decode(buf);
+    } catch {
+      html = new TextDecoder().decode(buf);
+    }
+    const out: Record<string, Fund> = {};
+    const rowRe = /papel=([A-Z0-9]{4,6})">[A-Z0-9]+<\/a><\/span><\/td>(.*?)<\/tr>/gs;
+    let m: RegExpExecArray | null;
+    while ((m = rowRe.exec(html)) !== null) {
+      const papel = m[1];
+      if (!only.has(papel)) continue;
+      const tds = [...m[2].matchAll(/<td[^>]*>\s*([^<]*?)\s*<\/td>/g)].map((x) => x[1]);
+      if (tds.length < 21) continue;
+      out[papel] = {
+        price: parseBR(tds[0]), pl: parseBR(tds[1]), pvp: parseBR(tds[2]), dy: parseBR(tds[4]),
+        evEbitda: parseBR(tds[10]), mrgEbit: parseBR(tds[12]), mrgLiq: parseBR(tds[13]), liqCorr: parseBR(tds[14]),
+        roic: parseBR(tds[15]), roe: parseBR(tds[16]), liq2m: parseBR(tds[17]), patrimLiq: parseBR(tds[18]),
+        divLiqPatrim: parseBR(tds[19]), crescRec5a: parseBR(tds[20]),
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
@@ -234,6 +294,25 @@ Deno.serve(async (req) => {
       .filter((c) => c.close != null);
     if (tf.agg) candles = aggregate(candles as Candle[], tf.agg);
     return json({ candles });
+  }
+
+  if (body.mode === "dividends" && body.ticker) {
+    const sym = TMAP[String(body.ticker)] ?? String(body.ticker);
+    const j = await yahoo(sym, String(body.range ?? "5y"), "1d", true);
+    const res = j?.chart?.result?.[0];
+    const price = res?.meta?.regularMarketPrice ?? null;
+    const divObj = (res?.events?.dividends ?? {}) as Record<string, { date: number; amount: number }>;
+    const dividends = Object.values(divObj)
+      .filter((d) => d && Number.isFinite(d.amount) && d.amount > 0)
+      .map((d) => ({ date: d.date, amount: d.amount }))
+      .sort((a, b) => a.date - b.date);
+    return json({ price, dividends });
+  }
+
+  if (body.mode === "fundamentals") {
+    const stocks = new Set(SYMS.filter(([, , k]) => k === "stock").map(([l]) => l));
+    const funds = await fundamentals(stocks);
+    return json({ funds });
   }
 
   if (body.mode === "macro") {
