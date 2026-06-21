@@ -11,6 +11,7 @@ import Disclaimer from "../components/Disclaimer";
 import MarketPlaceholder from "../components/MarketPlaceholder";
 import B3Module from "../components/b3/B3Module";
 import B3AssetSelector from "../components/b3/B3AssetSelector";
+import { B3_ASSETS, B3_FIIS } from "../lib/b3";
 import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
@@ -161,7 +162,12 @@ export default function Dashboard() {
           {market === "crypto" && (
             <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
           )}
-          {market === "b3" && <B3AssetSelector current={b3Asset} onChange={setB3Asset} />}
+          {market === "b3" && (
+            <div className="flex items-center gap-2">
+              <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_ASSETS} label="Ações" />
+              <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_FIIS} label="FIIs" />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <Link

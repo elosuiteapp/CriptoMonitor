@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { fetchB3Chart, fetchB3FundamentalsAll, fetchB3Macro, type B3Fund, type B3MacroData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Macro, isFii, type B3FiiFund, type B3Fund, type B3MacroData } from "../../lib/b3";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
-import { BiasGauge, biasTone, toneText } from "./B3Shared";
+import { BiasGauge, biasTone, selicAA, toneText } from "./B3Shared";
 
 const clamp = (v: number, lo = -100, hi = 100) => Math.max(lo, Math.min(hi, v));
 
@@ -87,6 +87,56 @@ function computeRead(asset: string, closes: number[], macro: B3MacroData | null,
   return { bias, label, axes, sentence };
 }
 
+/** Leitura específica de FII: tendência + momento + renda (DY) + valuation (P/VP) + juros (Selic). */
+function computeReadFii(asset: string, closes: number[], macro: B3MacroData | null, fund: B3FiiFund | null): Read | null {
+  if (closes.length < 25) return null;
+  const price = last(closes);
+  const e20 = last(ema(closes, 20));
+  const e50 = last(ema(closes, 50));
+  const r = last(rsi(closes, 14));
+  const hist = last(macd(closes).hist);
+
+  const trend = clamp((price > e20 ? 50 : -50) + (e20 > e50 ? 50 : -50));
+  const mom = clamp((Number.isFinite(r) ? (r - 50) * 4 : 0) * 0.7 + (hist > 0 ? 25 : -25));
+  const axes: Axis[] = [
+    { key: "trend", label: "Tendência", score: trend, note: `cota ${price > e20 ? "acima" : "abaixo"} da MM20 · MM20 ${e20 > e50 ? ">" : "<"} MM50` },
+    { key: "mom", label: "Momento", score: mom, note: `RSI ${Number.isFinite(r) ? r.toFixed(0) : "—"} · MACD ${hist > 0 ? "positivo" : "negativo"}` },
+  ];
+
+  if (fund?.dy != null) {
+    const s = fund.dy >= 11 ? 30 : fund.dy >= 9 ? 18 : fund.dy >= 7 ? 6 : -8;
+    axes.push({ key: "renda", label: "Renda (DY)", score: s, note: `DY ${fund.dy.toFixed(1)}% — ${fund.dy >= 9 ? "renda alta" : fund.dy >= 7 ? "renda ok" : "renda baixa"}` });
+  }
+  if (fund?.pvp != null && fund.pvp > 0) {
+    const s = fund.pvp < 0.9 ? 30 : fund.pvp < 1 ? 12 : fund.pvp < 1.1 ? -4 : -20;
+    axes.push({ key: "val", label: "Valuation (P/VP)", score: s, note: `P/VP ${fund.pvp.toFixed(2)} — ${fund.pvp < 1 ? "desconto" : "ágio"}` });
+  }
+  if (fund?.vacancia != null && (fund.qtdImoveis ?? 0) > 0) {
+    const s = fund.vacancia < 8 ? 15 : fund.vacancia < 15 ? 0 : -18;
+    axes.push({ key: "occ", label: "Ocupação", score: s, note: `vacância ${fund.vacancia.toFixed(1)}%` });
+  }
+  const selAA = selicAA(macro?.macro.selic ?? null);
+  if (selAA != null) {
+    const s = selAA < 10 ? 25 : selAA < 12 ? 8 : selAA < 14 ? -8 : -22;
+    axes.push({ key: "juros", label: "Juros (Selic)", score: s, note: `Selic ${selAA.toFixed(1)}% a.a. — ${selAA < 11 ? "favorece FII" : "pressiona FII"}` });
+  }
+
+  const W: Record<string, number> = { trend: 0.2, mom: 0.15, renda: 0.25, val: 0.25, juros: 0.15, occ: 0.1 };
+  let num = 0;
+  let den = 0;
+  for (const a of axes) {
+    const w = W[a.key] ?? 0.1;
+    num += a.score * w;
+    den += w;
+  }
+  const bias = Math.round(clamp(den ? num / den : 0));
+  const label = leanWord(bias);
+  const rendaTxt = fund?.dy != null ? `, renda ${leanWord(axes.find((a) => a.key === "renda")?.score ?? 0)}` : "";
+  const valTxt = fund?.pvp != null ? `, valuation ${leanWord(axes.find((a) => a.key === "val")?.score ?? 0)}` : "";
+  const sentence = `${asset} (FII${fund?.segmento ? ` · ${fund.segmento}` : ""}): tendência de ${leanWord(trend)}${rendaTxt}${valTxt}. Viés geral: ${label}.`;
+  return { bias, label, axes, sentence };
+}
+
 function AxisRow({ a }: { a: Axis }) {
   const dir = a.score > 6 ? 1 : a.score < -6 ? -1 : 0;
   const glyph = dir > 0 ? "▲" : dir < 0 ? "▼" : "—";
@@ -118,9 +168,10 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3FundamentalsAll()]).then(([candles, macro, funds]) => {
+    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3FundamentalsAll(), fetchB3FiisAll()]).then(([candles, macro, funds, fiis]) => {
       if (!alive) return;
-      setRead(computeRead(asset, candles.map((c) => c.close), macro, funds[asset] ?? null));
+      const closes = candles.map((c) => c.close);
+      setRead(isFii(asset) ? computeReadFii(asset, closes, macro, fiis[asset] ?? null) : computeRead(asset, closes, macro, funds[asset] ?? null));
       setLoading(false);
     });
     return () => {

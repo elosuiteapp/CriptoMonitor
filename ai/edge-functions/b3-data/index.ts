@@ -49,7 +49,27 @@ const SYMS: [string, string, string][] = [
   ["CPLE6", "CPLE6.SA", "stock"],
   ["KLBN11", "KLBN11.SA", "stock"],
 ];
-const TMAP: Record<string, string> = Object.fromEntries(SYMS.map(([l, s]) => [l, s]));
+// Fundos imobiliários (FIIs) líquidos, por segmento (papel/CRI, logística, shopping, lajes/híbrido, FOF).
+const SYMS_FII: [string, string][] = [
+  ["MXRF11", "MXRF11.SA"],
+  ["KNCR11", "KNCR11.SA"],
+  ["KNIP11", "KNIP11.SA"],
+  ["IRDM11", "IRDM11.SA"],
+  ["RECR11", "RECR11.SA"],
+  ["HGLG11", "HGLG11.SA"],
+  ["XPLG11", "XPLG11.SA"],
+  ["BTLG11", "BTLG11.SA"],
+  ["VILG11", "VILG11.SA"],
+  ["XPML11", "XPML11.SA"],
+  ["VISC11", "VISC11.SA"],
+  ["HGBS11", "HGBS11.SA"],
+  ["KNRI11", "KNRI11.SA"],
+  ["HGRU11", "HGRU11.SA"],
+  ["HGRE11", "HGRE11.SA"],
+  ["TRXF11", "TRXF11.SA"],
+  ["RBRF11", "RBRF11.SA"],
+];
+const TMAP: Record<string, string> = Object.fromEntries([...SYMS.map(([l, s]) => [l, s]), ...SYMS_FII.map(([l, s]) => [l, s])]);
 // Referências globais p/ correlação com o IBOV.
 const GLOBALS: [string, string][] = [
   ["S&P 500", "^GSPC"],
@@ -279,6 +299,57 @@ async function fundamentals(only: Set<string>): Promise<Record<string, Fund>> {
   }
 }
 
+// Fundamentos de FIIs (fii_resultado.php). Colunas (tds 0-idx): 0=Segmento(texto) 1=Cotação
+// 2=FFO Yield 3=Div.Yield 4=P/VP 5=Valor de Mercado 6=Liquidez 7=Qtd imóveis 8=Preço m2
+// 9=Aluguel m2 10=Cap Rate 11=Vacância Média 12=Endereço(texto).
+interface FiiFund {
+  segmento: string | null; price: number | null; ffoYield: number | null; dy: number | null;
+  pvp: number | null; valorMercado: number | null; liquidez: number | null; qtdImoveis: number | null;
+  capRate: number | null; vacancia: number | null;
+}
+async function fundamentalsFii(only: Set<string>): Promise<Record<string, FiiFund>> {
+  try {
+    const r = await fetch("https://www.fundamentus.com.br/fii_resultado.php", { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return {};
+    const buf = await r.arrayBuffer();
+    let html: string;
+    try {
+      html = new TextDecoder("iso-8859-1").decode(buf);
+    } catch {
+      html = new TextDecoder().decode(buf);
+    }
+    const out: Record<string, FiiFund> = {};
+    const rowRe = /papel=([A-Z0-9]{4,6})">[A-Z0-9]+<\/a><\/span><\/td>(.*?)<\/tr>/gs;
+    let m: RegExpExecArray | null;
+    while ((m = rowRe.exec(html)) !== null) {
+      const papel = m[1];
+      if (!only.has(papel)) continue;
+      const tds = [...m[2].matchAll(/<td[^>]*>\s*([^<]*?)\s*<\/td>/g)].map((x) => x[1]);
+      if (tds.length < 12) continue;
+      const qtd = parseBR(tds[7]);
+      const physical = (qtd ?? 0) > 0; // FII de tijolo (tem imóvel) vs papel/CRI/FOF
+      let capRate = parseBR(tds[10]);
+      let vacancia = parseBR(tds[11]);
+      // Cap rate e vacância só fazem sentido em FII de tijolo. Vacância >50% no Fundamentus
+      // é erro de dado (FII líquido não opera ~vazio) → anula em vez de exibir lixo.
+      if (!physical) {
+        capRate = null;
+        vacancia = null;
+      } else if (vacancia != null && vacancia > 50) {
+        vacancia = null;
+      }
+      out[papel] = {
+        segmento: tds[0]?.trim() || null, price: parseBR(tds[1]), ffoYield: parseBR(tds[2]), dy: parseBR(tds[3]),
+        pvp: parseBR(tds[4]), valorMercado: parseBR(tds[5]), liquidez: parseBR(tds[6]), qtdImoveis: qtd,
+        capRate, vacancia,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
@@ -310,6 +381,10 @@ Deno.serve(async (req) => {
   }
 
   if (body.mode === "fundamentals") {
+    if (body.kind === "fii") {
+      const fiis = await fundamentalsFii(new Set(SYMS_FII.map(([l]) => l)));
+      return json({ fiis });
+    }
     const stocks = new Set(SYMS.filter(([, , k]) => k === "stock").map(([l]) => l));
     const funds = await fundamentals(stocks);
     return json({ funds });
@@ -336,8 +411,9 @@ Deno.serve(async (req) => {
     return json({ globals, correlations, macro: { selic, ipca, usd_brl: usd }, focus: focusData, adrs });
   }
 
-  // overview: watchlist + macro BR
-  const quotes = (await mapLimit(SYMS, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k))).filter(Boolean);
+  // overview: watchlist (índice, dólar, ações e FIIs) + macro BR
+  const ALL: [string, string, string][] = [...SYMS, ...SYMS_FII.map(([l, s]) => [l, s, "fii"] as [string, string, string])];
+  const quotes = (await mapLimit(ALL, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k))).filter(Boolean);
   const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
   return json({ quotes, macro: { selic, ipca, usd_brl: usd } });
 });

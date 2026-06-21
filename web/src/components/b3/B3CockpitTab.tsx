@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3FundamentalsAll, fetchB3Overview, type B3Candle, type B3Funds, type B3Overview } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, isFii, type B3Candle, type B3FiiFunds, type B3Funds, type B3Overview } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
@@ -15,6 +15,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   const [candles, setCandles] = useState<B3Candle[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [funds, setFunds] = useState<B3Funds>({});
+  const [fiis, setFiis] = useState<B3FiiFunds>({});
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [showEma, setShowEma] = useState(true);
@@ -28,6 +29,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       setLoading(false);
     });
     fetchB3FundamentalsAll().then((f) => alive && setFunds(f));
+    fetchB3FiisAll().then((f) => alive && setFiis(f));
     return () => {
       alive = false;
     };
@@ -49,6 +51,8 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
   const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === asset) ?? null, [ov, asset]);
   const fund = funds[asset] ?? null;
+  const fiiFund = fiis[asset] ?? null;
+  const assetIsFii = isFii(asset);
   const ibov = ov?.quotes.find((q) => q.symbol === "IBOV");
   const dollar = ov?.quotes.find((q) => q.symbol === "USD/BRL");
 
@@ -99,8 +103,29 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       </div>
 
-      {/* Fundamentos completos do ativo */}
-      {fund && (
+      {/* Fundamentos de FII */}
+      {assetIsFii && fiiFund && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+            Fundamentos · {asset}
+            {fiiFund.segmento && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{fiiFund.segmento}</span>}
+          </h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <Cell label="Dividend Yield" value={<span className={fiiFund.dy != null && fiiFund.dy >= 9 ? "text-emerald-500" : "text-foreground"}>{fmtPctRaw(fiiFund.dy)}</span>} sub="proventos 12m" />
+            <Cell label="P/VP" value={<span className={fiiFund.pvp != null && fiiFund.pvp < 1 ? "text-emerald-500" : "text-foreground"}>{fmtMult(fiiFund.pvp)}</span>} sub="preço / patrimônio" />
+            <Cell label="FFO Yield" value={fmtPctRaw(fiiFund.ffoYield)} sub="geração de caixa" />
+            <Cell label="Cap Rate" value={fmtPctRaw(fiiFund.capRate)} sub="renda / valor" />
+            <Cell label="Vacância" value={<span className={fiiFund.vacancia != null && fiiFund.vacancia > 15 ? "text-rose-500" : "text-foreground"}>{fmtPctRaw(fiiFund.vacancia)}</span>} sub="média" />
+            <Cell label="Qtd de imóveis" value={fiiFund.qtdImoveis != null ? fmtNum(fiiFund.qtdImoveis, 0) : "—"} />
+            <Cell label="Valor de mercado" value={fmtBig(fiiFund.valorMercado)} />
+            <Cell label="Liquidez (dia)" value={fmtBig(fiiFund.liquidez)} sub="negociação média" />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. FII paga proventos mensais — ver aba Dividendos. Verde = DY≥9% / P/VP&lt;1.</p>
+        </div>
+      )}
+
+      {/* Fundamentos completos da ação */}
+      {!assetIsFii && fund && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
           <h3 className="mb-2 text-sm font-semibold text-foreground">Fundamentos · {asset}</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -121,8 +146,8 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       )}
 
-      {/* Screener — watchlist com fundamentos, filtro por setor e ordenação */}
-      <B3Screener quotes={ov.quotes} funds={funds} asset={asset} onAsset={onAsset} />
+      {/* Screener — Ações × FIIs, fundamentos, filtro e ordenação */}
+      <B3Screener quotes={ov.quotes} funds={funds} fiis={fiis} asset={asset} onAsset={onAsset} />
 
       <p className="text-[11px] text-muted-foreground">Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via Fundamentus.</p>
     </div>

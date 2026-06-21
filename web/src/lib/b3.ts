@@ -3,9 +3,10 @@
 
 import { supabase } from "./supabase";
 
+export type B3Kind = "index" | "currency" | "stock" | "fii";
 export interface B3Quote {
-  symbol: string; // IBOV, USD/BRL, PETR4…
-  kind: "index" | "currency" | "stock";
+  symbol: string; // IBOV, USD/BRL, PETR4, MXRF11…
+  kind: B3Kind;
   name: string;
   price: number | null;
   changePct: number | null; // dia
@@ -35,7 +36,7 @@ export interface B3Overview {
 export interface B3Asset {
   symbol: string;
   name: string;
-  kind: "index" | "currency" | "stock";
+  kind: B3Kind;
 }
 /** Universo do módulo B3 (índice, dólar e ações líquidas) — alimenta o seletor.
  *  Sincronizado com a lista SYMS da edge b3-data. */
@@ -90,6 +91,28 @@ export const B3_SECTORS: Record<string, string> = {
   VIVT3: "Telecom",
 };
 export const b3Sector = (symbol: string): string => B3_SECTORS[symbol] ?? "Outros";
+
+/** Universo de FIIs (fundos imobiliários) — lista separada, alimenta o 2º seletor do header. */
+export const B3_FIIS: B3Asset[] = [
+  { symbol: "MXRF11", name: "Maxi Renda (CRI)", kind: "fii" },
+  { symbol: "KNCR11", name: "Kinea Rendimentos (CRI)", kind: "fii" },
+  { symbol: "KNIP11", name: "Kinea Índices (CRI)", kind: "fii" },
+  { symbol: "IRDM11", name: "Iridium (CRI)", kind: "fii" },
+  { symbol: "RECR11", name: "REC Recebíveis (CRI)", kind: "fii" },
+  { symbol: "HGLG11", name: "CSHG Logística", kind: "fii" },
+  { symbol: "XPLG11", name: "XP Log", kind: "fii" },
+  { symbol: "BTLG11", name: "BTG Logística", kind: "fii" },
+  { symbol: "VILG11", name: "Vinci Logística", kind: "fii" },
+  { symbol: "XPML11", name: "XP Malls", kind: "fii" },
+  { symbol: "VISC11", name: "Vinci Shopping", kind: "fii" },
+  { symbol: "HGBS11", name: "Hedge Brasil Shopping", kind: "fii" },
+  { symbol: "KNRI11", name: "Kinea Renda Imob.", kind: "fii" },
+  { symbol: "HGRU11", name: "CSHG Renda Urbana", kind: "fii" },
+  { symbol: "HGRE11", name: "CSHG Real Estate", kind: "fii" },
+  { symbol: "TRXF11", name: "TRX Real Estate", kind: "fii" },
+  { symbol: "RBRF11", name: "RBR Alpha (FOF)", kind: "fii" },
+];
+export const isFii = (symbol: string): boolean => B3_FIIS.some((f) => f.symbol === symbol);
 
 export interface B3Global {
   symbol: string;
@@ -180,6 +203,32 @@ export async function fetchB3FundamentalsAll(): Promise<B3Funds> {
     const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals" } });
     if (error || !data) return {};
     return ((data as { funds?: B3Funds }).funds ?? {}) as B3Funds;
+  } catch {
+    return {};
+  }
+}
+
+// ── Fundamentos de FIIs (Fundamentus fii_resultado.php — indicadores próprios de FII) ──
+export interface B3FiiFund {
+  segmento: string | null; // Logística, Shopping, Papel/CRI, Lajes…
+  price: number | null;
+  ffoYield: number | null; // FFO Yield (%)
+  dy: number | null; // Dividend Yield (%)
+  pvp: number | null; // P/VP
+  valorMercado: number | null; // R$
+  liquidez: number | null; // R$/dia
+  qtdImoveis: number | null;
+  capRate: number | null; // %
+  vacancia: number | null; // vacância média (%)
+}
+export type B3FiiFunds = Record<string, B3FiiFund>;
+
+/** Fundamentos de TODOS os FIIs do universo (P/VP, DY, Cap Rate, Vacância…) numa só chamada. */
+export async function fetchB3FiisAll(): Promise<B3FiiFunds> {
+  try {
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals", kind: "fii" } });
+    if (error || !data) return {};
+    return ((data as { fiis?: B3FiiFunds }).fiis ?? {}) as B3FiiFunds;
   } catch {
     return {};
   }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { B3_ASSETS, fetchB3Dividends, fetchB3FundamentalsAll, type B3Dividend, type B3Funds } from "../../lib/b3";
+import { B3_ASSETS, B3_FIIS, fetchB3Dividends, fetchB3FiisAll, fetchB3FundamentalsAll, isFii, type B3Dividend, type B3FiiFunds, type B3Funds } from "../../lib/b3";
 import { B3AssetIcon, Cell, fmtBRL, fmtPctRaw, toneCls } from "./B3Shared";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -91,6 +91,7 @@ function YearBars({ byYear }: { byYear: { year: number; total: number }[] }) {
 export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
   const [data, setData] = useState<{ price: number | null; dividends: B3Dividend[] } | null>(null);
   const [funds, setFunds] = useState<B3Funds>({});
+  const [fiis, setFiis] = useState<B3FiiFunds>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -111,6 +112,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
   useEffect(() => {
     let alive = true;
     fetchB3FundamentalsAll().then((f) => alive && setFunds(f));
+    fetchB3FiisAll().then((f) => alive && setFiis(f));
     return () => {
       alive = false;
     };
@@ -119,14 +121,22 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
   const d = useMemo(() => (data ? derive(data.dividends, data.price) : null), [data]);
   const maxFreq = d ? Math.max(...d.monthFreq, 1) : 1;
 
-  // Ranking de pagadoras (universo por DY do Fundamentus).
-  const ranking = useMemo(() => {
-    return B3_ASSETS.filter((a) => a.kind === "stock" && funds[a.symbol]?.dy != null && (funds[a.symbol]!.dy as number) > 0)
-      .map((a) => ({ symbol: a.symbol, name: a.name, dy: funds[a.symbol]!.dy as number }))
-      .sort((a, b) => b.dy - a.dy);
-  }, [funds]);
+  const fiiView = isFii(asset);
 
-  const isStock = !asset.startsWith("^") && !asset.includes("/") && asset !== "IBOV" && asset !== "USD/BRL";
+  // Ranking de pagadoras (por DY do Fundamentus) — adapta entre FIIs e ações.
+  const ranking = useMemo(() => {
+    if (fiiView) {
+      return B3_FIIS.filter((a) => fiis[a.symbol]?.dy != null && (fiis[a.symbol]!.dy as number) > 0)
+        .map((a) => ({ symbol: a.symbol, name: a.name, dy: fiis[a.symbol]!.dy as number, kind: "fii" as const }))
+        .sort((a, b) => b.dy - a.dy);
+    }
+    return B3_ASSETS.filter((a) => a.kind === "stock" && funds[a.symbol]?.dy != null && (funds[a.symbol]!.dy as number) > 0)
+      .map((a) => ({ symbol: a.symbol, name: a.name, dy: funds[a.symbol]!.dy as number, kind: "stock" as const }))
+      .sort((a, b) => b.dy - a.dy);
+  }, [funds, fiis, fiiView]);
+
+  // Paga proventos? (ação ou FII — exclui índice/dólar)
+  const paysDiv = !asset.startsWith("^") && !asset.includes("/") && asset !== "IBOV" && asset !== "USD/BRL";
   const typicalLabel = d && d.typicalMonths.length ? d.typicalMonths.map((i) => MONTHS[i]).join(" · ") : null;
 
   return (
@@ -137,8 +147,8 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
           <B3AssetIcon symbol={asset} />
           <h3 className="text-sm font-semibold text-foreground">Dividendos · {asset}</h3>
         </div>
-        {!isStock ? (
-          <p className="text-sm text-muted-foreground">Selecione uma ação — índice e dólar não pagam proventos.</p>
+        {!paysDiv ? (
+          <p className="text-sm text-muted-foreground">Selecione uma ação ou FII — índice e dólar não pagam proventos.</p>
         ) : loading ? (
           <div className="h-20 animate-pulse rounded-xl bg-muted/40" />
         ) : !d ? (
@@ -161,7 +171,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
       </div>
 
       {/* Sazonalidade + por ano */}
-      {isStock && d && (
+      {paysDiv && d && (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
             <h3 className="mb-1 text-sm font-semibold text-foreground">Meses que costuma pagar</h3>
@@ -176,7 +186,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
       )}
 
       {/* Histórico */}
-      {isStock && d && data && data.dividends.length > 0 && (
+      {paysDiv && d && data && data.dividends.length > 0 && (
         <div className="rounded-2xl border border-border bg-card dark:bg-card/60">
           <h3 className="px-4 py-3 text-sm font-semibold text-foreground">Histórico de proventos</h3>
           <div className="max-h-72 overflow-y-auto">
@@ -206,7 +216,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
 
       {/* Ranking de pagadoras */}
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Ranking de pagadoras · Dividend Yield</h3>
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Ranking de pagadoras · {fiiView ? "FIIs" : "Ações"} · Dividend Yield</h3>
         {ranking.length === 0 ? (
           <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
         ) : (
@@ -229,7 +239,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
                     <td className="num px-3 py-2 text-muted-foreground">{i + 1}</td>
                     <td className="px-3 py-2">
                       <span className="flex items-center gap-2">
-                        <B3AssetIcon symbol={r.symbol} />
+                        <B3AssetIcon symbol={r.symbol} kind={r.kind} />
                         <span className="font-semibold text-foreground">{r.symbol}</span>
                         <span className="hidden text-xs text-muted-foreground sm:inline">{r.name}</span>
                       </span>
