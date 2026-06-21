@@ -24,6 +24,15 @@ export const selicAA = (daily: number | null) => (daily == null ? null : (Math.p
 export const fmtAssetPrice = (symbol: string, price: number | null) =>
   symbol === "USD/BRL" ? fmtBRL(price, 4) : symbol === "IBOV" ? fmtNum(price, 0) : fmtBRL(price);
 
+// Ícone monograma do ativo (sigla colorida) — sem dependência externa, consistente.
+const ICON_COLORS = ["bg-sky-600", "bg-violet-600", "bg-amber-600", "bg-rose-600", "bg-teal-600", "bg-indigo-600", "bg-orange-600", "bg-cyan-600", "bg-pink-600", "bg-lime-600", "bg-fuchsia-600", "bg-emerald-700"];
+export function B3AssetIcon({ symbol, kind }: { symbol: string; kind?: string }) {
+  const hash = [...symbol].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const bg = kind === "index" ? "bg-amber-500" : kind === "currency" ? "bg-emerald-600" : ICON_COLORS[hash % ICON_COLORS.length];
+  const label = kind === "currency" ? "R$" : kind === "index" ? "IBO" : symbol.replace(/[0-9]+$/, "").slice(0, 3);
+  return <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${bg} text-[8px] font-bold leading-none text-white`}>{label}</span>;
+}
+
 export function Cell({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: number | null }) {
   return (
     <div className="rounded-xl border border-border/70 bg-background/40 p-2.5">

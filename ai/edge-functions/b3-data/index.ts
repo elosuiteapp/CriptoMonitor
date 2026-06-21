@@ -14,16 +14,30 @@ const SYMS: [string, string, string][] = [
   ["IBOV", "^BVSP", "index"],
   ["USD/BRL", "USDBRL=X", "currency"],
   ["PETR4", "PETR4.SA", "stock"],
+  ["PETR3", "PETR3.SA", "stock"],
   ["VALE3", "VALE3.SA", "stock"],
   ["ITUB4", "ITUB4.SA", "stock"],
+  ["ITSA4", "ITSA4.SA", "stock"],
   ["BBDC4", "BBDC4.SA", "stock"],
   ["BBAS3", "BBAS3.SA", "stock"],
+  ["BPAC11", "BPAC11.SA", "stock"],
   ["B3SA3", "B3SA3.SA", "stock"],
   ["WEGE3", "WEGE3.SA", "stock"],
   ["ABEV3", "ABEV3.SA", "stock"],
   ["PRIO3", "PRIO3.SA", "stock"],
-  ["ELET3", "ELET3.SA", "stock"],
+  ["RAIL3", "RAIL3.SA", "stock"],
   ["RENT3", "RENT3.SA", "stock"],
+  ["SUZB3", "SUZB3.SA", "stock"],
+  ["CSAN3", "CSAN3.SA", "stock"],
+  ["RDOR3", "RDOR3.SA", "stock"],
+  ["GGBR4", "GGBR4.SA", "stock"],
+  ["RADL3", "RADL3.SA", "stock"],
+  ["LREN3", "LREN3.SA", "stock"],
+  ["UGPA3", "UGPA3.SA", "stock"],
+  ["EQTL3", "EQTL3.SA", "stock"],
+  ["SBSP3", "SBSP3.SA", "stock"],
+  ["CMIG4", "CMIG4.SA", "stock"],
+  ["VBBR3", "VBBR3.SA", "stock"],
   ["MGLU3", "MGLU3.SA", "stock"],
 ];
 const TMAP: Record<string, string> = Object.fromEntries(SYMS.map(([l, s]) => [l, s]));
@@ -55,6 +69,15 @@ function aggregate(c: Candle[], n: number): Candle[] {
     const g = c.slice(i, i + n);
     if (!g.length) continue;
     out.push({ time: g[0].time, open: g[0].open, high: Math.max(...g.map((x) => x.high)), low: Math.min(...g.map((x) => x.low)), close: g[g.length - 1].close, volume: g.reduce((s, x) => s + (x.volume || 0), 0) });
+  }
+  return out;
+}
+
+// Roda em LOTES (limite de concorrência) — evita o throttle do Yahoo com muitos símbolos.
+async function mapLimit<T, R>(arr: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < arr.length; i += limit) {
+    out.push(...(await Promise.all(arr.slice(i, i + limit).map(fn))));
   }
   return out;
 }
@@ -235,7 +258,7 @@ Deno.serve(async (req) => {
   }
 
   // overview: watchlist + macro BR
-  const quotes = (await Promise.all(SYMS.map(async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k)))).filter(Boolean);
+  const quotes = (await mapLimit(SYMS, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k))).filter(Boolean);
   const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
   return json({ quotes, macro: { selic, ipca, usd_brl: usd } });
 });

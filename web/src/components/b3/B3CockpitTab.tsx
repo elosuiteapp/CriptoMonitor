@@ -5,14 +5,19 @@ import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
-import { Cell, fmtAssetPrice, fmtBRL, fmtBig, fmtNum, fmtPct, fmtVol, selicAA, toneCls } from "./B3Shared";
+import { B3AssetIcon, Cell, fmtAssetPrice, fmtBRL, fmtBig, fmtNum, fmtPct, fmtVol, selicAA, toneCls } from "./B3Shared";
 
 /** Linha da tabela de desempenho (preço + retorno dia/semana/15d/30d). */
 function PerfRow({ q, active, onClick }: { q: B3Quote; active: boolean; onClick: () => void }) {
   const cell = (v: number | null | undefined) => <td className={`num px-3 py-2 text-right ${toneCls(v ?? null)}`}>{fmtPct(v ?? null)}</td>;
   return (
     <tr onClick={onClick} className={`cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted ${active ? "bg-primary/10" : ""}`}>
-      <td className="px-3 py-2 font-semibold text-foreground">{q.symbol}</td>
+      <td className="px-3 py-2 font-semibold text-foreground">
+        <span className="flex items-center gap-2">
+          <B3AssetIcon symbol={q.symbol} kind={q.kind} />
+          {q.symbol}
+        </span>
+      </td>
       <td className="num px-3 py-2 text-right text-foreground">{fmtNum(q.price, q.kind === "index" ? 0 : 2)}</td>
       {cell(q.changePct)}
       {cell(q.w1)}

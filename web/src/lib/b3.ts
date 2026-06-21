@@ -37,21 +37,36 @@ export interface B3Asset {
   name: string;
   kind: "index" | "currency" | "stock";
 }
-/** Universo do módulo B3 (índice, dólar e ações líquidas) — alimenta o seletor. */
+/** Universo do módulo B3 (índice, dólar e ações líquidas) — alimenta o seletor.
+ *  Sincronizado com a lista SYMS da edge b3-data. */
 export const B3_ASSETS: B3Asset[] = [
   { symbol: "IBOV", name: "Ibovespa", kind: "index" },
   { symbol: "USD/BRL", name: "Dólar", kind: "currency" },
   { symbol: "PETR4", name: "Petrobras PN", kind: "stock" },
+  { symbol: "PETR3", name: "Petrobras ON", kind: "stock" },
   { symbol: "VALE3", name: "Vale ON", kind: "stock" },
   { symbol: "ITUB4", name: "Itaú PN", kind: "stock" },
+  { symbol: "ITSA4", name: "Itaúsa PN", kind: "stock" },
   { symbol: "BBDC4", name: "Bradesco PN", kind: "stock" },
   { symbol: "BBAS3", name: "Banco do Brasil", kind: "stock" },
+  { symbol: "BPAC11", name: "BTG Pactual", kind: "stock" },
   { symbol: "B3SA3", name: "B3 ON", kind: "stock" },
   { symbol: "WEGE3", name: "WEG ON", kind: "stock" },
   { symbol: "ABEV3", name: "Ambev ON", kind: "stock" },
   { symbol: "PRIO3", name: "PRIO ON", kind: "stock" },
-  { symbol: "ELET3", name: "Eletrobras ON", kind: "stock" },
+  { symbol: "RAIL3", name: "Rumo ON", kind: "stock" },
   { symbol: "RENT3", name: "Localiza ON", kind: "stock" },
+  { symbol: "SUZB3", name: "Suzano ON", kind: "stock" },
+  { symbol: "CSAN3", name: "Cosan ON", kind: "stock" },
+  { symbol: "RDOR3", name: "Rede D'Or", kind: "stock" },
+  { symbol: "GGBR4", name: "Gerdau PN", kind: "stock" },
+  { symbol: "RADL3", name: "Raia Drogasil", kind: "stock" },
+  { symbol: "LREN3", name: "Lojas Renner", kind: "stock" },
+  { symbol: "UGPA3", name: "Ultrapar ON", kind: "stock" },
+  { symbol: "EQTL3", name: "Equatorial", kind: "stock" },
+  { symbol: "SBSP3", name: "Sabesp ON", kind: "stock" },
+  { symbol: "CMIG4", name: "Cemig PN", kind: "stock" },
+  { symbol: "VBBR3", name: "Vibra ON", kind: "stock" },
   { symbol: "MGLU3", name: "Magazine Luiza", kind: "stock" },
 ];
 
