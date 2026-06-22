@@ -89,7 +89,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <ChartTypeSelector chartType={chartType} onChartType={setChartType} timeframe={timeframe} onTimeframe={setTimeframe} />
           <PillRow label="Indicadores:">
             <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 períodos — tendência e suportes/resistências dinâmicos." />
-            {asset !== "USD/BRL" && (
+            {asset !== "USD/BRL" && asset !== "IBOV" && (
               <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc="Volume negociado por período (barras na base do gráfico)." />
             )}
           </PillRow>
