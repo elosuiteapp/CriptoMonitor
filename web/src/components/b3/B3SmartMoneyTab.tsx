@@ -173,13 +173,6 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="text-sm font-semibold text-foreground">Smart Money · {asset}</h3>
         <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>Viés: {biasWord(bias)}</span>
-        <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
-          {TFS.map((t) => (
-            <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-3 py-1 text-xs transition-colors ${tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Tendência multi-timeframe + posição no range */}
@@ -217,13 +210,22 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         </div>
       )}
 
-      {/* Gráfico SMC + camadas */}
+      {/* Gráfico SMC + camadas + timeframe (mesma linha, acima do gráfico — padrão do cripto) */}
       <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
-        <PillRow label="Camadas:">
-          {LAYERS.map((l) => (
-            <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggleLayer(l.key)} color={l.color} desc={l.help} />
-          ))}
-        </PillRow>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PillRow label="Camadas:">
+            {LAYERS.map((l) => (
+              <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggleLayer(l.key)} color={l.color} desc={l.help} />
+            ))}
+          </PillRow>
+          <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
+            {TFS.map((t) => (
+              <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-3 py-1 text-xs transition-colors ${tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mt-2">
           {loading && candles.length === 0 ? (
             <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>

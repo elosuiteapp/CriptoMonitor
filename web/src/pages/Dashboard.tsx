@@ -177,7 +177,11 @@ export default function Dashboard() {
             <span aria-hidden>📰</span>
             Newsletter
           </Link>
-          <AIAnalysisButton asset={asset} dailyLimit={plan.ai_daily_limit} />
+          <AIAnalysisButton
+            asset={market === "b3" ? b3Asset : asset}
+            to={market === "b3" ? "/b3-analysis" : "/analysis"}
+            dailyLimit={market === "b3" ? undefined : plan.ai_daily_limit}
+          />
           {user && <NotificationsBell user={user} />}
           <button
             onClick={() => setAlertsOpen(true)}

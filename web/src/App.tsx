@@ -5,6 +5,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useReferralCapture } from "./hooks/useReferralCapture";
 import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
+import B3Analysis from "./pages/B3Analysis";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Newsletter from "./pages/Newsletter";
@@ -89,6 +90,7 @@ export default function App() {
       <Route path="/newsletter/:slug" element={session ? <NewsletterEdition /> : <CaptureAndLogin />} />
       <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
       <Route path="/analysis" element={session ? <Analysis /> : <Navigate to="/login" replace />} />
+      <Route path="/b3-analysis" element={session ? <B3Analysis /> : <Navigate to="/login" replace />} />
       <Route path="/alerts" element={session ? <Alerts /> : <Navigate to="/login" replace />} />
 
       {/* Painel de administrador — guardado por sessão + papel admin */}

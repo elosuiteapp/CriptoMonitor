@@ -4,10 +4,12 @@ interface Props {
   asset: string;
   dailyUsed?: number;
   dailyLimit?: number | null;
+  to?: string; // rota base da análise (cripto: /analysis · B3: /b3-analysis)
 }
 
-/** Botão fixo "O que está acontecendo?" — costura a narrativa da IA (PRD §8.3). */
-export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit }: Props) {
+/** Botão fixo "O que está acontecendo?" — costura a narrativa da IA (PRD §8.3).
+ *  Contextual por módulo: leva à análise DO ATIVO selecionado (cripto ou B3). */
+export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit, to = "/analysis" }: Props) {
   const navigate = useNavigate();
   const counter =
     dailyLimit === null
@@ -18,7 +20,7 @@ export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit }: Props
 
   return (
     <button
-      onClick={() => navigate(`/analysis?asset=${asset}`)}
+      onClick={() => navigate(`${to}?asset=${asset}`)}
       className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-200 hover:bg-primary/90"
     >
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
