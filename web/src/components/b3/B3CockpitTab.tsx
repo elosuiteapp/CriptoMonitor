@@ -94,8 +94,8 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <ChartTypeSelector chartType={chartType} onChartType={setChartType} timeframe={timeframe} onTimeframe={setTimeframe} />
           <PillRow label="Indicadores:">
             <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 períodos — tendência e suportes/resistências dinâmicos." />
-            {asset !== "USD/BRL" && asset !== "IBOV" && (
-              <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc="Volume negociado por período (barras na base do gráfico)." />
+            {asset !== "USD/BRL" && (
+              <TogglePill label="Volume" active={showVolume} onToggle={() => setShowVolume((v) => !v)} color="bg-sky-400" desc={asset === "IBOV" ? "Volume negociado por período (via BOVA11, o ETF que segue o Ibovespa)." : "Volume negociado por período (barras na base do gráfico)."} />
             )}
             <TogglePill label="Bollinger" active={showBollinger} onToggle={() => setShowBollinger((v) => !v)} color="bg-sky-500" desc="Bandas de Bollinger (média 20 ± 2 desvios) — volatilidade e reversão à média. Aperto das bandas = baixa volatilidade." />
             <TogglePill label="MM200 + 52 sem" active={showLongTrend} onToggle={() => setShowLongTrend((v) => !v)} color="bg-orange-500" desc="Média móvel de 200 períodos (tendência primária) + linhas de máxima e mínima das últimas 52 semanas." />

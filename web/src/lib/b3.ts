@@ -42,7 +42,6 @@ export interface B3Asset {
  *  Sincronizado com a lista SYMS da edge b3-data. */
 export const B3_ASSETS: B3Asset[] = [
   { symbol: "IBOV", name: "Ibovespa", kind: "index" },
-  { symbol: "BOVA11", name: "Ibovespa c/ volume (BOVA11)", kind: "index" },
   { symbol: "USD/BRL", name: "Dólar", kind: "currency" },
   { symbol: "PETR4", name: "Petrobras PN", kind: "stock" },
   { symbol: "PETR3", name: "Petrobras ON", kind: "stock" },

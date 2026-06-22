@@ -14,7 +14,6 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const SYMS: [string, string, string][] = [
   ["IBOV", "^BVSP", "index"],
-  ["BOVA11", "BOVA11.SA", "index"],
   ["USD/BRL", "USDBRL=X", "currency"],
   ["PETR4", "PETR4.SA", "stock"],
   ["PETR3", "PETR3.SA", "stock"],
@@ -356,7 +355,8 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
 
   if (body.mode === "chart" && body.ticker) {
-    const sym = TMAP[String(body.ticker)] ?? String(body.ticker);
+    const label = String(body.ticker);
+    const sym = TMAP[label] ?? label;
     const tf = TF_MAP[String(body.tf)] ?? TF_MAP["1d"];
     const res = (await yahoo(sym, tf.range, tf.interval))?.chart?.result?.[0];
     const ts: number[] = res?.timestamp ?? [];
@@ -364,6 +364,16 @@ Deno.serve(async (req) => {
     let candles = ts
       .map((t, i) => ({ time: t, open: q.open?.[i], high: q.high?.[i], low: q.low?.[i], close: q.close?.[i], volume: q.volume?.[i] }))
       .filter((c) => c.close != null);
+    // IBOV (^BVSP) é índice e não tem volume no Yahoo → enxerta o volume do ETF
+    // BOVA11 (que segue o Ibovespa), casando por timestamp, pra o gráfico ter volume.
+    if (label === "IBOV" || sym === "^BVSP") {
+      const vres = (await yahoo("BOVA11.SA", tf.range, tf.interval))?.chart?.result?.[0];
+      const vts: number[] = vres?.timestamp ?? [];
+      const vvol: (number | null)[] = vres?.indicators?.quote?.[0]?.volume ?? [];
+      const volByTime: Record<number, number> = {};
+      for (let i = 0; i < vts.length; i++) if (vvol[i] != null) volByTime[vts[i]] = vvol[i] as number;
+      candles = candles.map((c) => ({ ...c, volume: volByTime[c.time] ?? c.volume ?? 0 }));
+    }
     if (tf.agg) candles = aggregate(candles as Candle[], tf.agg);
     return json({ candles });
   }
