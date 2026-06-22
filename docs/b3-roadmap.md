@@ -42,11 +42,10 @@ Call/Put Wall, Zero Gamma, Max Pain e exposição a gama por strike nas opções
 
 ## P1 — melhorias grátis que ficaram para depois
 
-- **Universo dinâmico** em vez da lista fixa: `brapi /api/quote/list?sortBy=...&sector=...` e `/api/v2/tickers` funcionam **sem token** → puxar as mais líquidas e a composição/peso do IBOV. (Hoje o universo é curado em `web/src/lib/b3.ts`.)
-- **Comparação com pares do setor** na ficha do ativo (ex.: "Itaú vs setor Bancos" — média de DY/ROE/P/L do setor). O screener já tem `B3_SECTORS`; falta o agregado por setor.
-- **Repensar a aba Smart Money para ação:** SMC/ICT (order blocks/FVG/CHoCH) é fraco em candle diário de ação. Manter o gráfico, mas trocar o foco por **suporte/resistência + médias + volume + força relativa vs IBOV** (o que o investidor de ação usa). SMC vira camada opcional.
-- **Distinguir Dividendo × JCP** no histórico de proventos (Yahoo não separa). brapi paga (`cashDividends.label`) ou Fundamentus `detalhes.php` (scrape por ação) trazem o tipo.
-- **Agenda de proventos futura** (data-com / data-ex provisionadas): Investidor10 / StatusInvest (scrape) ou dadosdemercado.
+- **Universo dinâmico** em vez da lista fixa: `brapi /api/quote/list?sortBy=...&sector=...` e `/api/v2/tickers` funcionam **sem token** → puxar as mais líquidas e a composição/peso do IBOV. (Hoje o universo é curado em `web/src/lib/b3.ts`.) — **PENDENTE**
+- ✅ **Comparação com pares do setor** na ficha do ativo — FEITO (jun/2026). `B3SectorCompare.tsx` no cockpit: mediana de DY/P/L/P/VP/ROE/margem dos pares do setor (`B3_SECTORS`) vs o ativo. Só ações, ≥3 pares.
+- ✅ **Repensar a aba Smart Money para ação** — FEITO (jun/2026). `B3StockReadPanel.tsx` + `lib/b3StockRead.ts`: força relativa vs IBOV (1M/3M/6M), médias (MM20/50/200 + golden/death), suporte/resistência por pivôs, volume vs média. SMC/ICT virou seção "Análise avançada" abaixo (só p/ ações; índice/dólar seguem no SMC).
+- ✅ **Distinguir Dividendo × JCP** + ✅ **Agenda de proventos futura** — FEITO (jun/2026). Edge `b3-data` modo `proventos` via **StatusInvest** (`companytickerprovents`, JSON interno): data-com (`ed`), pagamento (`pd`), tipo (`et`/`etd` → Dividendo/JCP/Rendimento), valor (`v`). Inclui provisionados futuros = agenda. Aba Dividendos: coluna Tipo no histórico + card "Agenda de proventos". Fallback Yahoo se vier vazio. Risco: scrape de endpoint interno pode quebrar.
 
 ---
 

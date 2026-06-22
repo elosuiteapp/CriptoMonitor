@@ -5,6 +5,7 @@
 //   { mode: "macro" }               -> macro global + correlações do IBOV + macro BR
 //   { mode: "fundamentals" }        -> fundamentos das ações (P/L, P/VP, DY, ROE… via Fundamentus)
 //   { mode: "dividends", ticker }   -> histórico de proventos (Yahoo events=div)
+//   { mode: "proventos", ticker }   -> proventos com tipo (Div/JCP) + agenda (StatusInvest)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -389,6 +390,54 @@ Deno.serve(async (req) => {
       .map((d) => ({ date: d.date, amount: d.amount }))
       .sort((a, b) => a.date - b.date);
     return json({ price, dividends });
+  }
+
+  // proventos: tipo (Dividendo/JCP/Rendimento) + AGENDA (provisionados futuros).
+  // Fonte grátis: endpoint JSON interno do StatusInvest (data-com `ed`, pagamento
+  // `pd`, tipo `et`/`etd`, valor `v`). Yahoo não distingue tipo nem traz agenda.
+  if (body.mode === "proventos" && body.ticker) {
+    const ticker = String(body.ticker).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const seg = body.kind === "fii" ? "fii" : "acao";
+    const url = `https://statusinvest.com.br/${seg}/companytickerprovents?ticker=${ticker}&chartProventsType=2`;
+    try {
+      const r = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "https://statusinvest.com.br/", "Accept": "application/json" },
+      });
+      if (!r.ok) return json({ past: [], upcoming: [] });
+      const j = await r.json();
+      // deno-lint-ignore no-explicit-any
+      const models: any[] = Array.isArray(j?.assetEarningsModels) ? j.assetEarningsModels : [];
+      const nowMs = Date.now();
+      const parseDate = (s: unknown): number | null => {
+        if (typeof s !== "string") return null;
+        const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return m ? Math.floor(Date.UTC(+m[3], +m[2] - 1, +m[1]) / 1000) : null;
+      };
+      const normType = (et: unknown, etd: unknown): string => {
+        const t = `${et ?? ""} ${etd ?? ""}`.toLowerCase();
+        if (t.includes("jcp") || t.includes("juros")) return "JCP";
+        if (t.includes("dividendo")) return "Dividendo";
+        if (t.includes("rendimento") || t.includes("rend")) return "Rendimento";
+        return typeof et === "string" && et ? et : "Provento";
+      };
+      const past: { date: number; amount: number; type: string }[] = [];
+      const upcoming: { exDate: number | null; payDate: number | null; amount: number; type: string }[] = [];
+      for (const e of models) {
+        const amount = Number(e?.v);
+        if (!Number.isFinite(amount) || amount <= 0) continue;
+        const ex = parseDate(e?.ed);
+        const pay = parseDate(e?.pd);
+        const type = normType(e?.et, e?.etd);
+        const refMs = ((pay ?? ex ?? 0) as number) * 1000;
+        if (refMs > nowMs) upcoming.push({ exDate: ex, payDate: pay, amount, type });
+        else if (ex) past.push({ date: ex, amount, type });
+      }
+      past.sort((a, b) => a.date - b.date);
+      upcoming.sort((a, b) => ((a.payDate ?? a.exDate ?? 0) - (b.payDate ?? b.exDate ?? 0)));
+      return json({ past, upcoming });
+    } catch {
+      return json({ past: [], upcoming: [] });
+    }
   }
 
   if (body.mode === "fundamentals") {

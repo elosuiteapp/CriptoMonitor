@@ -7,6 +7,7 @@ import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import B3IndicatorPanels from "./B3IndicatorPanels";
 import B3Screener from "./B3Screener";
+import B3SectorCompare from "./B3SectorCompare";
 import { Cell, fmtAssetPrice, fmtBig, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
 
 /** Cockpit Principal da B3: macro BR + ativo + gráfico + fundamentos completos + screener. */
@@ -157,6 +158,9 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. Verde = DY≥6% / ROE≥15% / crescimento positivo.</p>
         </div>
       )}
+
+      {/* Comparação com os pares do setor (mediana) — só p/ ações */}
+      {!assetIsFii && fund && <B3SectorCompare asset={asset} funds={funds} />}
 
       {/* Screener — Ações × FIIs, fundamentos, filtro e ordenação */}
       <B3Screener quotes={ov.quotes} funds={funds} fiis={fiis} asset={asset} onAsset={onAsset} />

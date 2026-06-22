@@ -253,3 +253,31 @@ export async function fetchB3Dividends(ticker: string, range = "5y"): Promise<B3
     return { price: null, dividends: [] };
   }
 }
+
+// ── Proventos com tipo (Dividendo/JCP/Rendimento) + agenda futura (StatusInvest) ──
+export interface B3ProventoPast {
+  date: number; // epoch (s) — data-com / data ex
+  amount: number; // R$ por ação/cota
+  type: string; // 'Dividendo' | 'JCP' | 'Rendimento' | ...
+}
+export interface B3ProventoUpcoming {
+  exDate: number | null; // data-com (epoch s)
+  payDate: number | null; // data de pagamento (epoch s)
+  amount: number;
+  type: string;
+}
+export interface B3ProventosData {
+  past: B3ProventoPast[];
+  upcoming: B3ProventoUpcoming[];
+}
+/** Proventos tipados + agenda de provisionados (data-com/pagamento futuros). */
+export async function fetchB3Proventos(ticker: string, kind: "stock" | "fii"): Promise<B3ProventosData> {
+  if (ticker.startsWith("^") || ticker.includes("/")) return { past: [], upcoming: [] };
+  try {
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "proventos", ticker, kind } });
+    if (error || !data) return { past: [], upcoming: [] };
+    return data as B3ProventosData;
+  } catch {
+    return { past: [], upcoming: [] };
+  }
+}

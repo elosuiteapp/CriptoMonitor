@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3Macro, type B3MacroData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3Macro, isFii, type B3MacroData } from "../../lib/b3";
+import { computeStockRead, type StockRead } from "../../lib/b3StockRead";
 import { computeVolumeProfile, type Candle, type Timeframe, type VolumeProfile } from "../../lib/marketData";
 import { computeSmc, type SmcResult } from "../../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource } from "../../lib/smcConfluence";
@@ -8,6 +9,7 @@ import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type T
 import InfoTip from "../InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 import { PillRow, TogglePill } from "../TogglePill";
+import B3StockReadPanel from "./B3StockReadPanel";
 import { Cell, ComingSoon, toneCls } from "./B3Shared";
 
 const TFS: { id: Timeframe; label: string }[] = [
@@ -78,8 +80,11 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
   const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
   const [layers, setLayers] = useState<SmcLayers>(B3_DEFAULT_LAYERS);
   const [macro, setMacro] = useState<B3MacroData | null>(null);
+  const [stockRead, setStockRead] = useState<StockRead | null>(null);
   const [loading, setLoading] = useState(true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((p) => ({ ...p, [key]: !p[key] }));
+  // Ações (não índice/dólar) ganham a "Leitura da ação" no topo; SMC vira avançado.
+  const isStock = !isFii(asset) && asset !== "IBOV" && !asset.includes("/");
 
   // Candles do ativo/timeframe + SMC.
   useEffect(() => {
@@ -135,6 +140,21 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, []);
 
+  // Leitura da ação (diário): força relativa vs IBOV + médias + S/R + volume.
+  useEffect(() => {
+    if (!isStock) {
+      setStockRead(null);
+      return;
+    }
+    let alive = true;
+    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Chart("IBOV", "1d")]).then(([a, ibov]) => {
+      if (alive) setStockRead(computeStockRead(a as Candle[], ibov as Candle[]));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [asset, isStock]);
+
   const vp = useMemo<VolumeProfile | null>(() => (candles.some((c) => c.volume > 0) ? computeVolumeProfile(candles) : null), [candles]);
 
   const htfLevels = useMemo(() => {
@@ -174,6 +194,18 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         <h3 className="text-sm font-semibold text-foreground">Smart Money · {asset}</h3>
         <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>Viés: {biasWord(bias)}</span>
       </div>
+
+      {/* Leitura da ação (foco p/ bolsa) — só ações; índice/dólar seguem no SMC */}
+      {isStock && stockRead && <B3StockReadPanel asset={asset} read={stockRead} />}
+
+      {/* Daqui pra baixo: Smart Money / estrutura ICT — camada avançada p/ ações */}
+      {isStock && (
+        <div className="flex items-center gap-2 pt-1">
+          <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Análise avançada · Smart Money</span>
+          <InfoTip text="Estrutura ICT/SMC (order blocks, FVG, liquidez, BOS/CHoCH). Funciona melhor em cripto/intraday; em candle diário de ação, use a leitura acima como foco principal." />
+          <div className="h-px flex-1 bg-border" />
+        </div>
+      )}
 
       {/* Tendência multi-timeframe + posição no range */}
       <div className="grid gap-2 sm:grid-cols-2">

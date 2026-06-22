@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { B3_ASSETS, B3_FIIS, fetchB3Dividends, fetchB3FiisAll, fetchB3FundamentalsAll, isFii, type B3Dividend, type B3FiiFunds, type B3Funds } from "../../lib/b3";
+import { B3_ASSETS, B3_FIIS, fetchB3Dividends, fetchB3FiisAll, fetchB3Proventos, fetchB3FundamentalsAll, isFii, type B3Dividend, type B3FiiFunds, type B3Funds, type B3ProventosData } from "../../lib/b3";
 import { B3AssetIcon, Cell, fmtBRL, fmtPctRaw, toneCls } from "./B3Shared";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const YEAR_S = 365.25 * 86400;
+const fmtDate = (epoch: number | null) => (epoch ? new Date(epoch * 1000).toLocaleDateString("pt-BR") : "a definir");
+
+const TYPE_STYLE: Record<string, string> = {
+  Dividendo: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  JCP: "border-amber-500/40 text-amber-600 dark:text-amber-400",
+  Rendimento: "border-sky-500/40 text-sky-600 dark:text-sky-400",
+};
+function TypeBadge({ type }: { type: string }) {
+  if (!type) return <span className="text-muted-foreground">—</span>;
+  return <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${TYPE_STYLE[type] ?? "border-border text-muted-foreground"}`}>{type}</span>;
+}
 
 interface Derived {
   dy12m: number | null; // dividend yield 12 meses (%)
@@ -90,6 +101,7 @@ function YearBars({ byYear }: { byYear: { year: number; total: number }[] }) {
 /** Aba Dividendos & Proventos — DY, sazonalidade ("meses pagando"), histórico e ranking. */
 export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
   const [data, setData] = useState<{ price: number | null; dividends: B3Dividend[] } | null>(null);
+  const [proventos, setProventos] = useState<B3ProventosData>({ past: [], upcoming: [] });
   const [funds, setFunds] = useState<B3Funds>({});
   const [fiis, setFiis] = useState<B3FiiFunds>({});
   const [loading, setLoading] = useState(true);
@@ -98,12 +110,14 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
     let alive = true;
     setLoading(true);
     setData(null);
+    setProventos({ past: [], upcoming: [] });
     fetchB3Dividends(asset).then((d) => {
       if (alive) {
         setData(d);
         setLoading(false);
       }
     });
+    fetchB3Proventos(asset, isFii(asset) ? "fii" : "stock").then((p) => alive && setProventos(p));
     return () => {
       alive = false;
     };
@@ -120,6 +134,11 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
 
   const d = useMemo(() => (data ? derive(data.dividends, data.price) : null), [data]);
   const maxFreq = d ? Math.max(...d.monthFreq, 1) : 1;
+  // Histórico: prefere StatusInvest (tem tipo); cai pro Yahoo se vier vazio.
+  const history = useMemo<{ date: number; amount: number; type: string }[]>(() => {
+    if (proventos.past.length) return proventos.past.slice().reverse();
+    return (data?.dividends ?? []).slice().reverse().map((dv) => ({ date: dv.date, amount: dv.amount, type: "" }));
+  }, [proventos, data]);
 
   const fiiView = isFii(asset);
 
@@ -170,6 +189,40 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
         )}
       </div>
 
+      {/* Agenda de proventos (provisionados futuros — data-com / pagamento) */}
+      {paysDiv && proventos.upcoming.length > 0 && (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+          <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-foreground">
+            📅 Agenda de proventos
+            <span className="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">provisionado</span>
+          </h3>
+          <p className="mb-3 text-[11px] text-muted-foreground">Já declarados, ainda a pagar. Para receber, ter o ativo até a <strong>data-com</strong>.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-3 py-2 text-left font-medium">Tipo</th>
+                  <th className="px-3 py-2 text-left font-medium">Data-com</th>
+                  <th className="px-3 py-2 text-left font-medium">Pagamento</th>
+                  <th className="px-3 py-2 text-right font-medium">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {proventos.upcoming.map((u, i) => (
+                  <tr key={i} className="border-b border-border/50 last:border-0">
+                    <td className="px-3 py-2"><TypeBadge type={u.type} /></td>
+                    <td className="num px-3 py-2 text-foreground">{fmtDate(u.exDate)}</td>
+                    <td className="num px-3 py-2 text-foreground">{fmtDate(u.payDate)}</td>
+                    <td className="num px-3 py-2 text-right font-semibold text-foreground">{fmtBRL(u.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">Fonte: StatusInvest. Educacional — não é recomendação.</p>
+        </div>
+      )}
+
       {/* Sazonalidade + por ano */}
       {paysDiv && d && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -186,31 +239,32 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
       )}
 
       {/* Histórico */}
-      {paysDiv && d && data && data.dividends.length > 0 && (
+      {paysDiv && history.length > 0 && (
         <div className="rounded-2xl border border-border bg-card dark:bg-card/60">
           <h3 className="px-4 py-3 text-sm font-semibold text-foreground">Histórico de proventos</h3>
           <div className="max-h-72 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-card dark:bg-card/95">
                 <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2 text-left font-medium">Data</th>
+                  <th className="px-4 py-2 text-left font-medium">Data-com</th>
+                  <th className="px-4 py-2 text-left font-medium">Tipo</th>
                   <th className="px-4 py-2 text-right font-medium">Valor por ação</th>
                 </tr>
               </thead>
               <tbody>
-                {data.dividends
-                  .slice()
-                  .reverse()
-                  .map((dv) => (
-                    <tr key={dv.date} className="border-b border-border/50 last:border-0">
-                      <td className="num px-4 py-2 text-foreground">{new Date(dv.date * 1000).toLocaleDateString("pt-BR")}</td>
-                      <td className="num px-4 py-2 text-right text-foreground">{fmtBRL(dv.amount)}</td>
-                    </tr>
-                  ))}
+                {history.map((dv, i) => (
+                  <tr key={`${dv.date}-${i}`} className="border-b border-border/50 last:border-0">
+                    <td className="num px-4 py-2 text-foreground">{new Date(dv.date * 1000).toLocaleDateString("pt-BR")}</td>
+                    <td className="px-4 py-2"><TypeBadge type={dv.type} /></td>
+                    <td className="num px-4 py-2 text-right text-foreground">{fmtBRL(dv.amount)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          <p className="px-4 py-2 text-[11px] text-muted-foreground">Fonte: Yahoo Finance (proventos por data ex). Não distingue dividendo de JCP.</p>
+          <p className="px-4 py-2 text-[11px] text-muted-foreground">
+            {proventos.past.length ? "Fonte: StatusInvest (data-com + tipo Dividendo/JCP/Rendimento)." : "Fonte: Yahoo Finance (por data ex). Tipo indisponível para este ativo."}
+          </p>
         </div>
       )}
 
