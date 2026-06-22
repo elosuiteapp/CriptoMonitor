@@ -15,7 +15,7 @@ export function useCvd(asset: string, tf: Timeframe, enabled: boolean): CvdPoint
     }
     let active = true;
     const load = () =>
-      fetchVolumeDelta(asset, tf, 300)
+      fetchVolumeDelta(asset, tf, 1000)
         .then((d) => active && setData(d))
         .catch(() => active && setData([]));
     load();

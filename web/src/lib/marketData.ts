@@ -79,7 +79,7 @@ const SYMBOL: Record<string, string> = Object.fromEntries(
   SMC_ASSETS.map((a) => [a, `${a}USDT`]),
 );
 
-export async function fetchKlines(asset: string, tf: Timeframe, limit = 300): Promise<Candle[]> {
+export async function fetchKlines(asset: string, tf: Timeframe, limit = 1000): Promise<Candle[]> {
   const symbol = SYMBOL[asset];
   if (!symbol) return [];
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
@@ -106,7 +106,7 @@ export interface CvdPoint {
  *  agressor (takerBuyQuote, índice 10) vs o volume total em quote (índice 7):
  *  delta = 2·takerBuyQuote − quoteVol. CVD = soma acumulada. Mesmo timeframe do
  *  gráfico, histórico completo, qualquer moeda — sem depender do coletor. */
-export async function fetchVolumeDelta(asset: string, tf: Timeframe, limit = 300): Promise<CvdPoint[]> {
+export async function fetchVolumeDelta(asset: string, tf: Timeframe, limit = 1000): Promise<CvdPoint[]> {
   const symbol = SYMBOL[asset];
   if (!symbol) return [];
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
