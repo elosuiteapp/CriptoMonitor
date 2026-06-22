@@ -24,9 +24,9 @@ export const MODULES: MarketModule[] = [
   },
   {
     id: "b3",
-    label: "B3 · Ações",
+    label: "B3 · Ações & FIIs",
     icon: "🇧🇷",
-    description: "Ações brasileiras (B3) — preço, volume e fluxo",
+    description: "Ações e FIIs da B3 — fundamentos, dividendos, indicadores e fluxo",
     available: false,
   },
   {

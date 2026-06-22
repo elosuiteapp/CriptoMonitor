@@ -14,6 +14,7 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const SYMS: [string, string, string][] = [
   ["IBOV", "^BVSP", "index"],
+  ["BOVA11", "BOVA11.SA", "index"],
   ["USD/BRL", "USDBRL=X", "currency"],
   ["PETR4", "PETR4.SA", "stock"],
   ["PETR3", "PETR3.SA", "stock"],

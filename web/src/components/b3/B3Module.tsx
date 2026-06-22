@@ -18,10 +18,10 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
     <section className="space-y-4">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
-          🇧🇷 B3 · Ações
+          🇧🇷 B3 · Ações & FIIs
           <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
         </h2>
-        <p className="text-xs text-muted-foreground">Plataforma da bolsa brasileira — cockpit, fluxo, leitura, macro e relatórios.</p>
+        <p className="text-xs text-muted-foreground">Plataforma da bolsa brasileira — ações e FIIs: cockpit, dividendos, fluxo, leitura, macro e relatórios.</p>
       </div>
 
       <B3TabBar tab={tab} onTab={setTab} />
