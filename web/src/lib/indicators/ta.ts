@@ -18,6 +18,33 @@ export function ema(values: number[], period: number): number[] {
   return out;
 }
 
+/** Média móvel simples. NaN durante o aquecimento. */
+export function sma(values: number[], period: number): number[] {
+  const out = new Array(values.length).fill(NaN);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+/** Bandas de Bollinger (média móvel ± mult desvios-padrão). NaN durante o aquecimento. */
+export function bollinger(values: number[], period = 20, mult = 2): { mid: number[]; upper: number[]; lower: number[] } {
+  const mid = sma(values, period);
+  const upper = new Array(values.length).fill(NaN);
+  const lower = new Array(values.length).fill(NaN);
+  for (let i = period - 1; i < values.length; i++) {
+    let s = 0;
+    for (let j = i - period + 1; j <= i; j++) s += (values[j] - mid[i]) ** 2;
+    const sd = Math.sqrt(s / period);
+    upper[i] = mid[i] + mult * sd;
+    lower[i] = mid[i] - mult * sd;
+  }
+  return { mid, upper, lower };
+}
+
 /** RSI de Wilder. NaN durante o aquecimento. */
 export function rsi(values: number[], period = 14): number[] {
   const out = new Array(values.length).fill(NaN);

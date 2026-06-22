@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 
-import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import { ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 
 import { useTheme } from "../../hooks/useTheme";
 import type { B3Candle } from "../../lib/b3";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
-import { ema } from "../../lib/indicators/ta";
+import { bollinger, ema, sma } from "../../lib/indicators/ta";
 import type { ChartType } from "../../lib/marketData";
 
 const UP = "#10b981";
@@ -21,11 +21,13 @@ interface Props {
   chartType: ChartType;
   showEma: boolean;
   showVolume: boolean;
+  showBollinger?: boolean;
+  showLongTrend?: boolean; // MM200 + linhas máx/mín 52 semanas
 }
 
 /** Gráfico da B3 — reusa o tema/comportamento do gráfico cripto (Lightweight Charts):
  *  tipos (velas/barras/linha/área), indicadores (EMA 9/21/50) e volume. Sem WS (B3 atrasado). */
-export default function B3Chart({ candles, chartType, showEma, showVolume }: Props) {
+export default function B3Chart({ candles, chartType, showEma, showVolume, showBollinger = false, showLongTrend = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const { isDark } = useTheme();
@@ -98,6 +100,33 @@ export default function B3Chart({ candles, chartType, showEma, showVolume }: Pro
         }
       }
 
+      const lineData = (vals: number[]) =>
+        sorted.map((c, i) => ({ time: c.time as UTCTimestamp, value: vals[i] })).filter((p) => Number.isFinite(p.value)) as never;
+      const overlayLine = (vals: number[], color: string, width: 1 | 2 = 1) => {
+        const ls = chart.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        ls.setData(lineData(vals));
+        created.push(ls);
+      };
+
+      // Bandas de Bollinger (20, 2σ) — volatilidade e reversão à média.
+      if (showBollinger && sorted.length > 21) {
+        const closes = sorted.map((c) => c.close);
+        const bb = bollinger(closes, 20, 2);
+        overlayLine(bb.upper, "rgba(56,189,248,0.7)");
+        overlayLine(bb.mid, "rgba(56,189,248,0.4)");
+        overlayLine(bb.lower, "rgba(56,189,248,0.7)");
+      }
+
+      // Tendência longa: MM200 + linhas de máx/mín de 52 semanas (~252 pregões).
+      if (showLongTrend && sorted.length > 1) {
+        overlayLine(sma(sorted.map((c) => c.close), 200), "#f97316", 2);
+        const win = sorted.slice(-252);
+        const hi = Math.max(...win.map((c) => c.high));
+        const lo = Math.min(...win.map((c) => c.low));
+        if (Number.isFinite(hi)) price.createPriceLine({ price: hi, color: "rgba(16,185,129,0.65)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Máx 52s" });
+        if (Number.isFinite(lo)) price.createPriceLine({ price: lo, color: "rgba(244,63,94,0.65)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Mín 52s" });
+      }
+
       // Volume só quando há dado (pares de moeda como USD/BRL vêm sem volume no Yahoo).
       if (showVolume && sorted.some((c) => (c.volume || 0) > 0)) {
         const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
@@ -121,7 +150,7 @@ export default function B3Chart({ candles, chartType, showEma, showVolume }: Pro
         /* chart já descartado */
       }
     };
-  }, [candles, chartType, showEma, showVolume]);
+  }, [candles, chartType, showEma, showVolume, showBollinger, showLongTrend]);
 
   return <div ref={wrapRef} className="h-[360px] w-full" />;
 }
