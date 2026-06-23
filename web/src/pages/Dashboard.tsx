@@ -17,6 +17,7 @@ import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LiquidationsStrip from "../components/LiquidationsStrip";
 import LockedCard from "../components/LockedCard";
+import LockedSubchart from "../components/LockedSubchart";
 import LockedTab from "../components/LockedTab";
 import IndicatorsTab from "../components/indicators/IndicatorsTab";
 import MacroTab from "../components/MacroTab";
@@ -63,6 +64,7 @@ import {
 import type { ChartType, Timeframe } from "../lib/marketData";
 import { GLOSSARY } from "../lib/glossary";
 import { cockpitSynthesis } from "../lib/cockpitSynthesis";
+import { layerAccess, LAYER_KEYS } from "../lib/layers";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL", "BNB"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit) + BNB (Binance), via relay
 const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
@@ -120,14 +122,16 @@ export default function Dashboard() {
   const isExpert = plan?.slug === "expert";
   const canSmart = plan?.smart_money ?? false;
   const canUseLayers = plan?.chart_layers ?? false;
-  // Camadas avançadas de fluxo (CVD, funding, pressão do book, heatmap de liquidações)
-  // são exclusivas do Expert. As camadas de estrutura de opções ficam no Pro.
-  const effectiveLayers: ActiveLayers = isExpert
-    ? layers
-    : { ...layers, funding: false, cvd: false, bookPressure: false, liquidations: false };
-  // Volume Delta / CVD e Pressão do book por candle — só quando a camada liga (Expert).
+  // Quais camadas o plano pode LIGAR (fonte única em lib/layers.ts):
+  // Expert = todas; Pro = estrutura de opções; Free = vitrine (preview_layers).
+  const access = layerAccess(plan);
+  // O que de fato renderiza = ligada pelo usuário E permitida pelo plano.
+  const effectiveLayers = { ...layers } as ActiveLayers;
+  for (const k of LAYER_KEYS) effectiveLayers[k] = layers[k] && access[k];
+  // Volume Delta / CVD (varejo, Binance) e Pressão do book por candle — quando a
+  // camada liga. No Free o book é só do VAREJO (Coinbase = teaser institucional).
   const cvdSeries = useCvd(asset, timeframe, canUseLayers && effectiveLayers.cvd);
-  const bookSeries = useBookPressureSeries(asset, plan, canUseLayers && effectiveLayers.bookPressure);
+  const bookSeries = useBookPressureSeries(asset, canUseLayers && effectiveLayers.bookPressure, !advanced);
   const isOptionAsset = OPTION_ASSETS.includes(asset);
   const isVolAsset = VOL_ASSETS.includes(asset);
 
@@ -251,15 +255,35 @@ export default function Dashboard() {
             oiSeries={oiSeries}
             onPrice={setLivePrice}
           />
-          <LayerToggles layers={layers} onToggle={toggleLayer} locked={!canUseLayers} isExpert={isExpert} />
+          <LayerToggles layers={layers} onToggle={toggleLayer} access={access} showUpsell={!advanced} />
           {canUseLayers && effectiveLayers.cvd && (
             <>
-              <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD (Binance · ${timeframe.toUpperCase()})`} />
-              <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
+              <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD do varejo (Binance · ${timeframe.toUpperCase()})`} />
+              {isExpert ? (
+                <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
+              ) : (
+                <LockedSubchart
+                  title="CVD institucional (Coinbase)"
+                  hint="O varejo você já vê. Falta o smart money à vista — o fluxo que mais diverge."
+                  plan="Expert"
+                />
+              )}
             </>
           )}
           {canUseLayers && effectiveLayers.bookPressure && (
-            <CvdSubchart data={bookSeries} title="Pressão do book · todas as fontes (bid − ask, ±2%)" />
+            <>
+              <CvdSubchart
+                data={bookSeries}
+                title={advanced ? "Pressão do book · todas as fontes (bid − ask, ±2%)" : "Pressão do book · varejo (Binance + OKX, bid − ask ±2%)"}
+              />
+              {!isExpert && (
+                <LockedSubchart
+                  title="Pressão do book · institucional (Coinbase)"
+                  hint="Liquidez parada do book institucional — onde a instituição segura o preço."
+                  plan="Expert"
+                />
+              )}
+            </>
           )}
           {canUseLayers && effectiveLayers.funding && <FundingStrip data={series.funding} />}
           {canUseLayers && effectiveLayers.liquidations && <LiquidationsStrip data={series.liquidations} />}

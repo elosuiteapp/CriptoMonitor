@@ -35,7 +35,7 @@ export function useSnapshot(asset: string, plan: Plan | null) {
     }
 
     async function loadBasic() {
-      const [{ data: prices }, { data: sent }] = await Promise.all([
+      const [{ data: prices }, { data: sent }, { data: g }] = await Promise.all([
         supabase
           .from("prices_cex")
           .select("*")
@@ -45,6 +45,16 @@ export function useSnapshot(asset: string, plan: Plan | null) {
         supabase
           .from("sentiment")
           .select("*")
+          .order("ts", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // Vitrine do Free: as paredes de opções do gráfico (Call/Put Wall, Zero
+        // Gamma, Max Pain) vêm direto do gamma_profile — o RLS (sql/053) libera o
+        // preview para os ativos do plano (Free = BTC). Sem opções → fica null.
+        supabase
+          .from("gamma_profile")
+          .select("zero_gamma_level, regime, max_pain, max_pain_expiry, net_gex_spot, spot_price, profile_jsonb")
+          .eq("asset", asset)
           .order("ts", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -64,7 +74,20 @@ export function useSnapshot(asset: string, plan: Plan | null) {
             ? (byExchange.coinbase.price - byExchange.binance.price) / byExchange.binance.price
             : null,
         derivatives: null,
-        gamma: null,
+        gamma: g
+          ? {
+              zero_gamma_level: g.zero_gamma_level ?? null,
+              regime: (g.regime as "positive" | "negative" | null) ?? null,
+              max_pain: g.max_pain ?? null,
+              max_pain_expiry: g.max_pain_expiry ?? null,
+              net_gex_spot: g.net_gex_spot ?? null,
+              spot_price: g.spot_price ?? null,
+              profile_jsonb: (g.profile_jsonb as Record<string, number> | null) ?? null,
+              put_call_ratio: null,
+              avg_iv: null,
+              iv_skew: null,
+            }
+          : null,
         onchain_perps: null,
         dex_liquidity: null,
         defi_health: null,

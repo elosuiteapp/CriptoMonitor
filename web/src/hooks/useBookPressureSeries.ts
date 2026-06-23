@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 
 import { supabase } from "../lib/supabase";
-import type { Plan } from "../lib/types";
 import type { SeriesPoint } from "./useSeries";
 
-/** Série temporal da pressão do book (bid − ask combinado, ±2%, todas as fontes)
- *  por snapshot — para o subgráfico estilo CVD embaixo do preço. Só busca quando
- *  a camada está ligada; atualiza a cada 60s com a aba visível. */
-export function useBookPressureSeries(asset: string, plan: Plan | null, enabled: boolean): SeriesPoint[] {
+/** Série temporal da pressão do book (bid − ask, ±2%) por snapshot — para o
+ *  subgráfico estilo CVD embaixo do preço. Só busca quando a camada está ligada;
+ *  atualiza a cada 60s com a aba visível.
+ *
+ *  `retailOnly`: soma só o VAREJO (exclui a Coinbase) — é o que o Free enxerga
+ *  (o institucional é teaser). Pro+/Expert passam false e veem todas as fontes.
+ *  O que volta de fato é decidido pelo RLS (sql/053); o filtro aqui é defensivo. */
+export function useBookPressureSeries(asset: string, enabled: boolean, retailOnly = false): SeriesPoint[] {
   const [data, setData] = useState<SeriesPoint[]>([]);
-  const advanced = plan?.advanced_metrics ?? false;
 
   useEffect(() => {
-    if (!enabled || !advanced) {
+    if (!enabled) {
       setData([]);
       return;
     }
@@ -20,15 +22,16 @@ export function useBookPressureSeries(asset: string, plan: Plan | null, enabled:
     const load = () =>
       supabase
         .from("orderbook_imbalance")
-        .select("bid_wide_usd, ask_wide_usd, ts")
+        .select("exchange, bid_wide_usd, ask_wide_usd, ts")
         .eq("asset", asset)
         .order("ts", { ascending: false })
-        .limit(240)
+        .limit(480) // várias exchanges por ts → mais linhas para cobrir ~120 ciclos
         .then(({ data: rows }) => {
           if (!active) return;
           // soma as exchanges por ts → net (bid − ask) combinado
           const byTs = new Map<string, number>();
-          for (const r of (rows as { bid_wide_usd: number; ask_wide_usd: number; ts: string }[] | null) ?? []) {
+          for (const r of (rows as { exchange: string; bid_wide_usd: number; ask_wide_usd: number; ts: string }[] | null) ?? []) {
+            if (retailOnly && r.exchange === "coinbase") continue;
             byTs.set(r.ts, (byTs.get(r.ts) ?? 0) + (r.bid_wide_usd - r.ask_wide_usd));
           }
           const series = [...byTs.entries()]
@@ -45,7 +48,7 @@ export function useBookPressureSeries(asset: string, plan: Plan | null, enabled:
       active = false;
       clearInterval(id);
     };
-  }, [asset, advanced, enabled]);
+  }, [asset, enabled, retailOnly]);
 
   return data;
 }

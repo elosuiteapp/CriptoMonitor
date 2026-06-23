@@ -51,7 +51,7 @@ const COPY: Record<Locale, {
     usdSoon: "Pagamento em dólar (Paddle) em breve.",
     payNote: "Pagamento via Pix e cartão (Asaas)",
     plans: {
-      free: { name: "Free", features: ["Somente Bitcoin (BTC)", "Preço + Fear & Greed atualizados a cada 1h", "1 análise de IA por dia", "Sem alertas e sem histórico"] },
+      free: { name: "Free", features: ["Bitcoin (BTC) em tempo real (5 min)", "Gráfico com Opções (Call/Put Wall), Zero Gamma e Max Pain", "Volume Profile + CVD e pressão do book do varejo", "1 análise de IA por dia", "Institucional, +19 ativos, alertas e histórico nos pagos"] },
       pro: { name: "Pro", tag: "Mais popular", features: ["20 ativos em tempo real (5 min)", "Gamma, opções e volatilidade · Macro & Correlações completo", "Cockpit de varejo: funding, CVD, long/short, liquidações e squeeze", "Camadas de opções no gráfico · 10 análises de IA/dia", "Alertas in-app e push · histórico de 30 dias"] },
       expert: { name: "Expert", features: ["Tudo do Pro", "Leitura do Mercado: viés, convicção e alvos numa síntese só (exclusivo)", "Institucional × varejo: quem compra à vista vs quem alavanca (ETFs, opções e liquidez do book)", "Camadas avançadas no gráfico: CVD, funding, pressão do book e heatmap de liquidações", "Smart Money & On-chain · 100 moedas", "Relatórios diários · 30 análises de IA/dia · histórico completo"] },
     },
@@ -77,7 +77,7 @@ const COPY: Record<Locale, {
     usdSoon: "USD checkout (Paddle) coming soon.",
     payNote: "Billed in USD via Paddle",
     plans: {
-      free: { name: "Free", features: ["Bitcoin (BTC) only", "Price + Fear & Greed, updated hourly", "1 AI analysis per day", "No alerts, no history"] },
+      free: { name: "Free", features: ["Bitcoin (BTC) in real time (5 min)", "Chart with Options (Call/Put Wall), Zero Gamma & Max Pain", "Volume Profile + retail CVD & book pressure", "1 AI analysis per day", "Institutional, +19 assets, alerts & history on paid plans"] },
       pro: { name: "Pro", tag: "Most popular", features: ["20 assets in real time (5 min)", "Gamma, options & volatility · full Macro & Correlations", "Retail cockpit: funding, CVD, long/short, liquidations & squeeze", "Options layers on the chart · 10 AI analyses/day", "In-app & push alerts · 30-day history"] },
       expert: { name: "Expert", features: ["Everything in Pro", "Market Read: bias, conviction & liquidity targets in one synthesis (exclusive)", "Institutional vs retail: spot buyers vs leverage (ETFs, options & book liquidity)", "Advanced chart layers: CVD, funding, book pressure & liquidation heatmap", "Smart Money & On-chain · 100 coins", "Daily reports · 30 AI analyses/day · full history"] },
     },

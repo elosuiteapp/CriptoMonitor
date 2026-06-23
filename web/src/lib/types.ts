@@ -15,6 +15,7 @@ export interface Plan {
   snapshot_interval_min: number;
   advanced_metrics: boolean;
   chart_layers: boolean;
+  preview_layers: string[]; // camadas que o plano liga SEM advanced (vitrine do Free)
   ai_daily_limit: number | null;
   ai_model: string;
   alert_channels: string[];
