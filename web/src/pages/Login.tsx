@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
+import { useT } from "../lib/i18n";
+import LangSwitch from "../components/ui/LangSwitch";
 
 function GoogleIcon() {
   return (
@@ -17,17 +19,11 @@ function GoogleIcon() {
 // Site público (landing). Quando o domínio estiver no ar: https://orbeview.com.
 const LANDING_URL = "https://orbeview.com";
 
-const HIGHLIGHTS = [
-  "Gamma, smart money e fluxo de capital em tempo real",
-  "Heatmap de liquidação e paredes do book",
-  "Alertas e relatórios diários por IA",
-  "Cripto agora; ações (B3) e câmbio chegando",
-];
-
 const fieldCls =
   "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary";
 
 export default function Login() {
+  const { t: tr } = useT();
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -51,11 +47,11 @@ export default function Login() {
       } else {
         const { error } = await signUp(email, password, fullName);
         if (error) throw error;
-        setInfo("Conta criada! Confirme o e-mail (se exigido) e faça login.");
+        setInfo(tr.login.accountCreated);
         setMode("signin");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha na autenticação");
+      setError(err instanceof Error ? err.message : tr.login.authFail);
     } finally {
       setBusy(false);
     }
@@ -74,27 +70,19 @@ export default function Login() {
         </div>
 
         <div className="relative">
-          <h2 className="text-4xl font-extrabold leading-tight">
-            Bem-vindo
-            <br />
-            de volta
-          </h2>
-          <p className="mt-4 max-w-sm text-white/80">
-            Acesse seu cockpit e continue lendo o mercado com a visão de quem o move.
-          </p>
+          <h2 className="text-4xl font-extrabold leading-tight">{tr.login.welcomeTitle}</h2>
+          <p className="mt-4 max-w-sm text-white/80">{tr.login.welcomeSub}</p>
           <ul className="mt-8 space-y-3 text-sm">
-            {HIGHLIGHTS.map((t) => (
-              <li key={t} className="flex items-center gap-2.5">
+            {tr.login.highlights.map((h) => (
+              <li key={h} className="flex items-center gap-2.5">
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white/20 text-[11px]">✓</span>
-                <span className="text-white/90">{t}</span>
+                <span className="text-white/90">{h}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="relative text-xs text-white/60">
-          © 2026 OrbeView · informativo e educacional, não é recomendação.
-        </p>
+        <p className="relative text-xs text-white/60">{tr.login.copyright}</p>
       </div>
 
       {/* ─── Formulário (direita) ─── */}
@@ -102,36 +90,39 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <div className="mb-7 flex items-center justify-between">
             <a href={LANDING_URL} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
-              ← Página inicial
+              {tr.login.backHome}
             </a>
-            <span className="flex items-center gap-2 lg:hidden">
-              <span className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-indigo-500 text-xs font-bold text-white">
-                OV
+            <div className="flex items-center gap-3">
+              <LangSwitch compact />
+              <span className="flex items-center gap-2 lg:hidden">
+                <span className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-indigo-500 text-xs font-bold text-white">
+                  OV
+                </span>
+                <span className="font-bold text-foreground">OrbeView</span>
               </span>
-              <span className="font-bold text-foreground">OrbeView</span>
-            </span>
+            </div>
           </div>
 
           <h1 className="text-2xl font-bold text-foreground">
-            {mode === "signin" ? "Acesse seu cockpit" : "Crie sua conta"}
+            {mode === "signin" ? tr.login.signinTitle : tr.login.signupTitle}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "signin" ? "Entre com suas credenciais para continuar." : "Comece grátis — sem cartão."}
+            {mode === "signin" ? tr.login.signinSub : tr.login.signupSub}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {mode === "signup" && (
               <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nome completo</span>
-                <input className={fieldCls} placeholder="Seu nome" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tr.login.fullName}</span>
+                <input className={fieldCls} placeholder={tr.login.namePlaceholder} value={fullName} onChange={(e) => setFullName(e.target.value)} required />
               </label>
             )}
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">E-mail</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tr.login.email}</span>
               <input type="email" className={fieldCls} placeholder="voce@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Senha</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tr.login.password}</span>
               <input type="password" className={fieldCls} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
             </label>
 
@@ -143,13 +134,13 @@ export default function Login() {
               disabled={busy}
               className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {busy ? "…" : mode === "signin" ? "Entrar no cockpit" : "Criar conta grátis"}
+              {busy ? "…" : mode === "signin" ? tr.login.signinBtn : tr.login.signupBtn}
             </button>
           </form>
 
           <div className="flex items-center gap-2 py-4">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">ou continue com</span>
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{tr.login.orContinue}</span>
             <span className="h-px flex-1 bg-border" />
           </div>
 
@@ -159,29 +150,29 @@ export default function Login() {
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             <GoogleIcon />
-            Entrar com Google
+            {tr.login.google}
           </button>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === "signin" ? (
               <>
-                Não tem conta?{" "}
+                {tr.login.noAccount}{" "}
                 <button onClick={() => setMode("signup")} className="font-medium text-primary hover:underline">
-                  Criar conta grátis
+                  {tr.login.createFree}
                 </button>
               </>
             ) : (
               <>
-                Já tem conta?{" "}
+                {tr.login.haveAccount}{" "}
                 <button onClick={() => setMode("signin")} className="font-medium text-primary hover:underline">
-                  Entrar
+                  {tr.login.signin}
                 </button>
               </>
             )}
           </p>
           <p className="mt-2 text-center text-xs text-muted-foreground">
             <Link to="/pricing" className="hover:underline">
-              Ver planos
+              {tr.login.seePlans}
             </Link>
           </p>
         </div>

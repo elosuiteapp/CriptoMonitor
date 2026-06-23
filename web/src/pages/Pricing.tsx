@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useLocale, type Locale } from "../hooks/useLocale";
 import { openPaddleCheckout, paddleConfigured } from "../lib/paddle";
 import { supabase } from "../lib/supabase";
-import LangToggle from "../components/ui/LangToggle";
+import LangSwitch from "../components/ui/LangSwitch";
 
 type Slug = "free" | "pro" | "expert";
 type Cycle = "monthly" | "annual";
@@ -153,7 +153,7 @@ export default function Pricing() {
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-muted-foreground hover:underline">{t.back}</Link>
-        <LangToggle />
+        <LangSwitch />
       </div>
 
       {/* Cabeçalho */}

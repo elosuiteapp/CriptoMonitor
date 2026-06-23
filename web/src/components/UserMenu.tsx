@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useProfile } from "../hooks/useProfile";
+import { useT } from "../lib/i18n";
 import AccountDrawer from "./AccountDrawer";
 import Avatar from "./Avatar";
 
@@ -18,6 +19,7 @@ const WELCOME_KEY = "ov.welcome-seen";
  *  perfil / sair). Tudo abre o painel "Sua conta" (AccountDrawer). No 1º acesso de
  *  quem está no Free, abre o painel de boas-vindas após ~60s de uso, uma única vez. */
 export default function UserMenu({ user, planName, onSignOut }: Props) {
+  const { t: tr } = useT();
   const { loading, avatarUrl, email, displayName, complete } = useProfile(user);
   const [open, setOpen] = useState(false);
   const [account, setAccount] = useState<{ welcome: boolean; intent?: "pro" | "expert" } | null>(null);
@@ -78,7 +80,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
         <Avatar url={avatarUrl} name={displayName} size={28} />
         <span className="max-w-[8rem] truncate text-sm font-medium text-foreground">{firstName}</span>
         {!loading && !complete && (
-          <span title="Cadastro incompleto" className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+          <span title={tr.account.incompleteShort} className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
         )}
         <span className="text-xs text-muted-foreground">▾</span>
       </button>
@@ -101,14 +103,14 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
                 onClick={openAccount}
                 className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
               >
-                Plano <span className="font-semibold text-foreground">{planName ?? "—"}</span>
-                <span className="text-primary">· gerenciar</span>
+                {tr.account.plan} <span className="font-semibold text-foreground">{planName ?? "—"}</span>
+                <span className="text-primary">· {tr.common.manage}</span>
               </button>
             </div>
 
             {!complete && (
               <p className="px-3 pt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
-                Cadastro incompleto — adicione seu telefone/WhatsApp.
+                {tr.account.incomplete}
               </p>
             )}
 
@@ -118,7 +120,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
               >
                 <span aria-hidden>👤</span>
-                Editar perfil
+                {tr.account.editProfile}
               </button>
               <button
                 onClick={() => {
@@ -128,7 +130,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
               >
                 <span aria-hidden>↩</span>
-                Sair
+                {tr.account.signOut}
               </button>
             </div>
           </div>

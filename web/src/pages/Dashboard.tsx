@@ -31,6 +31,7 @@ import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
+import LangSwitch from "../components/ui/LangSwitch";
 import ThemeToggle from "../components/ui/ThemeToggle";
 import UserMenu from "../components/UserMenu";
 import VolatilityPanel from "../components/VolatilityPanel";
@@ -65,11 +66,13 @@ import type { ChartType, Timeframe } from "../lib/marketData";
 import { GLOSSARY } from "../lib/glossary";
 import { cockpitSynthesis } from "../lib/cockpitSynthesis";
 import { layerAccess, LAYER_KEYS } from "../lib/layers";
+import { useT } from "../lib/i18n";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL", "BNB"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit) + BNB (Binance), via relay
 const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DVOL) + SOL (Bybit, s/ DVOL)
 
 export default function Dashboard() {
+  const { t: tr } = useT();
   const { user, signOut } = useAuth();
   const { plan, loading: planLoading } = usePlan(user?.id);
   const { isAdmin, loading: adminLoading } = useIsAdmin(user?.id);
@@ -141,7 +144,7 @@ export default function Dashboard() {
   const fng = useMemo<Reading>(() => readFng(payload?.sentiment?.fng_value), [payload]);
 
   if (planLoading || !plan) {
-    return <div className="grid h-full place-items-center text-muted-foreground">Carregando plano…</div>;
+    return <div className="grid h-full place-items-center text-muted-foreground">{tr.header.loadingPlan}</div>;
   }
 
   const d = payload?.derivatives;
@@ -179,7 +182,7 @@ export default function Dashboard() {
             className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary shadow-sm transition-colors duration-200 hover:border-primary/60 hover:bg-primary/10"
           >
             <span aria-hidden>📰</span>
-            Newsletter
+            {tr.header.newsletter}
           </Link>
           <AIAnalysisButton
             asset={market === "b3" ? b3Asset : asset}
@@ -191,13 +194,14 @@ export default function Dashboard() {
             onClick={() => setAlertsOpen(true)}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Alertas
+            {tr.header.alerts}
           </button>
           {isAdmin && (
             <Link to="/admin" className="text-xs font-semibold text-primary transition-colors hover:text-primary/80">
-              Admin
+              {tr.header.admin}
             </Link>
           )}
+          <LangSwitch compact />
           <ThemeToggle />
         </div>
       </header>

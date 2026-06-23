@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 
 import { useAuth } from "./hooks/useAuth";
 import { useReferralCapture } from "./hooks/useReferralCapture";
+import { useT } from "./lib/i18n";
 import Alerts from "./pages/Alerts";
 import Analysis from "./pages/Analysis";
 import B3Analysis from "./pages/B3Analysis";
@@ -25,7 +26,8 @@ import AdminUsage from "./pages/admin/Usage";
 import AdminUsers from "./pages/admin/Users";
 
 function Loading() {
-  return <div className="grid h-full place-items-center text-muted-foreground">Carregando…</div>;
+  const { t: tr } = useT();
+  return <div className="grid h-full place-items-center text-muted-foreground">{tr.common.loading}</div>;
 }
 
 // Rota protegida acessada deslogado (ex.: deep-link da newsletter vindo do site):

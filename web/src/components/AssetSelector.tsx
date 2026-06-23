@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { ASSET_NAME, isInstitutional } from "../lib/format";
+import { useT } from "../lib/i18n";
 import CoinIcon from "./CoinIcon";
 
 const ALL: string[] = [
@@ -20,6 +21,7 @@ interface Props {
 /** Seletor de ativo (dropdown com logo + nome). Moedas fora do plano aparecem
  *  com cadeado e levam ao /pricing. */
 export default function AssetSelector({ current, allowed, onChange }: Props) {
+  const { t: tr } = useT();
   const [open, setOpen] = useState(false);
   useEscapeKey(() => setOpen(false), open);
 
@@ -48,7 +50,7 @@ export default function AssetSelector({ current, allowed, onChange }: Props) {
                   <span className="text-xs text-muted-foreground">{ASSET_NAME[asset] ?? ""}</span>
                   {isInstitutional(asset) && (
                     <span
-                      title="Camada institucional completa (gamma, opções, DVOL, CVD Coinbase)"
+                      title={tr.asset.gammaTip}
                       className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary"
                     >
                       gamma
@@ -62,7 +64,7 @@ export default function AssetSelector({ current, allowed, onChange }: Props) {
                     key={asset}
                     to="/pricing"
                     onClick={() => setOpen(false)}
-                    title="Disponível em planos superiores"
+                    title={tr.asset.lockedTip}
                     className="flex items-center justify-between rounded-lg px-2 py-1.5 opacity-60 transition-colors hover:bg-muted"
                   >
                     {inner}

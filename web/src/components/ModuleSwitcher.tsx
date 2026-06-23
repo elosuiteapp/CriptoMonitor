@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useT } from "../lib/i18n";
 import { MODULES, type ModuleId } from "../lib/modules";
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
  *  Forex aparece como "Em breve" e só o admin pode alternar por enquanto —
  *  depois passa a exigir assinatura do plano Forex. */
 export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
+  const { t: tr } = useT();
   const [open, setOpen] = useState(false);
   useEscapeKey(() => setOpen(false), open);
   const active = MODULES.find((m) => m.id === current) ?? MODULES[0];
@@ -22,7 +24,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-muted"
-        title="Módulo de mercado"
+        title={tr.modules.tooltip}
       >
         <span aria-hidden className="text-base leading-none">
           {active.icon}
@@ -35,7 +37,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           <div className="absolute left-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-2xl">
-            <p className="px-3 pb-1 pt-2 section-title">Módulo de mercado</p>
+            <p className="px-3 pb-1 pt-2 section-title">{tr.modules.menuTitle}</p>
 
             {MODULES.map((m) => {
               const isActive = m.id === current;
@@ -53,7 +55,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
                       {m.label}
                       {!m.available && (
                         <span className="rounded-full border border-border px-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Em breve
+                          {tr.modules.soon}
                         </span>
                       )}
                     </span>
@@ -66,7 +68,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
                 return (
                   <div
                     key={m.id}
-                    title="Disponível com o plano Forex (em breve)"
+                    title={tr.modules.forexLocked}
                     className="flex cursor-not-allowed items-center justify-between gap-2 rounded-lg px-2 py-2 opacity-60"
                   >
                     {head}
@@ -100,7 +102,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
 
             {!isAdmin && (
               <p className="px-3 pb-2 pt-1 text-[11px] text-muted-foreground">
-                Novos módulos serão liberados conforme seu plano.
+                {tr.modules.moreSoon}
               </p>
             )}
           </div>
