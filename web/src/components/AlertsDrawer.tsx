@@ -4,8 +4,12 @@ import type { User } from "@supabase/supabase-js";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { fmtPrice } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import type { GammaData, Plan } from "../lib/types";
+
+/** Seletor curto PT/EN para os textos deste painel. */
+type TT = (pt: string, en: string) => string;
 
 interface AlertRow {
   id: string;
@@ -26,11 +30,9 @@ interface Props {
   onClose: () => void;
 }
 
-const METRICS = [
-  { id: "price", label: "Preço (US$)" },
-  { id: "funding", label: "Funding (%)" },
-  { id: "gamma_regime", label: "Regime de gamma" },
-];
+const METRIC_IDS = ["price", "funding", "gamma_regime"] as const;
+const metricLabel = (id: string, tt: TT) =>
+  id === "price" ? tt("Preço (US$)", "Price (US$)") : id === "funding" ? "Funding (%)" : tt("Regime de gamma", "Gamma regime");
 
 const PCT_PRESETS = [-10, -5, -2, 2, 5, 10];
 
@@ -64,23 +66,23 @@ function gammaLevels(g: GammaData | null): { name: string; value: number }[] {
 
 /** Estado visual do alerta: verde = ativo aguardando, laranja = já atingido,
  *  cinza = pausado. Baseado em `active` + `last_triggered_at`. */
-function alertStatus(r: AlertRow): { label: string; box: string; dot: string; text: string } {
+function alertStatus(r: AlertRow, tt: TT): { label: string; box: string; dot: string; text: string } {
   if (!r.active)
     return {
-      label: "pausado",
+      label: tt("pausado", "paused"),
       box: "border-border bg-card opacity-60 dark:bg-card/60",
       dot: "bg-muted-foreground/50",
       text: "text-muted-foreground",
     };
   if (r.last_triggered_at)
     return {
-      label: "atingido",
+      label: tt("atingido", "triggered"),
       box: "border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
       dot: "bg-amber-500",
       text: "text-amber-700 dark:text-amber-400",
     };
   return {
-    label: "ativo",
+    label: tt("ativo", "active"),
     box: "border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
     dot: "bg-emerald-500",
     text: "text-emerald-700 dark:text-emerald-400",
@@ -88,17 +90,22 @@ function alertStatus(r: AlertRow): { label: string; box: string; dot: string; te
 }
 
 /** Texto legível de um alerta para a lista ("preço acima de US$ 66.000"). */
-function describe(r: AlertRow): string {
+function describe(r: AlertRow, tt: TT): string {
   if (r.metric === "gamma_regime")
-    return `regime de gamma vira ${r.condition.equals === "positive" ? "positivo" : "negativo"}`;
-  const opLabel = r.condition.op === ">" ? "acima de" : "abaixo de";
+    return tt(
+      `regime de gamma vira ${r.condition.equals === "positive" ? "positivo" : "negativo"}`,
+      `gamma regime turns ${r.condition.equals === "positive" ? "positive" : "negative"}`,
+    );
+  const opLabel = r.condition.op === ">" ? tt("acima de", "above") : tt("abaixo de", "below");
   if (r.metric === "funding") return `funding ${opLabel} ${r.condition.value}%`;
-  return `preço ${opLabel} ${fmtPrice(r.condition.value)}`;
+  return tt(`preço ${opLabel} ${fmtPrice(r.condition.value)}`, `price ${opLabel} ${fmtPrice(r.condition.value)}`);
 }
 
 /** Painel lateral de alertas — abre SOBRE o cockpit (não troca de tela), já com o
  *  ativo/preço aberto, atalhos de % e níveis de gamma, e edição/exclusão. */
 export default function AlertsDrawer({ user, plan, currentAsset, price, funding, gamma, onClose }: Props) {
+  const { isEn } = useT();
+  const tt: TT = (pt, en) => (isEn ? en : pt);
   const assets = plan.assets ?? ["BTC"];
   const [shown, setShown] = useState(false);
   const [rows, setRows] = useState<AlertRow[]>([]);
@@ -217,7 +224,7 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
       resetForm();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar alerta");
+      setError(err instanceof Error ? err.message : tt("Falha ao salvar alerta", "Failed to save alert"));
     } finally {
       setBusy(false);
     }
@@ -252,15 +259,18 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-3.5">
           <div>
-            <h2 className="text-lg font-bold text-foreground">Alertas</h2>
+            <h2 className="text-lg font-bold text-foreground">{tt("Alertas", "Alerts")}</h2>
             <p className="text-xs text-muted-foreground">
-              Aviso no sistema (sino + pop-up) e, se permitir, push do navegador — mesmo com o app fechado.
+              {tt(
+                "Aviso no sistema (sino + pop-up) e, se permitir, push do navegador — mesmo com o app fechado.",
+                "In-app alert (bell + pop-up) and, if allowed, browser push — even with the app closed.",
+              )}
             </p>
           </div>
           <button
             onClick={close}
-            aria-label="Fechar (ESC)"
-            title="Fechar (ESC)"
+            aria-label={tt("Fechar (ESC)", "Close (ESC)")}
+            title={tt("Fechar (ESC)", "Close (ESC)")}
             className="shrink-0 text-lg leading-none text-muted-foreground transition-colors hover:text-foreground"
           >
             ✕
@@ -272,14 +282,14 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
           {isExpert ? (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 dark:bg-card/60">
               <span className="text-sm text-foreground">
-                Receber alertas por e-mail
-                <span className="mt-0.5 block text-xs text-muted-foreground">Enviado para {user.email}</span>
+                {tt("Receber alertas por e-mail", "Receive email alerts")}
+                <span className="mt-0.5 block text-xs text-muted-foreground">{tt("Enviado para", "Sent to")} {user.email}</span>
               </span>
               <button
                 type="button"
                 role="switch"
                 aria-checked={emailAlerts}
-                aria-label="Receber alertas por e-mail"
+                aria-label={tt("Receber alertas por e-mail", "Receive email alerts")}
                 disabled={emailBusy}
                 onClick={toggleEmailAlerts}
                 className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${emailAlerts ? "bg-primary" : "bg-muted"}`}
@@ -292,21 +302,21 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
               href="/pricing"
               className="mb-4 flex items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-xs text-primary transition-colors hover:bg-primary/10"
             >
-              ✉️ Receba alertas também por e-mail no plano Expert →
+              {tt("✉️ Receba alertas também por e-mail no plano Expert →", "✉️ Get email alerts too on the Expert plan →")}
             </a>
           ) : null}
           {!canCreate ? (
             <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground dark:bg-card/60">
-              Alertas estão disponíveis nos planos <strong>Pro</strong> e <strong>Expert</strong>.{" "}
+              {tt("Alertas estão disponíveis nos planos", "Alerts are available on the")} <strong>Pro</strong> {tt("e", "and")} <strong>Expert</strong>{tt(".", " plans.")}{" "}
               <a href="/pricing" className="text-primary hover:underline">
-                Ver planos →
+                {tt("Ver planos →", "See plans →")}
               </a>
             </div>
           ) : (
             <form onSubmit={submit} className="space-y-3 rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs text-muted-foreground">
-                  Ativo
+                  {tt("Ativo", "Asset")}
                   <select value={asset} onChange={(e) => setAsset(e.target.value)} className={`num ${fieldCls}`}>
                     {assets.map((a) => (
                       <option key={a} value={a}>
@@ -316,11 +326,11 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
                   </select>
                 </label>
                 <label className="text-xs text-muted-foreground">
-                  Métrica
+                  {tt("Métrica", "Metric")}
                   <select value={metric} onChange={(e) => setMetric(e.target.value)} className={fieldCls}>
-                    {METRICS.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
+                    {METRIC_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {metricLabel(id, tt)}
                       </option>
                     ))}
                   </select>
@@ -329,37 +339,37 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
 
               {metric === "gamma_regime" ? (
                 <label className="block text-xs text-muted-foreground">
-                  Quando o regime virar
+                  {tt("Quando o regime virar", "When the regime flips")}
                   <select value={regime} onChange={(e) => setRegime(e.target.value)} className={fieldCls}>
-                    <option value="negative">Negativo (movimentos amplificados)</option>
-                    <option value="positive">Positivo (volatilidade amortecida)</option>
+                    <option value="negative">{tt("Negativo (movimentos amplificados)", "Negative (amplified moves)")}</option>
+                    <option value="positive">{tt("Positivo (volatilidade amortecida)", "Positive (dampened volatility)")}</option>
                   </select>
                 </label>
               ) : (
                 <>
                   {isCurrent && metric === "price" && price != null && (
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                      <span className="text-muted-foreground">{asset} agora</span>
+                      <span className="text-muted-foreground">{asset} {tt("agora", "now")}</span>
                       <span className="num font-semibold text-foreground">{fmtPrice(price)}</span>
                     </div>
                   )}
                   {isCurrent && metric === "funding" && funding != null && (
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                      <span className="text-muted-foreground">Funding agora</span>
+                      <span className="text-muted-foreground">{tt("Funding agora", "Funding now")}</span>
                       <span className="num font-semibold text-foreground">{funding}%</span>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-xs text-muted-foreground">
-                      Condição
+                      {tt("Condição", "Condition")}
                       <select value={op} onChange={(e) => setOp(e.target.value)} className={fieldCls}>
-                        <option value=">">acima de</option>
-                        <option value="<">abaixo de</option>
+                        <option value=">">{tt("acima de", "above")}</option>
+                        <option value="<">{tt("abaixo de", "below")}</option>
                       </select>
                     </label>
                     <label className="text-xs text-muted-foreground">
-                      Valor {metric === "funding" ? "(%)" : "(US$)"}
+                      {tt("Valor", "Value")} {metric === "funding" ? "(%)" : "(US$)"}
                       <input
                         type="number"
                         step="any"
@@ -393,7 +403,7 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
                               key={lv.name}
                               type="button"
                               onClick={() => applyTarget(lv.value)}
-                              title={`Alertar no ${lv.name} (${fmtPrice(lv.value)})`}
+                              title={tt(`Alertar no ${lv.name} (${fmtPrice(lv.value)})`, `Alert at ${lv.name} (${fmtPrice(lv.value)})`)}
                               className="rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] text-primary transition-colors hover:bg-primary/10"
                             >
                               {lv.name} · <span className="num">{fmtPrice(lv.value)}</span>
@@ -414,7 +424,7 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
                   disabled={busy}
                   className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {busy ? "…" : editingId ? "Salvar alterações" : "Criar alerta"}
+                  {busy ? "…" : editingId ? tt("Salvar alterações", "Save changes") : tt("Criar alerta", "Create alert")}
                 </button>
                 {editingId && (
                   <button
@@ -422,24 +432,24 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
                     onClick={resetForm}
                     className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    Cancelar
+                    {tt("Cancelar", "Cancel")}
                   </button>
                 )}
               </div>
             </form>
           )}
 
-          <h3 className="mt-6 text-sm font-semibold text-foreground">Seus alertas</h3>
+          <h3 className="mt-6 text-sm font-semibold text-foreground">{tt("Seus alertas", "Your alerts")}</h3>
           <div className="mt-3 space-y-2">
-            {rows.length === 0 && <p className="text-sm text-muted-foreground">Nenhum alerta criado ainda.</p>}
+            {rows.length === 0 && <p className="text-sm text-muted-foreground">{tt("Nenhum alerta criado ainda.", "No alerts created yet.")}</p>}
             {rows.map((r) => {
-              const st = alertStatus(r);
+              const st = alertStatus(r, tt);
               const boxCls = editingId === r.id ? "border-primary bg-primary/5" : st.box;
               return (
                 <div key={r.id} className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${boxCls}`}>
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-foreground">
-                      <strong>{r.asset}</strong> · {describe(r)}
+                      <strong>{r.asset}</strong> · {describe(r, tt)}
                     </span>
                     <span className={`inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${st.text}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
@@ -448,13 +458,13 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
                   </div>
                   <div className="mt-1.5 flex items-center gap-3 text-[11px]">
                     <button onClick={() => toggleActive(r)} className="text-muted-foreground transition-colors hover:text-foreground">
-                      {r.active ? "Pausar" : "Reativar"}
+                      {r.active ? tt("Pausar", "Pause") : tt("Reativar", "Resume")}
                     </button>
                     <button onClick={() => startEdit(r)} className="text-primary hover:underline">
-                      Editar
+                      {tt("Editar", "Edit")}
                     </button>
                     <button onClick={() => remove(r.id)} className="text-rose-600 hover:underline dark:text-rose-400">
-                      Excluir
+                      {tt("Excluir", "Delete")}
                     </button>
                   </div>
                 </div>
