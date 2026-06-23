@@ -10,7 +10,8 @@ import {
   readSkew,
   LEVEL_DOT,
 } from "../lib/format";
-import { GLOSSARY } from "../lib/glossary";
+import { useGlossary } from "../lib/glossary";
+import { useT } from "../lib/i18n";
 import type { GammaData } from "../lib/types";
 import GammaLevelsChart from "./GammaLevelsChart";
 import GammaOiProfile from "./GammaOiProfile";
@@ -20,13 +21,15 @@ import OptionsFlowChart from "./OptionsFlowChart";
 
 type ProfileView = "bars" | "line" | "oi" | "levels";
 
-const VIEW_LABEL: Record<ProfileView, string> = { bars: "GEX (barras)", line: "GEX (linha)", oi: "OI", levels: "Níveis" };
-const VIEW_TITLE: Record<ProfileView, string> = {
-  bars: "Perfil de gamma por strike",
-  line: "Perfil de gamma (linha)",
-  oi: "Open interest por strike",
-  levels: "Níveis de gamma no tempo",
-};
+const viewLabel = (v: ProfileView, isEn: boolean): string =>
+  ({ bars: isEn ? "GEX (bars)" : "GEX (barras)", line: isEn ? "GEX (line)" : "GEX (linha)", oi: "OI", levels: isEn ? "Levels" : "Níveis" })[v];
+const viewTitle = (v: ProfileView, isEn: boolean): string =>
+  ({
+    bars: isEn ? "Gamma profile by strike" : "Perfil de gamma por strike",
+    line: isEn ? "Gamma profile (line)" : "Perfil de gamma (linha)",
+    oi: isEn ? "Open interest by strike" : "Open interest por strike",
+    levels: isEn ? "Gamma levels over time" : "Níveis de gamma no tempo",
+  })[v];
 
 interface Props {
   gamma: GammaData | null;
@@ -64,12 +67,15 @@ function GammaCard({ title, label, level, value, info }: { title: string; label:
 }
 
 export default function GammaPanel({ gamma, asset }: Props) {
+  const { isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
+  const GLOSSARY = useGlossary();
   const [view, setView] = useState<ProfileView>("bars");
 
   if (!gamma) {
     return (
       <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
-        Módulo Gamma indisponível — aguardando coleta de opções.
+        {tt("Módulo Gamma indisponível — aguardando coleta de opções.", "Gamma module unavailable — waiting for options data.")}
       </div>
     );
   }
@@ -87,34 +93,45 @@ export default function GammaPanel({ gamma, asset }: Props) {
     <div className="space-y-4">
       {asset !== "BTC" && asset !== "ETH" && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs leading-snug text-amber-200/80">
-          <span className="font-semibold text-amber-300">⚠ Liquidez reduzida.</span> As opções de {asset} vêm de um
-          mercado menor ({asset === "BNB" ? "Binance" : "Bybit"}, bem menor que o de BTC/ETH na Deribit). Os níveis —
-          Zero Gamma, Max Pain, Put/Call Wall — são <span className="font-medium text-amber-200">menos confiáveis</span>{" "}
-          e devem ser lidos como referência, não como muro firme.
+          <span className="font-semibold text-amber-300">⚠ {tt("Liquidez reduzida.", "Reduced liquidity.")}</span>{" "}
+          {tt(`As opções de ${asset} vêm de um mercado menor (`, `${asset} options come from a smaller market (`)}
+          {asset === "BNB" ? "Binance" : "Bybit"}
+          {tt(", bem menor que o de BTC/ETH na Deribit). Os níveis — Zero Gamma, Max Pain, Put/Call Wall — são ", ", much smaller than BTC/ETH on Deribit). The levels — Zero Gamma, Max Pain, Put/Call Wall — are ")}
+          <span className="font-medium text-amber-200">{tt("menos confiáveis", "less reliable")}</span>{" "}
+          {tt("e devem ser lidos como referência, não como muro firme.", "and should be read as reference, not a hard wall.")}
         </div>
       )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <GammaCard
-          title="Regime de gamma"
+          title={tt("Regime de gamma", "Gamma regime")}
           level={regime.level}
-          value={gamma.regime === "positive" ? "Positivo" : gamma.regime === "negative" ? "Negativo" : "—"}
+          value={gamma.regime === "positive" ? tt("Positivo", "Positive") : gamma.regime === "negative" ? tt("Negativo", "Negative") : "—"}
           label={regime.label}
-          info="Sinal do gama líquido dos dealers no spot. Positivo: dealers compram fraqueza/vendem força (amortecem, mercado mais calmo). Negativo: amplificam os movimentos (mais volátil)."
+          info={tt(
+            "Sinal do gama líquido dos dealers no spot. Positivo: dealers compram fraqueza/vendem força (amortecem, mercado mais calmo). Negativo: amplificam os movimentos (mais volátil).",
+            "Sign of dealers' net gamma at spot. Positive: dealers buy weakness/sell strength (dampen, calmer market). Negative: they amplify moves (more volatile).",
+          )}
         />
         <GammaCard
           title="Zero Gamma (flip)"
           level={gamma.zero_gamma_level != null ? "yellow" : "neutral"}
           value={fmtPrice(gamma.zero_gamma_level)}
-          label={gamma.zero_gamma_level != null ? "Nível onde o regime de volatilidade vira" : "Sem cruzamento na grade — regime estável"}
-          info="Preço onde o gama líquido dos dealers cruza de positivo para negativo — a fronteira entre regime calmo (acima) e volátil (abaixo)."
+          label={gamma.zero_gamma_level != null ? tt("Nível onde o regime de volatilidade vira", "Level where the volatility regime flips") : tt("Sem cruzamento na grade — regime estável", "No crossing on the grid — stable regime")}
+          info={tt(
+            "Preço onde o gama líquido dos dealers cruza de positivo para negativo — a fronteira entre regime calmo (acima) e volátil (abaixo).",
+            "Price where dealers' net gamma crosses from positive to negative — the boundary between the calm regime (above) and the volatile one (below).",
+          )}
         />
         <GammaCard
           title="Max Pain"
           level="neutral"
           value={fmtPrice(gamma.max_pain)}
-          label={gamma.max_pain_expiry ? `Ímã do vencimento de ${new Date(gamma.max_pain_expiry).toLocaleDateString("pt-BR")}` : "Vencimento mais próximo"}
-          info="Preço onde o maior volume de opções expira sem valor (compradores perdem mais). Perto do vencimento o preço tende a gravitar para cá."
+          label={gamma.max_pain_expiry ? tt(`Ímã do vencimento de ${new Date(gamma.max_pain_expiry).toLocaleDateString("pt-BR")}`, `Magnet for the ${new Date(gamma.max_pain_expiry).toLocaleDateString("en-US")} expiry`) : tt("Vencimento mais próximo", "Nearest expiry")}
+          info={tt(
+            "Preço onde o maior volume de opções expira sem valor (compradores perdem mais). Perto do vencimento o preço tende a gravitar para cá.",
+            "Price where the most options expire worthless (buyers lose the most). Near expiry, price tends to gravitate here.",
+          )}
         />
       </div>
 
@@ -125,21 +142,30 @@ export default function GammaPanel({ gamma, asset }: Props) {
           level={pc.level}
           value={gamma.put_call_ratio != null ? gamma.put_call_ratio.toFixed(2) : "—"}
           label={pc.label}
-          info="Razão entre o open interest de puts e calls. >1 = mais puts (proteção/viés de baixa); <1 = mais calls (viés de alta)."
+          info={tt(
+            "Razão entre o open interest de puts e calls. >1 = mais puts (proteção/viés de baixa); <1 = mais calls (viés de alta).",
+            "Ratio of put to call open interest. >1 = more puts (protection/bearish bias); <1 = more calls (bullish bias).",
+          )}
         />
         <GammaCard
-          title="Volatilidade implícita"
+          title={tt("Volatilidade implícita", "Implied volatility")}
           level={iv.level}
           value={gamma.avg_iv != null ? `${gamma.avg_iv.toFixed(1)}%` : "—"}
           label={iv.label}
-          info="IV média das opções — a oscilação futura que o mercado precifica nos prêmios. Alta = mais medo/expectativa de movimento."
+          info={tt(
+            "IV média das opções — a oscilação futura que o mercado precifica nos prêmios. Alta = mais medo/expectativa de movimento.",
+            "Average options IV — the future swing the market prices into premiums. High = more fear/expectation of movement.",
+          )}
         />
         <GammaCard
           title="Skew (puts − calls)"
           level={skew.level}
           value={gamma.iv_skew != null ? fmtPct(gamma.iv_skew, 1) : "—"}
           label={skew.label}
-          info="Diferença de IV entre puts e calls. Positivo = puts mais caras (demanda por proteção/medo); negativo = calls mais caras (apetite por alta)."
+          info={tt(
+            "Diferença de IV entre puts e calls. Positivo = puts mais caras (demanda por proteção/medo); negativo = calls mais caras (apetite por alta).",
+            "IV difference between puts and calls. Positive = puts richer (demand for protection/fear); negative = calls richer (appetite for upside).",
+          )}
         />
       </div>
 
@@ -147,7 +173,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
       <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-3">
-            <span>{VIEW_TITLE[view]}</span>
+            <span>{viewTitle(view, isEn)}</span>
             <div className="flex gap-1 rounded-md bg-muted p-0.5">
               {(["bars", "line", "oi", "levels"] as ProfileView[]).map((v) => (
                 <button
@@ -157,12 +183,12 @@ export default function GammaPanel({ gamma, asset }: Props) {
                     view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {VIEW_LABEL[v]}
+                  {viewLabel(v, isEn)}
                 </button>
               ))}
             </div>
           </div>
-          <span>GEX líquido no spot: <span className="num">{fmtUsd(gamma.net_gex_spot)}</span></span>
+          <span>{tt("GEX líquido no spot:", "Net GEX at spot:")} <span className="num">{fmtUsd(gamma.net_gex_spot)}</span></span>
         </div>
 
         {view === "levels" ? (
@@ -172,7 +198,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
         ) : view === "line" ? (
           <GammaProfileLine gamma={gamma} />
         ) : bars.length === 0 ? (
-          <div className="text-xs text-muted-foreground">Sem dados de perfil.</div>
+          <div className="text-xs text-muted-foreground">{tt("Sem dados de perfil.", "No profile data.")}</div>
         ) : (
           <div className="space-y-0.5">
             {bars.map((b) => {
@@ -198,8 +224,8 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
         {view === "bars" && (
           <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
-            <span>◀ Puts (suporte)</span>
-            <span>Calls (resistência) ▶</span>
+            <span>◀ {tt("Puts (suporte)", "Puts (support)")}</span>
+            <span>{tt("Calls (resistência)", "Calls (resistance)")} ▶</span>
           </div>
         )}
       </div>
@@ -208,7 +234,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
       {["BTC", "ETH", "SOL"].includes(asset) && (
         <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min</span>
+            <span>{tt("Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min", "Options flow (HIRO proxy) — dealers' hedge delta-flow, accumulated · 5 min")}</span>
             <InfoTip text={GLOSSARY.optionsFlow} />
           </div>
           <OptionsFlowChart asset={asset} />
