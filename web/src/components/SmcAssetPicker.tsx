@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { useFavorites } from "../hooks/useFavorites";
 import { ASSET_NAME } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { CURATED_ASSETS, SMC_ASSETS } from "../lib/marketData";
 import CoinIcon from "./CoinIcon";
 
@@ -33,6 +34,7 @@ interface Props {
 /** Seletor de moeda do Smart Money: busca por nome/ticker, favoritos (máx. 10)
  *  fixados no topo, e selo "price-action" nas moedas sem dados do coletor. */
 export default function SmcAssetPicker({ current, onChange }: Props) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const { favs, isFav, toggle, max, full } = useFavorites();
@@ -83,10 +85,10 @@ export default function SmcAssetPicker({ current, onChange }: Props) {
           disabled={!isFav(a) && full}
           title={
             isFav(a)
-              ? "Remover dos favoritos"
+              ? t.smart.favRemove
               : full
-                ? `Máximo de ${max} favoritos`
-                : "Adicionar aos favoritos"
+                ? t.smart.favMax.replace("{max}", String(max))
+                : t.smart.favAdd
           }
           className={`shrink-0 transition-colors disabled:opacity-30 ${
             isFav(a) ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400"
@@ -117,14 +119,14 @@ export default function SmcAssetPicker({ current, onChange }: Props) {
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar moeda (nome ou ticker)…"
+              placeholder={t.smart.searchPlaceholder}
               className="mb-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
             />
             <div className="max-h-80 overflow-y-auto">
               {fav.length > 0 && (
                 <>
                   <div className="section-title flex items-center justify-between px-2 pb-1 pt-1.5">
-                    <span>★ Favoritos</span>
+                    <span>★ {t.smart.favorites}</span>
                     <span className="text-muted-foreground/60">
                       {favs.length}/{max}
                     </span>
@@ -136,7 +138,7 @@ export default function SmcAssetPicker({ current, onChange }: Props) {
               {rest.map(Row)}
               {fav.length === 0 && rest.length === 0 && (
                 <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                  Nada encontrado.
+                  {t.smart.nothingFound}
                 </div>
               )}
             </div>

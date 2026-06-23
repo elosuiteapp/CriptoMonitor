@@ -1,14 +1,16 @@
 import { fmtUsd } from "../lib/format";
+import { useT } from "../lib/i18n";
 import type { CvdPoint } from "../lib/marketData";
 
 /** Painel de Volume Delta / CVD (padrão dos gráficos de trade): histograma de
  *  delta agressor por candle (verde comprador / vermelho vendedor) + linha do
  *  CVD acumulado por cima. Escalas independentes (barras × linha) no mesmo pane. */
 export default function VolumeDeltaSubchart({ data, title }: { data: CvdPoint[]; title: string }) {
+  const { t } = useT();
   if (data.length < 2) {
     return (
       <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
-        {title} — carregando…
+        {title} — {t.smart.subLoading}
       </div>
     );
   }

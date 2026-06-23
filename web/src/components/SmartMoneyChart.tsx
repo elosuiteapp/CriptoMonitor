@@ -10,9 +10,11 @@ import {
   type Time,
 } from "lightweight-charts";
 
+import { getLocale } from "../hooks/useLocale";
 import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { priceDecimals } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
 import { HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import { subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
@@ -63,7 +65,7 @@ interface Props {
 
 const kfmt = (v: number) => {
   const a = Math.abs(v);
-  if (a >= 1000) return `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
+  if (a >= 1000) return `${(v / 1000).toLocaleString(getLocale() === "en" ? "en-US" : "pt-BR", { maximumFractionDigits: 1 })}k`;
   if (a >= 1) return `${Math.round(v)}`;
   if (a >= 0.01) return v.toFixed(4);
   return v.toFixed(8); // moedas sub-centavo (ex.: PEPE)
@@ -83,6 +85,7 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
   const htfLinesRef = useRef<IPriceLine[]>([]);
   const lastViewKey = useRef<string | undefined>(undefined);
   const { isDark } = useTheme();
+  const { t } = useT();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -383,7 +386,7 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
           ctx.strokeStyle = bull ? "rgba(34,197,94,0.40)" : "rgba(239,68,68,0.40)";
           ctx.lineWidth = 1;
           ctx.stroke();
-          queueTag(ob.mid, `OB ${bull ? "alta" : "baixa"} ${kfmt(ob.mid)}`, bull ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)", bull ? INK : "#fff");
+          queueTag(ob.mid, `OB ${bull ? t.smart.obUp : t.smart.obDown} ${kfmt(ob.mid)}`, bull ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)", bull ? INK : "#fff");
         });
       }
 
@@ -453,7 +456,7 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [smc, candles, layers]);
+  }, [smc, candles, layers, t]);
 
   return (
     <div ref={wrapRef} className="relative h-[380px] w-full">
@@ -463,22 +466,22 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
       {layers.liquidations && (
         <>
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-            Heatmap de liquidações · estimativa (modelo de alavancagem)
+            {t.smart.heatmapTitle}
           </div>
           {/* Legenda: o fundo (térmico) = intensidade; as linhas das zonas = lado. (Igual ao cockpit.) */}
           <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              fraco
+              {t.smart.heatWeak}
               <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT }} />
-              forte
+              {t.smart.heatStrong}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#ef4444" }} />
-              longs ↓
+              {t.smart.heatLongs}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#10b981" }} />
-              shorts ↑
+              {t.smart.heatShorts}
             </span>
           </div>
           <div

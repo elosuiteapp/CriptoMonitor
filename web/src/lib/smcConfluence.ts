@@ -3,6 +3,8 @@
 // coincide com Put Wall + parede de compra, por exemplo, é de alta confiança —
 // algo que NENHUM dos indicadores do TradingView consegue sozinho.
 
+import { getLocale } from "../hooks/useLocale";
+
 export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq" | "htf";
 
 export interface ConfluenceSource {
@@ -60,11 +62,13 @@ export function buildConfluenceSources(
     if (gamma.zero_gamma_level) sources.push({ kind: "gamma", label: "Zero Gamma", price: gamma.zero_gamma_level });
     if (gamma.max_pain) sources.push({ kind: "gamma", label: "Max Pain", price: gamma.max_pain });
   }
+  const en = getLocale() === "en";
   const topWalls = [...walls].sort((a, b) => b.notional_usd - a.notional_usd).slice(0, 6);
   for (const w of topWalls) {
+    const side = w.side === "bid" ? (en ? "Buy wall" : "Parede compra") : en ? "Sell wall" : "Parede venda";
     sources.push({
       kind: "wall",
-      label: `Parede ${w.side === "bid" ? "compra" : "venda"} ${fmtUsd(w.notional_usd)}`,
+      label: `${side} ${fmtUsd(w.notional_usd)}`,
       price: w.price,
     });
   }

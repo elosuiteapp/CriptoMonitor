@@ -2,11 +2,15 @@
 // níveis-chave para a tabela e (b) uma leitura automática em português — o
 // diferencial do produto: estrutura traduzida, não só caixas no gráfico.
 
+import { getLocale } from "../hooks/useLocale";
 import type { ConfluenceHit, ConfluenceSource } from "./smcConfluence";
 import { confluenceFor } from "./smcConfluence";
 import type { SmcResult } from "./smc";
 
 export type Tone = "good" | "bad" | "warn" | "neutral";
+
+/** Seletor curto PT/EN para os textos puros deste módulo (mesmo padrão do format.ts). */
+const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
 
 export interface KeyLevel {
   label: string;
@@ -24,7 +28,7 @@ const pct = (level: number, price: number) => ((level - price) / price) * 100;
 /** Preço adaptativo na leitura (sem símbolo): integer p/ grandes, decimais p/ sub-1. */
 const pnum = (v: number): string => {
   const a = Math.abs(v);
-  if (a >= 100) return Math.round(v).toLocaleString("pt-BR");
+  if (a >= 100) return Math.round(v).toLocaleString(getLocale() === "en" ? "en-US" : "pt-BR");
   if (a >= 1) return v.toFixed(2);
   if (a >= 0.01) return v.toFixed(4);
   if (a >= 0.0001) return v.toFixed(6);
@@ -39,17 +43,20 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
 
   for (const pool of smc.liquidity) {
     add({
-      label: pool.side === "buy" ? "Liquidez de compra (stops de vendidos)" : "Liquidez de venda (stops de comprados)",
+      label: pool.side === "buy"
+        ? tl("Liquidez de compra (stops de vendidos)", "Buy-side liquidity (shorts' stops)")
+        : tl("Liquidez de venda (stops de comprados)", "Sell-side liquidity (longs' stops)"),
       category: "liquidity",
       price: pool.price,
       bias: pool.side === "buy" ? "bullish" : "bearish",
-      note: `${pool.count} toques${pool.swept ? " · já varrida" : ""}`,
+      note: `${pool.count} ${tl("toques", "touches")}${pool.swept ? tl(" · já varrida", " · already swept") : ""}`,
       swept: pool.swept,
     });
   }
   for (const ob of smc.orderBlocks) {
+    const kind = ob.bias === "bullish" ? tl("alta (demanda)", "bullish (demand)") : tl("baixa (oferta)", "bearish (supply)");
     add({
-      label: `Order block de ${ob.bias === "bullish" ? "alta (demanda)" : "baixa (oferta)"}${ob.internal ? " · interno" : ""}`,
+      label: `${tl("Order block de", "Order block")} ${kind}${ob.internal ? tl(" · interno", " · internal") : ""}`,
       category: "orderblock",
       price: ob.mid,
       bias: ob.bias,
@@ -58,7 +65,9 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
   }
   for (const g of smc.fvgs) {
     add({
-      label: `Imbalance/FVG de ${g.bias === "bullish" ? "alta" : "baixa"} (gap)`,
+      label: g.bias === "bullish"
+        ? tl("Imbalance/FVG de alta (gap)", "Bullish imbalance/FVG (gap)")
+        : tl("Imbalance/FVG de baixa (gap)", "Bearish imbalance/FVG (gap)"),
       category: "fvg",
       price: g.mid,
       bias: g.bias,
@@ -67,27 +76,31 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
   }
   for (const eq of smc.equals) {
     add({
-      label: eq.kind === "EQH" ? "Topos iguais (EQH) — liquidez acima" : "Fundos iguais (EQL) — liquidez abaixo",
+      label: eq.kind === "EQH"
+        ? tl("Topos iguais (EQH) — liquidez acima", "Equal highs (EQH) — liquidity above")
+        : tl("Fundos iguais (EQL) — liquidez abaixo", "Equal lows (EQL) — liquidity below"),
       category: "equal",
       price: eq.price,
       bias: eq.kind === "EQH" ? "bearish" : "bullish",
     });
   }
-  add({ label: "Topo do range (Strong/Weak High)", category: "extreme", price: smc.trailingTop, bias: "bearish" });
-  add({ label: "Fundo do range (Strong/Weak Low)", category: "extreme", price: smc.trailingBottom, bias: "bullish" });
-  add({ label: "Início da zona Premium (caro)", category: "zone", price: smc.premium.bottom, bias: "bearish" });
-  add({ label: "Início da zona Discount (barato)", category: "zone", price: smc.discount.top, bias: "bullish" });
+  add({ label: tl("Topo do range (Strong/Weak High)", "Range high (Strong/Weak High)"), category: "extreme", price: smc.trailingTop, bias: "bearish" });
+  add({ label: tl("Fundo do range (Strong/Weak Low)", "Range low (Strong/Weak Low)"), category: "extreme", price: smc.trailingBottom, bias: "bullish" });
+  add({ label: tl("Início da zona Premium (caro)", "Premium zone start (expensive)"), category: "zone", price: smc.premium.bottom, bias: "bearish" });
+  add({ label: tl("Início da zona Discount (barato)", "Discount zone start (cheap)"), category: "zone", price: smc.discount.top, bias: "bullish" });
 
   return out.sort((a, b) => Math.abs(a.distancePct) - Math.abs(b.distancePct));
 }
 
 export interface ReadingLine {
+  id: "structure" | "internal" | "zone" | "liqAbove" | "liqBelow" | "obAbove" | "obBelow" | "sweep";
   title: string;
   text: string;
   tone: Tone;
 }
 
-const biasWord = (b: "bullish" | "bearish" | null) => (b === "bullish" ? "alta" : b === "bearish" ? "baixa" : "indefinida");
+const biasWord = (b: "bullish" | "bearish" | null) =>
+  b === "bullish" ? tl("alta", "bullish") : b === "bearish" ? tl("baixa", "bearish") : tl("indefinida", "undefined");
 
 export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): ReadingLine[] {
   const lines: ReadingLine[] = [];
@@ -95,29 +108,38 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
 
   // 1) Viés estrutural
   const tone: Tone = smc.swingBias === "bullish" ? "good" : smc.swingBias === "bearish" ? "bad" : "neutral";
-  let structText = `Estrutura principal de ${biasWord(smc.swingBias)}.`;
+  let structText = tl(`Estrutura principal de ${biasWord(smc.swingBias)}.`, `Main structure is ${biasWord(smc.swingBias)}.`);
   if (smc.lastSwing) {
-    const ev = smc.lastSwing.type === "CHoCH" ? "Mudança de Caráter (CHoCH)" : "Rompimento de Estrutura (BOS)";
-    structText += ` Último evento relevante: ${ev} de ${biasWord(smc.lastSwing.bias)} em ${pnum(smc.lastSwing.price)}.`;
+    const ev = smc.lastSwing.type === "CHoCH"
+      ? tl("Mudança de Caráter (CHoCH)", "Change of Character (CHoCH)")
+      : tl("Rompimento de Estrutura (BOS)", "Break of Structure (BOS)");
+    structText += tl(
+      ` Último evento relevante: ${ev} de ${biasWord(smc.lastSwing.bias)} em ${pnum(smc.lastSwing.price)}.`,
+      ` Latest relevant event: ${biasWord(smc.lastSwing.bias)} ${ev} at ${pnum(smc.lastSwing.price)}.`,
+    );
   }
-  lines.push({ title: "Estrutura de mercado", text: structText, tone });
+  lines.push({ id: "structure", title: tl("Estrutura de mercado", "Market structure"), text: structText, tone });
 
   // 2) Divergência interna
   if (smc.internalBias && smc.swingBias && smc.internalBias !== smc.swingBias) {
     lines.push({
-      title: "Estrutura interna",
-      text: `A estrutura interna está de ${biasWord(smc.internalBias)}, divergindo da principal — possível pivô de curto prazo ou pullback.`,
+      id: "internal",
+      title: tl("Estrutura interna", "Internal structure"),
+      text: tl(
+        `A estrutura interna está de ${biasWord(smc.internalBias)}, divergindo da principal — possível pivô de curto prazo ou pullback.`,
+        `Internal structure is ${biasWord(smc.internalBias)}, diverging from the main one — possible short-term pivot or pullback.`,
+      ),
       tone: "warn",
     });
   }
 
   // 3) Posição premium/discount
   if (price >= smc.premium.bottom) {
-    lines.push({ title: "Zona de preço", text: "Preço na zona PREMIUM (caro) — região onde a mão forte tende a distribuir/vender.", tone: "warn" });
+    lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço na zona PREMIUM (caro) — região onde a mão forte tende a distribuir/vender.", "Price in the PREMIUM zone (expensive) — where smart money tends to distribute/sell."), tone: "warn" });
   } else if (price <= smc.discount.top) {
-    lines.push({ title: "Zona de preço", text: "Preço na zona DISCOUNT (barato) — região onde a mão forte tende a acumular/comprar.", tone: "good" });
+    lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço na zona DISCOUNT (barato) — região onde a mão forte tende a acumular/comprar.", "Price in the DISCOUNT zone (cheap) — where smart money tends to accumulate/buy."), tone: "good" });
   } else {
-    lines.push({ title: "Zona de preço", text: "Preço em EQUILÍBRIO (meio do range) — sem desconto nem prêmio claro.", tone: "neutral" });
+    lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço em EQUILÍBRIO (meio do range) — sem desconto nem prêmio claro.", "Price at EQUILIBRIUM (middle of the range) — no clear discount or premium."), tone: "neutral" });
   }
 
   // 4) Liquidez alvo acima/abaixo (não varrida)
@@ -126,33 +148,37 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
   const confTxt = (p: number) => {
     const c = confluenceFor(p, smc.atr, sources);
     const exact = c.filter((h) => h.strength === "exact");
-    if (exact.length) return ` — confluência com ${exact.map((h) => h.source.label).join(", ")} (alta confiança)`;
-    if (c.length) return ` — perto de ${c.map((h) => h.source.label).join(", ")}`;
+    if (exact.length) return tl(` — confluência com ${exact.map((h) => h.source.label).join(", ")} (alta confiança)`, ` — confluence with ${exact.map((h) => h.source.label).join(", ")} (high confidence)`);
+    if (c.length) return tl(` — perto de ${c.map((h) => h.source.label).join(", ")}`, ` — near ${c.map((h) => h.source.label).join(", ")}`);
     return "";
   };
   if (above) {
-    lines.push({ title: "Alvo de liquidez acima", text: `Pool de liquidez em ${pnum(above.price)} (~${pct(above.price, price).toFixed(1)}%) — ímã provável${confTxt(above.price)}.`, tone: "neutral" });
+    lines.push({ id: "liqAbove", title: tl("Alvo de liquidez acima", "Liquidity target above"), text: tl(`Pool de liquidez em ${pnum(above.price)} (~${pct(above.price, price).toFixed(1)}%) — ímã provável${confTxt(above.price)}.`, `Liquidity pool at ${pnum(above.price)} (~${pct(above.price, price).toFixed(1)}%) — likely magnet${confTxt(above.price)}.`), tone: "neutral" });
   }
   if (below) {
-    lines.push({ title: "Alvo de liquidez abaixo", text: `Pool de liquidez em ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, tone: "neutral" });
+    lines.push({ id: "liqBelow", title: tl("Alvo de liquidez abaixo", "Liquidity target below"), text: tl(`Pool de liquidez em ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, `Liquidity pool at ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — likely magnet${confTxt(below.price)}.`), tone: "neutral" });
   }
 
   // 5) Suporte/resistência por order block (acima e abaixo)
   const obAbove = smc.orderBlocks.filter((o) => o.mid > price).sort((a, b) => a.mid - b.mid)[0];
   const obBelow = smc.orderBlocks.filter((o) => o.mid <= price).sort((a, b) => b.mid - a.mid)[0];
   if (obAbove) {
-    lines.push({ title: "Resistência (order block)", text: `Order block de ${biasWord(obAbove.bias)} em ${pnum(obAbove.mid)} acima — possível resistência${confTxt(obAbove.mid)}.`, tone: "neutral" });
+    lines.push({ id: "obAbove", title: tl("Resistência (order block)", "Resistance (order block)"), text: tl(`Order block de ${biasWord(obAbove.bias)} em ${pnum(obAbove.mid)} acima — possível resistência${confTxt(obAbove.mid)}.`, `${biasWord(obAbove.bias)} order block at ${pnum(obAbove.mid)} above — possible resistance${confTxt(obAbove.mid)}.`), tone: "neutral" });
   }
   if (obBelow) {
-    lines.push({ title: "Suporte (order block)", text: `Order block de ${biasWord(obBelow.bias)} em ${pnum(obBelow.mid)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, tone: "neutral" });
+    lines.push({ id: "obBelow", title: tl("Suporte (order block)", "Support (order block)"), text: tl(`Order block de ${biasWord(obBelow.bias)} em ${pnum(obBelow.mid)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, `${biasWord(obBelow.bias)} order block at ${pnum(obBelow.mid)} below — possible support${confTxt(obBelow.mid)}.`), tone: "neutral" });
   }
 
   // 6) Varredura de liquidez recente (stop hunt)
   const sweep = smc.liquidity.filter((l) => l.sweptRecently).sort((a, b) => Math.abs(a.price - price) - Math.abs(b.price - price))[0];
   if (sweep) {
     lines.push({
-      title: "Varredura de liquidez",
-      text: `Liquidez ${sweep.side === "buy" ? "de compra" : "de venda"} em ${pnum(sweep.price)} foi varrida há pouco — possível stop hunt; atenção a reversão se o preço rejeitar o nível.`,
+      id: "sweep",
+      title: tl("Varredura de liquidez", "Liquidity sweep"),
+      text: tl(
+        `Liquidez ${sweep.side === "buy" ? "de compra" : "de venda"} em ${pnum(sweep.price)} foi varrida há pouco — possível stop hunt; atenção a reversão se o preço rejeitar o nível.`,
+        `${sweep.side === "buy" ? "Buy-side" : "Sell-side"} liquidity at ${pnum(sweep.price)} was swept recently — possible stop hunt; watch for a reversal if price rejects the level.`,
+      ),
       tone: "warn",
     });
   }
