@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ASSET_NAME, fmtPct, fmtPrice, isInstitutional } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { fetch24hChange } from "../lib/marketData";
 import type { SnapshotPayload } from "../lib/types";
 
@@ -12,12 +13,13 @@ interface Props {
 }
 
 export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Props) {
+  const { t, isEn } = useT();
   const binance = payload?.price?.binance;
   const coinbase = payload?.price?.coinbase;
   // Prioriza o preço ao vivo do gráfico (mesma fonte → topo == gráfico, em tempo real);
   // cai no snapshot do coletor enquanto o gráfico ainda não emitiu (ex.: trocou de ativo).
   const price = livePrice ?? binance?.price ?? coinbase?.price ?? payload?.gamma?.spot_price ?? null;
-  const when = updatedAt ? new Date(updatedAt).toLocaleString("pt-BR") : null;
+  const when = updatedAt ? new Date(updatedAt).toLocaleString(isEn ? "en-US" : "pt-BR") : null;
 
   const [change24h, setChange24h] = useState<number | null>(null);
   useEffect(() => {
@@ -43,18 +45,14 @@ export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Pr
           <h1 className="text-2xl font-bold tracking-tight text-foreground">{asset}</h1>
           <span className="text-sm text-muted-foreground">{ASSET_NAME[asset] ?? asset}</span>
           <span
-            title={
-              isInstitutional(asset)
-                ? "Camada institucional completa: gamma, opções, volatilidade (DVOL) e CVD/prêmio Coinbase — além de derivativos e fluxo."
-                : "Cockpit de derivativos & fluxo: funding (CEX + on-chain), OI, long/short, liquidações e paredes do book. Sem gamma/opções (não há bolsa de opções líquida para esta moeda)."
-            }
+            title={isInstitutional(asset) ? t.priceHeader.instTip : t.priceHeader.flowTip}
             className={`cursor-help rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
               isInstitutional(asset)
                 ? "border-primary/30 bg-primary/10 text-primary"
                 : "border-border bg-muted text-muted-foreground"
             }`}
           >
-            {isInstitutional(asset) ? "Institucional + Gamma" : "Derivativos & fluxo"}
+            {isInstitutional(asset) ? t.priceHeader.instTier : t.priceHeader.flowTier}
           </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-3">
@@ -75,11 +73,11 @@ export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Pr
           <>
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
             <span>
-              Atualizado <span className="num">{when}</span>
+              {t.priceHeader.updated} <span className="num">{when}</span>
             </span>
           </>
         ) : (
-          "Aguardando primeiro ciclo de coleta"
+          t.priceHeader.waiting
         )}
       </div>
     </div>

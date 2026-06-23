@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { useT } from "../lib/i18n";
 import Card from "./ui/Card";
 
 /** Vitrine de upgrade: card avançado aparece bloqueado (PRD §7.2, §8.3).
@@ -14,6 +15,7 @@ export default function LockedCard({
   institutional?: boolean;
   plan?: string;
 }) {
+  const { t } = useT();
   return (
     <Card highlight={institutional} className="relative overflow-hidden p-4">
       <div className="flex items-center justify-between">
@@ -28,7 +30,7 @@ export default function LockedCard({
         to="/pricing"
         className="mt-4 inline-block rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all duration-200 hover:opacity-90"
       >
-        Desbloquear no {plan} →
+        {t.locked.unlock.replace("{plan}", plan)}
       </Link>
     </Card>
   );

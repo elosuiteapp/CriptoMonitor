@@ -222,13 +222,13 @@ export default function Dashboard() {
           (canSmart ? (
             <IndicatorsTab asset={asset} payload={payload ?? null} plan={plan} />
           ) : (
-            <LockedTab title="Leitura do Mercado" plan="Expert" />
+            <LockedTab title={tr.tabs.indicators} plan="Expert" />
           ))}
         {tab === "smart" &&
           (canSmart ? (
             <SmartMoneyTab asset={asset} />
           ) : (
-            <LockedTab title="Smart Money & On-chain" plan="Expert" />
+            <LockedTab title={tr.tabs.smart} plan="Expert" />
           ))}
         {tab === "reports" && <ReportsTab asset={asset} plan={plan} isExpert={isExpert} />}
 
@@ -262,30 +262,19 @@ export default function Dashboard() {
           <LayerToggles layers={layers} onToggle={toggleLayer} access={access} showUpsell={!advanced} />
           {canUseLayers && effectiveLayers.cvd && (
             <>
-              <VolumeDeltaSubchart data={cvdSeries} title={`Volume Delta · CVD do varejo (Binance · ${timeframe.toUpperCase()})`} />
+              <VolumeDeltaSubchart data={cvdSeries} title={`${tr.subchart.cvdRetail} (Binance · ${timeframe.toUpperCase()})`} />
               {isExpert ? (
-                <CvdSubchart data={series.cvdInst} title="CVD institucional (Coinbase) — varejo × instituição" />
+                <CvdSubchart data={series.cvdInst} title={tr.subchart.cvdInst} />
               ) : (
-                <LockedSubchart
-                  title="CVD institucional (Coinbase)"
-                  hint="O varejo você já vê. Falta o smart money à vista — o fluxo que mais diverge."
-                  plan="Expert"
-                />
+                <LockedSubchart title={tr.subchart.cvdInstLocked} hint={tr.subchart.cvdInstHint} plan="Expert" />
               )}
             </>
           )}
           {canUseLayers && effectiveLayers.bookPressure && (
             <>
-              <CvdSubchart
-                data={bookSeries}
-                title={advanced ? "Pressão do book · todas as fontes (bid − ask, ±2%)" : "Pressão do book · varejo (Binance + OKX, bid − ask ±2%)"}
-              />
+              <CvdSubchart data={bookSeries} title={advanced ? tr.subchart.bookAll : tr.subchart.bookRetail} />
               {!isExpert && (
-                <LockedSubchart
-                  title="Pressão do book · institucional (Coinbase)"
-                  hint="Liquidez parada do book institucional — onde a instituição segura o preço."
-                  plan="Expert"
-                />
+                <LockedSubchart title={tr.subchart.bookInstLocked} hint={tr.subchart.bookInstHint} plan="Expert" />
               )}
             </>
           )}
@@ -297,14 +286,14 @@ export default function Dashboard() {
             como teasers: Gamma e — só em BTC/ETH — o Fluxo de opções (HIRO). */}
         {isOptionAsset && (
           <section>
-            <h2 className="mb-3 text-sm font-semibold text-foreground">Módulo Gamma (estilo SpotGamma)</h2>
+            <h2 className="mb-3 text-sm font-semibold text-foreground">{tr.cockpit.gammaModule}</h2>
             {advanced ? (
               <GammaPanel gamma={payload?.gamma ?? null} asset={asset} />
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-                <LockedCard title="Módulo Gamma — regime, Zero Gamma e Max Pain" />
+                <LockedCard title={tr.cockpit.gammaLocked} />
                 {asset !== "BNB" && (
-                  <LockedCard title="Fluxo de opções (HIRO) — delta-fluxo do hedge" />
+                  <LockedCard title={tr.cockpit.hiroLocked} />
                 )}
               </div>
             )}
@@ -319,8 +308,8 @@ export default function Dashboard() {
               <VolatilityPanel asset={asset} />
             ) : (
               <>
-                <h2 className="mb-3 text-sm font-semibold text-foreground">Volatilidade (DVOL, IV, term structure)</h2>
-                <LockedCard title="Volatilidade — DVOL, IV Percentile e term structure" />
+                <h2 className="mb-3 text-sm font-semibold text-foreground">{tr.cockpit.volTitle}</h2>
+                <LockedCard title={tr.cockpit.volLocked} />
               </>
             )}
           </section>
@@ -328,22 +317,22 @@ export default function Dashboard() {
 
         {/* Cards de métricas — separados por audiência: varejo × institucional (§8.6.3) */}
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-foreground">Fluxo, liquidez e sentimento</h2>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">{tr.cockpit.flowSection}</h2>
 
           {/* ── Varejo e alavancagem (perps, fluxo e posicionamento do varejo) ── */}
           <div className="mb-3 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-            <span>Varejo e alavancagem</span>
+            <span>{tr.cockpit.retailGroup}</span>
             <span className="h-px flex-1 bg-border" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard title="Fear & Greed" reading={fng} source="Alternative.me" timestamp={updatedAt} info={GLOSSARY.fng} />
             {advanced ? (
               <>
-                <MetricCard title="Funding (CEX agregado)" reading={readFunding(d?.funding_rate == null ? null : d.funding_rate / 100)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
-                <MetricCard title="Funding onchain" reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
+                <MetricCard title={tr.cockpit.fundingCex} reading={readFunding(d?.funding_rate == null ? null : d.funding_rate / 100)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
+                <MetricCard title={tr.cockpit.fundingOnchain} reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
                 <MetricCard
-                  title="CVD do varejo"
+                  title={tr.cockpit.cvdRetail}
                   info={GLOSSARY.cvd}
                   reading={readCvd(
                     payload?.price?.binance?.cvd == null && payload?.price?.okx?.cvd == null
@@ -353,24 +342,24 @@ export default function Dashboard() {
                   source="Binance + OKX"
                   timestamp={updatedAt}
                 />
-                <MetricCard title="Long / Short" reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.longShort} />
-                <MetricCard title="Liquidações" reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.liquidations} />
+                <MetricCard title={tr.cockpit.longShort} reading={readLongShort(d?.long_short_ratio)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.longShort} />
+                <MetricCard title={tr.cockpit.liquidations} reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.liquidations} />
                 <MetricCard
-                  title="Risco de squeeze"
+                  title={tr.cockpit.squeezeRisk}
                   reading={readSqueezeRisk(d?.funding_rate == null ? null : d.funding_rate / 100, d?.long_short_ratio, d?.liq_long_usd, d?.liq_short_usd)}
                   source="Coinalyze"
                   timestamp={updatedAt}
                   info={GLOSSARY.squeezeRisk}
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
-                <OrderbookImbalanceCard data={imbalance.varejo} title="Pressão do book · varejo" source="Binance + OKX" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
+                <OrderbookImbalanceCard data={imbalance.varejo} title={tr.cockpit.bookRetail} source="Binance + OKX" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
               </>
             ) : (
               <>
-                <LockedCard title="Funding & GEX" />
-                <LockedCard title="CVD do varejo" />
-                <LockedCard title="Long / Short ratio" />
-                <LockedCard title="Liquidações — alvos de liquidez" />
+                <LockedCard title={tr.cockpit.lockedFundingGex} />
+                <LockedCard title={tr.cockpit.lockedCvd} />
+                <LockedCard title={tr.cockpit.lockedLongShort} />
+                <LockedCard title={tr.cockpit.lockedLiq} />
               </>
             )}
           </div>
@@ -378,7 +367,7 @@ export default function Dashboard() {
           {/* ── Institucional e estrutural (spot/smart money, capital estrutural) ── */}
           <div className="mb-3 mt-6 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            <span>Institucional e estrutural</span>
+            <span>{tr.cockpit.instGroup}</span>
             <span className="h-px flex-1 bg-primary/25" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -386,7 +375,7 @@ export default function Dashboard() {
               <>
                 <MetricCard
                   institutional
-                  title="Viés Institucional × Varejo"
+                  title={tr.cockpit.instBias}
                   info={GLOSSARY.institutionalBias}
                   reading={readInstitutionalBias(
                     payload?.coinbase_premium,
@@ -397,21 +386,21 @@ export default function Dashboard() {
                     payload?.price?.coinbase?.cvd,
                     payload?.price?.binance?.cvd,
                   )}
-                  source="Prêmio + Participação + CVD (Coinbase × Binance+OKX)"
+                  source={tr.cockpit.instBiasSource}
                   timestamp={updatedAt}
                 />
-                <OrderbookImbalanceCard data={imbalance.institucional} title="Pressão do book · institucional" source="Coinbase" institutional timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
+                <OrderbookImbalanceCard data={imbalance.institucional} title={tr.cockpit.bookInst} source="Coinbase" institutional timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
                 {defi && (
-                  <MetricCard institutional title="Saúde DeFi (TVL)" reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} info={GLOSSARY.tvl} />
+                  <MetricCard institutional title={tr.cockpit.defiHealth} reading={readTvl(defi.tvl_usd, defi.stablecoin_flow_24h)} source="DefiLlama" timestamp={updatedAt} info={GLOSSARY.tvl} />
                 )}
                 {dex && (
                   <MetricCard
                     institutional
-                    title="Liquidez DEX"
+                    title={tr.cockpit.dexLiquidity}
                     info={GLOSSARY.dexLiquidity}
                     reading={{
-                      label: `${dex.pair}: ${fmtUsd(dex.liquidity_usd)} de liquidez`,
-                      detail: `Volume 24h ${fmtUsd(dex.volume_24h)}`,
+                      label: `${dex.pair}: ${fmtUsd(dex.liquidity_usd)} ${tr.cockpit.dexLiquiditySuffix}`,
+                      detail: `${tr.cockpit.vol24h} ${fmtUsd(dex.volume_24h)}`,
                       level: "neutral",
                     }}
                     source="DexScreener"
@@ -421,11 +410,11 @@ export default function Dashboard() {
                 {macro && (
                   <MetricCard
                     institutional
-                    title="Macro do mercado"
+                    title={tr.cockpit.marketMacro}
                     info={GLOSSARY.macroMarket}
                     reading={{
-                      label: `Dominância BTC ${fmtPct(macro.btc_dominance, 1)} · mcap ${fmtUsd(macro.total_mcap)}`,
-                      detail: `Dominância BTC ${fmtPct(macro.btc_dominance, 2)} · Market cap total ${fmtUsd(macro.total_mcap)}`,
+                      label: `${tr.cockpit.btcDominance} ${fmtPct(macro.btc_dominance, 1)} · mcap ${fmtUsd(macro.total_mcap)}`,
+                      detail: `${tr.cockpit.btcDominance} ${fmtPct(macro.btc_dominance, 2)} · ${tr.cockpit.totalMcap} ${fmtUsd(macro.total_mcap)}`,
                       level: "neutral",
                     }}
                     source="CoinGecko"
@@ -435,7 +424,7 @@ export default function Dashboard() {
                 {payload?.etf_flows && (
                   <MetricCard
                     institutional
-                    title="ETFs spot"
+                    title={tr.cockpit.etfSpot}
                     info={GLOSSARY.etfFlows}
                     reading={readEtfFlow(
                       payload.etf_flows.net_flow_usd,
@@ -450,7 +439,7 @@ export default function Dashboard() {
                 {payload?.gamma && (
                   <MetricCard
                     institutional
-                    title="Hedge institucional (opções)"
+                    title={tr.cockpit.optionsHedge}
                     info={GLOSSARY.optionsPositioning}
                     reading={readOptionsPositioning(
                       payload.gamma.put_call_ratio,
@@ -463,11 +452,11 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <LockedCard institutional plan="Expert" title="Viés Institucional × Varejo" />
-                <LockedCard institutional plan="Expert" title="Pressão do book · institucional" />
-                <LockedCard institutional plan="Expert" title="ETFs spot · fluxo institucional" />
-                <LockedCard institutional plan="Expert" title="Macro do mercado · dominância e mcap" />
-                <LockedCard institutional plan="Expert" title="Hedge institucional (opções)" />
+                <LockedCard institutional plan="Expert" title={tr.cockpit.lockedInstBias} />
+                <LockedCard institutional plan="Expert" title={tr.cockpit.lockedBookInst} />
+                <LockedCard institutional plan="Expert" title={tr.cockpit.lockedEtf} />
+                <LockedCard institutional plan="Expert" title={tr.cockpit.lockedMacro} />
+                <LockedCard institutional plan="Expert" title={tr.cockpit.lockedHedge} />
               </>
             )}
           </div>
