@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { fmtPct } from "../lib/format";
+import { getLocale } from "../hooks/useLocale";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import type { MacroData, MarketLiquidityData } from "../lib/types";
 import CotCard, { type CotRow } from "./CotCard";
 import InfoTip from "./InfoTip";
 import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
 import MacroGlobalPanel from "./MacroGlobalPanel";
+
+/** Seletor PT/EN para os helpers de módulo (o componente re-renderiza via useT). */
+const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
 
 interface MacroAssetRow {
   symbol: string;
@@ -33,8 +38,8 @@ interface CorrVal {
 }
 
 const fmtCorr = (c: number) => `${c >= 0 ? "+" : ""}${c.toFixed(2)}`;
-const corrStrength = (c: number) => (Math.abs(c) >= 0.5 ? "forte" : Math.abs(c) >= 0.3 ? "moderada" : "fraca");
-const corrDir = (c: number) => (c > 0.05 ? "direta" : c < -0.05 ? "inversa" : "neutra");
+const corrStrength = (c: number) => (Math.abs(c) >= 0.5 ? tl("forte", "strong") : Math.abs(c) >= 0.3 ? tl("moderada", "moderate") : tl("fraca", "weak"));
+const corrDir = (c: number) => (c > 0.05 ? tl("direta", "direct") : c < -0.05 ? tl("inversa", "inverse") : tl("neutra", "neutral"));
 const clampPos = (c: number) => (Math.max(-1, Math.min(1, c)) + 1) / 2;
 
 /** Medidor de correlação: −1 (inversa, vermelho) ↔ +1 (direta, verde). Marcador
@@ -46,9 +51,9 @@ function CorrGauge({ corr }: { corr: CorrVal | null }) {
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">correlação</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{tl("correlação", "correlation")}</span>
         <span className={`num text-xs font-semibold ${color}`}>
-          {c30 == null ? "sem dado ainda" : `${fmtCorr(c30)} · ${corrStrength(c30)} ${corrDir(c30)}`}
+          {c30 == null ? tl("sem dado ainda", "no data yet") : `${fmtCorr(c30)} · ${corrStrength(c30)} ${corrDir(c30)}`}
           {c90 != null && <span className="ml-1 font-normal text-muted-foreground">· 90d {fmtCorr(c90)}</span>}
         </span>
       </div>
@@ -70,9 +75,9 @@ function CorrGauge({ corr }: { corr: CorrVal | null }) {
         />
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-        <span>inversa (−1)</span>
+        <span>{tl("inversa (−1)", "inverse (−1)")}</span>
         <span>0</span>
-        <span>direta (+1)</span>
+        <span>{tl("direta (+1)", "direct (+1)")}</span>
       </div>
     </div>
   );
@@ -87,30 +92,33 @@ function buildSynthesis(corr: Record<string, CorrVal>, asset: string): string | 
   const parts: string[] = [];
 
   if (asset !== "BTC" && btc != null) {
-    if (btc >= 0.7) parts.push(`segue de perto o Bitcoin (${fmtCorr(btc)}) — principal motor; quando o BTC anda, ${asset} vai junto`);
-    else if (btc >= 0.4) parts.push(`anda bastante com o Bitcoin (${fmtCorr(btc)})`);
-    else parts.push(`relativamente descolada do Bitcoin (${fmtCorr(btc)}) — movimento mais próprio`);
+    if (btc >= 0.7) parts.push(tl(`segue de perto o Bitcoin (${fmtCorr(btc)}) — principal motor; quando o BTC anda, ${asset} vai junto`, `closely tracks Bitcoin (${fmtCorr(btc)}) — the main driver; when BTC moves, ${asset} follows`));
+    else if (btc >= 0.4) parts.push(tl(`anda bastante com o Bitcoin (${fmtCorr(btc)})`, `moves a lot with Bitcoin (${fmtCorr(btc)})`));
+    else parts.push(tl(`relativamente descolada do Bitcoin (${fmtCorr(btc)}) — movimento mais próprio`, `relatively decoupled from Bitcoin (${fmtCorr(btc)}) — more of its own move`));
   }
 
   const risk = ndx ?? spx;
   const riskName = ndx != null ? "Nasdaq" : "S&P 500";
   if (risk != null) {
-    if (risk >= 0.4) parts.push(`risco-on: acompanha a bolsa de tecnologia (${riskName} ${fmtCorr(risk)})`);
-    else if (risk <= -0.2) parts.push(`inversa às ações (${riskName} ${fmtCorr(risk)})`);
+    if (risk >= 0.4) parts.push(tl(`risco-on: acompanha a bolsa de tecnologia (${riskName} ${fmtCorr(risk)})`, `risk-on: tracks tech stocks (${riskName} ${fmtCorr(risk)})`));
+    else if (risk <= -0.2) parts.push(tl(`inversa às ações (${riskName} ${fmtCorr(risk)})`, `inverse to equities (${riskName} ${fmtCorr(risk)})`));
   }
-  if (dxy != null && dxy <= -0.3) parts.push(`tende a subir quando o dólar cai (DXY ${fmtCorr(dxy)})`);
+  if (dxy != null && dxy <= -0.3) parts.push(tl(`tende a subir quando o dólar cai (DXY ${fmtCorr(dxy)})`, `tends to rise when the dollar falls (DXY ${fmtCorr(dxy)})`));
   if (vix != null) {
-    if (vix <= -0.3) parts.push(`cai quando o medo aumenta (VIX ${fmtCorr(vix)})`);
-    else if (vix >= 0.3) parts.push(`sobe junto com o VIX (${fmtCorr(vix)}), o que é incomum`);
+    if (vix <= -0.3) parts.push(tl(`cai quando o medo aumenta (VIX ${fmtCorr(vix)})`, `falls when fear rises (VIX ${fmtCorr(vix)})`));
+    else if (vix >= 0.3) parts.push(tl(`sobe junto com o VIX (${fmtCorr(vix)}), o que é incomum`, `rises alongside the VIX (${fmtCorr(vix)}), which is unusual`));
   }
   const jpy = corr["USDJPY"]?.c30;
   if (jpy != null) {
-    if (jpy >= 0.3) parts.push(`risco-on com o iene fraco (USD/JPY ${fmtCorr(jpy)})`);
-    else if (jpy <= -0.3) parts.push(`sobe quando o iene fortalece (USD/JPY ${fmtCorr(jpy)})`);
+    if (jpy >= 0.3) parts.push(tl(`risco-on com o iene fraco (USD/JPY ${fmtCorr(jpy)})`, `risk-on with a weak yen (USD/JPY ${fmtCorr(jpy)})`));
+    else if (jpy <= -0.3) parts.push(tl(`sobe quando o iene fortalece (USD/JPY ${fmtCorr(jpy)})`, `rises when the yen strengthens (USD/JPY ${fmtCorr(jpy)})`));
   }
 
   if (!parts.length) return null;
-  return `${asset}: ${parts.join("; ")}. Em dias de CPI/FOMC o macro costuma dominar — veja o calendário.`;
+  return tl(
+    `${asset}: ${parts.join("; ")}. Em dias de CPI/FOMC o macro costuma dominar — veja o calendário.`,
+    `${asset}: ${parts.join("; ")}. On CPI/FOMC days macro usually dominates — check the calendar.`,
+  );
 }
 
 function countdown(iso: string): string {
@@ -121,27 +129,27 @@ function countdown(iso: string): string {
   const today = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
   const days = Math.round((a - today) / 86400000);
   if (days < 0) return "";
-  if (days === 0) return "hoje";
-  if (days === 1) return "amanhã";
-  return `em ${days} dias`;
+  if (days === 0) return tl("hoje", "today");
+  if (days === 1) return tl("amanhã", "tomorrow");
+  return tl(`em ${days} dias`, `in ${days} days`);
 }
 
 function fmtEvtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(getLocale() === "en" ? "en-US" : "pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 // Calendário: bandeira por moeda + estrelas por impacto (1=baixo, 2=médio, 3=alto).
 const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", JPY: "🇯🇵", CNY: "🇨🇳", GBP: "🇬🇧" };
 const impactStars = (impact: string) => (impact === "High" ? 3 : impact === "Medium" ? 2 : 1);
-const impactLabel = (impact: string) => (impact === "High" ? "alto" : impact === "Medium" ? "médio" : "baixo");
+const impactLabel = (impact: string) => (impact === "High" ? tl("alto", "high") : impact === "Medium" ? tl("médio", "medium") : tl("baixo", "low"));
 
 function Stars({ impact }: { impact: string }) {
   const n = impactStars(impact);
   const color = impact === "High" ? "text-rose-500" : "text-amber-500";
   return (
-    <span className="shrink-0 tracking-tighter" title={`Impacto ${impactLabel(impact)}`}>
+    <span className="shrink-0 tracking-tighter" title={`${tl("Impacto", "Impact")} ${impactLabel(impact)}`}>
       {[1, 2, 3].map((i) => (
         <span key={i} className={i <= n ? color : "text-muted-foreground/30"}>★</span>
       ))}
@@ -149,8 +157,8 @@ function Stars({ impact }: { impact: string }) {
   );
 }
 
-// Explicação por referência (tooltip no ⓘ de cada card)
-const MACRO_HELP: Record<string, string> = {
+// Explicação por referência (tooltip no ⓘ de cada card), bilíngue.
+const MACRO_HELP_PT: Record<string, string> = {
   BTC: "Bitcoin é o principal motor das altcoins. Correlação alta (+) = a moeda segue o BTC; baixa = anda mais por conta própria.",
   DXY: "Índice do dólar (força do dólar). Cripto costuma ser inversa: quando o dólar cai (−), a cripto tende a subir.",
   SPX: "S&P 500 — as 500 maiores empresas dos EUA, termômetro de risco. Correlação alta (+) = a moeda anda como ativo de risco (risco-on).",
@@ -164,6 +172,21 @@ const MACRO_HELP: Record<string, string> = {
   DAX: "DAX — bolsa da Alemanha. Termômetro de risco europeu; correlação alta (+) = risco-on.",
   EURUSD: "EUR/USD — euro vs dólar. Sobe quando o dólar cai; correlação direta (+) com cripto é comum (inverso do DXY).",
 };
+const MACRO_HELP_EN: Record<string, string> = {
+  BTC: "Bitcoin is the main driver of altcoins. High (+) correlation = the coin follows BTC; low = it moves more on its own.",
+  DXY: "Dollar index (the dollar's strength). Crypto is usually inverse: when the dollar falls (−), crypto tends to rise.",
+  SPX: "S&P 500 — the 500 largest US companies, a risk gauge. High (+) correlation = the coin trades as a risk asset (risk-on).",
+  NASDAQ: "Nasdaq — the tech exchange, the traditional asset most like crypto. High (+) correlation = a risk-on/tech profile.",
+  GOLD: "Gold — a classic store of value. Direct (+) correlation suggests the coin being treated as 'digital gold' / a hedge.",
+  US10Y: "US 10-year yield (the cost of money). Rising rates pressure risk assets — an inverse (−) correlation is common.",
+  VIX: "VIX — the market's fear index. A strong inverse (−) correlation = the coin falls when panic rises.",
+  USDJPY: "USD/JPY (the yen). Rises when the yen weakens — 'carry trade' on, risk-on; sharp drops often come with global risk-off.",
+  NIKKEI: "Nikkei 225 — Japan's exchange. A gauge of the Asian session; high (+) correlation = a risk-on profile.",
+  HSI: "Hang Seng — Hong Kong's exchange. Sensitive to China and the PBOC; high (+) correlation = Asian risk-on.",
+  DAX: "DAX — Germany's exchange. A European risk gauge; high (+) correlation = risk-on.",
+  EURUSD: "EUR/USD — euro vs. dollar. Rises when the dollar falls; a direct (+) correlation with crypto is common (inverse of DXY).",
+};
+const macroHelp = (symbol: string): string => (getLocale() === "en" ? MACRO_HELP_EN : MACRO_HELP_PT)[symbol] ?? "";
 
 
 const KEY_FREE = ["NASDAQ", "DXY", "VIX", "USDJPY"]; // "vento macro" no Free: risco, dólar, medo, carry (iene)
@@ -174,18 +197,18 @@ function MacroUpgradeCard() {
     <div className="rounded-2xl border border-primary/30 bg-primary/[0.06] p-5">
       <div className="flex items-center gap-2">
         <span className="text-lg" aria-hidden>🔒</span>
-        <h3 className="text-sm font-semibold text-foreground">Camada institucional · Pro</h3>
+        <h3 className="text-sm font-semibold text-foreground">{tl("Camada institucional · Pro", "Institutional layer · Pro")}</h3>
       </div>
       <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Liquidez &amp; Direção (DeFi)</strong> — stablecoins (dry powder), volume DEX e fees</span></li>
-        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Posicionamento institucional</strong> — CME/CFTC (asset managers × hedge funds)</span></li>
-        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">Matriz completa de correlações</strong> — S&amp;P 500, Ouro, Treasury 10a e mais</span></li>
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">{tl("Liquidez & Direção (DeFi)", "Liquidity & Direction (DeFi)")}</strong>{tl(" — stablecoins (dry powder), volume DEX e fees", " — stablecoins (dry powder), DEX volume, and fees")}</span></li>
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">{tl("Posicionamento institucional", "Institutional positioning")}</strong>{tl(" — CME/CFTC (asset managers × hedge funds)", " — CME/CFTC (asset managers vs. hedge funds)")}</span></li>
+        <li className="flex gap-2"><span className="text-primary">›</span><span><strong className="text-foreground">{tl("Matriz completa de correlações", "Full correlation matrix")}</strong>{tl(" — S&P 500, Ouro, Treasury 10a e mais", " — S&P 500, Gold, 10Y Treasury, and more")}</span></li>
       </ul>
       <Link
         to="/pricing"
         className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
       >
-        Desbloquear no Pro →
+        {tl("Desbloquear no Pro →", "Unlock with Pro →")}
       </Link>
     </div>
   );
@@ -194,6 +217,8 @@ function MacroUpgradeCard() {
 /** Aba "Macro & Correlações" (PRD §8.7 / §8.8.3). Versão leve liberada no Free
  *  (síntese + 3 correlações-chave + calendário); camada institucional só no Pro. */
 export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }) {
+  const { isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
   const [macro, setMacro] = useState<MacroAssetRow[]>([]);
   const [corr, setCorr] = useState<Record<string, CorrVal>>({});
   const [events, setEvents] = useState<EconEvent[] | null>(null);
@@ -293,7 +318,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
   if (!macro.length) {
     return (
       <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
-        Dados macro indisponíveis — aguardando coleta (a cada 30 min).
+        {tt("Dados macro indisponíveis — aguardando coleta (a cada 30 min).", "Macro data unavailable — waiting for collection (every 30 min).")}
       </div>
     );
   }
@@ -312,7 +337,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
 
   return (
     <section className="space-y-4">
-      <h2 className="text-sm font-semibold text-foreground">Macro & Correlações · {asset}</h2>
+      <h2 className="text-sm font-semibold text-foreground">{tt("Macro & Correlações", "Macro & Correlations")} · {asset}</h2>
 
       {synthesis && (
         <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm text-foreground">
@@ -337,10 +362,10 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
         {showBtc && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-baseline justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">₿ Bitcoin <InfoTip text={MACRO_HELP.BTC} /></span>
-              <span className="text-xs text-amber-500/80">referência cripto</span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">₿ Bitcoin <InfoTip text={macroHelp("BTC")} /></span>
+              <span className="text-xs text-amber-500/80">{tt("referência cripto", "crypto benchmark")}</span>
             </div>
-            <div className="mt-0.5 text-xs text-muted-foreground">o maior motor das altcoins</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">{tt("o maior motor das altcoins", "the biggest driver of altcoins")}</div>
             <CorrGauge corr={corr["BTC"] ?? null} />
           </div>
         )}
@@ -349,7 +374,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           <div key={m.symbol} className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
             <div className="flex items-baseline justify-between">
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                {m.name} <InfoTip text={MACRO_HELP[m.symbol] ?? ""} />
+                {m.name} <InfoTip text={macroHelp(m.symbol)} />
               </span>
               <span className="num text-xs text-muted-foreground">
                 {m.price ?? "—"}
@@ -368,33 +393,31 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
 
       {/* Como ler este painel */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4 text-xs text-muted-foreground">
-        <div className="font-semibold text-foreground">Como ler este painel</div>
+        <div className="font-semibold text-foreground">{tt("Como ler este painel", "How to read this panel")}</div>
         <ul className="mt-2 space-y-1.5">
           <li>
-            • <strong>Correlação</strong> vai de <span className="text-rose-600 dark:text-rose-400">−1 (anda ao contrário)</span> a{" "}
-            <span className="text-emerald-600 dark:text-emerald-400">+1 (anda junto)</span>; quanto maior o valor (em módulo), mais forte a relação.
+            • <strong>{tt("Correlação", "Correlation")}</strong> {tt("vai de", "ranges from")} <span className="text-rose-600 dark:text-rose-400">{tt("−1 (anda ao contrário)", "−1 (moves opposite)")}</span> {tt("a", "to")}{" "}
+            <span className="text-emerald-600 dark:text-emerald-400">{tt("+1 (anda junto)", "+1 (moves together)")}</span>; {tt("quanto maior o valor (em módulo), mais forte a relação.", "the larger the absolute value, the stronger the relationship.")}
           </li>
           <li>
-            • Marcador <strong>cheio = 30 dias</strong> (recente); <strong>fantasma = 90 dias</strong>. Se o de 30d está mais à
-            direita que o de 90d, a relação está <strong>fortalecendo</strong>.
+            • {tt("Marcador", "Marker")} <strong>{tt("cheio = 30 dias", "filled = 30 days")}</strong> ({tt("recente", "recent")}); <strong>{tt("fantasma = 90 dias", "ghost = 90 days")}</strong>. {tt("Se o de 30d está mais à direita que o de 90d, a relação está ", "If the 30d marker is further right than the 90d one, the relationship is ")}<strong>{tt("fortalecendo", "strengthening")}</strong>.
           </li>
           <li>
-            • <strong>Vento macro:</strong> seguir Nasdaq/S&P = <span className="text-emerald-600 dark:text-emerald-400">risco-on</span> · inversa ao
-            VIX = sensível ao <span className="text-rose-600 dark:text-rose-400">medo</span> · inversa ao DXY = sensível ao dólar · alts seguem o ₿ BTC.
+            • <strong>{tt("Vento macro:", "Macro wind:")}</strong> {tt("seguir Nasdaq/S&P =", "tracking Nasdaq/S&P =")} <span className="text-emerald-600 dark:text-emerald-400">risk-on</span> · {tt("inversa ao VIX = sensível ao", "inverse to VIX = sensitive to")} <span className="text-rose-600 dark:text-rose-400">{tt("medo", "fear")}</span> · {tt("inversa ao DXY = sensível ao dólar · alts seguem o ₿ BTC.", "inverse to DXY = sensitive to the dollar · alts follow ₿ BTC.")}
           </li>
-          <li>• Passe o mouse no <span className="cursor-help text-foreground">ⓘ</span> de cada card para entender o que ele significa.</li>
+          <li>• {tt("Passe o mouse no", "Hover the")} <span className="cursor-help text-foreground">ⓘ</span> {tt("de cada card para entender o que ele significa.", "on each card to learn what it means.")}</li>
         </ul>
       </div>
 
       {/* Calendário econômico */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Calendário econômico (global)</h3>
-          <span className="text-[11px] text-muted-foreground">eventos que mexem com o macro</span>
+          <h3 className="text-sm font-semibold text-foreground">{tt("Calendário econômico (global)", "Economic calendar (global)")}</h3>
+          <span className="text-[11px] text-muted-foreground">{tt("eventos que mexem com o macro", "events that move the macro")}</span>
         </div>
-        {events == null && <p className="mt-3 text-xs text-muted-foreground">Carregando…</p>}
+        {events == null && <p className="mt-3 text-xs text-muted-foreground">{tt("Carregando…", "Loading…")}</p>}
         {events && events.length === 0 && (
-          <p className="mt-3 text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias.</p>
+          <p className="mt-3 text-xs text-muted-foreground">{tt("Sem eventos de alto/médio impacto nos próximos dias.", "No high/medium-impact events in the coming days.")}</p>
         )}
         <div className="mt-3 space-y-2">
           {events?.map((e, i) => {
@@ -406,7 +429,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
                   <Stars impact={e.impact} />
                   <span className="truncate text-foreground">{e.title}</span>
                   {cd && (
-                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" || cd === "today" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
                       {cd}
                     </span>
                   )}
@@ -414,7 +437,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
                 <span className="flex shrink-0 items-center gap-3 text-muted-foreground">
                   {(e.forecast || e.previous) && (
                     <span className="num hidden md:inline">
-                      ant. {e.previous ?? "—"} · est. {e.forecast ?? "—"}
+                      {tt("ant.", "prev.")} {e.previous ?? "—"} · {tt("est.", "fcst.")} {e.forecast ?? "—"}
                     </span>
                   )}
                   <span className="num whitespace-nowrap text-muted-foreground">{fmtEvtDate(e.date)}</span>
@@ -424,13 +447,15 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           })}
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground">
-          Fonte: ForexFactory · EUA (alto/médio) + Japão, Euro e China (alto). ★★★ alto · ★★ médio.
+          {tt("Fonte: ForexFactory · EUA (alto/médio) + Japão, Euro e China (alto). ★★★ alto · ★★ médio.", "Source: ForexFactory · US (high/medium) + Japan, Euro, and China (high). ★★★ high · ★★ medium.")}
         </p>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Correlação de Pearson dos retornos diários entre {asset} e cada referência (marcador cheio = 30d, fantasma = 90d).
-        Cotações via Yahoo Finance.
+        {tt(
+          `Correlação de Pearson dos retornos diários entre ${asset} e cada referência (marcador cheio = 30d, fantasma = 90d). Cotações via Yahoo Finance.`,
+          `Pearson correlation of daily returns between ${asset} and each benchmark (filled marker = 30d, ghost = 90d). Quotes via Yahoo Finance.`,
+        )}
       </p>
     </section>
   );
