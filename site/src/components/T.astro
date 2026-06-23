@@ -1,0 +1,23 @@
+---
+// Texto bilíngue inline: renderiza PT e EN; a classe em <html data-lang> mostra um
+// e esconde o outro (ver styles/i18n.css). `html` permite marcação dentro do texto.
+interface Props {
+  pt: string;
+  en: string;
+  html?: boolean;
+}
+const { pt, en, html = false } = Astro.props;
+---
+{
+  html ? (
+    <Fragment>
+      <span class="i18n-pt" set:html={pt} />
+      <span class="i18n-en" set:html={en} />
+    </Fragment>
+  ) : (
+    <Fragment>
+      <span class="i18n-pt">{pt}</span>
+      <span class="i18n-en">{en}</span>
+    </Fragment>
+  )
+}

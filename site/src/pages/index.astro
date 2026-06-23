@@ -3,24 +3,26 @@ import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
 import NewsletterForm from "../components/NewsletterForm.astro";
+import T from "../components/T.astro";
 import { SIGNUP_URL, PRICING, MARKETS } from "../consts";
+import { PRICING_EN, MARKETS_EN } from "../consts.en";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const FEATURES = [
-  { icon: "🧭", tier: "Expert", title: "Leitura do Mercado", desc: "Tendência, fluxo institucional, posicionamento e liquidez sintetizados num só viés — com convicção, divergências e alvos. A leitura do agora, exclusiva do Expert." },
-  { icon: "📊", tier: "Pro", title: "Módulo Gamma", desc: "Regime de gamma, Zero Gamma, Max Pain e Call/Put Wall — os níveis institucionais, estilo SpotGamma." },
-  { icon: "🌊", tier: "Pro", title: "Fluxo e alavancagem", desc: "O lado do varejo especulativo: funding, CVD, long/short, liquidações e risco de squeeze — onde o dinheiro alavancado se acumula e quando ele vira combustível de movimento." },
-  { icon: "🌐", tier: "Pro", title: "Macro & Correlações", desc: "Correlação com DXY, Nasdaq, ouro e VIX, liquidez DeFi e calendário econômico global." },
-  { icon: "🏦", tier: "Expert", title: "Institucional × varejo", desc: "O outro lado da mesa: o capital que compra à vista — spot, ETFs e hedge de opções — contra o varejo alavancado, mais a liquidez parada no book. Cruzar os dois lados é a leitura mais forte." },
-  { icon: "🧠", tier: "Expert", title: "Smart Money & On-chain", desc: "Estrutura SMC, order blocks, liquidez, unlocks e atividade de rede — em qualquer moeda." },
-  { icon: "✨", tier: "Todos", title: "IA + Alertas", desc: "A IA costura tudo numa narrativa em português. Alertas de preço, funding e gamma: in-app, push e e-mail (Expert)." },
+  { icon: "🧭", tier: "Expert", tierEn: "Expert", title: { pt: "Leitura do Mercado", en: "Market Read" }, desc: { pt: "Tendência, fluxo institucional, posicionamento e liquidez sintetizados num só viés — com convicção, divergências e alvos. A leitura do agora, exclusiva do Expert.", en: "Trend, institutional flow, positioning, and liquidity distilled into a single bias — with conviction, divergences, and targets. A read on the now, exclusive to Expert." } },
+  { icon: "📊", tier: "Pro", tierEn: "Pro", title: { pt: "Módulo Gamma", en: "Gamma module" }, desc: { pt: "Regime de gamma, Zero Gamma, Max Pain e Call/Put Wall — os níveis institucionais, estilo SpotGamma.", en: "Gamma regime, Zero Gamma, Max Pain, and Call/Put Wall — the institutional levels, SpotGamma-style." } },
+  { icon: "🌊", tier: "Pro", tierEn: "Pro", title: { pt: "Fluxo e alavancagem", en: "Flow and leverage" }, desc: { pt: "O lado do varejo especulativo: funding, CVD, long/short, liquidações e risco de squeeze — onde o dinheiro alavancado se acumula e quando ele vira combustível de movimento.", en: "The speculative retail side: funding, CVD, long/short, liquidations, and squeeze risk — where leveraged money piles up and when it becomes fuel for the next move." } },
+  { icon: "🌐", tier: "Pro", tierEn: "Pro", title: { pt: "Macro & Correlações", en: "Macro & Correlations" }, desc: { pt: "Correlação com DXY, Nasdaq, ouro e VIX, liquidez DeFi e calendário econômico global.", en: "Correlations with DXY, Nasdaq, gold, and VIX, plus DeFi liquidity and a global economic calendar." } },
+  { icon: "🏦", tier: "Expert", tierEn: "Expert", title: { pt: "Institucional × varejo", en: "Institutional vs. retail" }, desc: { pt: "O outro lado da mesa: o capital que compra à vista — spot, ETFs e hedge de opções — contra o varejo alavancado, mais a liquidez parada no book. Cruzar os dois lados é a leitura mais forte.", en: "The other side of the desk: capital buying spot — spot markets, ETFs, and options hedging — against leveraged retail, plus the liquidity resting in the order book. Cross-referencing both sides is the strongest read of all." } },
+  { icon: "🧠", tier: "Expert", tierEn: "Expert", title: { pt: "Smart Money & On-chain", en: "Smart Money & On-chain" }, desc: { pt: "Estrutura SMC, order blocks, liquidez, unlocks e atividade de rede — em qualquer moeda.", en: "SMC structure, order blocks, liquidity, unlocks, and network activity — on any coin." } },
+  { icon: "✨", tier: "Todos", tierEn: "All plans", title: { pt: "IA + Alertas", en: "AI + Alerts" }, desc: { pt: "A IA costura tudo numa narrativa em português. Alertas de preço, funding e gamma: in-app, push e e-mail (Expert).", en: "AI stitches it all into a plain-language narrative. Price, funding, and gamma alerts: in-app, push, and email (Expert)." } },
 ];
 
 const STEPS = [
-  { n: "1", title: "Crie sua conta grátis", desc: "Comece pelo cockpit do BTC e pela newsletter semanal, sem cartão." },
-  { n: "2", title: "Leia o mercado com clareza", desc: "Gamma, fluxo e liquidez traduzidos em semáforo — sem precisar ser quant." },
-  { n: "3", title: "Suba quando quiser mais", desc: "Pro abre 20 ativos, gamma, macro e alertas. Expert adiciona a camada institucional, o fluxo avançado e o Smart Money." },
+  { n: "1", title: { pt: "Crie sua conta grátis", en: "Create your free account" }, desc: { pt: "Comece pelo cockpit do BTC e pela newsletter semanal, sem cartão.", en: "Start with the BTC cockpit and the weekly newsletter — no card required." } },
+  { n: "2", title: { pt: "Leia o mercado com clareza", en: "Read the market clearly" }, desc: { pt: "Gamma, fluxo e liquidez traduzidos em semáforo — sem precisar ser quant.", en: "Gamma, flow, and liquidity turned into a simple signal — no quant background needed." } },
+  { n: "3", title: { pt: "Suba quando quiser mais", en: "Upgrade whenever you want more" }, desc: { pt: "Pro abre 20 ativos, gamma, macro e alertas. Expert adiciona a camada institucional, o fluxo avançado e o Smart Money.", en: "Pro unlocks 20 assets, gamma, macro, and alerts. Expert adds the institutional layer, advanced flow, and Smart Money." } },
 ];
 
 // Cor do selo de plano em cada recurso (qual plano libera).
@@ -59,24 +61,30 @@ const CANDLES = [
     <div class="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 lg:grid-cols-2 lg:py-28">
       <div>
         <span class="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs text-muted">
-          <span class="h-1.5 w-1.5 rounded-full bg-up"></span> Dados institucionais, leitura simples
+          <span class="h-1.5 w-1.5 rounded-full bg-up"></span> <T pt="Dados institucionais, leitura simples" en="Institutional data, simple to read" />
         </span>
         <h1 class="mt-5 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-          O cockpit institucional<br /> dos <span class="text-primary">mercados</span>.
+          <T
+            html
+            pt={'O cockpit institucional<br /> dos <span class="text-primary">mercados</span>.'}
+            en={'The institutional cockpit for the <span class="text-primary">markets</span>.'}
+          />
         </h1>
         <p class="mt-5 max-w-md text-lg text-muted">
-          OrbeView traduz gamma, smart money e fluxo de capital em uma leitura clara — para você
-          decidir com a visão de quem move o mercado. Cripto agora; ações (B3) e câmbio chegando.
+          <T
+            pt="OrbeView traduz gamma, smart money e fluxo de capital em uma leitura clara — para você decidir com a visão de quem move o mercado. Cripto agora; ações (B3) e câmbio chegando."
+            en="OrbeView turns gamma, smart money, and capital flow into a clear read — so you can decide with the perspective of those who move the market. Crypto now; stocks (B3) and forex on the way."
+          />
         </p>
         <div class="mt-8 flex flex-wrap items-center gap-3">
           <a href={SIGNUP_URL} class="btn-glow rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary">
-            Criar conta grátis
+            <T pt="Criar conta grátis" en="Create free account" />
           </a>
           <a href="/precos" class="btn-glow rounded-lg border border-line px-5 py-3 text-sm font-semibold text-fg hover:bg-card">
-            Ver planos
+            <T pt="Ver planos" en="See plans" />
           </a>
         </div>
-        <p class="mt-3 text-xs text-muted">Grátis para sempre no plano Free · sem cartão</p>
+        <p class="mt-3 text-xs text-muted"><T pt="Grátis para sempre no plano Free · sem cartão" en="Free forever on the Free plan · no card" /></p>
       </div>
 
       <!-- Mock do cockpit (SVG) -->
@@ -109,7 +117,7 @@ const CANDLES = [
           </svg>
           <div class="mt-3 flex flex-wrap gap-1.5">
             <span class="rounded-full border border-up/30 bg-up/10 px-2 py-0.5 text-[10px] text-up">Call Wall 80k</span>
-            <span class="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] text-primary">Zero Gamma 65,4k</span>
+            <span class="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] text-primary">Zero Gamma <T pt="65,4k" en="65.4k" /></span>
             <span class="rounded-full border border-down/30 bg-down/10 px-2 py-0.5 text-[10px] text-down">Put Wall 60k</span>
           </div>
         </div>
@@ -121,7 +129,7 @@ const CANDLES = [
   <!-- Mercados — switcher interativo (Crypto no ar; B3/Forex em breve) -->
   <section id="mercados" class="border-y border-line/70 bg-surface/30">
     <div class="mx-auto max-w-6xl px-4 py-12">
-      <p class="text-center text-sm text-muted">Um cockpit, vários mercados — clique para conhecer cada um</p>
+      <p class="text-center text-sm text-muted"><T pt="Um cockpit, vários mercados — clique para conhecer cada um" en="One cockpit, many markets — click to explore each one" /></p>
 
       <!-- Abas -->
       <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5">
@@ -135,8 +143,8 @@ const CANDLES = [
             ]}
           >
             <span aria-hidden>{m.icon}</span>
-            <span class="font-medium">{m.label}</span>
-            <span class="text-[9px] uppercase tracking-wider text-muted">{m.note}</span>
+            <span class="font-medium"><T pt={m.label} en={MARKETS_EN[i].label} /></span>
+            <span class="text-[9px] uppercase tracking-wider text-muted"><T pt={m.note} en={MARKETS_EN[i].note} /></span>
           </button>
         ))}
       </div>
@@ -149,8 +157,8 @@ const CANDLES = [
               <div class="flex items-center gap-3">
                 <span class="text-2xl" aria-hidden>{m.icon}</span>
                 <div>
-                  <h3 class="text-lg font-bold">{m.label}</h3>
-                  <p class="text-sm text-muted">{m.tagline}</p>
+                  <h3 class="text-lg font-bold"><T pt={m.label} en={MARKETS_EN[i].label} /></h3>
+                  <p class="text-sm text-muted"><T pt={m.tagline} en={MARKETS_EN[i].tagline} /></p>
                 </div>
                 <span
                   class:list={[
@@ -158,19 +166,19 @@ const CANDLES = [
                     m.live ? "border-line text-up" : "border-line text-primary",
                   ]}
                 >
-                  {m.live ? "No ar" : "Em breve"}
+                  {m.live ? <T pt="No ar" en="Live" /> : <T pt="Em breve" en="Coming soon" />}
                 </span>
               </div>
               <ul class="mt-5 grid gap-2.5 sm:grid-cols-2">
-                {m.points.map((p) => (
-                  <li class="flex gap-2 text-sm text-muted"><span class="mt-0.5 text-primary">▹</span><span>{p}</span></li>
+                {m.points.map((p, j) => (
+                  <li class="flex gap-2 text-sm text-muted"><span class="mt-0.5 text-primary">▹</span><span><T pt={p} en={MARKETS_EN[i].points[j]} /></span></li>
                 ))}
               </ul>
               <div class="mt-6">
                 {m.live ? (
-                  <a href={SIGNUP_URL} class="btn-glow inline-block rounded-lg bg-primary-strong px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary">Abrir o cockpit grátis</a>
+                  <a href={SIGNUP_URL} class="btn-glow inline-block rounded-lg bg-primary-strong px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary"><T pt="Abrir o cockpit grátis" en="Open the cockpit for free" /></a>
                 ) : (
-                  <a href="#newsletter" class="inline-flex items-center gap-2 rounded-lg border border-line px-5 py-2.5 text-sm font-semibold text-fg hover:bg-surface">Quero ser avisado no lançamento →</a>
+                  <a href="#newsletter" class="inline-flex items-center gap-2 rounded-lg border border-line px-5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"><T pt="Quero ser avisado no lançamento →" en="Notify me at launch →" /></a>
                 )}
               </div>
             </div>
@@ -183,18 +191,18 @@ const CANDLES = [
   <!-- Recursos -->
   <section id="recursos" class="mx-auto max-w-6xl px-4 py-20">
     <div class="mx-auto max-w-2xl text-center">
-      <h2 class="text-3xl font-bold tracking-tight">As ferramentas que faltavam pro varejo</h2>
-      <p class="mt-3 text-muted">O que antes só mesa institucional via — agora num semáforo que qualquer trader entende. O selo em cada recurso mostra o plano que o libera.</p>
+      <h2 class="text-3xl font-bold tracking-tight"><T pt="As ferramentas que faltavam pro varejo" en="The tools retail was missing" /></h2>
+      <p class="mt-3 text-muted"><T pt="O que antes só mesa institucional via — agora num semáforo que qualquer trader entende. O selo em cada recurso mostra o plano que o libera." en="What only the institutional desk used to see — now in a simple read any trader can follow. The badge on each feature shows the plan that unlocks it." /></p>
     </div>
     <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {FEATURES.map((f) => (
         <div class="card-lift rounded-2xl border border-line bg-card p-6">
           <div class="flex items-start justify-between gap-3">
             <div class="icon-pop text-2xl" aria-hidden>{f.icon}</div>
-            <span class={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tierBadge(f.tier)}`}>{f.tier}</span>
+            <span class={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tierBadge(f.tier)}`}><T pt={f.tier} en={f.tierEn} /></span>
           </div>
-          <h3 class="mt-3 font-semibold">{f.title}</h3>
-          <p class="mt-1.5 text-sm text-muted">{f.desc}</p>
+          <h3 class="mt-3 font-semibold"><T pt={f.title.pt} en={f.title.en} /></h3>
+          <p class="mt-1.5 text-sm text-muted"><T pt={f.desc.pt} en={f.desc.en} /></p>
         </div>
       ))}
     </div>
@@ -207,8 +215,8 @@ const CANDLES = [
         {STEPS.map((s) => (
           <div class="step">
             <div class="step-num grid h-9 w-9 place-items-center rounded-full bg-primary-strong text-sm font-bold text-white">{s.n}</div>
-            <h3 class="mt-4 text-lg font-semibold">{s.title}</h3>
-            <p class="mt-1.5 text-sm text-muted">{s.desc}</p>
+            <h3 class="mt-4 text-lg font-semibold"><T pt={s.title.pt} en={s.title.en} /></h3>
+            <p class="mt-1.5 text-sm text-muted"><T pt={s.desc.pt} en={s.desc.en} /></p>
           </div>
         ))}
       </div>
@@ -218,43 +226,47 @@ const CANDLES = [
   <!-- Preços (teaser) -->
   <section id="precos" class="mx-auto max-w-6xl px-4 py-20">
     <div class="mx-auto max-w-2xl text-center">
-      <h2 class="text-3xl font-bold tracking-tight">Planos</h2>
-      <p class="mt-3 text-muted">Comece grátis. Suba quando quiser o cockpit completo. Anual com 30% OFF de lançamento.</p>
+      <h2 class="text-3xl font-bold tracking-tight"><T pt="Planos" en="Plans" /></h2>
+      <p class="mt-3 text-muted"><T pt="Comece grátis. Suba quando quiser o cockpit completo. Anual com 30% OFF de lançamento." en="Start free. Upgrade whenever you want the complete cockpit. Annual plans launch at 30% off." /></p>
     </div>
     <div class="mt-12 grid gap-5 lg:grid-cols-3">
-      {PRICING.plans.map((p) => (
+      {PRICING.plans.map((p, i) => (
         <div class={`card-lift rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
-          {p.highlight && <span class="mb-3 inline-block rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary">Mais popular</span>}
+          {p.highlight && <span class="mb-3 inline-block rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary"><T pt="Mais popular" en="Most popular" /></span>}
           <h3 class="text-lg font-bold">{p.name}</h3>
-          <p class="mt-1 text-sm text-muted">{p.tagline}</p>
+          <p class="mt-1 text-sm text-muted"><T pt={p.tagline} en={PRICING_EN.plans[i].tagline} /></p>
           <div class="mt-4 flex items-baseline gap-1">
-            <span class="num text-3xl font-extrabold">{p.monthly === 0 ? "Grátis" : brl(p.monthly)}</span>
-            {p.monthly > 0 && <span class="text-sm text-muted">/mês</span>}
+            <span class="num text-3xl font-extrabold">
+              {p.monthly === 0 ? <T pt="Grátis" en="Free" /> : <T pt={brl(p.monthly)} en={`$${PRICING_EN.plans[i].usd}`} />}
+            </span>
+            {p.monthly > 0 && <span class="text-sm text-muted"><T pt="/mês" en="/mo" /></span>}
           </div>
           <ul class="mt-5 space-y-2 text-sm">
-            {p.features.map((f) => (
-              <li class="flex gap-2 text-muted"><span class="text-up">✓</span><span>{f}</span></li>
+            {p.features.map((f, j) => (
+              <li class="flex gap-2 text-muted"><span class="text-up">✓</span><span><T pt={f} en={PRICING_EN.plans[i].features[j]} /></span></li>
             ))}
           </ul>
           <a
             href={p.slug === "free" ? SIGNUP_URL : `${SIGNUP_URL}?plan=${p.slug}`}
             class={`mt-6 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${p.highlight ? "bg-primary-strong text-white hover:bg-primary" : "border border-line text-fg hover:bg-surface"}`}
           >
-            {p.cta}
+            <T pt={p.cta} en={PRICING_EN.plans[i].cta} />
           </a>
         </div>
       ))}
     </div>
-    <p class="mt-6 text-center text-sm"><a href="/precos" class="text-primary hover:underline">Comparar planos em detalhe →</a></p>
+    <p class="mt-6 text-center text-sm"><a href="/precos" class="text-primary hover:underline"><T pt="Comparar planos em detalhe →" en="Compare plans in detail →" /></a></p>
   </section>
 
   <!-- Newsletter -->
   <section id="newsletter" class="border-y border-line/70 bg-surface/30">
     <div class="mx-auto max-w-2xl px-4 py-20 text-center">
-      <h2 class="text-3xl font-bold tracking-tight">A leitura semanal do mercado</h2>
+      <h2 class="text-3xl font-bold tracking-tight"><T pt="A leitura semanal do mercado" en="The market's weekly read" /></h2>
       <p class="mt-3 text-muted">
-        Toda semana, uma edição traduzindo o que a mesa institucional está vendo — gamma, fluxo e
-        liquidez. Grátis para quem tem conta.
+        <T
+          pt="Toda semana, uma edição traduzindo o que a mesa institucional está vendo — gamma, fluxo e liquidez. Grátis para quem tem conta."
+          en="Every week, an edition that decodes what the institutional desk is seeing — gamma, flow, and liquidity. Free with any account."
+        />
       </p>
       <div class="mt-8"><NewsletterForm /></div>
     </div>
@@ -262,10 +274,10 @@ const CANDLES = [
 
   <!-- CTA final -->
   <section class="mx-auto max-w-6xl px-4 py-24 text-center">
-    <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Veja o mercado como a mesa vê.</h2>
-    <p class="mx-auto mt-3 max-w-md text-muted">Crie sua conta grátis e abra o cockpit do BTC agora.</p>
+    <h2 class="text-3xl font-bold tracking-tight sm:text-4xl"><T pt="Veja o mercado como a mesa vê." en="See the market the way the desk does." /></h2>
+    <p class="mx-auto mt-3 max-w-md text-muted"><T pt="Crie sua conta grátis e abra o cockpit do BTC agora." en="Create your free account and open the BTC cockpit now." /></p>
     <a href={SIGNUP_URL} class="btn-glow mt-8 inline-block rounded-lg bg-primary-strong px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary">
-      Começar grátis
+      <T pt="Começar grátis" en="Start free" />
     </a>
   </section>
 

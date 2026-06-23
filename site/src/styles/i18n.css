@@ -1,0 +1,10 @@
+/* Alternância de idioma da landing: os dois idiomas vão no HTML (both-in-DOM) e a
+   classe em <html data-lang> mostra um e esconde o outro. Sem flash: o data-lang é
+   setado por um script inline no <head> antes do paint (ver Base.astro). */
+html[data-lang="en"] .i18n-pt { display: none; }
+html:not([data-lang="en"]) .i18n-en { display: none; }
+
+/* Botões de bandeira (seletor de idioma no Nav) */
+.langbtn { opacity: 0.5; transition: opacity 0.2s ease, box-shadow 0.2s ease; }
+.langbtn:hover { opacity: 0.85; }
+.langbtn.lang-on { opacity: 1; box-shadow: inset 0 0 0 1.5px rgb(99 102 241 / 0.55); }

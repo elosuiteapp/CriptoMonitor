@@ -1,6 +1,7 @@
 ---
 // Inscrição na newsletter = cria conta Free via magic-link (Supabase OTP) + registra
 // o assinante. 100% client-side com a anon key. Sem servidor.
+import T from "./T.astro";
 ---
 
 <form id="nl-form" class="mx-auto flex max-w-md flex-col gap-3 sm:flex-row">
@@ -18,10 +19,10 @@
     type="submit"
     class="shrink-0 rounded-lg bg-primary-strong px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary disabled:opacity-60"
   >
-    Quero receber
+    <T pt="Quero receber" en="Subscribe" />
   </button>
 </form>
-<p id="nl-msg" class="mt-3 text-xs text-muted">Sem spam. Cancele quando quiser.</p>
+<p id="nl-msg" class="mt-3 text-xs text-muted"><T pt="Sem spam. Cancele quando quiser." en="No spam. Unsubscribe anytime." /></p>
 
 <script>
   import { supabase } from "../lib/supabase";
@@ -32,17 +33,35 @@
   const btn = document.getElementById("nl-btn") as HTMLButtonElement | null;
   const msg = document.getElementById("nl-msg");
 
+  const MSG = {
+    pt: {
+      unavailable: "Cadastro temporariamente indisponível. Tente em instantes.",
+      sending: "Enviando…",
+      done: "Pronto! Enviamos um link pro seu e-mail — confirme para ativar sua conta grátis e receber a newsletter.",
+      fail: "Não foi possível inscrever agora. Tente novamente em instantes.",
+    },
+    en: {
+      unavailable: "Sign-up is temporarily unavailable. Please try again in a moment.",
+      sending: "Sending…",
+      done: "Done! We've emailed you a link — confirm it to activate your free account and start getting the newsletter.",
+      fail: "We couldn't subscribe you right now. Please try again in a moment.",
+    },
+  };
+  const lang = () => (document.documentElement.getAttribute("data-lang") === "en" ? "en" : "pt");
+  if (emailEl && lang() === "en") emailEl.placeholder = "you@email.com";
+
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!msg) return;
+    const m = MSG[lang()];
     const email = (emailEl?.value || "").trim().toLowerCase();
     if (!email) return;
     if (!supabase) {
-      msg.textContent = "Cadastro temporariamente indisponível. Tente em instantes.";
+      msg.textContent = m.unavailable;
       return;
     }
     if (btn) btn.disabled = true;
-    msg.textContent = "Enviando…";
+    msg.textContent = m.sending;
     try {
       await supabase
         .from("newsletter_subscribers")
@@ -52,11 +71,10 @@
         options: { shouldCreateUser: true, emailRedirectTo: APP_URL },
       });
       if (error) throw error;
-      msg.textContent =
-        "Pronto! Enviamos um link pro seu e-mail — confirme para ativar sua conta grátis e receber a newsletter.";
+      msg.textContent = m.done;
       form.reset();
     } catch (_err) {
-      msg.textContent = "Não foi possível inscrever agora. Tente novamente em instantes.";
+      msg.textContent = m.fail;
     } finally {
       if (btn) btn.disabled = false;
     }

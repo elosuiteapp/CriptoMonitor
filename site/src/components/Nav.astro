@@ -1,5 +1,12 @@
 ---
 import { SIGNUP_URL, LOGIN_URL } from "../consts";
+import T from "./T.astro";
+
+// Bandeira dos EUA (faixas + cantão) montada por loop p/ não poluir o markup.
+const SH = 20 / 13;
+const STRIPES = Array.from({ length: 13 }, (_, i) => ({ y: SH * i, red: i % 2 === 0 }));
+const STARS: { cx: number; cy: number }[] = [];
+for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) STARS.push({ cx: 1.7 + c * 2.6, cy: 1.9 + r * 2.7 });
 ---
 
 <header class="sticky top-0 z-50 border-b border-line/70 bg-base/80 backdrop-blur-md">
@@ -13,19 +20,81 @@ import { SIGNUP_URL, LOGIN_URL } from "../consts";
     </a>
 
     <div class="hidden items-center gap-7 text-sm text-muted md:flex">
-      <a href="/#recursos" class="transition-colors hover:text-fg">Recursos</a>
-      <a href="/#mercados" class="transition-colors hover:text-fg">Mercados</a>
-      <a href="/precos" class="transition-colors hover:text-fg">Preços</a>
+      <a href="/#recursos" class="transition-colors hover:text-fg"><T pt="Recursos" en="Features" /></a>
+      <a href="/#mercados" class="transition-colors hover:text-fg"><T pt="Mercados" en="Markets" /></a>
+      <a href="/precos" class="transition-colors hover:text-fg"><T pt="Preços" en="Pricing" /></a>
       <a href="/newsletter" class="transition-colors hover:text-fg">Newsletter</a>
     </div>
 
     <div class="flex items-center gap-3">
-      <a href={LOGIN_URL} class="hidden text-sm text-muted transition-colors hover:text-fg sm:block">Entrar</a>
+      <!-- Seletor de idioma (bandeiras) -->
+      <div class="flex items-center gap-0.5 rounded-full border border-line bg-card p-0.5">
+        <button type="button" data-lang-btn="en" class="langbtn flex items-center rounded-full p-1" title="English · billed in US$" aria-label="English">
+          <span class="block h-3.5 w-5 overflow-hidden rounded-[3px] shadow-sm ring-1 ring-black/10">
+            <svg viewBox="0 0 28 20" preserveAspectRatio="xMidYMid slice" class="h-full w-full" aria-hidden="true">
+              {STRIPES.map((s) => <rect y={s.y} width="28" height={SH} fill={s.red ? "#B22234" : "#fff"} />)}
+              <rect width="12" height={SH * 7} fill="#3C3B6E" />
+              {STARS.map((st) => <circle cx={st.cx} cy={st.cy} r="0.62" fill="#fff" />)}
+            </svg>
+          </span>
+        </button>
+        <button type="button" data-lang-btn="pt" class="langbtn flex items-center rounded-full p-1" title="Português · cobrança em R$" aria-label="Português">
+          <span class="block h-3.5 w-5 overflow-hidden rounded-[3px] shadow-sm ring-1 ring-black/10">
+            <svg viewBox="0 0 28 20" preserveAspectRatio="xMidYMid slice" class="h-full w-full" aria-hidden="true">
+              <rect width="28" height="20" fill="#1F8A3B" />
+              <path d="M14 2.4 L25.6 10 L14 17.6 L2.4 10 Z" fill="#FCD116" />
+              <circle cx="14" cy="10" r="3.8" fill="#0A2C8B" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      <a href={LOGIN_URL} class="hidden text-sm text-muted transition-colors hover:text-fg sm:block"><T pt="Entrar" en="Log in" /></a>
       <a
         href={SIGNUP_URL}
         class="rounded-lg bg-primary-strong px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary"
-        >Criar conta grátis</a
+        ><T pt="Criar conta grátis" en="Create free account" /></a
       >
     </div>
   </nav>
 </header>
+
+<script>
+  // Seletor de idioma: alterna PT/EN (classe em <html data-lang>), grava o cookie
+  // .orbeview.com (compartilhado com o app) e propaga ?lang nos links do app.
+  function setCookie(lang: string) {
+    const dom = location.hostname.indexOf("orbeview.com") >= 0 ? "; Domain=.orbeview.com" : "";
+    const sec = location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = "ov_lang=" + lang + "; Path=/; Max-Age=31536000; SameSite=Lax" + dom + sec;
+  }
+  function syncBtns(lang: string) {
+    document.querySelectorAll<HTMLElement>("[data-lang-btn]").forEach((b) => {
+      b.classList.toggle("lang-on", b.dataset.langBtn === lang);
+    });
+  }
+  function propagate(lang: string) {
+    document.querySelectorAll<HTMLAnchorElement>('a[href*="app.orbeview.com"]').forEach((a) => {
+      try {
+        const u = new URL(a.href);
+        u.searchParams.set("lang", lang);
+        a.href = u.toString();
+      } catch (e) {
+        /* ignore */
+      }
+    });
+  }
+  function apply(lang: string) {
+    const d = document.documentElement;
+    d.setAttribute("data-lang", lang);
+    d.setAttribute("lang", lang === "en" ? "en" : "pt-BR");
+    setCookie(lang);
+    syncBtns(lang);
+    propagate(lang);
+  }
+  const cur = document.documentElement.getAttribute("data-lang") || "pt";
+  syncBtns(cur);
+  propagate(cur);
+  document.querySelectorAll<HTMLElement>("[data-lang-btn]").forEach((b) => {
+    b.addEventListener("click", () => apply(b.dataset.langBtn || "pt"));
+  });
+</script>

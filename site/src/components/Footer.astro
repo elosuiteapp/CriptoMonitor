@@ -1,5 +1,6 @@
 ---
 import { SIGNUP_URL } from "../consts";
+import T from "./T.astro";
 const year = 2026;
 ---
 
@@ -15,32 +16,34 @@ const year = 2026;
           <span class="text-lg font-bold tracking-tight">OrbeView</span>
         </div>
         <p class="mt-3 text-sm text-muted">
-          O cockpit institucional dos mercados — cripto, ações (B3) e câmbio. Dados complexos
-          traduzidos em leitura clara.
+          <T
+            pt="O cockpit institucional dos mercados — cripto, ações (B3) e câmbio. Dados complexos traduzidos em leitura clara."
+            en="The institutional cockpit for the markets — crypto, stocks (B3), and forex. Complex data turned into a clear read."
+          />
         </p>
       </div>
 
       <div class="grid grid-cols-2 gap-8 text-sm sm:grid-cols-3">
         <div>
-          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Produto</div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted"><T pt="Produto" en="Product" /></div>
           <ul class="space-y-2 text-muted">
-            <li><a href="/#recursos" class="transition-colors hover:text-fg">Recursos</a></li>
-            <li><a href="/precos" class="transition-colors hover:text-fg">Preços</a></li>
+            <li><a href="/#recursos" class="transition-colors hover:text-fg"><T pt="Recursos" en="Features" /></a></li>
+            <li><a href="/precos" class="transition-colors hover:text-fg"><T pt="Preços" en="Pricing" /></a></li>
             <li><a href="/newsletter" class="transition-colors hover:text-fg">Newsletter</a></li>
           </ul>
         </div>
         <div>
-          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Conta</div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted"><T pt="Conta" en="Account" /></div>
           <ul class="space-y-2 text-muted">
-            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg">Criar conta</a></li>
-            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg">Entrar</a></li>
+            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg"><T pt="Criar conta" en="Create account" /></a></li>
+            <li><a href={SIGNUP_URL} class="transition-colors hover:text-fg"><T pt="Entrar" en="Log in" /></a></li>
           </ul>
         </div>
         <div>
           <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Legal</div>
           <ul class="space-y-2 text-muted">
-            <li><a href="/termos" class="transition-colors hover:text-fg">Termos</a></li>
-            <li><a href="/privacidade" class="transition-colors hover:text-fg">Privacidade</a></li>
+            <li><a href="/termos" class="transition-colors hover:text-fg"><T pt="Termos" en="Terms" /></a></li>
+            <li><a href="/privacidade" class="transition-colors hover:text-fg"><T pt="Privacidade" en="Privacy" /></a></li>
           </ul>
         </div>
       </div>
@@ -48,11 +51,13 @@ const year = 2026;
 
     <div class="mt-10 border-t border-line/70 pt-6 text-xs text-muted">
       <p>
-        As informações e leituras do OrbeView têm caráter <strong class="text-fg/80">informativo e
-        educacional</strong>. Não constituem recomendação de compra ou venda, nem aconselhamento
-        financeiro ou de investimento. Quem decide é sempre você.
+        <T
+          html
+          pt='As informações e leituras do OrbeView têm caráter <strong class="text-fg/80">informativo e educacional</strong>. Não constituem recomendação de compra ou venda, nem aconselhamento financeiro ou de investimento. Quem decide é sempre você.'
+          en='OrbeView&apos;s information and reads are provided for <strong class="text-fg/80">informational and educational purposes</strong> only. They are not buy or sell recommendations, nor financial or investment advice. The decision is always yours.'
+        />
       </p>
-      <p class="mt-3">© {year} OrbeView. Todos os direitos reservados.</p>
+      <p class="mt-3">© {year} OrbeView. <T pt="Todos os direitos reservados." en="All rights reserved." /></p>
     </div>
   </div>
 </footer>
