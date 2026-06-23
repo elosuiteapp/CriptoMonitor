@@ -82,6 +82,12 @@ export function setLocale(next: Locale) {
   emit();
 }
 
+/** Idioma atual fora de componente React (ex.: helpers puros em format.ts). Os
+ *  componentes que renderizam o resultado já reagem via useLocale/useT/useGlossary. */
+export function getLocale(): Locale {
+  return current;
+}
+
 if (typeof window !== "undefined") {
   // Persiste o idioma detectado já na 1ª carga (cookie + LS + <html lang>), p/ que
   // app, abas e o handoff da landing fiquem coerentes a partir daí.
