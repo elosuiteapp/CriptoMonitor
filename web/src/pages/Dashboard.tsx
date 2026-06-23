@@ -63,7 +63,7 @@ import {
   type Reading,
 } from "../lib/format";
 import type { ChartType, Timeframe } from "../lib/marketData";
-import { GLOSSARY } from "../lib/glossary";
+import { useGlossary } from "../lib/glossary";
 import { cockpitSynthesis } from "../lib/cockpitSynthesis";
 import { layerAccess, LAYER_KEYS } from "../lib/layers";
 import { useT } from "../lib/i18n";
@@ -73,6 +73,7 @@ const VOL_ASSETS = ["BTC", "ETH", "SOL"]; // Volatility: BTC/ETH (Deribit, c/ DV
 
 export default function Dashboard() {
   const { t: tr } = useT();
+  const GLOSSARY = useGlossary();
   const { user, signOut } = useAuth();
   const { plan, loading: planLoading } = usePlan(user?.id);
   const { isAdmin, loading: adminLoading } = useIsAdmin(user?.id);
