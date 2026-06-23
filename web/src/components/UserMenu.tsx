@@ -16,7 +16,7 @@ const WELCOME_KEY = "ov.welcome-seen";
 
 /** Chip de perfil no header: avatar + nome, com dropdown (gerenciar plano / editar
  *  perfil / sair). Tudo abre o painel "Sua conta" (AccountDrawer). No 1º acesso de
- *  quem está no Free, abre o painel automaticamente (boas-vindas), uma única vez. */
+ *  quem está no Free, abre o painel de boas-vindas após ~60s de uso, uma única vez. */
 export default function UserMenu({ user, planName, onSignOut }: Props) {
   const { loading, avatarUrl, email, displayName, complete } = useProfile(user);
   const [open, setOpen] = useState(false);
@@ -41,16 +41,25 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
       setAccount({ welcome: false, intent: pending });
       return;
     }
-    // Senão: boas-vindas no 1º acesso de quem está no Free (uma vez).
+    // Senão: boas-vindas no 1º acesso de quem está no Free — mas só depois de ~60s
+    // de uso (não na cara: deixa o usuário explorar o cockpit primeiro). Mostra uma
+    // única vez; marca como visto só quando de fato aparece.
     if (planName !== "Free") return;
     try {
-      if (!localStorage.getItem(WELCOME_KEY)) {
-        localStorage.setItem(WELCOME_KEY, "1");
-        setAccount({ welcome: true });
-      }
+      if (localStorage.getItem(WELCOME_KEY)) return;
     } catch {
       /* localStorage indisponível */
     }
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(WELCOME_KEY, "1");
+      } catch {
+        /* localStorage indisponível */
+      }
+      // não sobrepõe um painel que o usuário já tenha aberto manualmente nesse meio-tempo
+      setAccount((prev) => prev ?? { welcome: true });
+    }, 60000);
+    return () => clearTimeout(id);
   }, [planName]);
 
   const firstName = displayName.split(/\s+/)[0];
