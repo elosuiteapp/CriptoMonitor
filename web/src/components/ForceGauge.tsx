@@ -1,4 +1,5 @@
 import { LEVEL_TEXT } from "../lib/format";
+import { useT } from "../lib/i18n";
 import type { Level } from "../lib/types";
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
  *  vermelho→neutro→verde e marcador em TRAÇO VERTICAL milimétrico (não bolinha).
  *  Mesmo visual do medidor de correlação do Macro. */
 export default function ForceGauge({ pos, value, level, left, right, label }: Props) {
+  const { t } = useT();
   const p = pos == null ? 0.5 : Math.max(0, Math.min(1, pos));
   return (
     <div className="mt-2">
@@ -29,7 +31,7 @@ export default function ForceGauge({ pos, value, level, left, right, label }: Pr
         <span
           className={`num text-xs font-semibold ${pos == null ? "text-muted-foreground" : LEVEL_TEXT[level]}`}
         >
-          {pos == null ? "sem dado" : value}
+          {pos == null ? t.gauge.noData : value}
         </span>
       </div>
       <div

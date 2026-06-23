@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fmtPrice } from "../lib/format";
+import { useT } from "../lib/i18n";
 import type { GammaData } from "../lib/types";
 
 interface Pt {
@@ -18,6 +19,7 @@ const fmtK = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(s % 1000 === 0 ? 
  *  vendidos (abaixo, movimentos amplificam) em gamma — região para onde o preço
  *  tende a ser puxado. */
 export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
+  const { t } = useT();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
 
@@ -50,7 +52,7 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
   if (all.length < 2 || spot == null) {
     return (
       <div className="grid h-[300px] place-items-center text-xs text-muted-foreground">
-        Sem perfil de opções suficiente para desenhar a curva.
+        {t.gammaChart.noProfile}
       </div>
     );
   }
@@ -96,7 +98,7 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
       { v: putWall, name: "Put Wall", color: "#ef4444", dash: false },
       { v: callWall, name: "Call Wall", color: "#22c55e", dash: false },
       { v: spot, name: "Spot", color: "#f8fafc", dash: false },
-      { v: zeroGamma, name: "Ponto Zero", color: "#a855f7", dash: true },
+      { v: zeroGamma, name: t.gammaChart.zeroPoint, color: "#a855f7", dash: true },
       { v: maxPain, name: "Max Pain", color: "#eab308", dash: true },
     ] as { v: number | null; name: string; color: string; dash: boolean }[]
   ).filter((l): l is Lvl => l.v != null && l.v >= domLo && l.v <= domHi);
@@ -181,11 +183,10 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
 
       {/* Como ler — onde os dealers estão e para onde o preço é puxado */}
       <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-        À <span className="text-emerald-600 dark:text-emerald-400">direita do Ponto Zero</span> os dealers ficam{" "}
-        <span className="text-emerald-600 dark:text-emerald-400">comprados em gamma</span> (vendem altas/compram quedas → preço tende a grudar);
-        à <span className="text-rose-600 dark:text-rose-400">esquerda</span> ficam{" "}
-        <span className="text-rose-600 dark:text-rose-400">vendidos</span> (movimentos amplificam). O preço costuma ser puxado para as
-        paredes (Put/Call) e para o Max Pain.
+        {t.gammaChart.readAt} <span className="text-emerald-600 dark:text-emerald-400">{t.gammaChart.readRight}</span>{" "}
+        <span className="text-emerald-600 dark:text-emerald-400">{t.gammaChart.readLong}</span> {t.gammaChart.readRightTail}{" "}
+        {t.gammaChart.readToLeft} <span className="text-rose-600 dark:text-rose-400">{t.gammaChart.readLeft}</span>{" "}
+        <span className="text-rose-600 dark:text-rose-400">{t.gammaChart.readShort}</span> {t.gammaChart.readTail}
       </p>
     </div>
   );

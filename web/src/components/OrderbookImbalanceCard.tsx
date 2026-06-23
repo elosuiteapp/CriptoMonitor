@@ -1,4 +1,5 @@
 import { relativeTime } from "../lib/format";
+import { useT } from "../lib/i18n";
 import type { OrderbookImbalance } from "../lib/types";
 import InfoTip from "./InfoTip";
 import Card from "./ui/Card";
@@ -24,29 +25,31 @@ const fmtUsd = (n: number) => {
  *  Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois. */
 export default function OrderbookImbalanceCard({
   data,
-  title = "Pressão do book (bid × ask)",
+  title,
   source = "Binance + Coinbase",
   institutional = false,
   timestamp,
   info,
 }: Props) {
+  const { t } = useT();
+  const cardTitle = title ?? t.book.title;
   const wideTot = data ? data.bid_wide_usd + data.ask_wide_usd : 0;
   const bidPct = wideTot > 0 ? data!.bid_wide_usd / wideTot : 0.5;
   const wideImb = wideTot > 0 ? (data!.bid_wide_usd - data!.ask_wide_usd) / wideTot : 0;
   const buyer = wideImb > 0.05;
   const seller = wideImb < -0.05;
-  const sideLabel = buyer ? "Book mais comprador" : seller ? "Book mais vendedor" : "Book equilibrado";
+  const sideLabel = buyer ? t.book.sideBuyer : seller ? t.book.sideSeller : t.book.sideBalanced;
   const sideColor = buyer
     ? "text-emerald-600 dark:text-emerald-400"
     : seller
       ? "text-rose-600 dark:text-rose-400"
       : "text-muted-foreground";
   const domPct = Math.round((bidPct >= 0.5 ? bidPct : 1 - bidPct) * 100);
-  const domWord = bidPct >= 0.5 ? "compra" : "venda";
+  const domWord = bidPct >= 0.5 ? t.book.buy : t.book.sell;
 
   const nearTot = data ? data.bid_near_usd + data.ask_near_usd : 0;
   const nearImb = nearTot > 0 ? (data!.bid_near_usd - data!.ask_near_usd) / nearTot : 0;
-  const nearWord = nearImb > 0.05 ? "comprador" : nearImb < -0.05 ? "vendedor" : "equilibrado";
+  const nearWord = nearImb > 0.05 ? t.book.buyerWord : nearImb < -0.05 ? t.book.sellerWord : t.book.balancedWord;
   const nearColor = nearImb > 0.05
     ? "text-emerald-600 dark:text-emerald-400"
     : nearImb < -0.05
@@ -56,12 +59,12 @@ export default function OrderbookImbalanceCard({
   return (
     <Card highlight={institutional} className="p-4 transition-all duration-200 hover:border-foreground/10 hover:shadow-card-hover">
       <div className="section-title flex items-center gap-1.5">
-        {title}
+        {cardTitle}
         {info && <InfoTip text={info} />}
       </div>
 
       {!data ? (
-        <div className="mt-2 text-sm text-muted-foreground">Indisponível neste ciclo.</div>
+        <div className="mt-2 text-sm text-muted-foreground">{t.book.unavailable}</div>
       ) : (
         <>
           <div className="mt-1 text-sm leading-snug text-foreground">
@@ -76,13 +79,13 @@ export default function OrderbookImbalanceCard({
             <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-background/80" />
           </div>
           <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
-            <span className="num">compra {fmtUsd(data.bid_wide_usd)}</span>
-            <span className="text-muted-foreground/70">±2% do preço</span>
-            <span className="num">{fmtUsd(data.ask_wide_usd)} venda</span>
+            <span className="num">{t.book.buy} {fmtUsd(data.bid_wide_usd)}</span>
+            <span className="text-muted-foreground/70">{t.book.band2pct}</span>
+            <span className="num">{fmtUsd(data.ask_wide_usd)} {t.book.sell}</span>
           </div>
 
           <div className="mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
-            Perto (±0,5%): <b className={nearColor}>{nearWord}</b>
+            {t.book.near} <b className={nearColor}>{nearWord}</b>
             <span className="num"> · {fmtUsd(data.bid_near_usd)} × {fmtUsd(data.ask_near_usd)}</span>
           </div>
         </>
@@ -92,10 +95,10 @@ export default function OrderbookImbalanceCard({
         <span className="flex items-center gap-1.5">
           {institutional && (
             <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-primary">
-              Institucional
+              {t.book.institutional}
             </span>
           )}
-          <span>Fonte: {source}</span>
+          <span>{t.book.source} {source}</span>
         </span>
         <span className="num">{relativeTime(timestamp)}</span>
       </div>

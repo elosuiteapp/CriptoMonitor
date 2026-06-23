@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { relativeTime } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import type { Plan } from "../lib/types";
 
@@ -17,6 +18,7 @@ const COLS = "title, source, url, published_at";
  *  se não houver nenhuma específica, cai para notícias gerais recentes do mercado.
  *  Free vê 3, Pro+ vê 8. */
 export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan | null }) {
+  const { t } = useT();
   const [items, setItems] = useState<NewsRow[]>([]);
   const [general, setGeneral] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,12 +68,12 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
   return (
     <section>
       <h2 className="mb-3 text-sm font-semibold text-foreground">
-        {general ? "Notícias gerais do mercado" : `Notícias · ${asset}`}
+        {general ? t.news.general : t.news.forAsset.replace("{asset}", asset)}
       </h2>
       <div className="space-y-2">
-        {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {loading && <p className="text-sm text-muted-foreground">{t.common.loading}</p>}
         {!loading && items.length === 0 && (
-          <p className="text-sm text-muted-foreground">Sem notícias recentes.</p>
+          <p className="text-sm text-muted-foreground">{t.news.none}</p>
         )}
         {items.map((n, i) => (
           <a
@@ -90,7 +92,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
           </a>
         ))}
         {!plan?.advanced_metrics && items.length > 0 && (
-          <p className="text-[10px] text-muted-foreground">Mais notícias no plano Pro.</p>
+          <p className="text-[10px] text-muted-foreground">{t.news.moreOnPro}</p>
         )}
       </div>
     </section>

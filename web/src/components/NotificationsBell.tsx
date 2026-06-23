@@ -2,23 +2,27 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
+import { getLocale } from "../hooks/useLocale";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useNotifications, type NotificationRow } from "../hooks/useNotifications";
 import { usePush } from "../hooks/usePush";
+import { useT } from "../lib/i18n";
 import { playAlertSound } from "../lib/sound";
 
 const fmtTime = (iso: string) => {
   const d = new Date(iso);
   const today = new Date();
   const sameDay = d.toDateString() === today.toDateString();
+  const loc = getLocale() === "en" ? "en-US" : "pt-BR";
   return sameDay
-    ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    ? d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit" });
 };
 
 /** Sino de notificações: contador de não-lidas, central (dropdown), toggle de
  *  push do navegador e toast quando chega alerta novo ao vivo. */
 export default function NotificationsBell({ user }: { user: User }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [toasts, setToasts] = useState<NotificationRow[]>([]);
   const navigate = useNavigate();
@@ -39,7 +43,7 @@ export default function NotificationsBell({ user }: { user: User }) {
       <div className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
-          aria-label="Notificações"
+          aria-label={t.notif.title}
           className="relative grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <BellIcon />
@@ -55,16 +59,16 @@ export default function NotificationsBell({ user }: { user: User }) {
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
             <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl">
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-                <span className="text-sm font-semibold text-foreground">Notificações</span>
+                <span className="text-sm font-semibold text-foreground">{t.notif.title}</span>
                 <div className="flex items-center gap-3">
                   {unread > 0 && (
                     <button onClick={markAllRead} className="text-[11px] text-primary hover:underline">
-                      Marcar lidas
+                      {t.notif.markRead}
                     </button>
                   )}
                   {items.length > 0 && (
                     <button onClick={clearAll} className="text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline">
-                      Limpar
+                      {t.notif.clear}
                     </button>
                   )}
                 </div>
@@ -73,7 +77,7 @@ export default function NotificationsBell({ user }: { user: User }) {
               <div className="max-h-80 overflow-y-auto">
                 {items.length === 0 ? (
                   <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-                    Nenhuma notificação ainda. Crie alertas para ser avisado aqui.
+                    {t.notif.empty}
                   </p>
                 ) : (
                   items.map((n) => (
@@ -96,10 +100,10 @@ export default function NotificationsBell({ user }: { user: User }) {
                 <div className="flex items-center justify-between gap-2 border-t border-border bg-muted/30 px-4 py-2.5">
                   <span className="text-[11px] text-muted-foreground">
                     {push.permission === "denied"
-                      ? "Notificações bloqueadas no navegador."
+                      ? t.notif.pushBlocked
                       : push.subscribed
-                        ? "Notificações do navegador ativas."
-                        : "Receber alertas no navegador (mesmo com o app fechado)."}
+                        ? t.notif.pushActive
+                        : t.notif.pushOffer}
                   </span>
                   {push.permission !== "denied" &&
                     (push.subscribed ? (
@@ -108,7 +112,7 @@ export default function NotificationsBell({ user }: { user: User }) {
                         disabled={push.busy}
                         className="shrink-0 rounded-lg border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                       >
-                        Desativar
+                        {t.notif.disable}
                       </button>
                     ) : (
                       <button
@@ -116,7 +120,7 @@ export default function NotificationsBell({ user }: { user: User }) {
                         disabled={push.busy}
                         className="shrink-0 rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                       >
-                        {push.busy ? "…" : "Ativar"}
+                        {push.busy ? "…" : t.notif.enable}
                       </button>
                     ))}
                 </div>

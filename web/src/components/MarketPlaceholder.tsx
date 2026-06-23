@@ -1,3 +1,4 @@
+import { useT } from "../lib/i18n";
 import { MODULES, type ModuleId } from "../lib/modules";
 
 interface Props {
@@ -14,6 +15,7 @@ const COMING_SOON: Partial<Record<ModuleId, string>> = {
 /** Tela de um módulo de mercado ainda não liberado (preview admin). Genérica:
  *  usa o ícone/label de `modules.ts` e a copy específica do mercado. */
 export default function MarketPlaceholder({ module, onBack }: Props) {
+  const { t } = useT();
   const m = MODULES.find((x) => x.id === module);
   return (
     <section className="grid place-items-center rounded-2xl border border-dashed border-border bg-card px-6 py-20 text-center shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
@@ -21,17 +23,17 @@ export default function MarketPlaceholder({ module, onBack }: Props) {
         <div className="text-4xl" aria-hidden>
           {m?.icon ?? "📊"}
         </div>
-        <h2 className="text-xl font-bold text-foreground">Módulo {m?.label ?? module} — em construção</h2>
+        <h2 className="text-xl font-bold text-foreground">{t.placeholder.titleSuffix.replace("{label}", m?.label ?? module)}</h2>
         <p className="text-sm text-muted-foreground">
-          Em breve: {COMING_SOON[module] ?? m?.description}. Será liberado com o{" "}
-          <span className="text-foreground">plano correspondente</span>.
+          {t.placeholder.comingSoon} {COMING_SOON[module] ?? m?.description}.{" "}
+          <span className="text-foreground">{t.placeholder.correspondingPlan}</span>
         </p>
-        <p className="text-xs text-muted-foreground">Você está vendo este preview por ser administrador.</p>
+        <p className="text-xs text-muted-foreground">{t.placeholder.adminPreview}</p>
         <button
           onClick={onBack}
           className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-200 hover:opacity-90"
         >
-          Voltar ao módulo Crypto
+          {t.placeholder.backToCrypto}
         </button>
       </div>
     </section>

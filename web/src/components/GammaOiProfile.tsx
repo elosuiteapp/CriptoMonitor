@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { getLocale } from "../hooks/useLocale";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 
 interface OiRow {
@@ -31,6 +33,7 @@ export default function GammaOiProfile({
   spot: number | null;
   maxPain: number | null;
 }) {
+  const { t } = useT();
   const [rows, setRows] = useState<OiRow[] | null>(null);
 
   useEffect(() => {
@@ -49,9 +52,9 @@ export default function GammaOiProfile({
     };
   }, [asset]);
 
-  if (rows == null) return <div className="text-xs text-muted-foreground">Carregando open interest…</div>;
+  if (rows == null) return <div className="text-xs text-muted-foreground">{t.gammaChart.loadingOi}</div>;
   if (rows.length === 0)
-    return <div className="text-xs text-muted-foreground">Sem dados de open interest por strike.</div>;
+    return <div className="text-xs text-muted-foreground">{t.gammaChart.noOi}</div>;
 
   // Só o snapshot mais recente (todas as linhas de uma coleta compartilham o mesmo ts)
   const latestTs = rows[0].ts;
@@ -67,7 +70,7 @@ export default function GammaOiProfile({
     byStrike.set(k, a);
   }
   const aggs = [...byStrike.values()].sort((a, b) => b.strike - a.strike);
-  if (aggs.length === 0) return <div className="text-xs text-muted-foreground">Sem dados de open interest por strike.</div>;
+  if (aggs.length === 0) return <div className="text-xs text-muted-foreground">{t.gammaChart.noOi}</div>;
 
   const maxSide = Math.max(1, ...aggs.map((a) => Math.max(a.call, a.put)));
   const totalCall = aggs.reduce((s, a) => s + a.call, 0);
@@ -78,9 +81,9 @@ export default function GammaOiProfile({
   return (
     <div>
       <p className="mb-2 text-[10px] leading-snug text-muted-foreground">
-        Contratos <span className="text-foreground">crus</span> em aberto (vencimento mais próximo) — <span className="text-foreground">duas barras por strike</span>:
-        put à esquerda (suporte) e call à direita (resistência), cada uma com a quantidade. Diferente do GEX, que pondera pelo gama e
-        condensa cada strike numa barra só. Cor cheia = <span className="text-foreground">muro de OI</span>.
+        {t.gammaChart.oiIntro1} <span className="text-foreground">{t.gammaChart.oiIntroRaw}</span> {t.gammaChart.oiIntro2}{" "}
+        <span className="text-foreground">{t.gammaChart.oiIntroTwoBars}</span>{t.gammaChart.oiIntro3}{" "}
+        <span className="text-foreground">{t.gammaChart.oiIntroWall}</span>{t.gammaChart.oiIntro4}
       </p>
 
       <div className="space-y-0.5">
@@ -125,14 +128,14 @@ export default function GammaOiProfile({
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
         <span>
-          ◀ Puts <span className="num text-rose-600/80 dark:text-rose-400/80">{fmtOi(totalPut)}</span> · muro{" "}
+          ◀ {t.gammaChart.puts} <span className="num text-rose-600/80 dark:text-rose-400/80">{fmtOi(totalPut)}</span> · {t.gammaChart.wall}{" "}
           <span className="text-foreground">{fmtStrike(putWall.strike)}</span>
         </span>
         <span className="text-muted-foreground">
-          {expiry ? `venc. ${new Date(expiry).toLocaleDateString("pt-BR")}` : ""} · OI em contratos
+          {expiry ? `${t.gammaChart.expiryPrefix} ${new Date(expiry).toLocaleDateString(getLocale() === "en" ? "en-US" : "pt-BR")}` : ""} · {t.gammaChart.oiInContracts}
         </span>
         <span>
-          muro <span className="text-foreground">{fmtStrike(callWall.strike)}</span> · Calls{" "}
+          {t.gammaChart.wall} <span className="text-foreground">{fmtStrike(callWall.strike)}</span> · {t.gammaChart.calls}{" "}
           <span className="num text-emerald-600/80 dark:text-emerald-400/80">{fmtOi(totalCall)}</span> ▶
         </span>
       </div>

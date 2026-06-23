@@ -1,15 +1,17 @@
 import type { LiqPoint } from "../hooks/useSeries";
 import { fmtUsd } from "../lib/format";
+import { useT } from "../lib/i18n";
 
 /** Barras de liquidação REALIZADA (Coinalyze, bucket de 5 min) — subpainel abaixo
  *  do gráfico, no mesmo esquema do CvdSubchart. Complementa o heatmap estimado
  *  (que fica sobre as velas) com o dado real de quem JÁ foi liquidado no tempo:
  *  shorts ↑ verde (squeeze de baixa) / longs ↓ vermelho (flush de alta). */
 export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
+  const { t } = useT();
   if (data.length < 2) {
     return (
       <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
-        Liquidações realizadas (5 min) — aguardando coleta
+        {t.strips.liqRealizedShort} — {t.strips.awaiting}
       </div>
     );
   }
@@ -25,11 +27,11 @@ export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
   return (
     <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>Liquidações realizadas (5 min) · últimas ~12h</span>
+        <span>{t.strips.liqRealizedFull}</span>
         <span>
-          <span className="text-emerald-600 dark:text-emerald-400">shorts {fmtUsd(totShort)}</span>
+          <span className="text-emerald-600 dark:text-emerald-400">{t.strips.shorts} {fmtUsd(totShort)}</span>
           <span className="mx-1 text-muted-foreground">·</span>
-          <span className="text-rose-600 dark:text-rose-400">longs {fmtUsd(totLong)}</span>
+          <span className="text-rose-600 dark:text-rose-400">{t.strips.longs} {fmtUsd(totLong)}</span>
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-14 w-full">

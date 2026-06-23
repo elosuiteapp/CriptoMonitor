@@ -1,15 +1,17 @@
 import type { SeriesPoint } from "../hooks/useSeries";
 import { fmtPct } from "../lib/format";
+import { useT } from "../lib/i18n";
 import InfoTip from "./InfoTip";
 
 /** Funding ao longo do tempo (CEX agregado, Coinalyze, intervalo de 8h).
  *  Histograma em torno do zero: verde acima = comprados pagando; vermelho abaixo
  *  = vendidos pagando; altura ∝ magnitude. Valores em FRAÇÃO (ver useSeries). */
 export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
+  const { t } = useT();
   if (!data.length) {
     return (
       <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
-        Funding — aguardando coleta
+        {t.strips.fundingLabel} — {t.strips.awaiting}
       </div>
     );
   }
@@ -27,15 +29,15 @@ export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
     <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          Funding CEX (faixa temporal)
-          <InfoTip text="Funding dos perpétuos (agregado de exchanges, intervalo de 8h). Acima do zero (verde) = comprados pagando vendidos (otimismo alavancado); abaixo (vermelho) = vendidos pagando. Faixas longas no mesmo lado = posicionamento esticado. O anualizado é o custo de carregar a posição por 1 ano." />
+          {t.strips.fundingCexTitle}
+          <InfoTip text={t.strips.fundingTip} />
         </span>
         <span className="flex items-center gap-2">
           <span className={`num ${last >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-            atual {fmtPct(last * 100, 4)}
+            {t.strips.current} {fmtPct(last * 100, 4)}
           </span>
           <span className={`num ${annual >= 0 ? "text-emerald-600/80 dark:text-emerald-400/80" : "text-rose-600/80 dark:text-rose-400/80"}`}>
-            ~{fmtPct(annual * 100, 1)}/ano
+            ~{fmtPct(annual * 100, 1)}{t.strips.perYear}
           </span>
         </span>
       </div>

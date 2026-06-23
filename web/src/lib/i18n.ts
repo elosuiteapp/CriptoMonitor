@@ -1,4 +1,4 @@
-import { useLocale, type Locale } from "../hooks/useLocale";
+import { getLocale, useLocale, type Locale } from "../hooks/useLocale";
 
 /**
  * Dicionário central de strings do app (PT/EN). A interface `Dict` garante, em
@@ -41,7 +41,7 @@ export interface Dict {
     accountCreated: string;
     authFail: string;
   };
-  locked: { availableOn: string; unlock: string }; // {plan} interpolado
+  locked: { availableOn: string; unlock: string; viewOn: string }; // {plan} interpolado
   priceHeader: {
     instTier: string;
     flowTier: string;
@@ -210,6 +210,172 @@ export interface Dict {
       sweep: string;
     };
   };
+  tf: { m15: string; h1: string; h4: string; d1: string; w1: string; mo1: string };
+  chartType: { candles: string; bars: string; line: string; area: string };
+  layerToggles: {
+    title: string;
+    availableOn: string; // "· disponível no {tier}"
+    items: {
+      gex: { label: string; desc: string };
+      zeroGamma: { label: string; desc: string };
+      maxPain: { label: string; desc: string };
+      volumeProfile: { label: string; desc: string };
+      orderbookWalls: { label: string; desc: string };
+      funding: { label: string; desc: string };
+      cvd: { label: string; desc: string };
+      bookPressure: { label: string; desc: string };
+      liquidations: { label: string; desc: string };
+    };
+  };
+  book: {
+    title: string;
+    unavailable: string;
+    sideBuyer: string;
+    sideSeller: string;
+    sideBalanced: string;
+    buy: string;
+    sell: string;
+    band2pct: string;
+    near: string; // "Perto (±0,5%):"
+    buyerWord: string;
+    sellerWord: string;
+    balancedWord: string;
+    institutional: string;
+    source: string;
+  };
+  notif: {
+    title: string;
+    markRead: string;
+    clear: string;
+    empty: string;
+    pushBlocked: string;
+    pushActive: string;
+    pushOffer: string;
+    disable: string;
+    enable: string;
+  };
+  news: { general: string; forAsset: string; none: string; moreOnPro: string };
+  strips: {
+    awaiting: string;
+    fundingCexTitle: string;
+    fundingTip: string;
+    current: string;
+    perYear: string;
+    liqRealizedShort: string;
+    liqRealizedFull: string;
+    shorts: string;
+    longs: string;
+    cvdRetail: string;
+    fundingLabel: string;
+  };
+  macroGlobal: {
+    title: string;
+    tip: string;
+    riskOn: string;
+    riskOff: string;
+    neutral: string;
+    fedNetLiq: string;
+    triPrefix: string;
+    triSuffix: string;
+    tideRising: string;
+    tideFalling: string;
+    tide: string; // "maré"
+    conditions: string;
+    condLoose: string;
+    condTight: string;
+    hySpread: string;
+    hyTight: string;
+    hyWide: string;
+    realYield: string;
+    costOfMoney: string;
+    curve: string;
+    curveInverted: string;
+    curveNormal: string;
+    m2sub: string;
+    footer: string;
+  };
+  gammaChart: {
+    partialHist: string; // "histórico parcial: {label} (enche até {days}d)"
+    accumulating: string; // "{days}"
+    regimePos: string;
+    regimeNeg: string;
+    legendNote: string;
+    zeroPoint: string;
+    noProfile: string;
+    loadingOi: string;
+    noOi: string;
+    oiIntro1: string; // "Contratos"
+    oiIntroRaw: string; // "crus"
+    oiIntro2: string; // "em aberto (vencimento mais próximo) —"
+    oiIntroTwoBars: string; // "duas barras por strike"
+    oiIntro3: string; // ": put à esquerda (suporte)…condensa cada strike numa barra só. Cor cheia ="
+    oiIntroWall: string; // "muro de OI"
+    oiIntro4: string; // "."
+    puts: string;
+    calls: string;
+    wall: string; // "muro"
+    expiryPrefix: string; // "venc."
+    oiInContracts: string;
+    readRight: string; // "direita do Ponto Zero"
+    readLong: string; // "comprados em gamma"
+    readRightTail: string; // "(vendem altas/compram quedas → preço tende a grudar);"
+    readLeft: string; // "esquerda"
+    readShort: string; // "vendidos"
+    readTail: string; // "(movimentos amplificam). O preço costuma ser puxado para as paredes (Put/Call) e para o Max Pain."
+    readAt: string; // "À" / "To the"
+    readToLeft: string; // "à" / "to the"
+  };
+  disclaimer: string;
+  gauge: { noData: string };
+  errorBoundary: { brokeIn: string; thisSection: string; retry: string };
+  aiButton: { cta: string; unlimited: string; todayOf: string };
+  placeholder: { titleSuffix: string; comingSoon: string; correspondingPlan: string; adminPreview: string; backToCrypto: string };
+  accountDrawer: {
+    welcomeTitle: string;
+    accountTitle: string;
+    welcomeSub: string;
+    accountSub: string;
+    closeAria: string;
+    plan: string;
+    chosePlan: string; // "{plan}"
+    monthly: string;
+    annualOff: string;
+    perYear: string;
+    perMonth: string;
+    redirecting: string;
+    subscribe: string; // "{plan}"
+    payNote: string;
+    changePlan: string;
+    downgradeConfirmPre: string; // "Rebaixar para o"
+    downgradeConfirmMid: string; // "? Acesso garantido até"
+    downgradeConfirmPost: string; // ", sem nova cobrança."
+    yesDowngrade: string;
+    back: string;
+    downgrade: string;
+    profile: string;
+    fullName: string;
+    namePlaceholder: string;
+    phone: string;
+    cpf: string;
+    cpfNote: string;
+    email: string;
+    saving: string;
+    save: string;
+    saveError: string;
+    saved: string;
+    cpfRequired: string;
+    checkoutUnavailable: string;
+    checkoutFail: string;
+    cancelFail: string;
+    downgradeOk: string;
+    statusNoRenew: string; // "{date}"
+    statusPastDue: string;
+    statusRenews: string; // "{date}"
+    statusFree: string;
+    tagPopular: string;
+    proFeatures: [string, string, string];
+    expertFeatures: [string, string, string];
+  };
 }
 
 const PT: Dict = {
@@ -271,7 +437,7 @@ const PT: Dict = {
     accountCreated: "Conta criada! Confirme o e-mail (se exigido) e faça login.",
     authFail: "Falha na autenticação",
   },
-  locked: { availableOn: "Disponível no plano {plan}.", unlock: "Desbloquear no {plan} →" },
+  locked: { availableOn: "Disponível no plano {plan}.", unlock: "Desbloquear no {plan} →", viewOn: "Ver no {plan} →" },
   priceHeader: {
     instTier: "Institucional + Gamma",
     flowTier: "Derivativos & fluxo",
@@ -440,6 +606,179 @@ const PT: Dict = {
       sweep: "Stop hunt: o preço varre uma região de stops e reverte. Sinal clássico de manipulação da mão forte antes do movimento real.",
     },
   },
+  tf: { m15: "15M", h1: "1H", h4: "4H", d1: "1D", w1: "1S", mo1: "1Mês" },
+  chartType: { candles: "Velas", bars: "Barras", line: "Linha", area: "Área" },
+  layerToggles: {
+    title: "Camadas:",
+    availableOn: "disponível no {tier}",
+    items: {
+      gex: { label: "Opções (Call/Put Wall)", desc: "Strikes com maior gama (GEX): Call Wall = teto/resistência, Put Wall = piso/suporte onde os dealers tendem a segurar o preço." },
+      zeroGamma: { label: "Zero Gamma", desc: "Nível onde o gama dos dealers vira de positivo para negativo. Acima: dealers amortecem (mercado mais calmo). Abaixo: amplificam (mais volátil)." },
+      maxPain: { label: "Max Pain", desc: "Preço onde o maior volume de opções expira sem valor. Perto do vencimento o preço tende a gravitar para cá (efeito ímã)." },
+      volumeProfile: { label: "Volume Profile (POC)", desc: "POC = preço com maior volume negociado no período (ímã de liquidez); VA High/Low delimitam 70% do volume." },
+      orderbookWalls: { label: "Paredes do book", desc: "Grandes ordens no livro (Binance+Coinbase): paredes de compra = suporte, de venda = resistência." },
+      funding: { label: "Funding", desc: "Taxa de financiamento dos perpétuos: positiva = comprados pagam (otimismo alavancado), negativa = vendidos pagam." },
+      cvd: { label: "CVD", desc: "Cumulative Volume Delta: fluxo agressor líquido (compras a mercado − vendas a mercado). Varejo (Binance+OKX) × institucional (Coinbase)." },
+      bookPressure: { label: "Pressão do book", desc: "Pressão do book no tempo: liquidez parada bid − ask perto do preço (±2%). Verde = book comprador (mais compra), vermelho = vendedor. Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois." },
+      liquidations: { label: "Liquidações (heatmap + barras)", desc: "Heatmap estimado de zonas de liquidação (magnet zones, modelo de alavancagem) + barras de liquidações realizadas embaixo." },
+    },
+  },
+  book: {
+    title: "Pressão do book (bid × ask)",
+    unavailable: "Indisponível neste ciclo.",
+    sideBuyer: "Book mais comprador",
+    sideSeller: "Book mais vendedor",
+    sideBalanced: "Book equilibrado",
+    buy: "compra",
+    sell: "venda",
+    band2pct: "±2% do preço",
+    near: "Perto (±0,5%):",
+    buyerWord: "comprador",
+    sellerWord: "vendedor",
+    balancedWord: "equilibrado",
+    institutional: "Institucional",
+    source: "Fonte:",
+  },
+  notif: {
+    title: "Notificações",
+    markRead: "Marcar lidas",
+    clear: "Limpar",
+    empty: "Nenhuma notificação ainda. Crie alertas para ser avisado aqui.",
+    pushBlocked: "Notificações bloqueadas no navegador.",
+    pushActive: "Notificações do navegador ativas.",
+    pushOffer: "Receber alertas no navegador (mesmo com o app fechado).",
+    disable: "Desativar",
+    enable: "Ativar",
+  },
+  news: { general: "Notícias gerais do mercado", forAsset: "Notícias · {asset}", none: "Sem notícias recentes.", moreOnPro: "Mais notícias no plano Pro." },
+  strips: {
+    awaiting: "aguardando coleta",
+    fundingCexTitle: "Funding CEX (faixa temporal)",
+    fundingTip: "Funding dos perpétuos (agregado de exchanges, intervalo de 8h). Acima do zero (verde) = comprados pagando vendidos (otimismo alavancado); abaixo (vermelho) = vendidos pagando. Faixas longas no mesmo lado = posicionamento esticado. O anualizado é o custo de carregar a posição por 1 ano.",
+    current: "atual",
+    perYear: "/ano",
+    liqRealizedShort: "Liquidações realizadas (5 min)",
+    liqRealizedFull: "Liquidações realizadas (5 min) · últimas ~12h",
+    shorts: "shorts",
+    longs: "longs",
+    cvdRetail: "CVD do varejo",
+    fundingLabel: "Funding",
+  },
+  macroGlobal: {
+    title: "🌊 Liquidez & Macro Global",
+    tip: "A 'maré' que move o ciclo: liquidez líquida do Fed (balanço − reverse repo − conta do Tesouro) e condições financeiras. Maré subindo + condições frouxas = vento a favor de ativos de risco.",
+    riskOn: "Risk-on · vento a favor",
+    riskOff: "Risk-off · vento contra",
+    neutral: "Neutro",
+    fedNetLiq: "Liquidez líquida do Fed",
+    triPrefix: "US$ ",
+    triSuffix: " tri",
+    tideRising: "subindo",
+    tideFalling: "caindo",
+    tide: "maré",
+    conditions: "Condições (NFCI)",
+    condLoose: "frouxas · risk-on",
+    condTight: "apertadas · risk-off",
+    hySpread: "HY spread",
+    hyTight: "apertado · apetite",
+    hyWide: "abrindo · cautela",
+    realYield: "Juros reais 10Y",
+    costOfMoney: "custo do dinheiro",
+    curve: "Curva 2s10s",
+    curveInverted: "invertida · alerta",
+    curveNormal: "normal",
+    m2sub: "massa monetária",
+    footer: "Fonte: FRED (Fed de St. Louis) · net liquidity = balanço do Fed − reverse repo − conta do Tesouro · atualiza diariamente.",
+  },
+  gammaChart: {
+    partialHist: "histórico parcial: {label} (enche até {days}d)",
+    accumulating: "Acumulando histórico de níveis (a cada 5 min) — janela de {days} dias.",
+    regimePos: "regime + (calmo)",
+    regimeNeg: "regime − (volátil)",
+    legendNote: "· fundo = spot vs Zero Gamma · ↑/↓ = parede fora da janela (valor real ao lado)",
+    zeroPoint: "Ponto Zero",
+    noProfile: "Sem perfil de opções suficiente para desenhar a curva.",
+    loadingOi: "Carregando open interest…",
+    noOi: "Sem dados de open interest por strike.",
+    oiIntro1: "Contratos",
+    oiIntroRaw: "crus",
+    oiIntro2: "em aberto (vencimento mais próximo) —",
+    oiIntroTwoBars: "duas barras por strike",
+    oiIntro3: ": put à esquerda (suporte) e call à direita (resistência), cada uma com a quantidade. Diferente do GEX, que pondera pelo gama e condensa cada strike numa barra só. Cor cheia =",
+    oiIntroWall: "muro de OI",
+    oiIntro4: ".",
+    puts: "Puts",
+    calls: "Calls",
+    wall: "muro",
+    expiryPrefix: "venc.",
+    oiInContracts: "OI em contratos",
+    readRight: "direita do Ponto Zero",
+    readLong: "os dealers ficam comprados em gamma",
+    readRightTail: "(vendem altas/compram quedas → preço tende a grudar);",
+    readLeft: "esquerda",
+    readShort: "ficam vendidos",
+    readTail: "(movimentos amplificam). O preço costuma ser puxado para as paredes (Put/Call) e para o Max Pain.",
+    readAt: "À",
+    readToLeft: "à",
+  },
+  disclaimer:
+    "As informações e leituras desta plataforma têm caráter educacional e informativo. Não constituem recomendação de compra ou venda, aconselhamento financeiro ou de investimento. Quem decide é sempre você.",
+  gauge: { noData: "sem dado" },
+  errorBoundary: { brokeIn: "Algo quebrou ao renderizar {label}.", thisSection: "esta seção", retry: "Tentar de novo" },
+  aiButton: { cta: "O que está acontecendo?", unlimited: "ilimitado", todayOf: "{used} de {limit} hoje" },
+  placeholder: {
+    titleSuffix: "Módulo {label} — em construção",
+    comingSoon: "Em breve:",
+    correspondingPlan: "Será liberado com o plano correspondente.",
+    adminPreview: "Você está vendo este preview por ser administrador.",
+    backToCrypto: "Voltar ao módulo Crypto",
+  },
+  accountDrawer: {
+    welcomeTitle: "Bem-vindo ao OrbeView 🎉",
+    accountTitle: "Sua conta",
+    welcomeSub: "Finalize seu cadastro e escolha seu plano.",
+    accountSub: "Plano, assinatura e dados do perfil.",
+    closeAria: "Fechar (ESC)",
+    plan: "Plano",
+    chosePlan: "Você escolheu o {plan} — é só confirmar abaixo.",
+    monthly: "Mensal",
+    annualOff: "Anual −30%",
+    perYear: "/ano",
+    perMonth: "/mês",
+    redirecting: "Redirecionando…",
+    subscribe: "Assinar {plan}",
+    payNote: "Pix, boleto ou cartão (Asaas) · cancele quando quiser",
+    changePlan: "Trocar de plano",
+    downgradeConfirmPre: "Rebaixar para o",
+    downgradeConfirmMid: "? Acesso garantido até",
+    downgradeConfirmPost: ", sem nova cobrança.",
+    yesDowngrade: "Sim, rebaixar",
+    back: "Voltar",
+    downgrade: "Rebaixar para o Free",
+    profile: "Perfil",
+    fullName: "Nome completo",
+    namePlaceholder: "Seu nome",
+    phone: "Telefone / WhatsApp",
+    cpf: "CPF",
+    cpfNote: "Necessário para pagamento em reais (Pix/cartão).",
+    email: "E-mail",
+    saving: "Salvando…",
+    save: "Salvar",
+    saveError: "Não foi possível salvar.",
+    saved: "Perfil atualizado ✓",
+    cpfRequired: "Informe seu CPF no perfil abaixo e tente de novo.",
+    checkoutUnavailable: "checkout indisponível",
+    checkoutFail: "Falha ao iniciar o checkout.",
+    cancelFail: "Falha ao cancelar.",
+    downgradeOk: "Você volta ao Free ao fim do período já pago — o acesso fica garantido até lá.",
+    statusNoRenew: "Não renova. Acesso até {date}.",
+    statusPastDue: "Pagamento em atraso — regularize para manter o acesso.",
+    statusRenews: "Renova automaticamente em {date}.",
+    statusFree: "Você está no plano gratuito.",
+    tagPopular: "Mais popular",
+    proFeatures: ["20 ativos · dados a cada 5 min", "Gamma, volatilidade e camadas no gráfico", "Alertas e relatórios diários por IA"],
+    expertFeatures: ["Tudo do Pro", "Smart Money & On-chain · 100 moedas", "Arquivo completo · 30 análises de IA/dia"],
+  },
 };
 
 const EN: Dict = {
@@ -501,7 +840,7 @@ const EN: Dict = {
     accountCreated: "Account created! Confirm your email (if required) and sign in.",
     authFail: "Authentication failed",
   },
-  locked: { availableOn: "Available on the {plan} plan.", unlock: "Unlock with {plan} →" },
+  locked: { availableOn: "Available on the {plan} plan.", unlock: "Unlock with {plan} →", viewOn: "View on {plan} →" },
   priceHeader: {
     instTier: "Institutional + Gamma",
     flowTier: "Derivatives & flow",
@@ -670,6 +1009,179 @@ const EN: Dict = {
       sweep: "Stop hunt: price sweeps a region of stops and reverses. A classic sign of smart-money manipulation before the real move.",
     },
   },
+  tf: { m15: "15m", h1: "1h", h4: "4h", d1: "1D", w1: "1W", mo1: "1M" },
+  chartType: { candles: "Candles", bars: "Bars", line: "Line", area: "Area" },
+  layerToggles: {
+    title: "Layers:",
+    availableOn: "available on {tier}",
+    items: {
+      gex: { label: "Options (Call/Put Wall)", desc: "Strikes with the most gamma (GEX): Call Wall = ceiling/resistance, Put Wall = floor/support where dealers tend to hold price." },
+      zeroGamma: { label: "Zero Gamma", desc: "Level where dealer gamma flips from positive to negative. Above: dealers dampen (calmer market). Below: they amplify (more volatile)." },
+      maxPain: { label: "Max Pain", desc: "Price where the most options expire worthless. Near expiry, price tends to gravitate here (magnet effect)." },
+      volumeProfile: { label: "Volume Profile (POC)", desc: "POC = price with the most traded volume in the period (liquidity magnet); VA High/Low bound 70% of volume." },
+      orderbookWalls: { label: "Order-book walls", desc: "Large resting orders (Binance+Coinbase): buy walls = support, sell walls = resistance." },
+      funding: { label: "Funding", desc: "Perpetuals funding rate: positive = longs pay (leveraged optimism), negative = shorts pay." },
+      cvd: { label: "CVD", desc: "Cumulative Volume Delta: net aggressive flow (market buys − market sells). Retail (Binance+OKX) vs institutional (Coinbase)." },
+      bookPressure: { label: "Order-book pressure", desc: "Order-book pressure over time: resting bid − ask liquidity near price (±2%). Green = buy-side book (more bids), red = sell-side. Unlike CVD (executed flow) — the strong read is to cross the two." },
+      liquidations: { label: "Liquidations (heatmap + bars)", desc: "Estimated heatmap of liquidation zones (magnet zones, leverage model) + realized-liquidation bars below." },
+    },
+  },
+  book: {
+    title: "Order-book pressure (bid × ask)",
+    unavailable: "Unavailable this cycle.",
+    sideBuyer: "Buy-leaning book",
+    sideSeller: "Sell-leaning book",
+    sideBalanced: "Balanced book",
+    buy: "buy",
+    sell: "sell",
+    band2pct: "±2% of price",
+    near: "Near (±0.5%):",
+    buyerWord: "buy-side",
+    sellerWord: "sell-side",
+    balancedWord: "balanced",
+    institutional: "Institutional",
+    source: "Source:",
+  },
+  notif: {
+    title: "Notifications",
+    markRead: "Mark read",
+    clear: "Clear",
+    empty: "No notifications yet. Create alerts to be notified here.",
+    pushBlocked: "Notifications blocked in the browser.",
+    pushActive: "Browser notifications active.",
+    pushOffer: "Get alerts in the browser (even with the app closed).",
+    disable: "Disable",
+    enable: "Enable",
+  },
+  news: { general: "General market news", forAsset: "News · {asset}", none: "No recent news.", moreOnPro: "More news on the Pro plan." },
+  strips: {
+    awaiting: "awaiting data",
+    fundingCexTitle: "CEX funding (over time)",
+    fundingTip: "Perpetuals funding (aggregated across exchanges, 8h interval). Above zero (green) = longs paying shorts (leveraged optimism); below (red) = shorts paying. Long stretches on the same side = stretched positioning. The annualized value is the cost of carrying the position for 1 year.",
+    current: "now",
+    perYear: "/yr",
+    liqRealizedShort: "Realized liquidations (5 min)",
+    liqRealizedFull: "Realized liquidations (5 min) · last ~12h",
+    shorts: "shorts",
+    longs: "longs",
+    cvdRetail: "Retail CVD",
+    fundingLabel: "Funding",
+  },
+  macroGlobal: {
+    title: "🌊 Liquidity & Global Macro",
+    tip: "The 'tide' that drives the cycle: Fed net liquidity (balance sheet − reverse repo − Treasury account) and financial conditions. Rising tide + loose conditions = a tailwind for risk assets.",
+    riskOn: "Risk-on · tailwind",
+    riskOff: "Risk-off · headwind",
+    neutral: "Neutral",
+    fedNetLiq: "Fed net liquidity",
+    triPrefix: "$",
+    triSuffix: "T",
+    tideRising: "rising",
+    tideFalling: "falling",
+    tide: "tide",
+    conditions: "Conditions (NFCI)",
+    condLoose: "loose · risk-on",
+    condTight: "tight · risk-off",
+    hySpread: "HY spread",
+    hyTight: "tight · appetite",
+    hyWide: "widening · caution",
+    realYield: "Real yield 10Y",
+    costOfMoney: "cost of money",
+    curve: "2s10s curve",
+    curveInverted: "inverted · warning",
+    curveNormal: "normal",
+    m2sub: "money supply",
+    footer: "Source: FRED (St. Louis Fed) · net liquidity = Fed balance sheet − reverse repo − Treasury account · updates daily.",
+  },
+  gammaChart: {
+    partialHist: "partial history: {label} (fills to {days}d)",
+    accumulating: "Accumulating level history (every 5 min) — {days}-day window.",
+    regimePos: "regime + (calm)",
+    regimeNeg: "regime − (volatile)",
+    legendNote: "· background = spot vs Zero Gamma · ↑/↓ = wall outside the window (real value alongside)",
+    zeroPoint: "Zero Point",
+    noProfile: "Not enough options profile to draw the curve.",
+    loadingOi: "Loading open interest…",
+    noOi: "No open interest data by strike.",
+    oiIntro1: "Raw open",
+    oiIntroRaw: "contracts",
+    oiIntro2: "(nearest expiry) —",
+    oiIntroTwoBars: "two bars per strike",
+    oiIntro3: ": put on the left (support) and call on the right (resistance), each with its size. Unlike GEX, which weights by gamma and condenses each strike into a single bar. Solid color =",
+    oiIntroWall: "OI wall",
+    oiIntro4: ".",
+    puts: "Puts",
+    calls: "Calls",
+    wall: "wall",
+    expiryPrefix: "exp.",
+    oiInContracts: "OI in contracts",
+    readRight: "right of the Zero Point",
+    readLong: "dealers are long gamma",
+    readRightTail: "(sell rallies/buy dips → price tends to stick);",
+    readLeft: "left",
+    readShort: "they're short",
+    readTail: "(moves amplify). Price tends to be pulled toward the walls (Put/Call) and the Max Pain.",
+    readAt: "To the",
+    readToLeft: "to the",
+  },
+  disclaimer:
+    "The information and readings on this platform are educational and informational. They do not constitute a buy or sell recommendation, financial advice, or investment advice. You always make the decision.",
+  gauge: { noData: "no data" },
+  errorBoundary: { brokeIn: "Something broke while rendering {label}.", thisSection: "this section", retry: "Try again" },
+  aiButton: { cta: "What's going on?", unlimited: "unlimited", todayOf: "{used} of {limit} today" },
+  placeholder: {
+    titleSuffix: "{label} module — under construction",
+    comingSoon: "Coming soon:",
+    correspondingPlan: "Unlocks with the corresponding plan.",
+    adminPreview: "You're seeing this preview because you're an administrator.",
+    backToCrypto: "Back to the Crypto module",
+  },
+  accountDrawer: {
+    welcomeTitle: "Welcome to OrbeView 🎉",
+    accountTitle: "Your account",
+    welcomeSub: "Finish your sign-up and choose your plan.",
+    accountSub: "Plan, subscription, and profile details.",
+    closeAria: "Close (ESC)",
+    plan: "Plan",
+    chosePlan: "You chose {plan} — just confirm below.",
+    monthly: "Monthly",
+    annualOff: "Annual −30%",
+    perYear: "/yr",
+    perMonth: "/mo",
+    redirecting: "Redirecting…",
+    subscribe: "Subscribe to {plan}",
+    payNote: "Pix, boleto, or card (Asaas) · cancel anytime",
+    changePlan: "Change plan",
+    downgradeConfirmPre: "Downgrade to",
+    downgradeConfirmMid: "? Access guaranteed until",
+    downgradeConfirmPost: ", with no new charge.",
+    yesDowngrade: "Yes, downgrade",
+    back: "Back",
+    downgrade: "Downgrade to Free",
+    profile: "Profile",
+    fullName: "Full name",
+    namePlaceholder: "Your name",
+    phone: "Phone / WhatsApp",
+    cpf: "CPF",
+    cpfNote: "Required for payment in reais (Pix/card).",
+    email: "Email",
+    saving: "Saving…",
+    save: "Save",
+    saveError: "Couldn't save.",
+    saved: "Profile updated ✓",
+    cpfRequired: "Enter your CPF in the profile below and try again.",
+    checkoutUnavailable: "checkout unavailable",
+    checkoutFail: "Failed to start checkout.",
+    cancelFail: "Failed to cancel.",
+    downgradeOk: "You return to Free at the end of the period you've already paid — access is guaranteed until then.",
+    statusNoRenew: "Won't renew. Access until {date}.",
+    statusPastDue: "Payment overdue — settle it to keep access.",
+    statusRenews: "Renews automatically on {date}.",
+    statusFree: "You're on the free plan.",
+    tagPopular: "Most popular",
+    proFeatures: ["20 assets · data every 5 min", "Gamma, volatility, and chart layers", "AI alerts and daily reports"],
+    expertFeatures: ["Everything in Pro", "Smart Money & On-chain · 100 coins", "Full archive · 30 AI analyses/day"],
+  },
 };
 
 const MESSAGES: Record<Locale, Dict> = { pt: PT, en: EN };
@@ -678,4 +1190,10 @@ const MESSAGES: Record<Locale, Dict> = { pt: PT, en: EN };
 export function useT() {
   const { locale, setLocale, isEn } = useLocale();
   return { t: MESSAGES[locale], locale, setLocale, isEn };
+}
+
+/** Dicionário no idioma atual fora de componente React (helpers puros, class
+ *  components). Quem renderiza reage via useT/useLocale. */
+export function getT(): Dict {
+  return MESSAGES[getLocale()];
 }

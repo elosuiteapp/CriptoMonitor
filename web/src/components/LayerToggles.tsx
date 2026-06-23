@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { useT } from "../lib/i18n";
 import type { ActiveLayers } from "./Chart";
 import InfoTip from "./InfoTip";
 
@@ -12,36 +13,32 @@ interface Props {
   showUpsell: boolean;
 }
 
-interface Item {
-  key: keyof ActiveLayers;
-  label: string;
-  color: string;
-  desc: string; // explicação (tooltip nativo ao passar o mouse)
-  tier: "pro" | "expert"; // degrau que desbloqueia a camada quando ela está travada
-}
-
-const ITEMS: Item[] = [
-  { key: "gex", label: "Opções (Call/Put Wall)", color: "bg-emerald-500", tier: "pro", desc: "Strikes com maior gama (GEX): Call Wall = teto/resistência, Put Wall = piso/suporte onde os dealers tendem a segurar o preço." },
-  { key: "zeroGamma", label: "Zero Gamma", color: "bg-purple-500", tier: "pro", desc: "Nível onde o gama dos dealers vira de positivo para negativo. Acima: dealers amortecem (mercado mais calmo). Abaixo: amplificam (mais volátil)." },
-  { key: "maxPain", label: "Max Pain", color: "bg-amber-500", tier: "pro", desc: "Preço onde o maior volume de opções expira sem valor. Perto do vencimento o preço tende a gravitar para cá (efeito ímã)." },
-  { key: "volumeProfile", label: "Volume Profile (POC)", color: "bg-sky-400", tier: "pro", desc: "POC = preço com maior volume negociado no período (ímã de liquidez); VA High/Low delimitam 70% do volume." },
-  { key: "orderbookWalls", label: "Paredes do book", color: "bg-amber-500", tier: "pro", desc: "Grandes ordens no livro (Binance+Coinbase): paredes de compra = suporte, de venda = resistência." },
-  { key: "funding", label: "Funding", color: "bg-sky-500", tier: "expert", desc: "Taxa de financiamento dos perpétuos: positiva = comprados pagam (otimismo alavancado), negativa = vendidos pagam." },
-  { key: "cvd", label: "CVD", color: "bg-emerald-500", tier: "expert", desc: "Cumulative Volume Delta: fluxo agressor líquido (compras a mercado − vendas a mercado). Varejo (Binance+OKX) × institucional (Coinbase)." },
-  { key: "bookPressure", label: "Pressão do book", color: "bg-teal-500", tier: "expert", desc: "Pressão do book no tempo: liquidez parada bid − ask perto do preço (±2%). Verde = book comprador (mais compra), vermelho = vendedor. Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois." },
-  { key: "liquidations", label: "Liquidações (heatmap + barras)", color: "bg-rose-500", tier: "expert", desc: "Heatmap estimado de zonas de liquidação (magnet zones, modelo de alavancagem) + barras de liquidações realizadas embaixo." },
+// label/desc vêm do dicionário (t.layerToggles.items[key]); aqui só a cor e o degrau.
+// ActiveLayers e t.layerToggles.items compartilham exatamente as mesmas 9 chaves.
+const ITEMS: { key: keyof ActiveLayers; color: string; tier: "pro" | "expert" }[] = [
+  { key: "gex", color: "bg-emerald-500", tier: "pro" },
+  { key: "zeroGamma", color: "bg-purple-500", tier: "pro" },
+  { key: "maxPain", color: "bg-amber-500", tier: "pro" },
+  { key: "volumeProfile", color: "bg-sky-400", tier: "pro" },
+  { key: "orderbookWalls", color: "bg-amber-500", tier: "pro" },
+  { key: "funding", color: "bg-sky-500", tier: "expert" },
+  { key: "cvd", color: "bg-emerald-500", tier: "expert" },
+  { key: "bookPressure", color: "bg-teal-500", tier: "expert" },
+  { key: "liquidations", color: "bg-rose-500", tier: "expert" },
 ];
 
 export default function LayerToggles({ layers, onToggle, access, showUpsell }: Props) {
+  const { t } = useT();
   // Mostra uma camada quando o plano pode ligá-la OU quando é vitrine de upgrade
   // (Free vê as travadas como teaser 🔒 que leva ao /pricing).
   const items = ITEMS.filter((item) => access[item.key] || showUpsell);
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-muted-foreground">Camadas:</span>
+      <span className="text-muted-foreground">{t.layerToggles.title}</span>
       {items.map((item) => {
         const can = access[item.key];
+        const meta = t.layerToggles.items[item.key];
 
         if (!can) {
           // Teaser de upgrade: a camada existe, mas é de um plano superior.
@@ -50,11 +47,11 @@ export default function LayerToggles({ layers, onToggle, access, showUpsell }: P
             <Link
               key={item.key}
               to="/pricing"
-              title={`${item.desc} · disponível no ${target}`}
+              title={`${meta.desc} · ${t.layerToggles.availableOn.replace("{tier}", target)}`}
               className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
             >
               <span className="h-2 w-2 rounded-full bg-muted" />
-              {item.label}
+              {meta.label}
               <span aria-hidden>🔒</span>
             </Link>
           );
@@ -76,9 +73,9 @@ export default function LayerToggles({ layers, onToggle, access, showUpsell }: P
               className="flex items-center gap-1.5"
             >
               <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-muted"}`} />
-              {item.label}
+              {meta.label}
             </button>
-            <InfoTip text={item.desc} />
+            <InfoTip text={meta.desc} />
           </span>
         );
       })}

@@ -1,5 +1,7 @@
 import { useNavigate } from "react-router-dom";
 
+import { useT } from "../lib/i18n";
+
 interface Props {
   asset: string;
   dailyUsed?: number;
@@ -10,12 +12,13 @@ interface Props {
 /** Botão fixo "O que está acontecendo?" — costura a narrativa da IA (PRD §8.3).
  *  Contextual por módulo: leva à análise DO ATIVO selecionado (cripto ou B3). */
 export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit, to = "/analysis" }: Props) {
+  const { t } = useT();
   const navigate = useNavigate();
   const counter =
     dailyLimit === null
-      ? "ilimitado"
+      ? t.aiButton.unlimited
       : dailyLimit != null && dailyUsed != null
-        ? `${dailyUsed} de ${dailyLimit} hoje`
+        ? t.aiButton.todayOf.replace("{used}", String(dailyUsed)).replace("{limit}", String(dailyLimit))
         : null;
 
   return (
@@ -26,7 +29,7 @@ export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit, to = "/
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M3 12h4l2 6 4-14 2 8h6" />
       </svg>
-      O que está acontecendo?
+      {t.aiButton.cta}
       {counter && <span className="text-xs font-normal text-primary-foreground/80">({counter})</span>}
     </button>
   );

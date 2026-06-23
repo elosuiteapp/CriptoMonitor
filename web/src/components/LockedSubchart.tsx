@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 
+import { useT } from "../lib/i18n";
+
 // Alturas fixas (não-aleatórias) para o "gráfico" borrado de enfeite.
 const BARS = [40, 65, 30, 80, 55, 70, 25, 60, 45, 75, 35, 85, 50, 65, 30, 70, 55, 40, 60, 45];
 
@@ -16,6 +18,7 @@ export default function LockedSubchart({
   hint: string;
   plan?: string;
 }) {
+  const { t } = useT();
   return (
     <div className="relative overflow-hidden rounded-lg border border-primary/30 bg-card p-2 dark:bg-card/60">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
@@ -37,7 +40,7 @@ export default function LockedSubchart({
           to="/pricing"
           className="rounded-lg bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
         >
-          Ver no {plan} →
+          {t.locked.viewOn.replace("{plan}", plan)}
         </Link>
       </div>
     </div>

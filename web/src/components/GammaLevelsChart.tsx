@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { getLocale } from "../hooks/useLocale";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 
 interface Row {
@@ -36,9 +38,10 @@ const SERIES: Serie[] = [
 const fmtK = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(s % 1000 < 50 ? 0 : 1)}k` : `${Math.round(s)}`);
 const fmtAxis = (ts: string, spanMs: number) => {
   const d = new Date(ts);
+  const loc = getLocale() === "en" ? "en-US" : "pt-BR";
   return spanMs > 2 * 864e5
-    ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
-    : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    ? d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit" })
+    : d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
 };
 
 /** Média móvel causal (janela `win`) preservando nulos. */
@@ -61,6 +64,7 @@ function smooth(vals: (number | null)[], win: number): (number | null)[] {
 /** Níveis de gamma ao longo do tempo (estilo SpotGamma key levels): UM painel, uma
  *  linha de Spot. Zoom adaptativo no miolo; paredes distantes viram marcas na borda. */
 export default function GammaLevelsChart({ asset }: { asset: string }) {
+  const { t } = useT();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -113,7 +117,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
       <div className="mb-2 flex items-center justify-between gap-2">
         {partial ? (
           <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400/80">
-            histórico parcial: {partialLabel} (enche até {days}d)
+            {t.gammaChart.partialHist.replace("{label}", partialLabel).replace("{days}", String(days))}
           </span>
         ) : (
           <span />
@@ -135,7 +139,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
 
       {data == null || data.length < 2 ? (
         <div className="grid h-[300px] place-items-center text-xs text-muted-foreground">
-          Acumulando histórico de níveis (a cada 5 min) — janela de {days} dias.
+          {t.gammaChart.accumulating.replace("{days}", String(days))}
         </div>
       ) : (
         (() => {
@@ -276,13 +280,13 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
         ))}
         <span className="flex items-center gap-1">
           <span className="h-2.5 w-3 rounded" style={{ background: "rgba(34,197,94,0.25)" }} />
-          regime + (calmo)
+          {t.gammaChart.regimePos}
         </span>
         <span className="flex items-center gap-1">
           <span className="h-2.5 w-3 rounded" style={{ background: "rgba(239,68,68,0.3)" }} />
-          regime − (volátil)
+          {t.gammaChart.regimeNeg}
         </span>
-        <span className="text-muted-foreground">· fundo = spot vs Zero Gamma · ↑/↓ = parede fora da janela (valor real ao lado)</span>
+        <span className="text-muted-foreground">{t.gammaChart.legendNote}</span>
       </div>
     </div>
   );
