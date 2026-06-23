@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { LEVEL_DOT, relativeTime } from "../lib/format";
 import type { Reading } from "../lib/format";
+import { useT } from "../lib/i18n";
 import InfoTip from "./InfoTip";
 import Card from "./ui/Card";
 
@@ -22,6 +23,7 @@ interface Props {
 /** Card com semáforo + tradução; expande para o número bruto. Rodapé sempre
  *  mostra a fonte e o horário do dado (PRD §8.3 e §8.6.5). */
 export default function MetricCard({ title, reading, expanded, source, timestamp, institutional, info }: Props) {
+  const { isEn } = useT();
   const [open, setOpen] = useState(false);
   return (
     <Card
@@ -63,10 +65,10 @@ export default function MetricCard({ title, reading, expanded, source, timestamp
           <span className="flex items-center gap-1.5">
             {institutional && (
               <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-primary">
-                Institucional
+                {isEn ? "Institutional" : "Institucional"}
               </span>
             )}
-            {source && <span>Fonte: {source}</span>}
+            {source && <span>{isEn ? "Source" : "Fonte"}: {source}</span>}
           </span>
           <span className="num">{relativeTime(timestamp)}</span>
         </div>

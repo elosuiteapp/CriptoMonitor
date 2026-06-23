@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { readOiDelta } from "../lib/format";
-import { GLOSSARY } from "../lib/glossary";
+import { useGlossary } from "../lib/glossary";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import MetricCard from "./MetricCard";
 
@@ -12,6 +13,8 @@ interface OiDeltaRow {
 
 /** Card de Delta de OI (PRD3 §8.8.4) — lê a view v_oi_delta (Pro+ via RLS). */
 export default function OIDeltaCard({ asset, timestamp }: { asset: string; timestamp: string | null }) {
+  const { isEn } = useT();
+  const GLOSSARY = useGlossary();
   const [row, setRow] = useState<OiDeltaRow | null>(null);
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export default function OIDeltaCard({ asset, timestamp }: { asset: string; times
 
   return (
     <MetricCard
-      title="Delta de Open Interest"
+      title={isEn ? "Open Interest delta" : "Delta de Open Interest"}
       reading={readOiDelta(row?.oi_delta_4h, row?.price_delta_4h)}
       source="Coinalyze (4h)"
       timestamp={timestamp}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { LEVEL_DOT, readIvp, readIvRvSpread, readTermStructure, relativeTime } from "../lib/format";
-import { GLOSSARY } from "../lib/glossary";
+import { useGlossary } from "../lib/glossary";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import type { Level } from "../lib/types";
 import InfoTip from "./InfoTip";
@@ -22,6 +23,9 @@ const TENORS = ["7d", "30d", "90d", "180d"];
  *  structure. Complementa os cards de IV/Put-Call/Skew do Módulo Gamma (não duplica).
  *  BTC/ETH via Deribit (com DVOL) e SOL via Bybit (sem DVOL). RLS restringe a Pro+. */
 export default function VolatilityPanel({ asset }: { asset: string }) {
+  const { isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
+  const GLOSSARY = useGlossary();
   const [rows, setRows] = useState<VolRow[] | null>(null);
 
   useEffect(() => {
@@ -45,7 +49,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   if (!latest) {
     return (
       <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4 text-sm text-muted-foreground">
-        Painel de volatilidade — acumulando dados (a cada 5 min).
+        {tt("Painel de volatilidade — acumulando dados (a cada 5 min).", "Volatility panel — building data (every 5 min).")}
       </div>
     );
   }
@@ -69,22 +73,22 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   return (
     <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Painel de volatilidade (opções)
+        {tt("Painel de volatilidade (opções)", "Volatility panel (options)")}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <VolCard
           info={GLOSSARY.dvol}
-          title="DVOL (vol implícita)"
+          title={tt("DVOL (vol implícita)", "DVOL (implied vol)")}
           level="neutral"
           value={latest.dvol != null ? `${latest.dvol.toFixed(1)}%` : "—"}
           label={
             asset === "SOL"
-              ? "DVOL é índice da Deribit — indisponível p/ SOL"
+              ? tt("DVOL é índice da Deribit — indisponível p/ SOL", "DVOL is a Deribit index — unavailable for SOL")
               : dvolVar != null
                 ? `24h: ${dvolVar >= 0 ? "+" : ""}${dvolVar.toFixed(2)} pts`
-                : "Variação 24h — acumulando"
+                : tt("Variação 24h — acumulando", "24h change — building")
           }
-          foot={asset !== "SOL" && dvolVar == null && histDays < 1 ? `histórico parcial: ${partialLabel}` : undefined}
+          foot={asset !== "SOL" && dvolVar == null && histDays < 1 ? `${tt("histórico parcial:", "partial history:")} ${partialLabel}` : undefined}
         />
         <VolCard
           info={GLOSSARY.ivp}
@@ -92,7 +96,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           level={ivp.level}
           value={latest.ivp_90d != null ? `${latest.ivp_90d.toFixed(0)}/100` : "—"}
           label={ivp.label}
-          foot={histDays < 90 ? `histórico parcial: ${partialLabel} (enche até 90d)` : undefined}
+          foot={histDays < 90 ? `${tt("histórico parcial:", "partial history:")} ${partialLabel} ${tt("(enche até 90d)", "(fills to 90d)")}` : undefined}
         />
         <VolCard
           info={GLOSSARY.ivRv}
@@ -126,7 +130,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
         </div>
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">
-        Fonte: {asset === "SOL" ? "Bybit (opções)" : "Deribit"} · {relativeTime(latest.ts)} · leitura informativa, não é recomendação.
+        {tt("Fonte:", "Source:")} {asset === "SOL" ? tt("Bybit (opções)", "Bybit (options)") : "Deribit"} · {relativeTime(latest.ts)} · {tt("leitura informativa, não é recomendação.", "informational read, not a recommendation.")}
       </p>
     </div>
   );
