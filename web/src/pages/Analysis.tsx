@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import Disclaimer from "../components/Disclaimer";
+import { useT } from "../lib/i18n";
 import { smcSummary } from "../lib/smcSummary";
 import { supabase } from "../lib/supabase";
 
@@ -12,6 +13,7 @@ interface AnalysisRow {
 }
 
 export default function Analysis() {
+  const { t, isEn } = useT();
   const [params] = useSearchParams();
   const asset = (params.get("asset") ?? "BTC").toUpperCase();
   const [row, setRow] = useState<AnalysisRow | null>(null);
@@ -49,7 +51,7 @@ export default function Analysis() {
       // Calcula a estrutura SMC (1D+4h) no cliente e envia pro copiloto considerar
       const smc = await smcSummary(asset).catch(() => null);
       const { data, error } = await supabase.functions.invoke("generate-analysis", {
-        body: { asset, smc },
+        body: { asset, smc, lang: isEn ? "en" : "pt" },
       });
       if (error) {
         // Tenta extrair a mensagem amigável do corpo da resposta
@@ -68,7 +70,7 @@ export default function Analysis() {
       });
       setCounter({ used: data.used, limit: data.limit });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao gerar análise");
+      setError(e instanceof Error ? e.message : t.pages.analysis.genFail);
     } finally {
       setGenerating(false);
     }
@@ -78,25 +80,25 @@ export default function Analysis() {
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
         <Link to="/" className="text-sm text-muted-foreground hover:underline">
-          ← Voltar ao cockpit
+          {t.pages.backCockpit}
         </Link>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-foreground">O que está acontecendo · {asset}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t.pages.analysis.title} · {asset}</h1>
           <button
             onClick={generate}
             disabled={generating}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {generating ? "Gerando…" : "✨ Gerar análise"}
+            {generating ? t.pages.analysis.generating : `✨ ${t.pages.analysis.generate}`}
           </button>
         </div>
 
         {counter && (
           <p className="mt-2 text-xs text-muted-foreground">
             {counter.limit === null
-              ? "Plano com análises ilimitadas"
-              : `Análise ${counter.used} de ${counter.limit} hoje`}
+              ? t.pages.analysis.unlimited
+              : t.pages.analysis.countOf.replace("{used}", String(counter.used)).replace("{limit}", String(counter.limit))}
           </p>
         )}
 
@@ -108,18 +110,17 @@ export default function Analysis() {
 
         <div className="mt-4 rounded-2xl border border-border bg-card dark:bg-card/60 p-6">
           {loading ? (
-            <p className="text-muted-foreground">Carregando…</p>
+            <p className="text-muted-foreground">{t.common.loading}</p>
           ) : row ? (
             <>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{row.content}</p>
               <p className="mt-4 text-xs text-muted-foreground">
-                Análise de IA · {new Date(row.created_at).toLocaleString("pt-BR")}
+                {t.pages.analysis.aiAt.replace("{date}", new Date(row.created_at).toLocaleString(isEn ? "en-US" : "pt-BR"))}
               </p>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nenhuma análise gerada ainda. Clique em <strong>Gerar análise</strong> para o copiloto
-              narrar o cenário de {asset}.
+              {t.pages.analysis.noneA}<strong>{t.pages.analysis.generate}</strong>{t.pages.analysis.noneB.replace("{asset}", asset)}
             </p>
           )}
         </div>

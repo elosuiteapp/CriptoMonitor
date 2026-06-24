@@ -1,42 +1,8 @@
 ---
 import Base from "../layouts/Base.astro";
-import Nav from "../components/Nav.astro";
-import Footer from "../components/Footer.astro";
-import T from "../components/T.astro";
+import Termos from "../components/sections/Termos.astro";
 ---
 
-<Base title="Termos de Uso — OrbeView" description="Termos de uso do OrbeView.">
-  <Nav />
-  <section class="mx-auto max-w-3xl px-4 py-16">
-    <h1 class="text-3xl font-bold tracking-tight"><T pt="Termos de Uso" en="Terms of Use" /></h1>
-    <p class="mt-3 text-sm text-muted"><T pt="Última atualização: junho de 2026 · rascunho (versão final em breve)." en="Last updated: June 2026 · draft (final version coming soon)." /></p>
-    <div class="prose-news mt-8">
-      <h2><T pt="1. Sobre o serviço" en="1. About the service" /></h2>
-      <p>
-        <T
-          html
-          pt="O OrbeView é uma plataforma de <strong>informação e educação</strong> sobre mercados financeiros (cripto, ações e câmbio). Agregamos dados públicos e os traduzimos em leituras."
-          en="OrbeView is an <strong>information and education</strong> platform for financial markets (crypto, stocks, and forex). We aggregate public data and turn it into readable insights."
-        />
-      </p>
-      <h2><T pt="2. Natureza informativa" en="2. Informational nature" /></h2>
-      <p>
-        <T
-          html
-          pt="As informações e leituras têm caráter <strong>informativo e educacional</strong> e <strong>não constituem</strong> recomendação de compra ou venda, nem aconselhamento financeiro ou de investimento. A decisão é sempre sua."
-          en="The information and reads are provided for <strong>informational and educational purposes</strong> and <strong>do not constitute</strong> buy or sell recommendations, nor financial or investment advice. The decision is always yours."
-        />
-      </p>
-      <h2><T pt="3. Conta e assinatura" en="3. Account and subscription" /></h2>
-      <p>
-        <T
-          pt="Alguns recursos exigem conta e/ou assinatura paga. Você pode cancelar quando quiser; o acesso permanece até o fim do período já pago."
-          en="Some features require an account and/or a paid subscription. You can cancel anytime; access continues until the end of the period you've already paid for."
-        />
-      </p>
-      <h2><T pt="4. Contato" en="4. Contact" /></h2>
-      <p><T pt="Dúvidas:" en="Questions:" /> <a href="mailto:contato@orbeview.com">contato@orbeview.com</a>.</p>
-    </div>
-  </section>
-  <Footer />
+<Base hreflang title="Termos de Uso — OrbeView" description="Termos de uso do OrbeView.">
+  <Termos />
 </Base>

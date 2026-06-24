@@ -5,6 +5,7 @@ import Disclaimer from "../components/Disclaimer";
 import Markdown from "../components/Markdown";
 import { selicAA } from "../components/b3/B3Shared";
 import { B3_ASSETS, B3_FIIS, fetchB3Chart, fetchB3Dividends, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Macro, fetchB3Overview, isFii } from "../lib/b3";
+import { useT } from "../lib/i18n";
 import { ema, last, rsi } from "../lib/indicators/ta";
 import { computeSmc } from "../lib/smc";
 import type { Candle } from "../lib/marketData";
@@ -89,6 +90,7 @@ async function buildContext(asset: string, kind: "stock" | "fii") {
 
 /** "O que está acontecendo" do B3 — análise por IA DO ATIVO selecionado (ação ou FII). */
 export default function B3Analysis() {
+  const { t, isEn } = useT();
   const [params] = useSearchParams();
   const asset = (params.get("asset") ?? "PETR4").toUpperCase();
   const kind: "stock" | "fii" = isFii(asset) ? "fii" : "stock";
@@ -125,7 +127,7 @@ export default function B3Analysis() {
       }
       setRow({ content: data.content, model: data.model_used, ts: new Date().toISOString() });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao gerar análise");
+      setError(e instanceof Error ? e.message : t.pages.analysis.genFail);
     } finally {
       setGenerating(false);
     }
@@ -135,16 +137,16 @@ export default function B3Analysis() {
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
         <Link to="/" className="text-sm text-muted-foreground hover:underline">
-          ← Voltar ao cockpit
+          {t.pages.backCockpit}
         </Link>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
-            O que está acontecendo · {asset}
+            {t.pages.analysis.title} · {asset}
             <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">{kind === "fii" ? "FII" : "B3"}</span>
           </h1>
           <button onClick={generate} disabled={generating} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {generating ? "Gerando…" : "✨ Gerar análise"}
+            {generating ? t.pages.analysis.generating : `✨ ${t.pages.analysis.generate}`}
           </button>
         </div>
 
@@ -152,15 +154,15 @@ export default function B3Analysis() {
 
         <div className="mt-4 rounded-2xl border border-border bg-card p-6 dark:bg-card/60">
           {loading ? (
-            <p className="text-muted-foreground">Carregando…</p>
+            <p className="text-muted-foreground">{t.common.loading}</p>
           ) : row ? (
             <>
               <Markdown text={row.content} />
-              <p className="mt-4 text-xs text-muted-foreground">Análise de IA · {new Date(row.ts).toLocaleString("pt-BR")}</p>
+              <p className="mt-4 text-xs text-muted-foreground">{t.pages.analysis.aiAt.replace("{date}", new Date(row.ts).toLocaleString(isEn ? "en-US" : "pt-BR"))}</p>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nenhuma análise gerada ainda. Clique em <strong>Gerar análise</strong> para a IA narrar o cenário de {asset} (fundamentos, dividendos, técnico e macro).
+              {t.pages.analysis.noneA}<strong>{t.pages.analysis.generate}</strong>{t.pages.b3Analysis.noneB.replace("{asset}", asset)}
             </p>
           )}
         </div>

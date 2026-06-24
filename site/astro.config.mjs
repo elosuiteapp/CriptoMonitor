@@ -9,7 +9,16 @@ import sitemap from "@astrojs/sitemap";
 // https://astro.build/config
 export default defineConfig({
   site: "https://orbeview.com",
-  integrations: [sitemap()],
+  integrations: [
+    // i18n: rotas PT na raiz, EN sob /en/. O sitemap agrupa cada par e emite os
+    // <xhtml:link hreflang> automaticamente (pt-BR ↔ en) para o Google.
+    sitemap({
+      i18n: {
+        defaultLocale: "pt",
+        locales: { pt: "pt-BR", en: "en" },
+      },
+    }),
+  ],
   vite: {
     plugins: [tailwindcss()],
   },

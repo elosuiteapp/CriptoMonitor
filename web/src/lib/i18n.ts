@@ -376,6 +376,57 @@ export interface Dict {
     proFeatures: [string, string, string];
     expertFeatures: [string, string, string];
   };
+  pages: {
+    backCockpit: string;
+    notFound: { title: string; sub: string; back: string };
+    alerts: {
+      title: string;
+      sub: string;
+      metricPrice: string;
+      metricFunding: string;
+      metricRegime: string;
+      gatedPre: string;
+      gatedAnd: string;
+      gatedPost: string;
+      seePlans: string;
+      asset: string;
+      metric: string;
+      whenRegime: string;
+      regimeNeg: string;
+      regimePos: string;
+      condition: string;
+      above: string;
+      below: string;
+      valuePct: string;
+      valueUsd: string;
+      create: string;
+      yourAlerts: string;
+      none: string;
+      delete: string;
+      createFail: string;
+    };
+    analysis: {
+      title: string; // "O que está acontecendo" (+ · {asset})
+      generate: string;
+      generating: string;
+      unlimited: string;
+      countOf: string; // "Análise {used} de {limit} hoje"
+      noneA: string;
+      noneB: string; // " para o copiloto narrar o cenário de {asset}."
+      aiAt: string; // "Análise de IA · {date}"
+      genFail: string;
+    };
+    b3Analysis: { noneB: string }; // reusa analysis.* + noneB próprio
+    newsletter: { subA: string; subStrong: string; subB: string; empty: string; read: string };
+    newsletterEdition: {
+      notFound: string;
+      seeAll: string;
+      fullTitle: string; // "Edição completa no plano {tier}"
+      fullSub: string; // "…{tier}…"
+      subscribe: string; // "Assinar {tier}"
+      allEditions: string;
+    };
+  };
 }
 
 const PT: Dict = {
@@ -779,6 +830,67 @@ const PT: Dict = {
     proFeatures: ["20 ativos · dados a cada 5 min", "Gamma, volatilidade e camadas no gráfico", "Alertas e relatórios diários por IA"],
     expertFeatures: ["Tudo do Pro", "Smart Money & On-chain · 100 moedas", "Arquivo completo · 30 análises de IA/dia"],
   },
+  pages: {
+    backCockpit: "← Voltar ao cockpit",
+    notFound: {
+      title: "Página não encontrada",
+      sub: "O endereço que você acessou não existe ou foi movido.",
+      back: "Voltar ao início",
+    },
+    alerts: {
+      title: "Alertas",
+      sub: "Você é avisado no sistema (sino + pop-up na tela) e, se permitir, por notificação do navegador — mesmo com o app fechado.",
+      metricPrice: "Preço (US$)",
+      metricFunding: "Funding (%)",
+      metricRegime: "Regime de gamma",
+      gatedPre: "Alertas estão disponíveis nos planos ",
+      gatedAnd: " e ",
+      gatedPost: ". ",
+      seePlans: "Ver planos →",
+      asset: "Ativo",
+      metric: "Métrica",
+      whenRegime: "Quando o regime virar",
+      regimeNeg: "Negativo (movimentos amplificados)",
+      regimePos: "Positivo (volatilidade amortecida)",
+      condition: "Condição",
+      above: "acima de",
+      below: "abaixo de",
+      valuePct: "Valor (%)",
+      valueUsd: "Valor (US$)",
+      create: "Criar alerta",
+      yourAlerts: "Seus alertas",
+      none: "Nenhum alerta criado.",
+      delete: "Excluir",
+      createFail: "Falha ao criar alerta",
+    },
+    analysis: {
+      title: "O que está acontecendo",
+      generate: "Gerar análise",
+      generating: "Gerando…",
+      unlimited: "Plano com análises ilimitadas",
+      countOf: "Análise {used} de {limit} hoje",
+      noneA: "Nenhuma análise gerada ainda. Clique em ",
+      noneB: " para o copiloto narrar o cenário de {asset}.",
+      aiAt: "Análise de IA · {date}",
+      genFail: "Falha ao gerar análise",
+    },
+    b3Analysis: { noneB: " para a IA narrar o cenário de {asset} (fundamentos, dividendos, técnico e macro)." },
+    newsletter: {
+      subA: "A leitura semanal do mercado — gamma, fluxo e liquidez traduzidos. Edições completas liberadas para ",
+      subStrong: "qualquer conta",
+      subB: "; gerada automaticamente pela IA toda semana.",
+      empty: "Nenhuma edição publicada ainda — em breve.",
+      read: "Ler edição →",
+    },
+    newsletterEdition: {
+      notFound: "Edição não encontrada.",
+      seeAll: "Ver todas as edições →",
+      fullTitle: "Edição completa no plano {tier}",
+      fullSub: "Sua leitura completa libera no plano {tier} — junto com o cockpit completo, Smart Money e o arquivo da newsletter.",
+      subscribe: "Assinar {tier}",
+      allEditions: "← Todas as edições",
+    },
+  },
 };
 
 const EN: Dict = {
@@ -1181,6 +1293,67 @@ const EN: Dict = {
     tagPopular: "Most popular",
     proFeatures: ["20 assets · data every 5 min", "Gamma, volatility, and chart layers", "AI alerts and daily reports"],
     expertFeatures: ["Everything in Pro", "Smart Money & On-chain · 100 coins", "Full archive · 30 AI analyses/day"],
+  },
+  pages: {
+    backCockpit: "← Back to cockpit",
+    notFound: {
+      title: "Page not found",
+      sub: "The address you went to doesn't exist or has moved.",
+      back: "Back home",
+    },
+    alerts: {
+      title: "Alerts",
+      sub: "You're notified in-app (bell + on-screen pop-up) and, if you allow it, by browser notification — even with the app closed.",
+      metricPrice: "Price (US$)",
+      metricFunding: "Funding (%)",
+      metricRegime: "Gamma regime",
+      gatedPre: "Alerts are available on the ",
+      gatedAnd: " and ",
+      gatedPost: " plans. ",
+      seePlans: "See plans →",
+      asset: "Asset",
+      metric: "Metric",
+      whenRegime: "When the regime flips to",
+      regimeNeg: "Negative (amplified moves)",
+      regimePos: "Positive (dampened volatility)",
+      condition: "Condition",
+      above: "above",
+      below: "below",
+      valuePct: "Value (%)",
+      valueUsd: "Value (US$)",
+      create: "Create alert",
+      yourAlerts: "Your alerts",
+      none: "No alerts created.",
+      delete: "Delete",
+      createFail: "Failed to create alert",
+    },
+    analysis: {
+      title: "What's going on",
+      generate: "Generate analysis",
+      generating: "Generating…",
+      unlimited: "Plan with unlimited analyses",
+      countOf: "Analysis {used} of {limit} today",
+      noneA: "No analysis generated yet. Click ",
+      noneB: " for the copilot to narrate the {asset} scenario.",
+      aiAt: "AI analysis · {date}",
+      genFail: "Failed to generate analysis",
+    },
+    b3Analysis: { noneB: " for the AI to narrate the {asset} scenario (fundamentals, dividends, technicals, and macro)." },
+    newsletter: {
+      subA: "The market's weekly read — gamma, flow, and liquidity decoded. Full editions unlocked for ",
+      subStrong: "any account",
+      subB: "; generated automatically by AI every week.",
+      empty: "No editions published yet — coming soon.",
+      read: "Read edition →",
+    },
+    newsletterEdition: {
+      notFound: "Edition not found.",
+      seeAll: "See all editions →",
+      fullTitle: "Full edition on the {tier} plan",
+      fullSub: "Your full read unlocks on the {tier} plan — along with the complete cockpit, Smart Money, and the newsletter archive.",
+      subscribe: "Subscribe to {tier}",
+      allEditions: "← All editions",
+    },
   },
 };
 

@@ -1,3 +1,4 @@
+import { getLocale } from "../hooks/useLocale";
 import { supabase } from "./supabase";
 
 export type Tier = "free" | "pro" | "expert";
@@ -37,5 +38,6 @@ export async function getEditionFull(slug: string): Promise<EditionFull | null> 
 }
 
 export function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const loc = getLocale() === "en" ? "en-US" : "pt-BR";
+  return new Date(iso).toLocaleDateString(loc, { day: "2-digit", month: "long", year: "numeric" });
 }

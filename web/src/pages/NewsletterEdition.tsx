@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Markdown from "../components/Markdown";
 import ThemeToggle from "../components/ui/ThemeToggle";
+import { useT } from "../lib/i18n";
 import { getEditionFull, fmtDate, TIER_LABEL, type EditionFull } from "../lib/newsletter";
 
 type State = "loading" | "notfound" | EditionFull;
@@ -11,6 +12,7 @@ type State = "loading" | "notfound" | EditionFull;
  *  se o plano não alcança o min_tier, mostra o convite de upgrade (reaproveita o
  *  fluxo do AccountDrawer via sessionStorage 'ov.pending-plan'). */
 export default function NewsletterEdition() {
+  const { t } = useT();
   const { slug } = useParams();
   const navigate = useNavigate();
   const [state, setState] = useState<State>("loading");
@@ -45,12 +47,12 @@ export default function NewsletterEdition() {
 
       <main className="mx-auto w-full max-w-2xl px-4 py-12">
         {state === "loading" ? (
-          <p className="text-sm text-muted-foreground">Carregando…</p>
+          <p className="text-sm text-muted-foreground">{t.common.loading}</p>
         ) : state === "notfound" ? (
           <div className="rounded-2xl border border-border bg-card p-8 text-center dark:bg-card/60">
-            <p className="text-sm text-muted-foreground">Edição não encontrada.</p>
+            <p className="text-sm text-muted-foreground">{t.pages.newsletterEdition.notFound}</p>
             <Link to="/newsletter" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
-              Ver todas as edições →
+              {t.pages.newsletterEdition.seeAll}
             </Link>
           </div>
         ) : (
@@ -75,24 +77,23 @@ export default function NewsletterEdition() {
               <div className="rounded-2xl border border-primary/30 bg-primary/[0.06] p-7 text-center">
                 <p className="text-2xl" aria-hidden>🔒</p>
                 <p className="mt-2 text-base font-semibold text-foreground">
-                  Edição completa no plano {TIER_LABEL[state.min_tier]}
+                  {t.pages.newsletterEdition.fullTitle.replace("{tier}", TIER_LABEL[state.min_tier])}
                 </p>
                 <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-                  Sua leitura completa libera no plano {TIER_LABEL[state.min_tier]} — junto com o cockpit completo,
-                  Smart Money e o arquivo da newsletter.
+                  {t.pages.newsletterEdition.fullSub.replace("{tier}", TIER_LABEL[state.min_tier])}
                 </p>
                 <button
                   onClick={() => upgrade(state.min_tier === "expert" ? "expert" : "pro")}
                   className="mt-4 inline-block rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  Assinar {TIER_LABEL[state.min_tier]}
+                  {t.pages.newsletterEdition.subscribe.replace("{tier}", TIER_LABEL[state.min_tier])}
                 </button>
               </div>
             )}
 
             <div className="mt-10 border-t border-border pt-6">
               <Link to="/newsletter" className="text-sm font-medium text-primary hover:underline">
-                ← Todas as edições
+                {t.pages.newsletterEdition.allEditions}
               </Link>
             </div>
           </article>

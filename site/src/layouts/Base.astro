@@ -1,44 +1,65 @@
 ---
 import "../styles/global.css";
 import "../styles/i18n.css";
-import { SITE_URL } from "../consts";
+import { langFromPath, altPaths, absUrl } from "../lib/i18n";
 
 interface Props {
   title?: string;
   description?: string;
+  /** Idioma da rota. Se omitido, é derivado do pathname (/en/* = en, resto = pt). */
+  lang?: "pt" | "en";
+  /** Emite o par hreflang pt-BR/en/x-default (só em páginas com espelho /en). */
+  hreflang?: boolean;
 }
 const {
   title = "OrbeView — Cockpit dos mercados",
   description = "O cockpit institucional dos mercados: cripto, ações (B3) e câmbio. Traduz gamma, smart money e fluxo em leitura clara para decidir melhor.",
+  lang = langFromPath(Astro.url.pathname),
+  hreflang = false,
 } = Astro.props;
 
-const canonical = new URL(Astro.url.pathname, SITE_URL).href;
+const isEn = lang === "en";
+const htmlLang = isEn ? "en" : "pt-BR";
+const canonical = absUrl(Astro.url.pathname);
+
+// Pares de URL por idioma (para hreflang) calculados do pathname atual.
+const alt = altPaths(Astro.url.pathname);
+const ptUrl = absUrl(alt.pt);
+const enUrl = absUrl(alt.en);
 ---
 
 <!doctype html>
-<html lang="pt-BR" class="dark">
+<html lang={htmlLang} data-lang={lang} class="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Idioma (PT/EN) ANTES do paint, sem flash. Resolve ?lang/?locale -> cookie
-         .orbeview.com -> navegador. Mesma regra do app (useLocale). Persiste o
-         cookie compartilhado para sincronizar com app.orbeview.com. -->
-    <script is:inline>
+    <!-- Idioma (PT/EN) ANTES do paint, sem flash. Rotas /en forçam EN (são o canônico
+         inglês); a árvore PT detecta ?lang/?locale -> cookie .orbeview.com -> navegador
+         (mesma regra do app/useLocale). Sempre persiste o cookie compartilhado para
+         sincronizar com app.orbeview.com. -->
+    <script is:inline define:vars={{ routeLang: lang }}>
       (function () {
         try {
+          var d = document.documentElement;
+          function persist(l) {
+            d.setAttribute("data-lang", l);
+            d.setAttribute("lang", l === "en" ? "en" : "pt-BR");
+            var dom = location.hostname.indexOf("orbeview.com") >= 0 ? "; Domain=.orbeview.com" : "";
+            var sec = location.protocol === "https:" ? "; Secure" : "";
+            document.cookie = "ov_lang=" + l + "; Path=/; Max-Age=31536000; SameSite=Lax" + dom + sec;
+          }
+          if (routeLang === "en") {
+            persist("en");
+            return;
+          }
           var q = new URLSearchParams(location.search);
           var p = q.get("lang") || q.get("locale");
           var m = document.cookie.match(/(?:^|; )ov_lang=([^;]*)/);
           var c = m ? decodeURIComponent(m[1]) : null;
           var nav = (navigator.language || "").toLowerCase();
           var lang = p === "pt" || p === "en" ? p : c === "pt" || c === "en" ? c : nav.indexOf("en") === 0 ? "en" : "pt";
-          var d = document.documentElement;
-          d.setAttribute("data-lang", lang);
-          d.setAttribute("lang", lang === "en" ? "en" : "pt-BR");
-          var dom = location.hostname.indexOf("orbeview.com") >= 0 ? "; Domain=.orbeview.com" : "";
-          var sec = location.protocol === "https:" ? "; Secure" : "";
-          document.cookie = "ov_lang=" + lang + "; Path=/; Max-Age=31536000; SameSite=Lax" + dom + sec;
+          persist(lang);
         } catch (e) {}
       })();
     </script>
@@ -46,6 +67,15 @@ const canonical = new URL(Astro.url.pathname, SITE_URL).href;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    {
+      hreflang && (
+        <Fragment>
+          <link rel="alternate" hreflang="pt-BR" href={ptUrl} />
+          <link rel="alternate" hreflang="en" href={enUrl} />
+          <link rel="alternate" hreflang="x-default" href={ptUrl} />
+        </Fragment>
+      )
+    }
     <meta name="generator" content={Astro.generator} />
 
     <!-- Open Graph / Twitter -->
@@ -53,6 +83,8 @@ const canonical = new URL(Astro.url.pathname, SITE_URL).href;
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={isEn ? "en_US" : "pt_BR"} />
+    {hreflang && <meta property="og:locale:alternate" content={isEn ? "pt_BR" : "en_US"} />}
     <meta name="twitter:card" content="summary_large_image" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

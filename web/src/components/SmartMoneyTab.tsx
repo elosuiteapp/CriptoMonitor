@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
-import { useCvd } from "../hooks/useCvd";
 import { useNetworkActivity } from "../hooks/useNetworkActivity";
 import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePerpContext } from "../hooks/usePerpContext";
@@ -22,7 +21,6 @@ import { supabase } from "../lib/supabase";
 import InfoTip from "./InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "./SmartMoneyChart";
 import SmcAssetPicker from "./SmcAssetPicker";
-import VolumeDeltaSubchart from "./VolumeDeltaSubchart";
 
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "15m", label: "15M" },
@@ -56,7 +54,8 @@ const biasDot = (b: "bullish" | "bearish" | "neutral") =>
 // Camadas de mercado = indicadores calculados das velas da Binance (sem dados do
 // coletor; funcionam em qualquer das 100 moedas). Mesmo esquema de toggle.
 const LAYER_KEYS: (keyof SmcLayers)[] = ["orderBlocks", "fvg", "liquidity", "zones", "equal", "structure"];
-const MARKET_KEYS: (keyof SmcLayers)[] = ["volumeProfile", "cvd", "liquidations", "htf"];
+// CVD / Volume Delta fica SÓ no cockpit (decisão do dono) — fora das camadas do Smart Money.
+const MARKET_KEYS: (keyof SmcLayers)[] = ["volumeProfile", "liquidations", "htf"];
 
 const CONF_STYLE: Record<string, string> = {
   gamma: "border-primary/40 text-primary",
@@ -121,8 +120,6 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [layers, setLayers] = usePersistentState<SmcLayers>("cm.smc-layers", DEFAULT_LAYERS, true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
-  // Volume Delta / CVD por candle (klines) — só busca com a camada CVD ligada.
-  const cvdSeries = useCvd(smcAsset, tf, layers.cvd);
   // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
   const perp = usePerpContext(smcAsset);
   // On-chain: próximo token unlock (DefiLlama) — evento de oferta.
@@ -613,11 +610,6 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           {t.smart.legendEqual} · {t.smart.legendArrows}. {t.smart.legendComputed}
         </p>
       </div>
-
-      {/* Volume Delta / CVD (klines) — painel abaixo do gráfico, qualquer moeda */}
-      {layers.cvd && (
-        <VolumeDeltaSubchart data={cvdSeries} title={t.smart.cvdSubTitle.replace("{tf}", tf.toUpperCase())} />
-      )}
 
       {/* Tabela de níveis-chave com confluência */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">

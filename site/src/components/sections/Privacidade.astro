@@ -1,0 +1,38 @@
+---
+// Corpo da página de Privacidade (compartilhado entre / e /en/ — both-in-DOM via <T>).
+import Nav from "../Nav.astro";
+import Footer from "../Footer.astro";
+import T from "../T.astro";
+---
+
+<Nav />
+<section class="mx-auto max-w-3xl px-4 py-16">
+  <h1 class="text-3xl font-bold tracking-tight"><T pt="Política de Privacidade" en="Privacy Policy" /></h1>
+  <p class="mt-3 text-sm text-muted"><T pt="Última atualização: junho de 2026 · rascunho (versão final em breve)." en="Last updated: June 2026 · draft (final version coming soon)." /></p>
+  <div class="prose-news mt-8">
+    <h2><T pt="1. Dados que coletamos" en="1. Data we collect" /></h2>
+    <p>
+      <T
+        pt="E-mail (para conta e newsletter), nome e dados de pagamento processados pelo gateway (Asaas), e dados de uso do produto para melhorar o serviço."
+        en="Email (for your account and the newsletter), name, payment data processed by our gateway (Asaas), and product usage data to improve the service."
+      />
+    </p>
+    <h2><T pt="2. Como usamos" en="2. How we use it" /></h2>
+    <p>
+      <T
+        pt="Para autenticar seu acesso, enviar a newsletter e comunicações do serviço, processar assinaturas e melhorar o produto. Não vendemos seus dados."
+        en="To authenticate your access, send the newsletter and service communications, process subscriptions, and improve the product. We do not sell your data."
+      />
+    </p>
+    <h2><T pt="3. Seus direitos (LGPD)" en="3. Your rights (LGPD)" /></h2>
+    <p>
+      <T
+        pt="Você pode acessar, corrigir ou excluir seus dados e cancelar a newsletter a qualquer momento. Solicitações:"
+        en="You can access, correct, or delete your data and unsubscribe from the newsletter at any time. Requests:"
+      /> <a href="mailto:contato@orbeview.com">contato@orbeview.com</a>.
+    </p>
+    <h2><T pt="4. Cookies" en="4. Cookies" /></h2>
+    <p><T pt="Usamos o mínimo necessário para sessão e preferências. Sem rastreamento invasivo." en="We use only the minimum needed for sessions and preferences. No invasive tracking." /></p>
+  </div>
+</section>
+<Footer />

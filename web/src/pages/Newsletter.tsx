@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import ThemeToggle from "../components/ui/ThemeToggle";
+import { useT } from "../lib/i18n";
 import { listEditions, fmtDate, TIER_LABEL, type EditionCard } from "../lib/newsletter";
 
 /** Arquivo da newsletter dentro do app (rota /newsletter). Lista as edições
  *  publicadas; a leitura completa (e o paywall por plano) fica em /newsletter/:slug. */
 export default function Newsletter() {
+  const { t } = useT();
   const [eds, setEds] = useState<EditionCard[] | null>(null);
 
   useEffect(() => {
@@ -27,16 +29,15 @@ export default function Newsletter() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl px-4 py-10">
-        <h1 className="text-3xl font-extrabold tracking-tight">Newsletter</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight">{t.header.newsletter}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A leitura semanal do mercado — gamma, fluxo e liquidez traduzidos. Edições completas liberadas
-          para <strong className="text-foreground">qualquer conta</strong>; gerada automaticamente pela IA toda semana.
+          {t.pages.newsletter.subA}<strong className="text-foreground">{t.pages.newsletter.subStrong}</strong>{t.pages.newsletter.subB}
         </p>
 
         {eds == null ? (
-          <p className="mt-8 text-sm text-muted-foreground">Carregando…</p>
+          <p className="mt-8 text-sm text-muted-foreground">{t.common.loading}</p>
         ) : eds.length === 0 ? (
-          <p className="mt-8 text-sm text-muted-foreground">Nenhuma edição publicada ainda — em breve.</p>
+          <p className="mt-8 text-sm text-muted-foreground">{t.pages.newsletter.empty}</p>
         ) : (
           <div className="mt-8 space-y-3">
             {eds.map((e) => (
@@ -56,7 +57,7 @@ export default function Newsletter() {
                 </div>
                 <h2 className="mt-2 text-lg font-bold text-foreground">{e.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{e.excerpt}</p>
-                <span className="mt-3 inline-block text-sm font-medium text-primary">Ler edição →</span>
+                <span className="mt-3 inline-block text-sm font-medium text-primary">{t.pages.newsletter.read}</span>
               </Link>
             ))}
           </div>
