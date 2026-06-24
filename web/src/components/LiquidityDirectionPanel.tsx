@@ -1,4 +1,4 @@
-import { fmtPct, fmtUsd, relativeTime } from "../lib/format";
+import { fmtPct, fmtUsd, readCapitalDirection, relativeTime, LEVEL_DOT, LEVEL_TEXT } from "../lib/format";
 import { useGlossary } from "../lib/glossary";
 import { useT } from "../lib/i18n";
 import type { Level, MacroData, MarketLiquidityData } from "../lib/types";
@@ -30,6 +30,8 @@ export default function LiquidityDirectionPanel({
   const sc = liquidity.total_stablecoin_usd;
   const scChg = liquidity.stablecoin_chg_7d_pct;
   const dom = sc != null && macro?.total_mcap ? (sc / macro.total_mcap) * 100 : null;
+  // Síntese: lê os 3 sinais juntos num veredito de "direção do capital" (market-wide).
+  const capital = readCapitalDirection(scChg, liquidity.fees_change_7d, liquidity.dex_change_7d);
 
   return (
     <div className="rounded-xl border-2 border-primary/70 bg-card dark:bg-card/60 p-4 ring-1 ring-primary/15">
@@ -38,6 +40,15 @@ export default function LiquidityDirectionPanel({
           {tt("Liquidez & direção (DeFi)", "Liquidity & direction (DeFi)")} <InfoTip text={GLOSSARY.marketLiquidity} />
         </span>
         <span className="text-[10px] text-muted-foreground">{tt("Fonte:", "Source:")} DefiLlama · {relativeTime(updatedAt)}</span>
+      </div>
+
+      {/* Veredito único: direção do capital (cruza dry powder + uso real + especulação) */}
+      <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-background/40 p-2.5">
+        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${LEVEL_DOT[capital.level]}`} />
+        <div className="min-w-0">
+          <p className={`text-sm font-semibold ${LEVEL_TEXT[capital.level]}`}>{capital.label}</p>
+          <p className="text-[10px] text-muted-foreground">{capital.detail}</p>
+        </div>
       </div>
 
       {/* Stablecoins — dry powder */}

@@ -347,7 +347,15 @@ export default function Dashboard() {
                 <MetricCard title={tr.cockpit.liquidations} reading={readLiquidations(d?.liq_long_usd, d?.liq_short_usd)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.liquidations} />
                 <MetricCard
                   title={tr.cockpit.squeezeRisk}
-                  reading={readSqueezeRisk(d?.funding_rate == null ? null : d.funding_rate / 100, d?.long_short_ratio, d?.liq_long_usd, d?.liq_short_usd)}
+                  reading={readSqueezeRisk(
+                    d?.funding_rate == null ? null : d.funding_rate / 100,
+                    d?.long_short_ratio,
+                    d?.liq_long_usd,
+                    d?.liq_short_usd,
+                    payload?.price?.binance?.cvd == null && payload?.price?.okx?.cvd == null
+                      ? d?.cvd
+                      : (payload?.price?.binance?.cvd ?? 0) + (payload?.price?.okx?.cvd ?? 0),
+                  )}
                   source="Coinalyze"
                   timestamp={updatedAt}
                   info={GLOSSARY.squeezeRisk}

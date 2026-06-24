@@ -137,6 +137,7 @@ export function readSqueezeRisk(
   longShort: number | null | undefined,
   liqLong: number | null | undefined,
   liqShort: number | null | undefined,
+  cvd?: number | null, // CVD agressor do varejo (opcional) — confirma o gatilho do squeeze
 ): Reading {
   if (funding == null && longShort == null)
     return { label: tl("Risco de squeeze indisponível", "Squeeze risk unavailable"), detail: "—", level: "neutral" };
@@ -146,26 +147,38 @@ export function readSqueezeRisk(
   const s = liqShort ?? 0;
   const flushLong = l > s * 1.5; // longs já sendo liquidados
   const flushShort = s > l * 1.5; // shorts já sendo liquidados
-  const detail = `funding ${fmtPct(fr * 100, 4)} · L/S ${r.toFixed(2)}`;
+  // CVD confirma o gatilho: venda agressiva acompanha squeeze de baixa; compra, o de alta.
+  const cvdSell = cvd != null && cvd < 0;
+  const cvdBuy = cvd != null && cvd > 0;
+  const confirm = tl(" · fluxo confirma", " · flow confirms");
+  const detail = `funding ${fmtPct(fr * 100, 4)} · L/S ${r.toFixed(2)}${cvd != null ? ` · CVD ${fmtUsd(cvd)}` : ""}`;
 
   // Comprados lotados pagando funding caro → vulneráveis a squeeze de BAIXA.
-  if (fr > 0.0003 && r >= 1.5)
+  if (fr > 0.0003 && r >= 1.5) {
+    const underway = flushLong || (cvdSell && fr > 0.0005);
     return {
-      label: flushLong
-        ? tl("Squeeze de BAIXA em curso — comprados lotados sendo liquidados", "DOWNSIDE squeeze underway — crowded longs being liquidated")
-        : tl("Squeeze de BAIXA armando — comprados lotados pagando funding caro", "DOWNSIDE squeeze building — crowded longs paying high funding"),
+      label:
+        (flushLong
+          ? tl("Squeeze de BAIXA em curso — comprados lotados sendo liquidados", "DOWNSIDE squeeze underway — crowded longs being liquidated")
+          : tl("Squeeze de BAIXA armando — comprados lotados pagando funding caro", "DOWNSIDE squeeze building — crowded longs paying high funding")) +
+        (flushLong && cvdSell ? confirm : ""),
       detail,
-      level: flushLong ? "red" : "yellow",
+      level: underway ? "red" : "yellow",
     };
+  }
   // Vendidos lotados pagando funding caro → vulneráveis a squeeze de ALTA.
-  if (fr < -0.0003 && r <= 0.67)
+  if (fr < -0.0003 && r <= 0.67) {
+    const underway = flushShort || (cvdBuy && fr < -0.0005);
     return {
-      label: flushShort
-        ? tl("Squeeze de ALTA em curso — vendidos lotados sendo liquidados", "UPSIDE squeeze underway — crowded shorts being liquidated")
-        : tl("Squeeze de ALTA armando — vendidos lotados pagando funding caro", "UPSIDE squeeze building — crowded shorts paying high funding"),
+      label:
+        (flushShort
+          ? tl("Squeeze de ALTA em curso — vendidos lotados sendo liquidados", "UPSIDE squeeze underway — crowded shorts being liquidated")
+          : tl("Squeeze de ALTA armando — vendidos lotados pagando funding caro", "UPSIDE squeeze building — crowded shorts paying high funding")) +
+        (flushShort && cvdBuy ? confirm : ""),
       detail,
-      level: flushShort ? "red" : "yellow",
+      level: underway ? "red" : "yellow",
     };
+  }
   // Pressão de um lado só, sem lotação extrema.
   if (fr > 0.0005) return { label: tl("Comprados pagando caro — risco de squeeze de baixa", "Longs paying up — downside-squeeze risk"), detail, level: "yellow" };
   if (fr < -0.0005) return { label: tl("Vendidos pagando caro — risco de squeeze de alta", "Shorts paying up — upside-squeeze risk"), detail, level: "yellow" };
@@ -469,6 +482,59 @@ export function readMarketLiquidity(
   if (chg7dPct != null && chg7dPct <= -0.3)
     return { label: tl("Liquidez recuando — stablecoins saindo do mercado", "Liquidity retreating — stablecoins leaving the market"), detail, level: "yellow" };
   return { label: tl("Liquidez estável — oferta de stablecoins de lado", "Liquidity steady — stablecoin supply flat"), detail, level: "neutral" };
+}
+
+/**
+ * Direção do Capital (market-wide) — síntese ÚNICA de "vento a favor/contra" cruzando
+ * os 3 sinais que hoje vivem como barras soltas: oferta de stablecoins (dry powder /
+ * disponibilidade de capital), receita/fees DeFi (uso REAL — não dá pra inflar como TVL)
+ * e volume de DEX (especulação). Opcionalmente soma o fluxo de ETF spot (institucional).
+ * Resume num placar direcional (−1..+1 normalizado) com semáforo. Mesma leitura p/ todos
+ * os ativos (é market-wide), mas modula o pano de fundo de qualquer leitura cripto.
+ */
+export function readCapitalDirection(
+  stableChg7dPct: number | null | undefined, // variação % 7d da oferta de stablecoins
+  feesChg7d: number | null | undefined, // variação % 7d das fees/receita DeFi
+  dexChg7d: number | null | undefined, // variação % 7d do volume DEX
+  etf7d?: number | null, // fluxo de ETF spot 7d em USD (opcional; BTC/ETH)
+): Reading {
+  let score = 0;
+  let n = 0;
+  const parts: string[] = [];
+
+  if (stableChg7dPct != null) {
+    n++;
+    score += stableChg7dPct >= 0.3 ? 1 : stableChg7dPct <= -0.5 ? -1 : 0;
+    parts.push(`${tl("dry powder", "dry powder")} ${fmtPct(stableChg7dPct, 1)}`);
+  }
+  if (feesChg7d != null) {
+    n++;
+    score += feesChg7d >= 5 ? 1 : feesChg7d <= -5 ? -1 : 0;
+    parts.push(`${tl("uso real", "real usage")} ${fmtPct(feesChg7d, 1)}`);
+  }
+  if (dexChg7d != null) {
+    n++;
+    score += dexChg7d >= 10 ? 1 : dexChg7d <= -10 ? -1 : 0;
+    parts.push(`${tl("especulação DEX", "DEX speculation")} ${fmtPct(dexChg7d, 1)}`);
+  }
+  if (etf7d != null) {
+    n++;
+    score += etf7d > 0 ? 1 : etf7d < 0 ? -1 : 0;
+    parts.push(`ETF 7d ${fmtUsd(etf7d)}`);
+  }
+  if (!n) return { label: tl("Direção do capital indisponível", "Capital direction unavailable"), detail: "—", level: "neutral" };
+
+  const norm = score / n; // −1..+1
+  const detail = parts.join(" · ");
+  if (norm >= 0.5)
+    return { label: tl("Capital entrando com convicção — vento a favor do risco", "Capital flowing in with conviction — tailwind for risk"), detail, level: "green" };
+  if (norm > 0)
+    return { label: tl("Capital inclinado a entrar — leve vento a favor", "Capital leaning in — slight tailwind"), detail, level: "green" };
+  if (norm <= -0.5)
+    return { label: tl("Capital saindo — vento contra o risco", "Capital flowing out — headwind for risk"), detail, level: "red" };
+  if (norm < 0)
+    return { label: tl("Capital inclinado a sair — leve vento contra", "Capital leaning out — slight headwind"), detail, level: "yellow" };
+  return { label: tl("Capital de lado — sem direção clara", "Capital sideways — no clear direction"), detail, level: "yellow" };
 }
 
 /** Posicionamento institucional em opções (Deribit): Put/Call ratio + skew de IV. */

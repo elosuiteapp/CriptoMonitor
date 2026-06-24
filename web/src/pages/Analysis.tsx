@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import Disclaimer from "../components/Disclaimer";
 import { useT } from "../lib/i18n";
+import { marketReadSummary } from "../lib/marketReadSummary";
 import { smcSummary } from "../lib/smcSummary";
 import { supabase } from "../lib/supabase";
 
@@ -48,10 +49,14 @@ export default function Analysis() {
     setGenerating(true);
     setError(null);
     try {
-      // Calcula a estrutura SMC (1D+4h) no cliente e envia pro copiloto considerar
-      const smc = await smcSummary(asset).catch(() => null);
+      // Calcula a estrutura SMC (1D+4h) e a Leitura do Mercado (motor de confluência)
+      // no cliente e envia pro copiloto — a IA narra em cima da MESMA leitura do app.
+      const [smc, read] = await Promise.all([
+        smcSummary(asset).catch(() => null),
+        marketReadSummary(asset).catch(() => null),
+      ]);
       const { data, error } = await supabase.functions.invoke("generate-analysis", {
-        body: { asset, smc, lang: isEn ? "en" : "pt" },
+        body: { asset, smc, read, lang: isEn ? "en" : "pt" },
       });
       if (error) {
         // Tenta extrair a mensagem amigável do corpo da resposta

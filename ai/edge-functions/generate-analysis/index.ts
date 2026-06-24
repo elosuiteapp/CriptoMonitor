@@ -24,7 +24,7 @@ const SYSTEM_PROMPT_PT = [
   "3c) Risco de squeeze - cruze funding + long/short + liquidacoes: comprados lotados pagando funding caro = risco de squeeze de BAIXA (liquidam se cai); vendidos lotados pagando = risco de squeeze de ALTA. Se as liquidacoes daquele lado ja correm, o squeeze esta em curso.",
   "3b) Estrutura de mercado (Smart Money Concepts) - quando a ESTRUTURA SMC for fornecida, use o vies por timeframe (1D e 4h), o ultimo evento (BOS = continuacao / CHoCH = possivel reversao), os order blocks de suporte/resistencia, os pools de liquidez (alvos magneticos) e a zona premium (caro) / discount (barato). DESTAQUE como ALTA CONFLUENCIA quando um order block ou pool de liquidez coincidir (preco proximo) com Call/Put Wall, Zero Gamma, Max Pain ou parede do book. Explique BOS/CHoCH/order block/liquidez em poucas palavras.",
   "4) Volatilidade e sentimento - Fear & Greed; opcoes: Put/Call, IV media e skew; e o painel de volatilidade quando houver: DVOL, IV Percentile 90d, IV-RV spread (premio de risco) e term structure (se o curto 7d > 90d e backwardation, mercado pricing evento de curto prazo).",
-  "5) Sintese - junte os sinais num quadro coerente.",
+  "5) Sintese - junte os sinais num quadro coerente. Quando vier a LEITURA DO MERCADO (motor de confluencia ja calculado: vies -100..+100, conviccao, regime, divergencias, alvos, falsificador), use-a como ESPINHA DORSAL da sintese: confirme quando os outros sinais concordam, e destaque quando algum diverge. NAO contradiga o vies/alvos sem explicar o porque. Cite o falsificador (o nivel que muda a leitura).",
   "FUNDING (unidades): no snapshot, derivatives.funding_rate (CEX, Coinalyze) ja vem em PERCENT (0,01 = 0,01%, intervalo 8h) e onchain_perps.funding_rate (Hyperliquid) vem em FRACAO (x100 para %). Use os valores de funding ja convertidos para percent fornecidos no prompt e NUNCA multiplique o CEX por 100.",
   "Proibido: recomendar compra/venda, prever preco-alvo, usar linguagem de certeza (prefira 'tende a', 'historicamente', 'sugere').",
   "Use apenas os dados fornecidos; se uma metrica vier ausente, diga que esta indisponivel neste ciclo e nunca invente numeros.",
@@ -41,7 +41,7 @@ const SYSTEM_PROMPT_EN = [
   "3c) Squeeze risk - cross funding + long/short + liquidations: crowded longs paying expensive funding = DOWNSIDE squeeze risk (they liquidate if price drops); crowded shorts paying = UPSIDE squeeze risk. If liquidations on that side are already running, the squeeze is underway.",
   "3b) Market structure (Smart Money Concepts) - when the SMC STRUCTURE is provided, use the bias per timeframe (1D and 4h), the last event (BOS = continuation / CHoCH = possible reversal), the support/resistance order blocks, the liquidity pools (magnetic targets), and the premium (expensive) / discount (cheap) zone. HIGHLIGHT as HIGH CONFLUENCE when an order block or liquidity pool coincides (nearby price) with a Call/Put Wall, Zero Gamma, Max Pain, or order-book wall. Explain BOS/CHoCH/order block/liquidity in a few words.",
   "4) Volatility and sentiment - Fear & Greed; options: Put/Call, average IV, and skew; and the volatility panel when available: DVOL, IV Percentile 90d, IV-RV spread (risk premium), and term structure (if the 7d short end > 90d it's backwardation, the market is pricing a short-term event).",
-  "5) Synthesis - tie the signals into a coherent picture.",
+  "5) Synthesis - tie the signals into a coherent picture. When the MARKET READ is provided (pre-computed confluence engine: bias -100..+100, conviction, regime, divergences, targets, falsifier), use it as the BACKBONE of the synthesis: confirm when the other signals agree, and flag when one diverges. Do NOT contradict the bias/targets without explaining why. Cite the falsifier (the level that changes the read).",
   "FUNDING (units): in the snapshot, derivatives.funding_rate (CEX, Coinalyze) already comes in PERCENT (0.01 = 0.01%, 8h interval) and onchain_perps.funding_rate (Hyperliquid) comes as a FRACTION (x100 for %). Use the funding values already converted to percent provided in the prompt and NEVER multiply the CEX one by 100 again.",
   "Forbidden: recommending buy/sell, predicting a price target, using language of certainty (prefer 'tends to', 'historically', 'suggests').",
   "Use only the data provided; if a metric is missing, say it's unavailable this cycle and never make up numbers.",
@@ -103,6 +103,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const ativo = String(body.asset || "BTC").toUpperCase();
   const smc = body.smc ?? null; // resumo Smart Money Concepts (1D+4h) enviado pelo cliente
+  const read = body.read ?? null; // Leitura do Mercado JÁ computada (motor de confluência)
   const lang: "pt" | "en" = body.lang === "en" ? "en" : "pt"; // idioma da resposta (front envia getLocale())
   const isEn = lang === "en";
   const SYSTEM_PROMPT = isEn ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_PT;
@@ -204,6 +205,9 @@ Deno.serve(async (req) => {
         "SMC structure (Smart Money Concepts, computed from 1D and 4h candles - bias, BOS/CHoCH, support/resistance order blocks, liquidity pools, premium/discount zone, recent sweep):",
         JSON.stringify(smc ?? {}),
         "",
+        "Market Read (pre-computed confluence engine - the SAME read the app shows; use as the backbone): bias -100..+100, conviction 0..100, regime, divergences, targets (magnets), falsifier:",
+        JSON.stringify(read ?? {}),
+        "",
         "Recent news:",
         newsText,
       ]
@@ -221,6 +225,9 @@ Deno.serve(async (req) => {
         "",
         "Estrutura SMC (Smart Money Concepts, calculada dos candles 1D e 4h - vies, BOS/CHoCH, order blocks de suporte/resistencia, pools de liquidez, zona premium/discount, sweep recente):",
         JSON.stringify(smc ?? {}),
+        "",
+        "Leitura do Mercado (motor de confluencia ja calculado - a MESMA leitura que o app mostra; use como espinha dorsal): vies -100..+100, conviccao 0..100, regime, divergencias, alvos (imas), falsificador:",
+        JSON.stringify(read ?? {}),
         "",
         "Noticias recentes:",
         newsText,

@@ -372,6 +372,37 @@ export function computeMarketRead(
     });
   }
 
+  // ── Contexto: DIREÇÃO DO CAPITAL (market-wide: dry powder + uso real + ETF) ──
+  // Não vota no viés (é pano de fundo), mas vira divergência quando contraria o movimento.
+  let capitalGate: number | null = null;
+  const liq = payload?.liquidity;
+  if (liq || payload?.etf_flows) {
+    let cs = 0;
+    let cn = 0;
+    if (liq?.stablecoin_chg_7d_pct != null) { cs += liq.stablecoin_chg_7d_pct >= 0.3 ? 1 : liq.stablecoin_chg_7d_pct <= -0.5 ? -1 : 0; cn++; }
+    if (liq?.fees_change_7d != null) { cs += liq.fees_change_7d >= 5 ? 1 : liq.fees_change_7d <= -5 ? -1 : 0; cn++; }
+    if (liq?.dex_change_7d != null) { cs += liq.dex_change_7d >= 10 ? 1 : liq.dex_change_7d <= -10 ? -1 : 0; cn++; }
+    const etf7c = payload?.etf_flows?.flow_7d_usd;
+    if (etf7c != null) { cs += etf7c > 0 ? 1 : etf7c < 0 ? -1 : 0; cn++; }
+    if (cn) {
+      capitalGate = cs / cn;
+      axes.push({
+        key: "capital",
+        label: tl("Direção do capital (market-wide)", "Capital direction (market-wide)"),
+        group: tl("fluxo", "flow"),
+        dir: 0,
+        strength: clamp01(Math.abs(capitalGate)),
+        available: true,
+        detail:
+          capitalGate > 0.2
+            ? tl("Capital entrando — vento a favor (dry powder / uso real / ETF)", "Capital flowing in — tailwind (dry powder / real usage / ETF)")
+            : capitalGate < -0.2
+              ? tl("Capital saindo — vento contra", "Capital flowing out — headwind")
+              : tl("Capital de lado", "Capital sideways"),
+      });
+    }
+  }
+
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
   const directional = [
     { dir: trendDir, str: trendStr, w: 0.28, avail: haveTrend },
@@ -447,6 +478,38 @@ export function computeMarketRead(
       divergences.push(tl("Viés de baixa, mas a maré macro é risk-on (VIX/juros caindo) — pode limitar a queda.", "Bearish bias, but the macro tide is risk-on (VIX/rates falling) — may limit the downside."));
     else if (bias > 0 && macroGate < -0.3)
       divergences.push(tl("Viés de alta contra maré macro risk-off (DXY/juros subindo) — vento contra.", "Bullish bias against a risk-off macro tide (DXY/rates rising) — headwind."));
+  }
+
+  // Divergência viés × direção do capital (pano de fundo market-wide contra o movimento).
+  if (capitalGate != null && wsum && bias !== 0) {
+    if (bias > 0 && capitalGate < -0.3)
+      divergences.push(tl("Viés de alta, mas o capital market-wide está saindo (dry powder / uso real caindo) — base frágil.", "Bullish bias, but market-wide capital is leaving (dry powder / real usage falling) — fragile base."));
+    else if (bias < 0 && capitalGate > 0.3)
+      divergences.push(tl("Viés de baixa, mas o capital market-wide está entrando — pode segurar a queda.", "Bearish bias, but market-wide capital is flowing in — may cushion the downside."));
+  }
+
+  // Risco de GAMMA: o regime amplifica/amortece a leitura direcional (não muda o viés,
+  // muda a forma como o movimento se comporta). Faz toda leitura ficar consciente de risco.
+  if (gammaRegime && wsum && bias !== 0) {
+    if (gammaRegime === "negative")
+      divergences.push(
+        bias > 0
+          ? tl(
+              "Leitura de alta em gamma negativo — dealers amplificam: maior risco de overshoot e stop-hunt nos dois sentidos.",
+              "Bullish read in negative gamma — dealers amplify: higher overshoot and stop-hunt risk both ways.",
+            )
+          : tl(
+              "Leitura de baixa em gamma negativo — quedas tendem a acelerar (dealers vendem fraqueza).",
+              "Bearish read in negative gamma — drops tend to accelerate (dealers sell weakness).",
+            ),
+      );
+    else if (gammaRegime === "positive" && Math.abs(bias) >= 25)
+      divergences.push(
+        tl(
+          "Leitura direcional em gamma positivo — dealers amortecem: o movimento tende a perder força perto das paredes (volta à média).",
+          "Directional read in positive gamma — dealers dampen: the move tends to stall near the walls (mean-reversion).",
+        ),
+      );
   }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────
