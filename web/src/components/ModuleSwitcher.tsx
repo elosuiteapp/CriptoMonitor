@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useT } from "../lib/i18n";
-import { MODULES, type ModuleId } from "../lib/modules";
+import { MODULES, moduleDescription, moduleLabel, type ModuleId } from "../lib/modules";
 
 interface Props {
   current: ModuleId;
@@ -29,7 +29,7 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
         <span aria-hidden className="text-base leading-none">
           {active.icon}
         </span>
-        <span>{active.label}</span>
+        <span>{moduleLabel(active.id)}</span>
         <span className="text-xs text-muted-foreground">▾</span>
       </button>
 
@@ -52,14 +52,14 @@ export default function ModuleSwitcher({ current, onChange, isAdmin }: Props) {
                   </span>
                   <span className="flex flex-col">
                     <span className="flex items-center gap-1.5 font-medium text-foreground">
-                      {m.label}
+                      {moduleLabel(m.id)}
                       {!m.available && (
                         <span className="rounded-full border border-border px-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                           {tr.modules.soon}
                         </span>
                       )}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                    <span className="text-[11px] text-muted-foreground">{moduleDescription(m.id)}</span>
                   </span>
                 </span>
               );

@@ -14,6 +14,7 @@ import {
 
 import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
+import { useT } from "../lib/i18n";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import { buildLiquidationGrid, heatColor, liquidationMagnets, HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
@@ -71,6 +72,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const { isDark } = useTheme();
+  const { isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
 
   // Espelhamento do preço ao vivo para o topo: ref evita re-subscrever o WS, e o
   // throttle (~1s) evita re-render do Dashboard a cada tick.
@@ -177,7 +180,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           emitPrice(bar.close); // mantém o topo em sincronia, ao vivo
         });
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "falha ao carregar candles");
+        if (!cancelled) setError(e instanceof Error ? e.message : "load_error");
       }
     })();
 
@@ -415,8 +418,11 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         return;
       }
       const side = vs >= vl ? "shorts ↑" : "longs ↓";
-      const word = ratio >= 0.66 ? "forte" : ratio >= 0.33 ? "média" : "fraca";
-      tip.textContent = `Liq. de ${side} · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
+      const word = ratio >= 0.66 ? tt("forte", "strong") : ratio >= 0.33 ? tt("média", "medium") : tt("fraca", "weak");
+      const px = Math.round(price).toLocaleString(isEn ? "en-US" : "pt-BR");
+      tip.textContent = isEn
+        ? `${side} liq. · ~$${px} · ${Math.round(ratio * 100)}% (${word})`
+        : `Liq. de ${side} · ~$${px} · ${Math.round(ratio * 100)}% (${word})`;
       tip.style.display = "block";
       tip.style.left = `${param.point.x + 12}px`;
       tip.style.top = `${param.point.y + 12}px`;
@@ -430,7 +436,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       removeMagnets();
       clear();
     };
-  }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType, gamma, vp, walls]);
+  }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType, gamma, vp, walls, isEn]);
 
   // ─── Paredes do book — barras de liquidez na borda direita ───────────────────
   // Cada parede vira uma barra horizontal ancorada à direita; comprimento ∝ tamanho
@@ -589,25 +595,25 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       {canUseLayers && layers.orderbookWalls && walls && walls.length > 0 && (
         <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(34,197,94,0.7)" }} /> parede compra
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(34,197,94,0.7)" }} /> {tt("parede compra", "buy wall")}
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> parede venda
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> {tt("parede venda", "sell wall")}
           </span>
-          <span>· barra = tamanho</span>
+          <span>· {tt("barra = tamanho", "bar = size")}</span>
         </div>
       )}
       {canUseLayers && layers.liquidations && (
         <>
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-            Heatmap de liquidações · estimativa (modelo de alavancagem)
+            {tt("Heatmap de liquidações · estimativa (modelo de alavancagem)", "Liquidations heatmap · estimate (leverage model)")}
           </div>
           {/* Legenda: o fundo (térmico) = intensidade; as linhas das zonas = lado. */}
           <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              fraco
+              {tt("fraco", "weak")}
               <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT }} />
-              forte
+              {tt("forte", "strong")}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#ef4444" }} />
@@ -627,7 +633,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       )}
       {error && (
         <div className="absolute inset-0 z-20 grid place-items-center text-sm text-muted-foreground">
-          Gráfico indisponível ({error})
+          {tt("Gráfico indisponível", "Chart unavailable")} ({error === "load_error" ? tt("falha ao carregar candles", "failed to load candles") : error})
         </div>
       )}
     </div>

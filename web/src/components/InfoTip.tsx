@@ -1,9 +1,12 @@
 import { useState } from "react";
 
+import { useT } from "../lib/i18n";
+
 /** Tooltip premium reutilizável: ícone "i" discreto que, no hover/clique, abre um
  *  card escuro com borda, sombra e seta. Use em qualquer rótulo que tenha jargão. */
 export default function InfoTip({ text, className = "" }: { text: string; className?: string }) {
   const [open, setOpen] = useState(false);
+  const { isEn } = useT();
   if (!text) return null;
 
   return (
@@ -11,7 +14,7 @@ export default function InfoTip({ text, className = "" }: { text: string; classN
       <span
         role="button"
         tabIndex={0}
-        aria-label="Mais informações"
+        aria-label={isEn ? "More info" : "Mais informações"}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}

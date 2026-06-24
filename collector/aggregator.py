@@ -120,7 +120,9 @@ def build_snapshots(
     macro = macro_rows[0] if macro_rows else macro_fallback
     liq_rows = _rows_of(results, "market_liquidity")
     liquidity = liq_rows[0] if liq_rows else liquidity_fallback
-    news = _rows_of(results, "news_feed")
+    # Só notícias PT no payload do snapshot: a IA (generate-analysis) ainda responde
+    # em PT. As notícias EN existem na tabela só p/ o NewsBlock do app em inglês.
+    news = [n for n in _rows_of(results, "news_feed") if (n.get("lang") or "pt") == "pt"]
 
     snapshots: list[dict] = []
     for asset in assets:

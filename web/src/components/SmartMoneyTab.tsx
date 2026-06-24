@@ -33,8 +33,6 @@ const TFS: { id: Timeframe; label: string }[] = [
   { id: "1M", label: "1M" },
 ];
 
-const TF_LABEL: Record<string, string> = { "15m": "15m", "1h": "1h", "1d": "1D", "4h": "4h", "1w": "1S", "1M": "1Mês" };
-
 // Timeframe imediatamente MAIOR (para a confluência multi-timeframe / top-down).
 const HIGHER_TF: Partial<Record<Timeframe, Timeframe>> = { "15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M" };
 
@@ -100,6 +98,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const { t, locale } = useT();
   const glossary = useGlossary();
   const numLocale = locale === "en" ? "en-US" : "pt-BR";
+  // Rótulo de timeframe no idioma atual (PT: 1S/1Mês · EN: 1W/1M) — usa o dicionário central.
+  const tfLabel = (id?: string): string | undefined =>
+    id === "15m" ? t.tf.m15 : id === "1h" ? t.tf.h1 : id === "4h" ? t.tf.h4 : id === "1d" ? t.tf.d1 : id === "1w" ? t.tf.w1 : id === "1M" ? t.tf.mo1 : undefined;
   const { user } = useAuth();
   const { plan } = usePlan(user?.id);
   const channels = plan?.alert_channels ?? [];
@@ -242,7 +243,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const htfLevels = useMemo(() => {
     if (!htfSmc) return [];
     const s = htfSmc;
-    const lbl = TF_LABEL[HIGHER_TF[tf] ?? ""] ?? "HTF";
+    const lbl = tfLabel(HIGHER_TF[tf]) ?? "HTF";
     const out: { price: number; label: string }[] = [];
     const byDist = (a: { mid: number }, b: { mid: number }) => Math.abs(a.mid - s.price) - Math.abs(b.mid - s.price);
     s.orderBlocks.filter((o) => o.bias === "bearish").sort(byDist).slice(0, 2).forEach((o) => out.push({ price: o.mid, label: `OB ${lbl}` }));
@@ -253,7 +254,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       .slice(0, 3)
       .forEach((l) => out.push({ price: l.price, label: `Liq ${lbl}` }));
     return out;
-  }, [htfSmc, tf]);
+  }, [htfSmc, tf, t]);
 
   // Volume Profile (POC/VA) dos candles — reusado na confluência e no gráfico.
   const vp = useMemo(() => (candles.length ? computeVolumeProfile(candles) : null), [candles]);
@@ -305,7 +306,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     const prev = lastEventRef.current[key];
     lastEventRef.current[key] = sig;
     if (prev === undefined || prev === sig) return; // 1ª vez semeia; igual = sem novidade
-    const msg = `${smcAsset} · ${TF_LABEL[tf] ?? tf}: ${latest.text}`;
+    const msg = `${smcAsset} · ${tfLabel(tf) ?? tf}: ${latest.text}`;
     setSmcAlert({ text: msg, tone: latest.tone });
     try {
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -513,7 +514,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           ) : (
             mtf.map((m) => (
               <span key={m.tf} className={`rounded-full border px-2 py-0.5 text-xs ${BIAS_TONE[m.bias]}`}>
-                {TF_LABEL[m.tf] ?? m.tf} · {m.bias === "bullish" ? t.smart.biasUp : m.bias === "bearish" ? t.smart.biasDown : t.smart.trendNeutral}
+                {tfLabel(m.tf) ?? m.tf} · {m.bias === "bullish" ? t.smart.biasUp : m.bias === "bearish" ? t.smart.biasDown : t.smart.trendNeutral}
               </span>
             ))
           )}
@@ -587,15 +588,15 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             ))}
           </div>
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
-            {TFS.map((t) => (
+            {TFS.map((tfo) => (
               <button
-                key={t.id}
-                onClick={() => setTf(t.id)}
+                key={tfo.id}
+                onClick={() => setTf(tfo.id)}
                 className={`rounded-md px-3 py-1 text-xs transition-colors ${
-                  tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                  tf === tfo.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t.label}
+                {tfLabel(tfo.id) ?? tfo.label}
               </button>
             ))}
           </div>

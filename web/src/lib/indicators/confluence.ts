@@ -3,7 +3,10 @@
 // snapshot) e devolve UMA leitura sintetizada: viés + convicção + caráter +
 // regime nomeado + divergências + alvos de liquidez. Determinístico e auditável:
 // cada eixo expõe sua direção, força e o porquê. NÃO é previsão — é leitura do agora.
+// Bilíngue (PT/EN) via getLocale() — o IndicatorsTab inclui o idioma nas deps do
+// useMemo, então a leitura recomputa ao trocar de idioma.
 
+import { getLocale } from "../../hooks/useLocale";
 import { buildLiquidationGrid, liquidationMagnets } from "../liquidationModel";
 import type { Candle } from "../marketData";
 import { computeVolumeProfile } from "../marketData";
@@ -12,13 +15,20 @@ import { adx, atr, ema, last, macd, percentileRank, rsi } from "./ta";
 
 export type Dir = -1 | 0 | 1;
 
-const fmtUsd0 = (n: number) =>
-  "US$ " + (n >= 1000 ? Math.round(n).toLocaleString("pt-BR") : n.toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+/** Seletor curto PT/EN (idioma escolhido no render). */
+const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
+
+const fmtUsd0 = (n: number) => {
+  const en = getLocale() === "en";
+  const cur = en ? "$" : "US$ ";
+  const loc = en ? "en-US" : "pt-BR";
+  return cur + (n >= 1000 ? Math.round(n).toLocaleString(loc) : n.toLocaleString(loc, { maximumFractionDigits: 2 }));
+};
 
 export interface AxisSignal {
   key: string;
   label: string;
-  group: "tendência" | "momento" | "fluxo" | "posição" | "opções" | "caráter";
+  group: string; // grupo traduzido p/ exibição
   dir: Dir; // -1 baixa, 0 neutro, +1 alta
   strength: number; // 0..1
   detail: string;
@@ -45,7 +55,7 @@ export function timeframeLean(tf: string, candles: Candle[]): TfLean {
   v += e20 > e50 ? 1 : -1;
   v += hist > 0 ? 1 : -1;
   const dir: Dir = v >= 2 ? 1 : v <= -2 ? -1 : 0;
-  return { tf, dir, label: dir > 0 ? "alta" : dir < 0 ? "baixa" : "lateral" };
+  return { tf, dir, label: dir > 0 ? tl("alta", "up") : dir < 0 ? tl("baixa", "down") : tl("lateral", "sideways") };
 }
 
 export interface LiquidityTarget {
@@ -61,7 +71,7 @@ export interface MarketRead {
   conviction: number; // 0..100 (% das forças direcionais que concordam com o viés)
   agree: number;
   voting: number;
-  character: "tendência" | "range" | "comprimido" | "—";
+  character: string; // rótulo traduzido (tendência/range/comprimido/—)
   gammaNote: string | null;
   regime: { key: string; label: string; tone: "bull" | "bear" | "neutral" };
   axes: AxisSignal[];
@@ -96,11 +106,17 @@ function rsiDivergence(closes: number[], rsiArr: number[], look = 20): string | 
   const pH1 = maxIdx(px, 0, half);
   const pH2 = maxIdx(px, half, look);
   if (px[pH2] > px[pH1] && Number.isFinite(rs[pH1]) && Number.isFinite(rs[pH2]) && rs[pH2] < rs[pH1])
-    return "Divergência de baixa: preço fez topo mais alto, mas o RSI não acompanhou.";
+    return tl(
+      "Divergência de baixa: preço fez topo mais alto, mas o RSI não acompanhou.",
+      "Bearish divergence: price made a higher high, but RSI didn't follow.",
+    );
   const pL1 = minIdx(px, 0, half);
   const pL2 = minIdx(px, half, look);
   if (px[pL2] < px[pL1] && Number.isFinite(rs[pL1]) && Number.isFinite(rs[pL2]) && rs[pL2] > rs[pL1])
-    return "Divergência de alta: preço fez fundo mais baixo, mas o RSI segurou.";
+    return tl(
+      "Divergência de alta: preço fez fundo mais baixo, mas o RSI segurou.",
+      "Bullish divergence: price made a lower low, but RSI held.",
+    );
   return null;
 }
 
@@ -132,15 +148,15 @@ export function computeMarketRead(
     trendStr = clamp01(Math.abs(distPct) / 15);
     axes.push({
       key: "trend",
-      label: "Tendência",
-      group: "tendência",
+      label: tl("Tendência", "Trend"),
+      group: tl("tendência", "trend"),
       dir: trendDir,
       strength: trendStr,
       available: true,
-      detail: `Preço ${distPct >= 0 ? "+" : ""}${distPct.toFixed(1)}% vs EMA200 · EMA50 ${golden ? ">" : "<"} EMA200 (${golden ? "golden" : "death"} cross)`,
+      detail: `${tl("Preço", "Price")} ${distPct >= 0 ? "+" : ""}${distPct.toFixed(1)}% vs EMA200 · EMA50 ${golden ? ">" : "<"} EMA200 (${golden ? "golden" : "death"} cross)`,
     });
   } else {
-    axes.push({ key: "trend", label: "Tendência", group: "tendência", dir: 0, strength: 0, available: false, detail: "Histórico insuficiente" });
+    axes.push({ key: "trend", label: tl("Tendência", "Trend"), group: tl("tendência", "trend"), dir: 0, strength: 0, available: false, detail: tl("Histórico insuficiente", "Not enough history") });
   }
 
   // ── Eixo MOMENTO (MACD + RSI) ───────────────────────────────────────────
@@ -156,17 +172,17 @@ export function computeMarketRead(
     momStr = clamp01(Math.abs(rLast - 50) / 30);
     axes.push({
       key: "momentum",
-      label: "Momento",
-      group: "momento",
+      label: tl("Momento", "Momentum"),
+      group: tl("momento", "momentum"),
       dir: momDir,
       strength: momStr,
       available: true,
-      detail: `MACD ${histLast >= 0 ? "positivo" : "negativo"} · RSI ${rLast.toFixed(0)}${rLast > 70 ? " (sobrecomprado)" : rLast < 30 ? " (sobrevendido)" : ""}`,
+      detail: `MACD ${histLast >= 0 ? tl("positivo", "positive") : tl("negativo", "negative")} · RSI ${rLast.toFixed(0)}${rLast > 70 ? tl(" (sobrecomprado)", " (overbought)") : rLast < 30 ? tl(" (sobrevendido)", " (oversold)") : ""}`,
     });
     const div = rsiDivergence(closes, rsiArr);
     if (div) divergences.push(div);
   } else {
-    axes.push({ key: "momentum", label: "Momento", group: "momento", dir: 0, strength: 0, available: false, detail: "Histórico insuficiente" });
+    axes.push({ key: "momentum", label: tl("Momento", "Momentum"), group: tl("momento", "momentum"), dir: 0, strength: 0, available: false, detail: tl("Histórico insuficiente", "Not enough history") });
   }
 
   // ── Eixo FLUXO (institucional × varejo) ─────────────────────────────────
@@ -179,29 +195,29 @@ export function computeMarketRead(
   if (premium != null) {
     instAcc += sign(premium);
     instN++;
-    flowParts.push(`prêmio Coinbase ${premium >= 0 ? "+" : ""}${(premium * 100).toFixed(2)}%`);
+    flowParts.push(`${tl("prêmio Coinbase", "Coinbase premium")} ${premium >= 0 ? "+" : ""}${(premium * 100).toFixed(2)}%`);
   }
   if (cbCvd != null) {
     instAcc += sign(cbCvd);
     instN++;
-    flowParts.push(`CVD institucional ${cbCvd >= 0 ? "comprador" : "vendedor"}`);
+    flowParts.push(`${tl("CVD institucional", "Institutional CVD")} ${cbCvd >= 0 ? tl("comprador", "buying") : tl("vendedor", "selling")}`);
   }
   if (etf7 != null) {
     instAcc += sign(etf7);
     instN++;
-    flowParts.push(`ETF 7d ${etf7 >= 0 ? "entrando" : "saindo"}`);
+    flowParts.push(`ETF 7d ${etf7 >= 0 ? tl("entrando", "inflow") : tl("saindo", "outflow")}`);
   }
   const haveFlow = instN > 0;
   const flowDir: Dir = haveFlow ? sign(instAcc) : 0;
   const flowStr = haveFlow ? clamp01(Math.abs(instAcc) / instN) : 0;
   axes.push({
     key: "flow",
-    label: "Fluxo institucional",
-    group: "fluxo",
+    label: tl("Fluxo institucional", "Institutional flow"),
+    group: tl("fluxo", "flow"),
     dir: flowDir,
     strength: flowStr,
     available: haveFlow,
-    detail: haveFlow ? flowParts.join(" · ") : "Indisponível neste ativo",
+    detail: haveFlow ? flowParts.join(" · ") : tl("Indisponível neste ativo", "Not available for this asset"),
   });
 
   // ── Eixo POSIÇÃO (funding + long/short) ─────────────────────────────────
@@ -217,21 +233,27 @@ export function computeMarketRead(
     posStr = clamp01(Math.abs(funding) / 0.05);
     axes.push({
       key: "position",
-      label: "Posição alavancada",
-      group: "posição",
+      label: tl("Posição alavancada", "Leveraged positioning"),
+      group: tl("posição", "position"),
       dir: posDir,
       strength: posStr,
       available: true,
-      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(4)}% (${funding >= 0 ? "longs pagam" : "shorts pagam"})${ls != null ? ` · L/S ${ls.toFixed(2)}` : ""}`,
+      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(4)}% (${funding >= 0 ? tl("longs pagam", "longs pay") : tl("shorts pagam", "shorts pay")})${ls != null ? ` · L/S ${ls.toFixed(2)}` : ""}`,
     });
     if (Math.abs(funding) > 0.03)
       divergences.push(
         funding > 0
-          ? "Funding alto positivo — longs lotados, risco de long squeeze (reversão para baixo)."
-          : "Funding negativo — shorts lotados, combustível para short squeeze (reversão para cima).",
+          ? tl(
+              "Funding alto positivo — longs lotados, risco de long squeeze (reversão para baixo).",
+              "High positive funding — longs crowded, long-squeeze risk (reversal down).",
+            )
+          : tl(
+              "Funding negativo — shorts lotados, combustível para short squeeze (reversão para cima).",
+              "Negative funding — shorts crowded, fuel for a short squeeze (reversal up).",
+            ),
       );
   } else {
-    axes.push({ key: "position", label: "Posição alavancada", group: "posição", dir: 0, strength: 0, available: false, detail: "Indisponível" });
+    axes.push({ key: "position", label: tl("Posição alavancada", "Leveraged positioning"), group: tl("posição", "position"), dir: 0, strength: 0, available: false, detail: tl("Indisponível", "Not available") });
   }
 
   // ── Eixo OPÇÕES (put/call + skew) — expectativa do desk de opções ───────
@@ -247,15 +269,15 @@ export function computeMarketRead(
     optStr = clamp01(Math.abs(pcr - 1) / 0.5);
     axes.push({
       key: "options",
-      label: "Opções (put/call + skew)",
-      group: "opções",
+      label: tl("Opções (put/call + skew)", "Options (put/call + skew)"),
+      group: tl("opções", "options"),
       dir: optDir,
       strength: optStr,
       available: true,
       detail: `Put/Call ${pcr.toFixed(2)}${skew != null ? ` · skew ${skew >= 0 ? "+" : ""}${skew.toFixed(1)}%` : ""}${iv != null ? ` · IV ${iv.toFixed(0)}%` : ""}`,
     });
   } else {
-    axes.push({ key: "options", label: "Opções (put/call + skew)", group: "opções", dir: 0, strength: 0, available: false, detail: "Indisponível neste ativo" });
+    axes.push({ key: "options", label: tl("Opções (put/call + skew)", "Options (put/call + skew)"), group: tl("opções", "options"), dir: 0, strength: 0, available: false, detail: tl("Indisponível neste ativo", "Not available for this asset") });
   }
 
   // ── CARÁTER (ADX + ATR percentil + regime de gamma) ─────────────────────
@@ -263,29 +285,37 @@ export function computeMarketRead(
   const atrArr = atr(candles, 14);
   const atrLast = last(atrArr);
   const atrPct = percentileRank(atrArr.slice(-90), atrLast);
-  let character: MarketRead["character"] = "—";
+  let charKey: "trend" | "range" | "comprimido" | "none" = "none";
   if (Number.isFinite(adxv)) {
-    if (adxv >= 25) character = "tendência";
-    else if (Number.isFinite(atrPct) && atrPct < 30) character = "comprimido";
-    else character = "range";
+    if (adxv >= 25) charKey = "trend";
+    else if (Number.isFinite(atrPct) && atrPct < 30) charKey = "comprimido";
+    else charKey = "range";
   }
+  const character =
+    charKey === "trend" ? tl("tendência", "trending") : charKey === "comprimido" ? tl("comprimido", "compressed") : charKey === "range" ? tl("range", "range") : "—";
   const gammaRegime = payload?.gamma?.regime ?? null;
   const gammaNote =
     gammaRegime === "negative"
-      ? "Gamma negativo — dealers amplificam o movimento (tende a esticar tendência/volatilidade)."
+      ? tl(
+          "Gamma negativo — dealers amplificam o movimento (tende a esticar tendência/volatilidade).",
+          "Negative gamma — dealers amplify the move (tends to stretch trend/volatility).",
+        )
       : gammaRegime === "positive"
-        ? "Gamma positivo — dealers amortecem (tende a voltar à média / range)."
+        ? tl(
+            "Gamma positivo — dealers amortecem (tende a voltar à média / range).",
+            "Positive gamma — dealers dampen (tends to mean-revert / range).",
+          )
         : null;
   axes.push({
     key: "character",
-    label: "Caráter (ADX + gamma)",
-    group: "caráter",
+    label: tl("Caráter (ADX + gamma)", "Character (ADX + gamma)"),
+    group: tl("caráter", "character"),
     dir: 0,
     strength: Number.isFinite(adxv) ? clamp01(adxv / 50) : 0,
     available: Number.isFinite(adxv),
     detail: Number.isFinite(adxv)
-      ? `ADX ${adxv.toFixed(0)} (${character})${Number.isFinite(atrPct) ? ` · volatilidade no percentil ${atrPct.toFixed(0)}` : ""}${gammaRegime ? ` · gamma ${gammaRegime === "positive" ? "positivo" : "negativo"}` : ""}`
-      : "Histórico insuficiente",
+      ? `ADX ${adxv.toFixed(0)} (${character})${Number.isFinite(atrPct) ? `${tl(" · volatilidade no percentil ", " · volatility at percentile ")}${atrPct.toFixed(0)}` : ""}${gammaRegime ? ` · gamma ${gammaRegime === "positive" ? tl("positivo", "positive") : tl("negativo", "negative")}` : ""}`
+      : tl("Histórico insuficiente", "Not enough history"),
   });
 
   // ── Contexto: OPEN INTEREST 24h (convicção do movimento; não vota no viés) ──
@@ -294,11 +324,11 @@ export function computeMarketRead(
     axes.push({
       key: "oi",
       label: "Open Interest (24h)",
-      group: "posição",
+      group: tl("posição", "position"),
       dir: 0,
       strength: clamp01(Math.abs(oiDeltaPct) / 10),
       available: true,
-      detail: `OI ${up ? "+" : ""}${oiDeltaPct.toFixed(1)}% em 24h — ${up ? "posições novas entrando" : "posições saindo (desalavancagem)"}`,
+      detail: `OI ${up ? "+" : ""}${oiDeltaPct.toFixed(1)}% ${tl("em 24h", "in 24h")} — ${up ? tl("posições novas entrando", "new positions opening") : tl("posições saindo (desalavancagem)", "positions closing (deleveraging)")}`,
     });
   }
 
@@ -307,12 +337,12 @@ export function computeMarketRead(
     const buy = bookImbalance > 0;
     axes.push({
       key: "book",
-      label: "Pressão do book",
-      group: "fluxo",
+      label: tl("Pressão do book", "Book pressure"),
+      group: tl("fluxo", "flow"),
       dir: 0,
       strength: clamp01(Math.abs(bookImbalance) / 0.4),
       available: true,
-      detail: `Book ${Math.abs(bookImbalance) < 0.05 ? "equilibrado" : buy ? "comprador" : "vendedor"} (${bookImbalance >= 0 ? "+" : ""}${(bookImbalance * 100).toFixed(0)}% ±2%) — liquidez parada`,
+      detail: `Book ${Math.abs(bookImbalance) < 0.05 ? tl("equilibrado", "balanced") : buy ? tl("comprador", "buy-side") : tl("vendedor", "sell-side")} (${bookImbalance >= 0 ? "+" : ""}${(bookImbalance * 100).toFixed(0)}% ±2%) — ${tl("liquidez parada", "resting liquidity")}`,
     });
   }
 
@@ -330,15 +360,15 @@ export function computeMarketRead(
       n += 1;
     }
     macroGate = votes / n;
-    const tide = macro.nlChg != null ? ` · liquidez Fed ${macro.nlChg >= 0 ? "↑" : "↓"}` : "";
+    const tide = macro.nlChg != null ? ` · ${tl("liquidez Fed", "Fed liquidity")} ${macro.nlChg >= 0 ? "↑" : "↓"}` : "";
     axes.push({
       key: "macro",
-      label: "Maré macro (liquidez/VIX/juros)",
-      group: "caráter",
+      label: tl("Maré macro (liquidez/VIX/juros)", "Macro tide (liquidity/VIX/rates)"),
+      group: tl("caráter", "character"),
       dir: 0,
       strength: clamp01(Math.abs(macroGate)),
       available: true,
-      detail: `${macroGate > 0.2 ? "Risk-on — vento a favor de risco" : macroGate < -0.2 ? "Risk-off — vento contra" : "Neutro"} · VIX ${macro.vixChg >= 0 ? "↑" : "↓"} · DXY ${macro.dxyChg >= 0 ? "↑" : "↓"} · juros ${macro.us10yChg >= 0 ? "↑" : "↓"}${tide}`,
+      detail: `${macroGate > 0.2 ? tl("Risk-on — vento a favor de risco", "Risk-on — tailwind for risk") : macroGate < -0.2 ? tl("Risk-off — vento contra", "Risk-off — headwind") : tl("Neutro", "Neutral")} · VIX ${macro.vixChg >= 0 ? "↑" : "↓"} · DXY ${macro.dxyChg >= 0 ? "↑" : "↓"} · ${tl("juros", "rates")} ${macro.us10yChg >= 0 ? "↑" : "↓"}${tide}`,
     });
   }
 
@@ -369,67 +399,88 @@ export function computeMarketRead(
   if (flowOpposesTrend)
     divergences.unshift(
       trendDir > 0
-        ? "Preço em alta, mas o fluxo institucional não acompanha — rali pode ser de varejo/alavancagem."
-        : "Preço em baixa, mas o institucional não confirma a venda — possível absorção de fundo.",
+        ? tl(
+            "Preço em alta, mas o fluxo institucional não acompanha — rali pode ser de varejo/alavancagem.",
+            "Price rising, but institutional flow isn't following — rally may be retail/leverage-driven.",
+          )
+        : tl(
+            "Preço em baixa, mas o institucional não confirma a venda — possível absorção de fundo.",
+            "Price falling, but institutions aren't confirming the selling — possible bottom absorption.",
+          ),
     );
 
   // Divergência tendência × momento (ex.: baixa estrutural com repique de curto prazo).
   if (haveTrend && haveMom && trendDir !== 0 && momDir !== 0 && trendDir !== momDir)
     divergences.push(
       trendDir < 0
-        ? "Tendência de baixa, mas o momento de curto prazo virou pra cima — possível repique/contra-tendência."
-        : "Tendência de alta, mas o momento de curto prazo enfraquece — atenção a uma correção.",
+        ? tl(
+            "Tendência de baixa, mas o momento de curto prazo virou pra cima — possível repique/contra-tendência.",
+            "Downtrend, but short-term momentum turned up — possible bounce/counter-trend.",
+          )
+        : tl(
+            "Tendência de alta, mas o momento de curto prazo enfraquece — atenção a uma correção.",
+            "Uptrend, but short-term momentum is weakening — watch for a pullback.",
+          ),
     );
 
   // Divergência preço × Open Interest (a "convicção do movimento").
   if (oiDeltaPct != null && Number.isFinite(oiDeltaPct) && Math.abs(oiDeltaPct) > 1.5 && wsum && bias !== 0) {
     if (bias > 0 && oiDeltaPct < 0)
-      divergences.push("Alta com OI caindo — short-covering, não demanda nova: o rali tende a perder força.");
+      divergences.push(tl("Alta com OI caindo — short-covering, não demanda nova: o rali tende a perder força.", "Rally with OI falling — short-covering, not new demand: the rally tends to fade."));
     else if (bias < 0 && oiDeltaPct < 0)
-      divergences.push("Queda com OI caindo — desalavancagem/liquidação: a baixa pode estar se exaurindo.");
+      divergences.push(tl("Queda com OI caindo — desalavancagem/liquidação: a baixa pode estar se exaurindo.", "Drop with OI falling — deleveraging/liquidation: the decline may be exhausting."));
     else if (bias < 0 && oiDeltaPct > 0)
-      divergences.push("Queda com OI subindo — shorts novos entrando: pressão real, mas munição para um short squeeze.");
+      divergences.push(tl("Queda com OI subindo — shorts novos entrando: pressão real, mas munição para um short squeeze.", "Drop with OI rising — new shorts opening: real pressure, but fuel for a short squeeze."));
   }
 
   // Divergência viés × pressão do book (liquidez passiva contra o movimento).
   if (bookImbalance != null && Number.isFinite(bookImbalance) && Math.abs(bookImbalance) > 0.2 && wsum && bias !== 0) {
     if (bias > 0 && bookImbalance < 0)
-      divergences.push("Alta com book vendedor — parede de liquidez à venda acima pode segurar o movimento.");
+      divergences.push(tl("Alta com book vendedor — parede de liquidez à venda acima pode segurar o movimento.", "Rally with sell-side book — a sell wall above may cap the move."));
     else if (bias < 0 && bookImbalance > 0)
-      divergences.push("Queda com book comprador — liquidez de compra abaixo pode amortecer a queda.");
+      divergences.push(tl("Queda com book comprador — liquidez de compra abaixo pode amortecer a queda.", "Drop with buy-side book — buy liquidity below may cushion the fall."));
   }
 
   // Divergência viés × maré macro (risk-on/off contra o movimento).
   if (macroGate != null && wsum && bias !== 0) {
     if (bias < 0 && macroGate > 0.3)
-      divergences.push("Viés de baixa, mas a maré macro é risk-on (VIX/juros caindo) — pode limitar a queda.");
+      divergences.push(tl("Viés de baixa, mas a maré macro é risk-on (VIX/juros caindo) — pode limitar a queda.", "Bearish bias, but the macro tide is risk-on (VIX/rates falling) — may limit the downside."));
     else if (bias > 0 && macroGate < -0.3)
-      divergences.push("Viés de alta contra maré macro risk-off (DXY/juros subindo) — vento contra.");
+      divergences.push(tl("Viés de alta contra maré macro risk-off (DXY/juros subindo) — vento contra.", "Bullish bias against a risk-off macro tide (DXY/rates rising) — headwind."));
   }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────
   let regime: MarketRead["regime"];
-  if (!wsum) regime = { key: "sem_dados", label: "Sem dados suficientes para leitura.", tone: "neutral" };
+  if (!wsum) regime = { key: "sem_dados", label: tl("Sem dados suficientes para leitura.", "Not enough data for a read."), tone: "neutral" };
   else if (Math.abs(bias) < 12)
-    regime = { key: "indeciso", label: "Indeciso — forças em conflito, mercado aguardando catalisador.", tone: "neutral" };
-  else if (character === "comprimido")
+    regime = { key: "indeciso", label: tl("Indeciso — forças em conflito, mercado aguardando catalisador.", "Undecided — forces in conflict, market awaiting a catalyst."), tone: "neutral" };
+  else if (charKey === "comprimido")
     regime = {
       key: "comprimido",
-      label: `Comprimido — volatilidade baixa; o rompimento define o lado (viés leve de ${bias > 0 ? "alta" : "baixa"}).`,
+      label: tl(
+        `Comprimido — volatilidade baixa; o rompimento define o lado (viés leve de ${bias > 0 ? "alta" : "baixa"}).`,
+        `Compressed — low volatility; the breakout decides the side (slight ${bias > 0 ? "bullish" : "bearish"} bias).`,
+      ),
       tone: bias > 0 ? "bull" : "bear",
     };
   else if (flowOpposesTrend)
     regime = {
       key: "fragil",
-      label: bias > 0 ? "Alta frágil — preço sobe, mas o fluxo institucional não acompanha." : "Baixa frágil — preço cai, mas o institucional não confirma.",
+      label:
+        bias > 0
+          ? tl("Alta frágil — preço sobe, mas o fluxo institucional não acompanha.", "Fragile rally — price rises, but institutional flow isn't following.")
+          : tl("Baixa frágil — preço cai, mas o institucional não confirma.", "Fragile decline — price falls, but institutions aren't confirming."),
       tone: bias > 0 ? "bull" : "bear",
     };
   else if (bias > 0 && funding != null && funding > 0.03 && (ls ?? 1) > 1.3)
-    regime = { key: "squeeze", label: "Perseguição alavancada — longs lotados; alta real, mas com risco de squeeze.", tone: "bull" };
+    regime = { key: "squeeze", label: tl("Perseguição alavancada — longs lotados; alta real, mas com risco de squeeze.", "Leveraged chase — longs crowded; real upside, but squeeze risk."), tone: "bull" };
   else
     regime = {
       key: bias > 0 ? "trend_up" : "trend_down",
-      label: `Tendência de ${bias > 0 ? "alta" : "baixa"}${conviction >= 60 ? " com convicção" : ""} — ${agree} de ${voting} forças alinhadas.`,
+      label: tl(
+        `Tendência de ${bias > 0 ? "alta" : "baixa"}${conviction >= 60 ? " com convicção" : ""} — ${agree} de ${voting} forças alinhadas.`,
+        `${bias > 0 ? "Uptrend" : "Downtrend"}${conviction >= 60 ? " with conviction" : ""} — ${agree} of ${voting} forces aligned.`,
+      ),
       tone: bias > 0 ? "bull" : "bear",
     };
 
@@ -454,14 +505,14 @@ export function computeMarketRead(
   pushT(g?.zero_gamma_level, "Zero Gamma");
   const vp = computeVolumeProfile(candles.slice(-30));
   pushT(vp?.poc, "POC 30d");
-  pushT(vp?.vah, "VAH · topo do valor");
-  pushT(vp?.val, "VAL · base do valor");
+  pushT(vp?.vah, tl("VAH · topo do valor", "VAH · top of value"));
+  pushT(vp?.val, tl("VAL · base do valor", "VAL · bottom of value"));
   // Ímãs de LIQUIDAÇÃO (reusa o modelo do heatmap): bolsão de shorts acima / longs
   // abaixo. Usa velas intraday (4H) quando disponíveis → zonas próximas e acionáveis.
   const liqGrid = buildLiquidationGrid((intra && intra.length >= 30 ? intra : candles).slice(-120));
   if (liqGrid && price != null) {
     for (const mg of liquidationMagnets(liqGrid, price, 1, 0.35))
-      pushT(mg.price, mg.side === "short" ? "Liquidação de shorts ↑" : "Liquidação de longs ↓");
+      pushT(mg.price, mg.side === "short" ? tl("Liquidação de shorts ↑", "Short liquidations ↑") : tl("Liquidação de longs ↓", "Long liquidations ↓"));
   }
   for (const t of targets) t.strength = clamp01(1 - Math.abs(t.distPct) / 15);
   targets.sort((a, b) => b.strength - a.strength);
@@ -475,11 +526,20 @@ export function computeMarketRead(
     const above = levelList.filter((l) => l.p > price).sort((a, b) => a.p - b.p)[0];
     const below = levelList.filter((l) => l.p < price).sort((a, b) => b.p - a.p)[0];
     if (bias < 0 && above)
-      falsifier = `A leitura de baixa enfraquece se romper acima de ${above.name} (${fmtUsd0(above.p)} · +${(((above.p - price) / price) * 100).toFixed(1)}%).`;
+      falsifier = tl(
+        `A leitura de baixa enfraquece se romper acima de ${above.name} (${fmtUsd0(above.p)} · +${(((above.p - price) / price) * 100).toFixed(1)}%).`,
+        `The bearish read weakens if it breaks above ${above.name} (${fmtUsd0(above.p)} · +${(((above.p - price) / price) * 100).toFixed(1)}%).`,
+      );
     else if (bias > 0 && below)
-      falsifier = `A leitura de alta enfraquece se perder ${below.name} (${fmtUsd0(below.p)} · ${(((below.p - price) / price) * 100).toFixed(1)}%).`;
+      falsifier = tl(
+        `A leitura de alta enfraquece se perder ${below.name} (${fmtUsd0(below.p)} · ${(((below.p - price) / price) * 100).toFixed(1)}%).`,
+        `The bullish read weakens if it loses ${below.name} (${fmtUsd0(below.p)} · ${(((below.p - price) / price) * 100).toFixed(1)}%).`,
+      );
     else if (above && below)
-      falsifier = `Define o lado: alta acima de ${above.name} (${fmtUsd0(above.p)}), baixa abaixo de ${below.name} (${fmtUsd0(below.p)}).`;
+      falsifier = tl(
+        `Define o lado: alta acima de ${above.name} (${fmtUsd0(above.p)}), baixa abaixo de ${below.name} (${fmtUsd0(below.p)}).`,
+        `Picks the side: up above ${above.name} (${fmtUsd0(above.p)}), down below ${below.name} (${fmtUsd0(below.p)}).`,
+      );
   }
 
   return {

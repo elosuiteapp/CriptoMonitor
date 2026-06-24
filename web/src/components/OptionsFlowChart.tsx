@@ -3,6 +3,7 @@ import { ColorType, LineStyle, createChart, type IChartApi } from "lightweight-c
 
 import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
+import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 
 /** Proxy de fluxo de opções (HIRO simplificado, PRD3). Linha do delta-fluxo
@@ -12,6 +13,8 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const emptyRef = useRef<HTMLDivElement | null>(null);
   const { isDark } = useTheme();
+  const { isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
 
   useEffect(() => {
     let chart: IChartApi | undefined;
@@ -90,7 +93,7 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
           priceScaleId: "left",
           priceLineVisible: false,
           lastValueVisible: isLast,
-          title: isLast ? "Fluxo acum." : "",
+          title: isLast ? tt("Fluxo acum.", "Cum. flow") : "",
         });
         s.setData(run.pts as never);
         if (idx === 0) {
@@ -112,19 +115,19 @@ export default function OptionsFlowChart({ asset }: { asset: string }) {
       cancelled = true;
       chart?.remove();
     };
-  }, [asset, isDark]);
+  }, [asset, isDark, isEn]);
 
   return (
     <div>
       <div className="relative">
         <div ref={ref} className="h-[260px] w-full" />
         <div ref={emptyRef} className="absolute inset-0 grid place-items-center text-xs text-muted-foreground" style={{ display: "none" }}>
-          Acumulando fluxo de opções (a cada 5 min).
+          {tt("Acumulando fluxo de opções (a cada 5 min).", "Building options flow (every 5 min).")}
         </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-emerald-500" />Fluxo subindo (hedge comprador: compra de call/venda de put)</span>
-        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-rose-500" />Fluxo caindo (hedge vendedor)</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-emerald-500" />{tt("Fluxo subindo (hedge comprador: compra de call/venda de put)", "Flow rising (buy hedge: buying calls / selling puts)")}</span>
+        <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-rose-500" />{tt("Fluxo caindo (hedge vendedor)", "Flow falling (sell hedge)")}</span>
         <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-muted-foreground" />Spot</span>
       </div>
     </div>

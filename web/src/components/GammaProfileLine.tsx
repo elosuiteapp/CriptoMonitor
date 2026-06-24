@@ -19,7 +19,7 @@ const fmtK = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(s % 1000 === 0 ? 
  *  vendidos (abaixo, movimentos amplificam) em gamma — região para onde o preço
  *  tende a ser puxado. */
 export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
-  const { t } = useT();
+  const { t, isEn } = useT();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
 
@@ -113,7 +113,7 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
   return (
     <div>
       <div ref={wrapRef} className="w-full">
-        <svg width={w} height={H} role="img" aria-label="Perfil de gamma por strike em linha">
+        <svg width={w} height={H} role="img" aria-label={isEn ? "Gamma profile by strike (line)" : "Perfil de gamma por strike em linha"}>
           <defs>
             <linearGradient id="gexProfileGrad" x1="0" y1={padT} x2="0" y2={H - padB} gradientUnits="userSpaceOnUse">
               <stop offset="0" stopColor="#22c55e" stopOpacity="0.38" />

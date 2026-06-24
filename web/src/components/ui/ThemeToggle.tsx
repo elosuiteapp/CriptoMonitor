@@ -1,4 +1,5 @@
 import { useTheme } from "../../hooks/useTheme";
+import { useT } from "../../lib/i18n";
 
 function SunIcon() {
   return (
@@ -20,11 +21,12 @@ function MoonIcon() {
 /** Botão de troca de tema (sol/lua). */
 export default function ThemeToggle() {
   const { isDark, toggle } = useTheme();
+  const { isEn } = useT();
   return (
     <button
       onClick={toggle}
-      aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
-      title={isDark ? "Modo claro" : "Modo escuro"}
+      aria-label={isEn ? (isDark ? "Switch to light mode" : "Switch to dark mode") : isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+      title={isEn ? (isDark ? "Light mode" : "Dark mode") : isDark ? "Modo claro" : "Modo escuro"}
       className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-surface text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
     >
       {isDark ? <SunIcon /> : <MoonIcon />}

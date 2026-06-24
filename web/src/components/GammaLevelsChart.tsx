@@ -64,7 +64,7 @@ function smooth(vals: (number | null)[], win: number): (number | null)[] {
 /** Níveis de gamma ao longo do tempo (estilo SpotGamma key levels): UM painel, uma
  *  linha de Spot. Zoom adaptativo no miolo; paredes distantes viram marcas na borda. */
 export default function GammaLevelsChart({ asset }: { asset: string }) {
-  const { t } = useT();
+  const { t, isEn } = useT();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -201,7 +201,7 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
             reg === "positive" ? "rgba(34,197,94,0.07)" : reg === "negative" ? "rgba(239,68,68,0.08)" : "transparent";
 
           return (
-            <svg width={w} height={H} role="img" aria-label="Níveis de gamma ao longo do tempo">
+            <svg width={w} height={H} role="img" aria-label={isEn ? "Gamma levels over time" : "Níveis de gamma ao longo do tempo"}>
               {bands.map((b, i) => (
                 <g key={`band-${i}`}>
                   <rect x={b.x0} y={padT} width={Math.max(0, b.x1 - b.x0)} height={plotH} fill={bandFill(b.regime)} />

@@ -223,11 +223,13 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
 
   const read = useMemo(
     () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro),
-    [c1d, payload, c4h, oiDelta, bookImbalance, macro],
+    // isEn nas deps: a leitura monta strings traduzidas (confluence.ts via getLocale),
+    // então precisa recomputar ao trocar de idioma.
+    [c1d, payload, c4h, oiDelta, bookImbalance, macro, isEn],
   );
   const leans: TfLean[] = useMemo(
     () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
-    [c1d, c4h, c1h],
+    [c1d, c4h, c1h, isEn],
   );
   const aligned = leans.every((l) => l.dir > 0) || leans.every((l) => l.dir < 0);
   const sortedTargets = useMemo(() => [...read.targets].sort((a, b) => b.price - a.price), [read.targets]);

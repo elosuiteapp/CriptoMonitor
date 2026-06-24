@@ -18,11 +18,12 @@ const COLS = "title, source, url, published_at";
  *  se não houver nenhuma específica, cai para notícias gerais recentes do mercado.
  *  Free vê 3, Pro+ vê 8. */
 export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan | null }) {
-  const { t } = useT();
+  const { t, isEn } = useT();
   const [items, setItems] = useState<NewsRow[]>([]);
   const [general, setGeneral] = useState(false);
   const [loading, setLoading] = useState(true);
   const limit = plan?.advanced_metrics ? 8 : 3;
+  const lang = isEn ? "en" : "pt"; // manchetes no idioma selecionado (link → fonte original)
 
   useEffect(() => {
     let active = true;
@@ -30,10 +31,11 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
 
     (async () => {
-      // 1. Notícias específicas do ativo nos últimos 7 dias
+      // 1. Notícias específicas do ativo nos últimos 7 dias (no idioma atual)
       const { data: specific } = await supabase
         .from("news_feed")
         .select(COLS)
+        .eq("lang", lang)
         .contains("assets", [asset])
         .gte("published_at", since)
         .order("published_at", { ascending: false })
@@ -51,6 +53,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       const { data: gen } = await supabase
         .from("news_feed")
         .select(COLS)
+        .eq("lang", lang)
         .gte("published_at", since)
         .order("published_at", { ascending: false })
         .limit(limit);
@@ -63,7 +66,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
     return () => {
       active = false;
     };
-  }, [asset, limit]);
+  }, [asset, limit, lang]);
 
   return (
     <section>
