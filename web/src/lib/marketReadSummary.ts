@@ -11,13 +11,15 @@ import type { SnapshotPayload } from "./types";
 
 export async function marketReadSummary(asset: string) {
   try {
-    const [candles, snap] = await Promise.all([
+    const [candles, snap, btc] = await Promise.all([
       fetchKlines(asset, "1d", 320).catch(() => []),
       supabase.from("market_snapshot").select("payload").eq("asset", asset).order("ts", { ascending: false }).limit(1).maybeSingle(),
+      asset === "BTC" ? Promise.resolve([]) : fetchKlines("BTC", "1d", 10).catch(() => []),
     ]);
     if (!candles.length) return null;
     const payload = (snap.data?.payload ?? null) as SnapshotPayload | null;
-    const r = computeMarketRead(candles, payload);
+    const btcChg7d = btc.length >= 8 ? (btc[btc.length - 1].close - btc[btc.length - 8].close) / btc[btc.length - 8].close : null;
+    const r = computeMarketRead(candles, payload, undefined, undefined, undefined, undefined, btcChg7d);
     if (!r.hasData) return null;
     return {
       bias: r.bias, // −100..+100

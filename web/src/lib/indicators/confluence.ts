@@ -127,6 +127,7 @@ export function computeMarketRead(
   oiDeltaPct?: number | null,
   bookImbalance?: number | null,
   macro?: { vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null,
+  btcChg7d?: number | null, // variação 7d do BTC (fração) — p/ rotação de liderança (alts)
 ): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
@@ -510,6 +511,38 @@ export function computeMarketRead(
           "Directional read in positive gamma — dealers dampen: the move tends to stall near the walls (mean-reversion).",
         ),
       );
+  }
+
+  // Exaustão de alavancagem: funding esticado + OI caindo = posição se DESFAZENDO
+  // (não nova demanda) — o movimento perde combustível, atenção a reversão.
+  if (funding != null && oiDeltaPct != null && Number.isFinite(oiDeltaPct) && wsum && bias !== 0) {
+    if (bias > 0 && funding > 0.03 && oiDeltaPct < 0)
+      divergences.push(tl("Alta com funding esticado e OI caindo — perseguição alavancada se exaurindo (longs realizando, não nova demanda).", "Rally with stretched funding and OI falling — leveraged chase exhausting (longs taking profit, not new demand)."));
+    else if (bias < 0 && funding < -0.03 && oiDeltaPct < 0)
+      divergences.push(tl("Queda com funding muito negativo e OI caindo — shorts cobrindo posição esticada: a baixa pode estar sem combustível.", "Drop with very negative funding and OI falling — shorts covering a stretched position: the decline may be out of fuel."));
+  }
+
+  // Vazamento de posicionamento: maioria lotada de um lado, mas OI ainda SUBINDO =
+  // novas posições entrando CONTRA a maioria (zona de batalha / combustível de squeeze).
+  if (ls != null && oiDeltaPct != null && Number.isFinite(oiDeltaPct) && oiDeltaPct > 1.5) {
+    if (ls >= 1.8)
+      divergences.push(tl(`Longs lotados (L/S ${ls.toFixed(2)}), mas OI ainda subindo — novos shorts entrando contra a maioria: zona de batalha e munição para squeeze nos dois sentidos.`, `Longs crowded (L/S ${ls.toFixed(2)}), yet OI still rising — new shorts entering against the crowd: a battleground and fuel for a squeeze both ways.`));
+    else if (ls <= 0.55)
+      divergences.push(tl(`Shorts lotados (L/S ${ls.toFixed(2)}), mas OI ainda subindo — novos longs entrando contra a maioria: possível fundo em formação / zona de batalha.`, `Shorts crowded (L/S ${ls.toFixed(2)}), yet OI still rising — new longs entering against the crowd: possible bottoming / battleground.`));
+  }
+
+  // Rotação de liderança (alts): força/fraqueza relativa ao BTC em 7d. Alt descolando
+  // do BTC = rotação de capital; ficando para trás = capital preferindo o BTC.
+  if (btcChg7d != null && payload?.asset && payload.asset !== "BTC" && closes.length >= 8) {
+    const a0 = closes[closes.length - 8];
+    const assetChg7d = a0 ? (closes[closes.length - 1] - a0) / a0 : null;
+    if (assetChg7d != null) {
+      const rel = (assetChg7d - btcChg7d) * 100; // pontos percentuais vs BTC
+      if (rel >= 8)
+        divergences.push(tl(`${payload.asset} liderando — +${rel.toFixed(0)}pp vs BTC em 7d: força relativa (capital rotacionando para fora do BTC).`, `${payload.asset} leading — +${rel.toFixed(0)}pp vs BTC over 7d: relative strength (capital rotating out of BTC).`));
+      else if (rel <= -8)
+        divergences.push(tl(`${payload.asset} ficando para trás — ${rel.toFixed(0)}pp vs BTC em 7d: fraqueza relativa (capital preferindo o BTC).`, `${payload.asset} lagging — ${rel.toFixed(0)}pp vs BTC over 7d: relative weakness (capital favoring BTC).`));
+    }
   }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────

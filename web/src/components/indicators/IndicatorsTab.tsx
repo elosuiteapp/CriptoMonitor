@@ -123,17 +123,20 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   const [oiDelta, setOiDelta] = useState<number | null>(null);
   const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null>(null);
   const [biasHist, setBiasHist] = useState<number[]>([]);
+  const [btcChg7d, setBtcChg7d] = useState<number | null>(null); // 7d do BTC (rotação de liderança)
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     (async () => {
-      const [d, h4, h1] = await Promise.all([
+      const [d, h4, h1, btc] = await Promise.all([
         fetchKlines(asset, "1d", 365).catch(() => [] as Candle[]),
         fetchKlines(asset, "4h", 300).catch(() => [] as Candle[]),
         fetchKlines(asset, "1h", 300).catch(() => [] as Candle[]),
+        asset === "BTC" ? Promise.resolve([] as Candle[]) : fetchKlines("BTC", "1d", 10).catch(() => [] as Candle[]),
       ]);
+      const bChg7d = btc.length >= 8 ? (btc[btc.length - 1].close - btc[btc.length - 8].close) / btc[btc.length - 8].close : null;
       // OI-delta 24h (tabela derivatives — convicção do movimento). Opcional.
       let oi: number | null = null;
       try {
@@ -207,6 +210,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
       setOiDelta(oi);
       setMacro(macroCtx);
       setBiasHist(bh);
+      setBtcChg7d(bChg7d);
       setLoading(false);
     })();
     return () => {
@@ -222,10 +226,10 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
   }, [imbalance]);
 
   const read = useMemo(
-    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro),
+    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d),
     // isEn nas deps: a leitura monta strings traduzidas (confluence.ts via getLocale),
     // então precisa recomputar ao trocar de idioma.
-    [c1d, payload, c4h, oiDelta, bookImbalance, macro, isEn],
+    [c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d, isEn],
   );
   const leans: TfLean[] = useMemo(
     () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
