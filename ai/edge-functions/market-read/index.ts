@@ -1,14 +1,36 @@
 // Edge Function: market-read (Leitura do Mercado no servidor — Fase 2)
-// Roda o NÚCLEO do motor de confluência (viés/convicção/regime) para BTC/ETH/SOL a
-// cada ~30 min (cron), grava em `market_read` e dispara alerta (notifications) quando
-// o VIÉS VIRA (tone muda). O front continua calculando a leitura COMPLETA (alvos,
-// multi-timeframe, falsificador) ao vivo — aqui é só o que precisa de memória/alerta.
+// Roda o NÚCLEO do motor de confluência (viés/convicção/regime) para TODAS as moedas
+// (SMC_ASSETS) a cada ~30 min (cron), grava em `market_read` e dispara alerta
+// (notifications) quando o VIÉS VIRA para uma direção clara e com convicção
+// (movimentação interessante — evita spam nas ~80 moedas). O front continua calculando
+// a leitura COMPLETA (alvos, multi-timeframe, falsificador) ao vivo — aqui é só o que
+// precisa de memória/alerta.
 //
-// MANTER EM SINCRONIA com web/src/lib/indicators/confluence.ts (pesos e regras do viés).
+// MANTER EM SINCRONIA com web/src/lib/indicators/confluence.ts (pesos e regras do viés)
+// e com web/src/lib/marketData.ts (lista SMC_ASSETS).
 // Auth: header x-dispatch-secret == DISPATCH_SECRET. Deploy: --no-verify-jwt.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const ASSETS = ["BTC", "ETH", "SOL"];
+// Universo completo (espelho de SMC_ASSETS). As 20 primeiras (CURATED) têm snapshot do
+// coletor (leitura completa); as demais só price-action (velas) → tendência/momento.
+const ASSETS = [
+  "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI",
+  "TON", "POL", "DOT", "LTC", "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE",
+  "TRX", "BCH", "NEAR", "APT", "ICP", "FIL", "ETC", "HBAR", "XLM", "IMX",
+  "OP", "INJ", "VET", "GRT", "ALGO", "STX", "RENDER", "MKR", "SAND", "MANA",
+  "AXS", "THETA", "XTZ", "EOS", "CHZ", "GALA", "CRV", "SNX", "COMP", "APE",
+  "FLOW", "EGLD", "DYDX", "ENS", "SEI", "TIA", "WIF", "BONK", "JUP", "WLD",
+  "ENA", "ORDI", "PENDLE", "FET", "RUNE", "KAVA", "ROSE", "ZEC", "DASH", "1INCH",
+  "ZIL", "ENJ", "BAT", "QNT", "NEO", "IOTA", "KSM", "GMT", "JASMY", "MASK",
+  "CFX", "AR", "ONDO", "TWT", "GMX", "SUSHI", "YFI", "ANKR", "CELO", "SKL",
+  "LRC", "ONT", "RVN", "STORJ", "FLOKI", "PYTH", "JTO", "STRK", "BLUR", "W",
+];
+
+// "Movimentação interessante": só notifica quando a leitura VIRA para uma direção clara
+// e com convicção — evita spam nas ~80 moedas (flips p/ indecisão ou leituras fracas não
+// disparam alerta, mas são gravados no histórico).
+const isInteresting = (r: { tone: string; bias: number; conviction: number }): boolean =>
+  r.tone !== "neutral" && Math.abs(r.bias) >= 25 && r.conviction >= 50;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const sign = (v: number): number => (v > 0 ? 1 : v < 0 ? -1 : 0);
 const last = (a: number[]): number => {
@@ -199,60 +221,79 @@ function computeRead(candles: any[], payload: any) {
   return { bias, conviction, regime_key, regime_label, tone, char_state: charState };
 }
 
+async function fetchCandles(asset: string): Promise<C[]> {
+  const kr = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${asset}USDT&interval=1d&limit=250`);
+  if (!kr.ok) throw new Error(`klines ${kr.status}`);
+  const raw = (await kr.json()) as unknown[][];
+  return raw.map((k) => ({ high: Number(k[2]), low: Number(k[3]), close: Number(k[4]) }));
+}
+
 Deno.serve(async (req) => {
   const secret = Deno.env.get("DISPATCH_SECRET");
   if (secret && req.headers.get("x-dispatch-secret") !== secret) return new Response("forbidden", { status: 401 });
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  let experts: string[] | null = null;
-  const getExperts = async (): Promise<string[]> => {
-    if (experts) return experts;
-    const { data } = await admin.from("subscriptions").select("user_id, plan:plans(slug)").eq("status", "active");
-    experts = ((data ?? []) as Array<{ user_id: string; plan?: { slug?: string } }>).filter((s) => s.plan?.slug === "expert").map((s) => s.user_id);
-    return experts;
-  };
+  // ── Lotes (1 query cada, dedupe em memória) — evita 80×N round-trips ──────────
+  // Snapshots recentes (últimos 60 min) por ativo: só as 20 CURATED têm; o resto
+  // computa só a partir das velas.
+  const { data: snapRows } = await admin
+    .from("market_snapshot").select("asset, payload, ts")
+    .gte("ts", new Date(Date.now() - 60 * 60000).toISOString()).order("ts", { ascending: false });
+  const snapByAsset = new Map<string, unknown>();
+  for (const r of (snapRows ?? []) as Array<{ asset: string; payload: unknown }>)
+    if (!snapByAsset.has(r.asset)) snapByAsset.set(r.asset, r.payload);
 
-  const results: unknown[] = [];
-  let alerted = 0;
-  for (const asset of ASSETS) {
-    try {
-      const kr = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${asset}USDT&interval=1d&limit=250`);
-      const raw = (await kr.json()) as unknown[][];
-      const candles = raw.map((k) => ({ high: Number(k[2]), low: Number(k[3]), close: Number(k[4]) }));
-      const { data: snap } = await admin.from("market_snapshot").select("payload").eq("asset", asset).order("ts", { ascending: false }).limit(1).maybeSingle();
-      const read = computeRead(candles, snap?.payload ?? null);
-      if (read.regime_key === "sem_dados") {
-        results.push({ asset, skipped: true });
-        continue;
-      }
-      const { data: prev } = await admin.from("market_read").select("tone").eq("asset", asset).order("ts", { ascending: false }).limit(1).maybeSingle();
-      await admin.from("market_read").insert({
-        asset,
-        bias: read.bias,
-        conviction: read.conviction,
-        regime_key: read.regime_key,
-        regime_label: read.regime_label,
-        tone: read.tone,
-        char_state: read.char_state,
-      });
-      const changed = prev != null && prev.tone !== read.tone;
-      if (changed) {
-        for (const uid of await getExperts()) {
-          await admin.from("notifications").insert({
-            user_id: uid,
-            title: `${asset} · mudança de leitura`,
-            body: `O viés do ${asset} virou: ${read.regime_label}`,
-            asset,
-            metric: "regime",
-            value: read.regime_key,
-          });
-          alerted++;
+  // Tone anterior por ativo (últimas 3h) — p/ detectar a virada.
+  const { data: prevRows } = await admin
+    .from("market_read").select("asset, tone, ts")
+    .gte("ts", new Date(Date.now() - 3 * 3600 * 1000).toISOString()).order("ts", { ascending: false });
+  const prevTone = new Map<string, string>();
+  for (const r of (prevRows ?? []) as Array<{ asset: string; tone: string }>)
+    if (!prevTone.has(r.asset)) prevTone.set(r.asset, r.tone);
+
+  // Experts (destinatários do alerta) — 1 query.
+  const { data: subs } = await admin.from("subscriptions").select("user_id, plan:plans(slug)").eq("status", "active");
+  const experts = ((subs ?? []) as Array<{ user_id: string; plan?: { slug?: string } }>)
+    .filter((s) => s.plan?.slug === "expert").map((s) => s.user_id);
+
+  // ── Computa a leitura de cada ativo, em lotes paralelos (klines da Binance) ───
+  const reads: Array<{ asset: string; read: ReturnType<typeof computeRead> }> = [];
+  const BATCH = 12;
+  for (let i = 0; i < ASSETS.length; i += BATCH) {
+    const out = await Promise.all(
+      ASSETS.slice(i, i + BATCH).map(async (asset) => {
+        try {
+          const read = computeRead(await fetchCandles(asset), snapByAsset.get(asset) ?? null);
+          return read.regime_key === "sem_dados" ? null : { asset, read };
+        } catch {
+          return null;
         }
-      }
-      results.push({ asset, bias: read.bias, regime: read.regime_key, tone: read.tone, changed });
-    } catch (e) {
-      results.push({ asset, error: String(e) });
+      }),
+    );
+    for (const x of out) if (x) reads.push(x);
+  }
+  if (!reads.length) return new Response(JSON.stringify({ ok: true, assets: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  // Grava o histórico de todas as leituras (1 insert).
+  await admin.from("market_read").insert(
+    reads.map(({ asset, read }) => ({
+      asset, bias: read.bias, conviction: read.conviction, regime_key: read.regime_key,
+      regime_label: read.regime_label, tone: read.tone, char_state: read.char_state,
+    })),
+  );
+
+  // Alerta os Experts nos ativos que VIRARAM para movimento interessante (1 insert).
+  const notifs: Array<Record<string, unknown>> = [];
+  let changed = 0;
+  for (const { asset, read } of reads) {
+    const prev = prevTone.get(asset);
+    if (prev != null && prev !== read.tone && isInteresting(read)) {
+      changed++;
+      for (const uid of experts)
+        notifs.push({ user_id: uid, title: `${asset} · mudança de leitura`, body: `O viés do ${asset} virou: ${read.regime_label}`, asset, metric: "regime", value: read.regime_key });
     }
   }
-  return new Response(JSON.stringify({ results, alerted }), { status: 200, headers: { "Content-Type": "application/json" } });
+  if (notifs.length) await admin.from("notifications").insert(notifs);
+
+  return new Response(JSON.stringify({ ok: true, assets: reads.length, changed, alerted: notifs.length }), { status: 200, headers: { "Content-Type": "application/json" } });
 });
