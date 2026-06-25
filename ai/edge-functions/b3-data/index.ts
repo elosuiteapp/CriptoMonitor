@@ -92,15 +92,17 @@ const COMMODITIES: [string, string, string][] = [
 ];
 
 // Timeframe → (intervalo, janela) do Yahoo. 4h não existe no Yahoo → agrega 1h.
-// Janelas no MÁXIMO que o Yahoo permite por intervalo (15m até 60d; 60m/1h até 730d;
-// diário/semanal/mensal até "max") — carrega o máximo de histórico p/ o zoom-out.
-const TF_MAP: Record<string, { interval: string; range: string; agg?: number }> = {
+// IMPORTANTE: `range=max` no Yahoo faz DOWNSAMPLING (diário/semanal viram ~140 pontos
+// esparsos). Para histórico DENSO e COMPLETO usamos period1=0 (full=true) no diário/
+// semanal/mensal. Intraday fica no range máximo que o Yahoo permite por intervalo
+// (15m até 60d; 60m/1h até 730d).
+const TF_MAP: Record<string, { interval: string; range?: string; full?: boolean; agg?: number }> = {
   "15m": { interval: "15m", range: "2mo" },
   "1h": { interval: "60m", range: "2y" },
   "4h": { interval: "60m", range: "2y", agg: 4 },
-  "1d": { interval: "1d", range: "max" },
-  "1w": { interval: "1wk", range: "max" },
-  "1M": { interval: "1mo", range: "max" },
+  "1d": { interval: "1d", full: true },
+  "1w": { interval: "1wk", full: true },
+  "1M": { interval: "1mo", full: true },
 };
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
 function aggregate(c: Candle[], n: number): Candle[] {
@@ -128,6 +130,19 @@ async function yahoo(symbol: string, range: string, interval: string, events = f
   try {
     const ev = events ? "&events=div" : "";
     const r = await fetch(`${Y}${encodeURIComponent(symbol)}?interval=${interval}&range=${range}${ev}`, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+// Histórico COMPLETO e DENSO via period1=0/period2=agora (o `range=max` do Yahoo
+// vem downsampled). Usado nos timeframes diário/semanal/mensal.
+// deno-lint-ignore no-explicit-any
+async function yahooFull(symbol: string, interval: string): Promise<any> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const r = await fetch(`${Y}${encodeURIComponent(symbol)}?interval=${interval}&period1=0&period2=${now}`, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!r.ok) return null;
     return await r.json();
   } catch {
@@ -518,7 +533,8 @@ Deno.serve(async (req) => {
     const label = String(body.ticker);
     const sym = TMAP[label] ?? label;
     const tf = TF_MAP[String(body.tf)] ?? TF_MAP["1d"];
-    const res = (await yahoo(sym, tf.range, tf.interval))?.chart?.result?.[0];
+    // full=true → histórico completo e denso (period1=0); senão, janela por range.
+    const res = (tf.full ? await yahooFull(sym, tf.interval) : await yahoo(sym, tf.range, tf.interval))?.chart?.result?.[0];
     const ts: number[] = res?.timestamp ?? [];
     const q = res?.indicators?.quote?.[0] ?? {};
     let candles = ts
@@ -527,7 +543,7 @@ Deno.serve(async (req) => {
     // IBOV (^BVSP) é índice e não tem volume no Yahoo → enxerta o volume do ETF
     // BOVA11 (que segue o Ibovespa), casando por timestamp, pra o gráfico ter volume.
     if (label === "IBOV" || sym === "^BVSP") {
-      const vres = (await yahoo("BOVA11.SA", tf.range, tf.interval))?.chart?.result?.[0];
+      const vres = (tf.full ? await yahooFull("BOVA11.SA", tf.interval) : await yahoo("BOVA11.SA", tf.range, tf.interval))?.chart?.result?.[0];
       const vts: number[] = vres?.timestamp ?? [];
       const vvol: (number | null)[] = vres?.indicators?.quote?.[0]?.volume ?? [];
       const volByTime: Record<number, number> = {};
