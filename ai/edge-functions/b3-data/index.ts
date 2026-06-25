@@ -6,6 +6,7 @@
 //   { mode: "fundamentals" }        -> fundamentos das ações (P/L, P/VP, DY, ROE… via Fundamentus)
 //   { mode: "dividends", ticker }   -> histórico de proventos (Yahoo events=div)
 //   { mode: "proventos", ticker }   -> proventos com tipo (Div/JCP) + agenda (StatusInvest)
+//   { mode: "fii-detail", ticker }  -> detalhe POR FII (VP/Cota, patrimônio, nº cotas… via Fundamentus detalhes.php)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -452,6 +453,53 @@ async function fundamentalsFii(only: Set<string>): Promise<Record<string, FiiFun
   }
 }
 
+// ── Detalhe POR FII (detalhes.php?papel=TICKER — 1 request por fundo) ──────────
+// Traz o que o lote (fii_resultado.php) NÃO tem: VP/Cota (valor patrimonial por cota →
+// deságio/ágio em R$), patrimônio líquido (porte), nº de cotas, FFO/Cota e dividendo/cota
+// declarado. Scrape latin1 frágil (cai se o layout mudar) → retorna null p/ o front usar
+// o lote como fallback. Padrão da página: <span class="txt">RÓTULO</span></td> seguido da
+// célula <td class="data…"><span…>(<font…>)?VALOR.
+interface FiiDetail {
+  vpCota: number | null; ffoCota: number | null; divCota: number | null;
+  patrimLiq: number | null; valorMercado: number | null; numCotas: number | null;
+  min52: number | null; max52: number | null;
+}
+function fiiField(html: string, label: string): number | null {
+  // label entra como trecho de regex (use "." p/ acento). Âncora `>label</span></td>`
+  // evita casar com o mesmo texto dentro de um title="…" (tooltip).
+  const re = new RegExp(`>${label}</span></td>\\s*<td[^>]*>\\s*<span[^>]*>(?:<font[^>]*>)?\\s*([^<]+?)\\s*(?:</font>)?</span>`, "i");
+  const m = re.exec(html);
+  return m ? parseBR(m[1]) : null;
+}
+async function fiiDetail(ticker: string): Promise<FiiDetail | null> {
+  try {
+    const r = await fetch(`https://www.fundamentus.com.br/detalhes.php?papel=${encodeURIComponent(ticker)}`, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return null;
+    const buf = await r.arrayBuffer();
+    let html: string;
+    try {
+      html = new TextDecoder("iso-8859-1").decode(buf);
+    } catch {
+      html = new TextDecoder().decode(buf);
+    }
+    const d: FiiDetail = {
+      vpCota: fiiField(html, "VP/Cota"),
+      ffoCota: fiiField(html, "FFO/Cota"),
+      divCota: fiiField(html, "Dividendo/cota"),
+      patrimLiq: fiiField(html, "Patrim L.quido"),
+      valorMercado: fiiField(html, "Valor de mercado"),
+      numCotas: fiiField(html, "Nro. Cotas"),
+      min52: fiiField(html, "Min 52 sem"),
+      max52: fiiField(html, "Max 52 sem"),
+    };
+    // Se nem VP/Cota nem patrimônio vieram, o scrape falhou (layout mudou) → null.
+    if (d.vpCota == null && d.patrimLiq == null) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
@@ -549,6 +597,13 @@ Deno.serve(async (req) => {
     const stocks = new Set(SYMS.filter(([, , k]) => k === "stock").map(([l]) => l));
     const funds = await fundamentals(stocks);
     return json({ funds });
+  }
+
+  // Detalhe por FII (on-demand ao selecionar o fundo) — VP/Cota, patrimônio, nº cotas…
+  if (body.mode === "fii-detail" && body.ticker) {
+    const ticker = String(body.ticker).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const detail = await fiiDetail(ticker);
+    return json({ detail });
   }
 
   if (body.mode === "macro") {

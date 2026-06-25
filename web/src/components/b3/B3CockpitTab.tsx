@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, fetchB3Proventos, isFii, type B3Candle, type B3FiiFunds, type B3Funds, type B3Overview, type B3ProventosData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FiiDetail, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, fetchB3Proventos, isFii, type B3Candle, type B3FiiDetail, type B3FiiFunds, type B3Funds, type B3Overview, type B3ProventosData } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
@@ -10,7 +10,7 @@ import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
-import { Cell, fmtAssetPrice, fmtBig, fmtBRL, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
+import { Cell, fmtAssetPrice, fmtBig, fmtBRL, fmtMult, fmtNum, fmtPct, fmtPctRaw, fmtVol, selicAA, toneCls } from "./B3Shared";
 
 /** Cockpit Principal da B3: macro BR + ativo + gráfico + fundamentos completos + screener. */
 export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
@@ -21,6 +21,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   const [funds, setFunds] = useState<B3Funds>({});
   const [fiis, setFiis] = useState<B3FiiFunds>({});
   const [proventos, setProventos] = useState<B3ProventosData>({ past: [], upcoming: [] });
+  const [fiiDetail, setFiiDetail] = useState<B3FiiDetail | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [showEma, setShowEma] = useState(true);
@@ -71,6 +72,20 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     };
   }, [asset]);
 
+  // Detalhe por FII (VP/Cota, patrimônio, nº de cotas…) — 1 request on-demand ao selecionar.
+  useEffect(() => {
+    if (!isFii(asset)) {
+      setFiiDetail(null);
+      return;
+    }
+    let alive = true;
+    setFiiDetail(null);
+    fetchB3FiiDetail(asset).then((d) => alive && setFiiDetail(d));
+    return () => {
+      alive = false;
+    };
+  }, [asset]);
+
   const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === asset) ?? null, [ov, asset]);
   const fund = funds[asset] ?? null;
   const fiiFund = fiis[asset] ?? null;
@@ -93,6 +108,15 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     const vsIfix = fiiChg != null && ifixChg != null ? fiiChg - ifixChg : null;
     return { last, fwdDy, dy, cdi, dyVsCdi, ifixChg, fiiChg, vsIfix };
   }, [assetIsFii, fiiFund, selQuote, proventos, ov]);
+
+  // Deságio/ágio vs valor patrimonial — leitura mais concreta do P/VP (em R$ e %).
+  // Preço abaixo do VP/Cota = comprando R$1 de patrimônio por menos de R$1 (deságio).
+  const fiiAgio = useMemo(() => {
+    if (!assetIsFii || !fiiDetail?.vpCota) return null;
+    const price = fiiFund?.price ?? selQuote?.price ?? null;
+    if (!price || price <= 0) return null;
+    return { price, deltaPct: (price / fiiDetail.vpCota - 1) * 100, deltaBRL: price - fiiDetail.vpCota };
+  }, [assetIsFii, fiiDetail, fiiFund, selQuote]);
 
   if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
   if (!ov) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
@@ -222,6 +246,28 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
             DY vs CDI = prêmio do FII sobre a renda fixa (verde = paga mais que o CDI). IFIX é o índice dos FIIs. Educacional — não é recomendação.
+          </p>
+        </div>
+      )}
+
+      {/* Detalhe do fundo (por FII) — VP/Cota, deságio/ágio, patrimônio, nº de cotas */}
+      {assetIsFii && fiiDetail && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Detalhe do fundo · {asset}</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Cell label="VP/Cota" value={fmtBRL(fiiDetail.vpCota)} sub="patrimônio por cota" />
+            <Cell
+              label="Deságio / ágio"
+              value={fiiAgio ? <span className={toneCls(-fiiAgio.deltaPct)}>{`${fiiAgio.deltaPct >= 0 ? "+" : ""}${fiiAgio.deltaPct.toFixed(1)}%`}</span> : "—"}
+              sub={fiiAgio ? `${fiiAgio.deltaBRL >= 0 ? "+" : "−"}${fmtBRL(Math.abs(fiiAgio.deltaBRL))} vs VP` : "preço vs VP"}
+            />
+            <Cell label="Patrimônio líq." value={fmtBig(fiiDetail.patrimLiq)} sub="porte do fundo" />
+            <Cell label="Nº de cotas" value={fmtVol(fiiDetail.numCotas)} />
+            <Cell label="FFO/Cota" value={fmtBRL(fiiDetail.ffoCota)} sub="caixa por cota" />
+            <Cell label="Dividendo/cota" value={fmtBRL(fiiDetail.divCota)} sub="rend. 12m / cota" />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Deságio (verde) = preço abaixo do valor patrimonial por cota — comprando R$1 de patrimônio por menos de R$1. Fonte: Fundamentus (detalhe por fundo).
           </p>
         </div>
       )}

@@ -260,6 +260,29 @@ export async function fetchB3FiisAll(): Promise<B3FiiFunds> {
   }
 }
 
+// ── Detalhe POR FII (Fundamentus detalhes.php — 1 request por fundo, on-demand) ──
+export interface B3FiiDetail {
+  vpCota: number | null; // valor patrimonial por cota (R$) — base do deságio/ágio
+  ffoCota: number | null; // FFO por cota (geração de caixa)
+  divCota: number | null; // dividendo/rendimento por cota declarado (último)
+  patrimLiq: number | null; // patrimônio líquido (R$) — porte do fundo
+  valorMercado: number | null; // valor de mercado (R$)
+  numCotas: number | null; // nº total de cotas
+  min52: number | null; // mínima 52 semanas (R$)
+  max52: number | null; // máxima 52 semanas (R$)
+}
+/** Detalhe de um FII (VP/Cota, patrimônio, nº de cotas…) via Fundamentus. null se o scrape falhar. */
+export async function fetchB3FiiDetail(ticker: string): Promise<B3FiiDetail | null> {
+  if (!isFii(ticker)) return null;
+  try {
+    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fii-detail", ticker } });
+    if (error || !data) return null;
+    return ((data as { detail?: B3FiiDetail | null }).detail ?? null);
+  } catch {
+    return null;
+  }
+}
+
 export interface B3Dividend {
   date: number; // epoch (s)
   amount: number; // R$ por ação
