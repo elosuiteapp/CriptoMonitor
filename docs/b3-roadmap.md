@@ -42,10 +42,13 @@ Tudo abaixo respeita [[scale-with-revenue]] (grátis primeiro, pago só com rece
 ### Ondas (grátis, priorizado)
 - **Onda 1 — FEITO 25/jun:** BCB completo (CDI/IBC-Br/desemprego) + strip "Commodities que movem o
   IBOV" (Brent/cobre/ouro com mapeamento p/ PETR4/VALE3/siderúrgicas) no cockpit B3.
-- **Onda 2 — diferencial nosso:** (a) surface do contexto global já coletado (VIX/DXY/yields/M2) no
-  cockpit B3 com barra risk-on/off; (b) **Fear & Greed Brasil próprio** (breadth/vol/momentum do
-  IBOV — ninguém tem, e sob nosso controle); (c) COT (DXY/ouro/petróleo) na aba Macro;
-  (d) enriquecer o **Cockpit Report B3** (`b3-report`, já existe) sintetizando tudo em PT.
+- **Onda 2 — diferencial nosso:** (b) ✅ **FEITO 25/jun** — **Fear & Greed Brasil próprio**
+  (`brazilFng` no `b3-data` mode overview, `B3FearGreedPanel` no cockpit): 0..100 de 6 forças
+  grátis e auditáveis — amplitude do basket, momento IBOV vs MM125, faixa 52 sem, volatilidade
+  realizada (invertida), câmbio (porto-seguro) e risco global (VIX). Reusa o `BiasGauge`. Validado
+  live (score 49 "Neutro"). Falta: (a) surface dos demais globais (DXY/yields/M2 já em
+  `macro_global`) num bloco risk-on/off; (c) COT (DXY/ouro/petróleo) na aba Macro; (d) enriquecer o
+  **Cockpit Report B3** (`b3-report`) sintetizando tudo em PT.
 - **Onda 3 — com receita:** fluxo por investidor (UP2DATA/dadosdemercado) + gamma/opções (OpLab) —
   os dois maiores trunfos, ambos pagos.
 

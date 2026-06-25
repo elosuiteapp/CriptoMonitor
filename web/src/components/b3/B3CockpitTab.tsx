@@ -6,6 +6,7 @@ import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import B3IndicatorPanels from "./B3IndicatorPanels";
+import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
 import { Cell, fmtAssetPrice, fmtBig, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
@@ -80,6 +81,9 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <Cell label="Desemprego" value={ov.macro.unemployment != null ? `${ov.macro.unemployment.toFixed(1)}%` : "—"} sub="PNAD" />
         </div>
       </div>
+
+      {/* Termômetro de Medo & Ganância Brasil (índice próprio) */}
+      {ov.fng && <B3FearGreedPanel fng={ov.fng} />}
 
       {/* Commodities que movem o IBOV — petróleo/metais lá fora antecipam PETR4/VALE3 */}
       {ov.commodities && ov.commodities.length > 0 && (

@@ -198,6 +198,74 @@ async function buildMacroBR() {
   const ibc_br = ibc && ibc[0] !== 0 ? { value: ibc[1], momPct: ((ibc[1] - ibc[0]) / ibc[0]) * 100 } : null;
   return { selic, ipca, usd_brl: usd, cdi, ibc_br, unemployment };
 }
+
+// ── Medo & Ganância Brasil (índice PRÓPRIO do OrbeView) ──────────────────────
+// Sentimento do mercado BR em 0..100 (0=medo extremo, 100=ganância extrema),
+// sintetizando 6 forças de dados GRÁTIS, transparente/auditável (cada componente à
+// mostra): amplitude do basket, momento do IBOV (vs MM125), faixa de 52 semanas,
+// volatilidade realizada (invertida), câmbio (porto-seguro) e risco global (VIX).
+const clamp0100 = (v: number) => Math.max(0, Math.min(100, v));
+const sma = (a: number[], n: number): number | null => (a.length < n ? null : a.slice(-n).reduce((x, y) => x + y, 0) / n);
+function fngLabel(s: number): string {
+  return s >= 75 ? "Ganância extrema" : s >= 55 ? "Ganância" : s >= 45 ? "Neutro" : s >= 25 ? "Medo" : "Medo extremo";
+}
+// deno-lint-ignore no-explicit-any
+async function brazilFng(quotes: any[]) {
+  // 1) Amplitude — % das ações do basket acima do preço de 30d atrás.
+  const stocks = quotes.filter((q) => q?.kind === "stock" && q?.d30 != null);
+  const breadth = stocks.length >= 5 ? (stocks.filter((s) => s.d30 > 0).length / stocks.length) * 100 : null;
+  // 5) Câmbio (porto-seguro) — dólar SUBINDO (BRL fraco) = medo → invertido.
+  const usd = quotes.find((q) => q?.symbol === "USD/BRL");
+  const usdChg30 = usd?.d30 ?? null;
+  const cambio = usdChg30 != null ? clamp0100(50 - (usdChg30 / 10) * 50) : null;
+
+  // 2/3/4) IBOV 1 ano — momento, faixa 52 sem e volatilidade.
+  let momentum: number | null = null;
+  let range52: number | null = null;
+  let volScore: number | null = null;
+  const ibovJ = await yahoo("^BVSP", "1y", "1d");
+  const closes: number[] = (ibovJ?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []).filter((c: number | null) => c != null);
+  if (closes.length >= 130) {
+    const price = closes[closes.length - 1];
+    const ma125 = sma(closes, 125);
+    if (ma125) momentum = clamp0100(50 + (((price - ma125) / ma125) * 100 / 12) * 50); // ±12% → 0..100
+    const win = closes.slice(-252);
+    const hi = Math.max(...win);
+    const lo = Math.min(...win);
+    if (hi > lo) range52 = ((price - lo) / (hi - lo)) * 100;
+    const rets: number[] = [];
+    for (let i = 1; i < closes.length; i++) rets.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    const volSeries: number[] = [];
+    for (let end = 21; end <= rets.length; end++) {
+      const s = rets.slice(end - 21, end);
+      const m = s.reduce((a, b) => a + b, 0) / s.length;
+      volSeries.push(Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / s.length));
+    }
+    if (volSeries.length >= 30) {
+      const cur = volSeries[volSeries.length - 1];
+      const pctile = (volSeries.filter((v) => v <= cur).length / volSeries.length) * 100;
+      volScore = 100 - pctile; // vol alta = percentil alto = medo
+    }
+  }
+
+  // 6) Risco global — VIX baixo (~12) = ganância, alto (~35) = medo.
+  let vixScore: number | null = null;
+  const vix = (await yahoo("^VIX", "5d", "1d"))?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  if (vix != null) vixScore = clamp0100(100 - ((vix - 12) / (35 - 12)) * 100);
+
+  const raw: [string, string, number | null][] = [
+    ["breadth", "Amplitude (ações em alta 30d)", breadth],
+    ["momentum", "Momento (IBOV vs MM125)", momentum],
+    ["range52", "Faixa de 52 semanas", range52],
+    ["volatility", "Volatilidade (invertida)", volScore],
+    ["cambio", "Porto-seguro (câmbio)", cambio],
+    ["vix", "Risco global (VIX)", vixScore],
+  ];
+  const components = raw.filter(([, , s]) => s != null).map(([key, label, s]) => ({ key, label, score: Math.round(s as number) }));
+  if (!components.length) return null;
+  const score = Math.round(components.reduce((a, c) => a + c.score, 0) / components.length);
+  return { score, label: fngLabel(score), components };
+}
 // deno-lint-ignore no-explicit-any
 function closeMap(j: any): Record<string, number> {
   const res = j?.chart?.result?.[0];
@@ -516,5 +584,6 @@ Deno.serve(async (req) => {
     ).then((a) => a.filter(Boolean)),
     buildMacroBR(),
   ]);
-  return json({ quotes, commodities, macro });
+  const fng = await brazilFng(quotes);
+  return json({ quotes, commodities, macro, fng });
 });

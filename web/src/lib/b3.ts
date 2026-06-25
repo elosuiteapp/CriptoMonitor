@@ -39,10 +39,23 @@ export interface B3Commodity {
   w1?: number | null; // 7 dias
   impacts: string; // ações que costuma mover
 }
+/** Componente do Medo & Ganância Brasil (0..100, transparente/auditável). */
+export interface B3FngComponent {
+  key: string;
+  label: string;
+  score: number; // 0..100
+}
+/** Índice Medo & Ganância Brasil (próprio) — 0=medo extremo, 100=ganância extrema. */
+export interface B3Fng {
+  score: number; // 0..100
+  label: string; // Medo extremo / Medo / Neutro / Ganância / Ganância extrema
+  components: B3FngComponent[];
+}
 export interface B3Overview {
   quotes: B3Quote[];
   macro: B3Macro;
   commodities?: B3Commodity[];
+  fng?: B3Fng | null;
 }
 
 export interface B3Asset {
