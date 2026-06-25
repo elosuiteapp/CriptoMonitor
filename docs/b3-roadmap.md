@@ -46,9 +46,11 @@ Tudo abaixo respeita [[scale-with-revenue]] (grátis primeiro, pago só com rece
   (`brazilFng` no `b3-data` mode overview, `B3FearGreedPanel` no cockpit): 0..100 de 6 forças
   grátis e auditáveis — amplitude do basket, momento IBOV vs MM125, faixa 52 sem, volatilidade
   realizada (invertida), câmbio (porto-seguro) e risco global (VIX). Reusa o `BiasGauge`. Validado
-  live (score 49 "Neutro"). Falta: (a) surface dos demais globais (DXY/yields/M2 já em
-  `macro_global`) num bloco risk-on/off; (c) COT (DXY/ouro/petróleo) na aba Macro; (d) enriquecer o
-  **Cockpit Report B3** (`b3-report`) sintetizando tudo em PT.
+  live (score 49 "Neutro"). E (d) ✅ **FEITO 25/jun** — **Cockpit Report B3** (`b3-report`, Gemini)
+  enriquecido: recebe F&G + commodities + macro completo e abre com uma **## Síntese do dia** (2-3
+  frases que amarram o termômetro ao quadro), + seções de macro (CDI/IBC-Br/desemprego) e externo
+  (commodities→ação) ampliadas. Falta: (a) surface dos demais globais (DXY/yields/M2 já em
+  `macro_global`) num bloco risk-on/off; (c) COT (DXY/ouro/petróleo) na aba Macro.
 - **Onda 3 — com receita:** fluxo por investidor (UP2DATA/dadosdemercado) + gamma/opções (OpLab) —
   os dois maiores trunfos, ambos pagos.
 
