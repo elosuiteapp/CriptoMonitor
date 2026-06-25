@@ -574,7 +574,7 @@ Deno.serve(async (req) => {
 
   // overview: watchlist (índice, dólar, ações e FIIs) + macro BR + commodities
   const ALL: [string, string, string][] = [...SYMS, ...SYMS_FII.map(([l, s]) => [l, s, "fii"] as [string, string, string])];
-  const [quotes, commodities, macro] = await Promise.all([
+  const [quotes, commodities, ifix, macro] = await Promise.all([
     mapLimit(ALL, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k)).then((a) => a.filter(Boolean)),
     Promise.all(
       COMMODITIES.map(async ([label, sym, impacts]) => {
@@ -582,8 +582,17 @@ Deno.serve(async (req) => {
         return q ? { symbol: label, price: q.price, changePct: q.changePct, w1: q.w1, impacts } : null;
       }),
     ).then((a) => a.filter(Boolean)),
+    // IFIX (benchmark dos FIIs): índice retorna série esparsa no Yahoo → variação do
+    // dia vem do meta (regularMarketPrice vs chartPreviousClose), não da série.
+    (async () => {
+      // deno-lint-ignore no-explicit-any
+      const m: any = (await yahoo("IFIX.SA", "5d", "1d"))?.chart?.result?.[0]?.meta;
+      const price = m?.regularMarketPrice ?? null;
+      const prev = m?.chartPreviousClose ?? m?.previousClose ?? null;
+      return price != null ? { symbol: "IFIX", price, changePct: prev ? ((price - prev) / prev) * 100 : null } : null;
+    })(),
     buildMacroBR(),
   ]);
   const fng = await brazilFng(quotes);
-  return json({ quotes, commodities, macro, fng });
+  return json({ quotes, commodities, ifix, macro, fng });
 });

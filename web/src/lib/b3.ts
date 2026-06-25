@@ -56,6 +56,7 @@ export interface B3Overview {
   macro: B3Macro;
   commodities?: B3Commodity[];
   fng?: B3Fng | null;
+  ifix?: B3Global | null; // IFIX — índice de FIIs (benchmark da classe): preço + variação do dia
 }
 
 export interface B3Asset {

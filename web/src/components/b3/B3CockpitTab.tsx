@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, isFii, type B3Candle, type B3FiiFunds, type B3Funds, type B3Overview } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, fetchB3Proventos, isFii, type B3Candle, type B3FiiFunds, type B3Funds, type B3Overview, type B3ProventosData } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import B3IndicatorPanels from "./B3IndicatorPanels";
 import B3FearGreedPanel from "./B3FearGreedPanel";
+import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
-import { Cell, fmtAssetPrice, fmtBig, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
+import { Cell, fmtAssetPrice, fmtBig, fmtBRL, fmtMult, fmtNum, fmtPct, fmtPctRaw, selicAA, toneCls } from "./B3Shared";
 
 /** Cockpit Principal da B3: macro BR + ativo + gráfico + fundamentos completos + screener. */
 export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
@@ -19,6 +20,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   const [chartLoading, setChartLoading] = useState(true);
   const [funds, setFunds] = useState<B3Funds>({});
   const [fiis, setFiis] = useState<B3FiiFunds>({});
+  const [proventos, setProventos] = useState<B3ProventosData>({ past: [], upcoming: [] });
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [showEma, setShowEma] = useState(true);
@@ -56,12 +58,41 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     };
   }, [asset, timeframe]);
 
+  // Proventos do FII (rendimento por cota) — p/ rendimento projetado e último pagamento.
+  useEffect(() => {
+    if (!isFii(asset)) {
+      setProventos({ past: [], upcoming: [] });
+      return;
+    }
+    let alive = true;
+    fetchB3Proventos(asset, "fii").then((p) => alive && setProventos(p));
+    return () => {
+      alive = false;
+    };
+  }, [asset]);
+
   const selQuote = useMemo(() => ov?.quotes.find((q) => q.symbol === asset) ?? null, [ov, asset]);
   const fund = funds[asset] ?? null;
   const fiiFund = fiis[asset] ?? null;
   const assetIsFii = isFii(asset);
   const ibov = ov?.quotes.find((q) => q.symbol === "IBOV");
   const dollar = ov?.quotes.find((q) => q.symbol === "USD/BRL");
+
+  // Contexto de renda do FII: DY vs CDI (renda fixa que concorre), rendimento projetado
+  // (último × 12 / preço) e desempenho vs IFIX (benchmark dos FIIs).
+  const fiiCtx = useMemo(() => {
+    if (!assetIsFii) return null;
+    const price = fiiFund?.price ?? selQuote?.price ?? null;
+    const last = proventos.past.length ? proventos.past[proventos.past.length - 1] : null;
+    const fwdDy = last && price && price > 0 ? ((last.amount * 12) / price) * 100 : null;
+    const dy = fiiFund?.dy ?? null;
+    const cdi = ov?.macro.cdi ?? null;
+    const dyVsCdi = dy != null && cdi != null ? dy - cdi : null;
+    const ifixChg = ov?.ifix?.changePct ?? null;
+    const fiiChg = selQuote?.changePct ?? null;
+    const vsIfix = fiiChg != null && ifixChg != null ? fiiChg - ifixChg : null;
+    return { last, fwdDy, dy, cdi, dyVsCdi, ifixChg, fiiChg, vsIfix };
+  }, [assetIsFii, fiiFund, selQuote, proventos, ov]);
 
   if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
   if (!ov) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
@@ -162,6 +193,41 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. FII paga proventos mensais — ver aba Dividendos. Verde = DY≥9% / P/VP&lt;1.</p>
         </div>
       )}
+
+      {/* Renda & contexto do FII — DY vs CDI, rendimento projetado e vs IFIX */}
+      {assetIsFii && fiiCtx && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Renda &amp; contexto · {asset}</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Cell
+              label="DY vs CDI"
+              value={<span className={fiiCtx.dyVsCdi != null ? toneCls(fiiCtx.dyVsCdi) : "text-foreground"}>{fiiCtx.dyVsCdi != null ? `${fiiCtx.dyVsCdi >= 0 ? "+" : ""}${fiiCtx.dyVsCdi.toFixed(1)} pp` : "—"}</span>}
+              sub={fiiCtx.dy != null && fiiCtx.cdi != null ? `DY ${fiiCtx.dy.toFixed(1)}% × CDI ${fiiCtx.cdi.toFixed(1)}%` : "renda fixa"}
+            />
+            <Cell
+              label="Rendimento projetado"
+              value={fiiCtx.fwdDy != null ? `${fiiCtx.fwdDy.toFixed(1)}%` : "—"}
+              sub="último × 12 / preço"
+            />
+            <Cell
+              label="Último rendimento"
+              value={fmtBRL(fiiCtx.last?.amount ?? null)}
+              sub={fiiCtx.last?.date ? `data-com ${new Date(fiiCtx.last.date * 1000).toLocaleDateString("pt-BR")}` : "por cota"}
+            />
+            <Cell
+              label="vs IFIX (dia)"
+              value={<span className={fiiCtx.vsIfix != null ? toneCls(fiiCtx.vsIfix) : "text-foreground"}>{fiiCtx.vsIfix != null ? `${fiiCtx.vsIfix >= 0 ? "+" : ""}${fiiCtx.vsIfix.toFixed(2)} pp` : "—"}</span>}
+              sub={fiiCtx.ifixChg != null ? `IFIX ${fmtPct(fiiCtx.ifixChg)}` : "índice de FIIs"}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            DY vs CDI = prêmio do FII sobre a renda fixa (verde = paga mais que o CDI). IFIX é o índice dos FIIs. Educacional — não é recomendação.
+          </p>
+        </div>
+      )}
+
+      {/* Comparação com o segmento (mediana) — só p/ FIIs */}
+      {assetIsFii && <B3FiiSegmentCompare asset={asset} fiis={fiis} />}
 
       {/* Fundamentos completos da ação */}
       {!assetIsFii && fund && (
