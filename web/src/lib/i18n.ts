@@ -1262,7 +1262,7 @@ const EN: Dict = {
     perMonth: "/mo",
     redirecting: "Redirecting…",
     subscribe: "Subscribe to {plan}",
-    payNote: "Pix, boleto, or card (Asaas) · cancel anytime",
+    payNote: "Secure card payment (Paddle) · cancel anytime",
     changePlan: "Change plan",
     downgradeConfirmPre: "Downgrade to",
     downgradeConfirmMid: "? Access guaranteed until",

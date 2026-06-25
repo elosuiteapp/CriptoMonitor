@@ -7,6 +7,7 @@ import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 import type { MacroData, MarketLiquidityData } from "../lib/types";
 import CotCard, { type CotRow } from "./CotCard";
+import FearGreedHistoryPanel from "./FearGreedHistoryPanel";
 import InfoTip from "./InfoTip";
 import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
 import MacroGlobalPanel from "./MacroGlobalPanel";
@@ -345,6 +346,9 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           {synthesis}
         </div>
       )}
+
+      {/* Medo & Ganância (histórico + overlay de preço) — sentimento do mercado, livre p/ todos */}
+      <FearGreedHistoryPanel />
 
       {/* Maré de liquidez macro (FRED): net liquidity do Fed + condições financeiras — Pro */}
       {pro && <MacroGlobalPanel />}
