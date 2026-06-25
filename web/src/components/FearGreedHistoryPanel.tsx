@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useT } from "../lib/i18n";
 import { fetchKlines } from "../lib/marketData";
@@ -36,6 +36,8 @@ export default function FearGreedHistoryPanel() {
   const [fng, setFng] = useState<FngPoint[]>([]);
   const [priceByDate, setPriceByDate] = useState<Record<string, number>>({});
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -99,6 +101,22 @@ export default function FearGreedHistoryPanel() {
   const d30 = ago(30);
   const markerTop = (1 - cur / 100) * 100;
 
+  // Hover: mapeia a posição do cursor para o índice mais próximo da série.
+  const onMove = (clientX: number) => {
+    const el = wrapRef.current;
+    if (!el || n < 2) return;
+    const rect = el.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    setHover(Math.round(frac * (n - 1)));
+  };
+  const hi = hover != null ? Math.max(0, Math.min(n - 1, hover)) : null;
+  const hPt = hi != null ? fng[hi] : null;
+  const hPrice = hi != null ? priceAligned[hi] : null;
+  const hTone = hPt ? fngTone(hPt.value) : null;
+  const hLeft = hi != null && n > 1 ? (hi / (n - 1)) * 100 : 50;
+  const hFngTop = hPt ? (1 - hPt.value / 100) * 100 : 0;
+  const hPriceTop = hPrice != null ? (py(hPrice) / H) * 100 : null;
+
   return (
     <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -117,7 +135,15 @@ export default function FearGreedHistoryPanel() {
         {d30 != null && <span>30d <span className={`num ${d30 >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{d30 >= 0 ? "+" : ""}{d30}</span></span>}
       </div>
 
-      <div className="relative mt-2">
+      <div
+        ref={wrapRef}
+        className="relative mt-2 cursor-crosshair"
+        onMouseMove={(e) => onMove(e.clientX)}
+        onMouseLeave={() => setHover(null)}
+        onTouchStart={(e) => onMove(e.touches[0].clientX)}
+        onTouchMove={(e) => onMove(e.touches[0].clientX)}
+        onTouchEnd={() => setHover(null)}
+      >
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-28 w-full">
           {ZONES.map(([a, b, cls], i) => (
             <rect key={i} x="0" y={fy(b)} width={W} height={fy(a) - fy(b)} className={cls} />
@@ -130,6 +156,26 @@ export default function FearGreedHistoryPanel() {
         </svg>
         {/* marcador do valor atual (HTML p/ não distorcer com o preserveAspectRatio) */}
         <span className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background ${tone.text}`} style={{ left: "100%", top: `${markerTop}%`, backgroundColor: "currentColor" }} />
+
+        {/* Hover: linha de cruz + pontos + tooltip (data, índice + classificação, preço BTC) */}
+        {hi != null && hPt && hTone && (
+          <>
+            <div className="pointer-events-none absolute inset-y-0 w-px bg-foreground/25" style={{ left: `${hLeft}%` }} />
+            <span className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background" style={{ left: `${hLeft}%`, top: `${hFngTop}%`, backgroundColor: hTone.hex }} />
+            {hPriceTop != null && <span className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-400 ring-2 ring-background" style={{ left: `${hLeft}%`, top: `${hPriceTop}%` }} />}
+            <div
+              className="pointer-events-none absolute top-0 z-10 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 shadow-card dark:bg-card"
+              style={{ left: `${hLeft}%`, transform: `translateX(${hLeft < 18 ? "0%" : hLeft > 82 ? "-100%" : "-50%"})` }}
+            >
+              <div className="text-[10px] text-muted-foreground">{new Date(hPt.ts * 1000).toLocaleDateString(isEn ? "en-US" : "pt-BR", { day: "2-digit", month: "short" })}</div>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className={`num font-semibold ${hTone.text}`}>{hPt.value}</span>
+                <span className="text-muted-foreground">{tl(hTone.pt, hTone.en)}</span>
+              </div>
+              {hPrice != null && <div className="num text-[11px] text-foreground">BTC {hPrice.toLocaleString(isEn ? "en-US" : "pt-BR", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}</div>}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
