@@ -44,7 +44,9 @@ async function b3data(url: string, key: string, mode: string): Promise<Record<st
   }
 }
 async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
-  const generationConfig: Record<string, unknown> = { maxOutputTokens: 4096, temperature: 0.6 };
+  // 8192 (não 4096): o gemini-2.5-pro é modelo de "thinking" e consome parte do
+  // orçamento pensando — com 4096 estourava e devolvia texto VAZIO. Flash sem thinking.
+  const generationConfig: Record<string, unknown> = { maxOutputTokens: 8192, temperature: 0.6 };
   if (model.includes("flash")) generationConfig.thinkingConfig = { thinkingBudget: 0 };
   return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
     method: "POST",
@@ -88,18 +90,30 @@ async function generateReport(admin: any, geminiKey: string, supaUrl: string, se
     JSON.stringify(topDy),
   ].join("\n");
 
-  let usedModel = PRIMARY_MODEL;
-  let aiResp = await callGemini(usedModel, geminiKey, SYSTEM_PROMPT, userMsg);
-  if (!aiResp.ok && usedModel !== FALLBACK_MODEL) {
-    usedModel = FALLBACK_MODEL;
-    aiResp = await callGemini(usedModel, geminiKey, SYSTEM_PROMPT, userMsg);
+  // Tenta o pro e, em QUALQUER falha (erro HTTP OU texto vazio — o pro "pensa"
+  // demais e devolve vazio), cai pro flash (thinking off → sempre responde).
+  let usedModel = "";
+  let content = "";
+  // deno-lint-ignore no-explicit-any
+  let aiData: any = {};
+  let lastErr = "";
+  for (const model of [PRIMARY_MODEL, FALLBACK_MODEL]) {
+    usedModel = model;
+    const aiResp = await callGemini(model, geminiKey, SYSTEM_PROMPT, userMsg);
+    if (!aiResp.ok) {
+      lastErr = `gemini ${aiResp.status}`;
+      console.error(`[b3-report] ${model}: HTTP ${aiResp.status} — ${(await aiResp.text().catch(() => "")).slice(0, 300)}`);
+      continue;
+    }
+    aiData = await aiResp.json();
+    const parts = aiData.candidates?.[0]?.content?.parts ?? [];
+    content = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+    if (content) break;
+    const fr = aiData.candidates?.[0]?.finishReason ?? "?";
+    lastErr = `resposta vazia (finish=${fr})`;
+    console.error(`[b3-report] ${model}: resposta vazia, finishReason=${fr}`);
   }
-  if (!aiResp.ok) return { ok: false, error: `gemini ${aiResp.status}` };
-
-  const aiData = await aiResp.json();
-  const parts = aiData.candidates?.[0]?.content?.parts ?? [];
-  const content = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
-  if (!content) return { ok: false, error: "resposta vazia" };
+  if (!content) return { ok: false, error: lastErr || "resposta vazia" };
 
   const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
   const inTok = Number(um.promptTokenCount ?? 0);

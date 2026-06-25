@@ -81,7 +81,7 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
         const ctx = (fnErr as { context?: Response }).context;
         if (ctx && typeof ctx.json === "function") {
           const body = await ctx.json().catch(() => null);
-          if (body?.error) msg = body.error;
+          if (body?.error) msg = body.detail ? `${body.error} — ${body.detail}` : body.error;
         }
         throw new Error(msg);
       }
