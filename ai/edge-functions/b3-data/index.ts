@@ -94,10 +94,10 @@ const COMMODITIES: [string, string, string][] = [
 // Timeframe → (intervalo, janela) do Yahoo. 4h não existe no Yahoo → agrega 1h.
 // IMPORTANTE: `range=max` no Yahoo faz DOWNSAMPLING (diário/semanal viram ~140 pontos
 // esparsos). Para histórico DENSO e COMPLETO usamos period1=0 (full=true) no diário/
-// semanal/mensal. Intraday fica no range máximo que o Yahoo permite por intervalo
-// (15m até 60d; 60m/1h até 730d).
+// semanal/mensal. Intraday usa PRESETS VÁLIDOS do Yahoo (1d/5d/1mo/3mo/6mo/1y/2y/5y/
+// 10y/max) — "2mo" NÃO existe e dá 422. 15m só vai até 60d → "1mo"; 60m/1h até 730d → "2y".
 const TF_MAP: Record<string, { interval: string; range?: string; full?: boolean; agg?: number }> = {
-  "15m": { interval: "15m", range: "2mo" },
+  "15m": { interval: "15m", range: "1mo" },
   "1h": { interval: "60m", range: "2y" },
   "4h": { interval: "60m", range: "2y", agg: 4 },
   "1d": { interval: "1d", full: true },
