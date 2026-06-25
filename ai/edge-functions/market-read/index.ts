@@ -1,10 +1,14 @@
 // Edge Function: market-read (Leitura do Mercado no servidor — Fase 2)
 // Roda o NÚCLEO do motor de confluência (viés/convicção/regime) para TODAS as moedas
 // (SMC_ASSETS) a cada ~30 min (cron), grava em `market_read` e dispara alerta
-// (notifications) quando o VIÉS VIRA para uma direção clara e com convicção
-// (movimentação interessante — evita spam nas ~80 moedas). O front continua calculando
-// a leitura COMPLETA (alvos, multi-timeframe, falsificador) ao vivo — aqui é só o que
-// precisa de memória/alerta.
+// (notifications) quando a moeda ENTRA num estado relevante ou VIRA de direção.
+// Anti-spam em três camadas: (1) só notifica direção clara e com convicção; (2)
+// barra MAIS ALTA para a cauda-longa (moedas só com price-action, sem snapshot);
+// (3) cooldown por moeda (não re-alerta a mesma dentro da janela). Detecta a
+// ENTRADA no estado relevante (não só a virada crua de tone) — pega também o
+// movimento que rampa de fraco p/ forte sem trocar de tone. O front continua
+// calculando a leitura COMPLETA (alvos, multi-timeframe, falsificador) ao vivo —
+// aqui é só o que precisa de memória/alerta.
 //
 // MANTER EM SINCRONIA com web/src/lib/indicators/confluence.ts (pesos e regras do viés)
 // e com web/src/lib/marketData.ts (lista SMC_ASSETS).
@@ -26,13 +30,30 @@ const ASSETS = [
   "LRC", "ONT", "RVN", "STORJ", "FLOKI", "PYTH", "JTO", "STRK", "BLUR", "W",
 ];
 
-// "Movimentação interessante": só notifica quando a leitura VIRA para uma direção clara
-// e com convicção — evita spam nas ~80 moedas (flips p/ indecisão ou leituras fracas não
-// disparam alerta, mas são gravados no histórico).
-const isInteresting = (r: { tone: string; bias: number; conviction: number }): boolean =>
-  r.tone !== "neutral" && Math.abs(r.bias) >= 25 && r.conviction >= 50;
+// Limiares de "movimentação interessante" por riqueza do dado:
+//  • CURATED (snapshot completo: fluxo/opções/posição) → entra em |bias|>=25;
+//  • cauda-longa (só price-action das velas) → barra MAIS ALTA (|bias|>=35), p/ não
+//    notificar leitura fraca de moeda sem microestrutura.
+// conviction>=50 em ambos; tom neutro nunca alerta. Ajustáveis por env.
+const ENTER_CURATED = Number(Deno.env.get("MARKET_READ_ENTER_CURATED") ?? "25");
+const ENTER_LONGTAIL = Number(Deno.env.get("MARKET_READ_ENTER_LONGTAIL") ?? "35");
+const MIN_CONVICTION = Number(Deno.env.get("MARKET_READ_MIN_CONVICTION") ?? "50");
+// Cooldown por moeda (horas) — anti-flapping em torno do limiar.
+const COOLDOWN_H = Number(Deno.env.get("MARKET_READ_COOLDOWN_H") ?? "6");
+
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const sign = (v: number): number => (v > 0 ? 1 : v < 0 ? -1 : 0);
+
+// Direção do sinal "interessante" o bastante p/ alertar (-1/0/+1). 0 = sem
+// movimento relevante (a leitura é gravada no histórico de qualquer forma).
+const interestDir = (
+  r: { tone: string; bias: number; conviction: number },
+  curated: boolean,
+): number => {
+  if (r.tone === "neutral" || r.conviction < MIN_CONVICTION) return 0;
+  const enter = curated ? ENTER_CURATED : ENTER_LONGTAIL;
+  return Math.abs(r.bias) >= enter ? sign(r.bias) : 0;
+};
 const last = (a: number[]): number => {
   for (let i = a.length - 1; i >= 0; i--) if (Number.isFinite(a[i])) return a[i];
   return NaN;
@@ -243,18 +264,27 @@ Deno.serve(async (req) => {
   for (const r of (snapRows ?? []) as Array<{ asset: string; payload: unknown }>)
     if (!snapByAsset.has(r.asset)) snapByAsset.set(r.asset, r.payload);
 
-  // Tone anterior por ativo (últimas 3h) — p/ detectar a virada.
+  // Leitura anterior por ativo (últimas 3h) — p/ detectar entrada/virada de estado.
   const { data: prevRows } = await admin
-    .from("market_read").select("asset, tone, ts")
+    .from("market_read").select("asset, tone, bias, conviction, ts")
     .gte("ts", new Date(Date.now() - 3 * 3600 * 1000).toISOString()).order("ts", { ascending: false });
-  const prevTone = new Map<string, string>();
-  for (const r of (prevRows ?? []) as Array<{ asset: string; tone: string }>)
-    if (!prevTone.has(r.asset)) prevTone.set(r.asset, r.tone);
+  const prevByAsset = new Map<string, { tone: string; bias: number; conviction: number }>();
+  for (const r of (prevRows ?? []) as Array<{ asset: string; tone: string; bias: number; conviction: number }>)
+    if (!prevByAsset.has(r.asset)) prevByAsset.set(r.asset, { tone: r.tone, bias: Number(r.bias), conviction: Number(r.conviction) });
 
   // Experts (destinatários do alerta) — 1 query.
   const { data: subs } = await admin.from("subscriptions").select("user_id, plan:plans(slug)").eq("status", "active");
   const experts = ((subs ?? []) as Array<{ user_id: string; plan?: { slug?: string } }>)
     .filter((s) => s.plan?.slug === "expert").map((s) => s.user_id);
+
+  // Cooldown por moeda: as que já receberam alerta de "mudança de leitura" dentro da
+  // janela ficam de fora (reusa as notificações já gravadas — sem schema novo).
+  const { data: recentNotifs } = await admin
+    .from("notifications").select("asset")
+    .eq("metric", "regime")
+    .gte("created_at", new Date(Date.now() - COOLDOWN_H * 3600 * 1000).toISOString());
+  const onCooldown = new Set<string>();
+  for (const r of (recentNotifs ?? []) as Array<{ asset: string | null }>) if (r.asset) onCooldown.add(r.asset);
 
   // ── Computa a leitura de cada ativo, em lotes paralelos (klines da Binance) ───
   const reads: Array<{ asset: string; read: ReturnType<typeof computeRead> }> = [];
@@ -282,13 +312,20 @@ Deno.serve(async (req) => {
     })),
   );
 
-  // Alerta os Experts nos ativos que VIRARAM para movimento interessante (1 insert).
+  // Alerta os Experts quando a moeda ENTRA num estado relevante ou VIRA de direção
+  // (não só na virada crua de tone) — com tier por riqueza de dado e cooldown (1 insert).
   const notifs: Array<Record<string, unknown>> = [];
   let changed = 0;
   for (const { asset, read } of reads) {
-    const prev = prevTone.get(asset);
-    if (prev != null && prev !== read.tone && isInteresting(read)) {
+    const prev = prevByAsset.get(asset);
+    if (!prev) continue; // sem leitura anterior observável → não alerta (evita rajada)
+    const curated = snapByAsset.has(asset); // tem snapshot = leitura rica
+    const curDir = interestDir(read, curated);
+    const prevDir = interestDir(prev, curated);
+    // Entrou no estado relevante (prevDir 0 → ±1) ou virou de lado (+1 ↔ −1).
+    if (curDir !== 0 && curDir !== prevDir && !onCooldown.has(asset)) {
       changed++;
+      onCooldown.add(asset); // trava p/ o resto deste ciclo também
       for (const uid of experts)
         notifs.push({ user_id: uid, title: `${asset} · mudança de leitura`, body: `O viés do ${asset} virou: ${read.regime_label}`, asset, metric: "regime", value: read.regime_key });
     }
