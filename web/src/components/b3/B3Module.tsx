@@ -32,7 +32,7 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
         {tab === "fluxo" && <B3SmartMoneyTab asset={asset} />}
         {tab === "leitura" && <B3LeituraTab asset={asset} />}
         {tab === "macro" && <B3MacroTab />}
-        {tab === "reports" && <B3ReportsTab />}
+        {tab === "reports" && <B3ReportsTab asset={asset} />}
       </ErrorBoundary>
     </section>
   );

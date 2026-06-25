@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { isFii } from "../../lib/b3";
 import { supabase } from "../../lib/supabase";
 import Markdown from "../Markdown";
 
@@ -10,21 +11,31 @@ interface ReportRow {
   ts: string;
 }
 
-/** Relatórios — relatório diário do pregão da B3 gerado por IA (Gemini). Admin-only. */
-export default function B3ReportsTab() {
+/** Relatórios da B3 (Gemini, admin-only). O tipo segue o ativo do header: FII →
+ *  relatório do mercado de FIIs (DY × CDI, P/VP, segmentos); ação/índice → pregão. */
+export default function B3ReportsTab({ asset }: { asset: string }) {
+  const fii = isFii(asset);
+  const kind = fii ? "fii" : "acoes";
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("b3_reports").select("id, content, model, ts").order("ts", { ascending: false }).limit(14);
+    const { data } = await supabase
+      .from("b3_reports")
+      .select("id, content, model, ts")
+      .eq("kind", kind)
+      .order("ts", { ascending: false })
+      .limit(14);
     const list = (data as ReportRow[]) ?? [];
     setRows(list);
     return list;
-  }, []);
+  }, [kind]);
 
   useEffect(() => {
+    setRows(null);
+    setOpen(null);
     load();
   }, [load]);
 
@@ -32,13 +43,13 @@ export default function B3ReportsTab() {
     setGenerating(true);
     setError(null);
     try {
-      const { error: fnErr } = await supabase.functions.invoke("b3-report", { body: {} });
+      const { error: fnErr } = await supabase.functions.invoke("b3-report", { body: { kind } });
       if (fnErr) {
         let msg = fnErr.message;
         const ctx = (fnErr as { context?: Response }).context;
         if (ctx && typeof ctx.json === "function") {
           const body = await ctx.json().catch(() => null);
-          if (body?.error) msg = body.error;
+          if (body?.error) msg = body.detail ? `${body.error} — ${body.detail}` : body.error;
         }
         throw new Error(msg);
       }
@@ -55,15 +66,19 @@ export default function B3ReportsTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Relatório do pregão · B3</h3>
-          <p className="text-xs text-muted-foreground">Gerado pela IA a partir de IBOV, dólar, macro BR, Focus, cenário externo e ADRs.</p>
+          <h3 className="text-sm font-semibold text-foreground">{fii ? "Relatório de FIIs" : "Relatório do pregão · B3"}</h3>
+          <p className="text-xs text-muted-foreground">
+            {fii
+              ? "Panorama dos fundos imobiliários: DY × CDI, P/VP, segmentos e destaques — gerado pela IA."
+              : "Gerado pela IA a partir de IBOV, dólar, macro BR, Focus, cenário externo e ADRs."}
+          </p>
         </div>
         <button
           onClick={generate}
           disabled={generating}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {generating ? "Gerando…" : "✨ Gerar relatório agora"}
+          {generating ? "Gerando…" : fii ? "✨ Gerar relatório de FIIs" : "✨ Gerar relatório agora"}
         </button>
       </div>
 
@@ -74,7 +89,9 @@ export default function B3ReportsTab() {
       {rows == null ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Nenhum relatório ainda. Clique em "Gerar relatório agora".</div>
+        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+          {fii ? "Nenhum relatório de FIIs ainda. Clique em “Gerar relatório de FIIs”." : "Nenhum relatório ainda. Clique em “Gerar relatório agora”."}
+        </div>
       ) : (
         <div className="space-y-2">
           {rows.map((r) => {
@@ -84,7 +101,7 @@ export default function B3ReportsTab() {
               <div key={r.id} className="rounded-xl border border-border bg-card dark:bg-card/60">
                 <button onClick={() => setOpen(isOpen ? null : r.id)} className="flex w-full items-center justify-between gap-3 p-4 text-left">
                   <span className="flex items-center gap-2 text-sm text-foreground">
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Pregão</span>
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{fii ? "FIIs" : "Pregão"}</span>
                     <span className="num">
                       {dt.toLocaleDateString("pt-BR")} · {dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                     </span>
