@@ -70,13 +70,35 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       {/* Macro BR + índice/dólar */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Macro BR & mercado</h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           <Cell label="IBOV" value={fmtNum(ibov?.price ?? null, 0)} sub={fmtPct(ibov?.changePct ?? null)} tone={ibov?.changePct} />
           <Cell label="Dólar (USD/BRL)" value={fmtNum(dollar?.price ?? null)} sub={fmtPct(dollar?.changePct ?? null)} tone={dollar?.changePct} />
           <Cell label="Selic (a.a.)" value={selicAA(ov.macro.selic) != null ? `${selicAA(ov.macro.selic)!.toFixed(2)}%` : "—"} sub="taxa básica" />
+          <Cell label="CDI (a.a.)" value={ov.macro.cdi != null ? `${ov.macro.cdi.toFixed(2)}%` : "—"} sub="renda fixa / FII" />
           <Cell label="IPCA (mês)" value={ov.macro.ipca != null ? `${ov.macro.ipca.toFixed(2)}%` : "—"} sub="inflação" />
+          <Cell label="IBC-Br (mês)" value={ov.macro.ibc_br != null ? `${ov.macro.ibc_br.momPct >= 0 ? "+" : ""}${ov.macro.ibc_br.momPct.toFixed(2)}%` : "—"} sub="atividade" tone={ov.macro.ibc_br?.momPct ?? null} />
+          <Cell label="Desemprego" value={ov.macro.unemployment != null ? `${ov.macro.unemployment.toFixed(1)}%` : "—"} sub="PNAD" />
         </div>
       </div>
+
+      {/* Commodities que movem o IBOV — petróleo/metais lá fora antecipam PETR4/VALE3 */}
+      {ov.commodities && ov.commodities.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Commodities que movem o IBOV</h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {ov.commodities.map((c) => (
+              <Cell
+                key={c.symbol}
+                label={c.symbol}
+                value={fmtNum(c.price)}
+                tone={c.changePct}
+                sub={<><span className={toneCls(c.changePct)}>{fmtPct(c.changePct)}</span> · move {c.impacts}</>}
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Petróleo e metais lá fora antecipam a abertura de PETR4, VALE3 e siderúrgicas. Cobre serve de proxy de metais (minério de ferro não tem feed grátis). Fonte: Yahoo Finance.</p>
+        </div>
+      )}
 
       {/* Ativo selecionado */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">

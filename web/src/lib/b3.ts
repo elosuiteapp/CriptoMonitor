@@ -24,13 +24,25 @@ export interface B3Candle {
   volume: number;
 }
 export interface B3Macro {
-  selic: number | null; // % ao dia (BCB série 11)
+  selic: number | null; // % ao dia (BCB série 11) — anualizar no front
   ipca: number | null; // % no mês (BCB série 433)
   usd_brl: number | null; // PTAX venda (BCB série 1)
+  cdi?: number | null; // % a.a. já anualizado (BCB série 4389) — referência de renda fixa/FII
+  ibc_br?: { value: number; momPct: number } | null; // IBC-Br (BCB 24364) + variação mensal — atividade econômica
+  unemployment?: number | null; // % desocupação PNAD Contínua (BCB 24369)
+}
+/** Commodity que move o Ibovespa (Yahoo) + as ações da B3 que ela costuma antecipar. */
+export interface B3Commodity {
+  symbol: string;
+  price: number | null;
+  changePct: number | null; // dia
+  w1?: number | null; // 7 dias
+  impacts: string; // ações que costuma mover
 }
 export interface B3Overview {
   quotes: B3Quote[];
   macro: B3Macro;
+  commodities?: B3Commodity[];
 }
 
 export interface B3Asset {

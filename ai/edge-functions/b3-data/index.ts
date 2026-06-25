@@ -80,6 +80,15 @@ const GLOBALS: [string, string][] = [
   ["Petróleo (Brent)", "BZ=F"],
   ["VIX", "^VIX"],
 ];
+// Commodities que movem o Ibovespa (Yahoo, grátis). Cada uma mapeada às ações da B3
+// que ela costuma antecipar — o "minério subiu na Ásia → VALE3 abre em alta".
+// GAP conhecido: minério de ferro não tem feed grátis bom → cobre serve de proxy de
+// metais p/ VALE3/siderúrgicas (ver docs/b3-roadmap.md).
+const COMMODITIES: [string, string, string][] = [
+  ["Petróleo (Brent)", "BZ=F", "PETR4 · PRIO3"],
+  ["Cobre", "HG=F", "VALE3 · CSNA3 · GGBR4"],
+  ["Ouro", "GC=F", "mineradoras de ouro"],
+];
 
 // Timeframe → (intervalo, janela) do Yahoo. 4h não existe no Yahoo → agrega 1h.
 // Janelas generosas (mais histórico), respeitando os limites do Yahoo por intervalo
@@ -164,6 +173,30 @@ async function bcb(code: number): Promise<number | null> {
   } catch {
     return null;
   }
+}
+// Últimos 2 pontos de uma série (p/ variação no período — ex.: IBC-Br mês a mês).
+async function bcbLast2(code: number): Promise<[number, number] | null> {
+  try {
+    const r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/2?formato=json`, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!r.ok) return null;
+    const a = (await r.json()) as Array<{ valor: string }>;
+    if (!a || a.length < 2) return null;
+    const prev = Number(a[0].valor);
+    const cur = Number(a[1].valor);
+    return Number.isFinite(prev) && Number.isFinite(cur) ? [prev, cur] : null;
+  } catch {
+    return null;
+  }
+}
+// Pacote macro BR (BCB SGS, grátis e sem chave) — usado pelos modos overview e macro.
+// Selic 11 (% a.d. → anualizar no front), IPCA 433 (% mês), PTAX venda 1, CDI 4389
+// (% a.a., já anualizado), IBC-Br 24364 (índice + var. mensal), desocupação PNAD 24369.
+async function buildMacroBR() {
+  const [selic, ipca, usd, cdi, ibc, unemployment] = await Promise.all([
+    bcb(11), bcb(433), bcb(1), bcb(4389), bcbLast2(24364), bcb(24369),
+  ]);
+  const ibc_br = ibc && ibc[0] !== 0 ? { value: ibc[1], momPct: ((ibc[1] - ibc[0]) / ibc[0]) * 100 } : null;
+  return { selic, ipca, usd_brl: usd, cdi, ibc_br, unemployment };
 }
 // deno-lint-ignore no-explicit-any
 function closeMap(j: any): Record<string, number> {
@@ -467,13 +500,21 @@ Deno.serve(async (req) => {
     });
     const globals = GLOBALS.map(([l]) => ({ symbol: l, price: byLabel[l]?.price ?? null, changePct: byLabel[l]?.changePct ?? null }));
     const usdSpot = byLabel["Dólar"]?.price ?? null;
-    const [selic, ipca, usd, focusData, adrs] = await Promise.all([bcb(11), bcb(433), bcb(1), focus(), adrPremiums(usdSpot)]);
-    return json({ globals, correlations, macro: { selic, ipca, usd_brl: usd }, focus: focusData, adrs });
+    const [macro, focusData, adrs] = await Promise.all([buildMacroBR(), focus(), adrPremiums(usdSpot)]);
+    return json({ globals, correlations, macro, focus: focusData, adrs });
   }
 
-  // overview: watchlist (índice, dólar, ações e FIIs) + macro BR
+  // overview: watchlist (índice, dólar, ações e FIIs) + macro BR + commodities
   const ALL: [string, string, string][] = [...SYMS, ...SYMS_FII.map(([l, s]) => [l, s, "fii"] as [string, string, string])];
-  const quotes = (await mapLimit(ALL, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k))).filter(Boolean);
-  const [selic, ipca, usd] = await Promise.all([bcb(11), bcb(433), bcb(1)]);
-  return json({ quotes, macro: { selic, ipca, usd_brl: usd } });
+  const [quotes, commodities, macro] = await Promise.all([
+    mapLimit(ALL, 8, async ([l, s, k]) => quoteOf(await yahoo(s, "3mo", "1d"), l, k)).then((a) => a.filter(Boolean)),
+    Promise.all(
+      COMMODITIES.map(async ([label, sym, impacts]) => {
+        const q = quoteOf(await yahoo(sym, "1mo", "1d"), label, "commodity");
+        return q ? { symbol: label, price: q.price, changePct: q.changePct, w1: q.w1, impacts } : null;
+      }),
+    ).then((a) => a.filter(Boolean)),
+    buildMacroBR(),
+  ]);
+  return json({ quotes, commodities, macro });
 });

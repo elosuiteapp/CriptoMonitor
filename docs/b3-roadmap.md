@@ -7,6 +7,55 @@ para não precisar pesquisar tudo de novo. Pesquisa feita em **jun/2026**.
 
 ---
 
+## Avaliação de fontes + arquitetura (25/jun/2026)
+
+Avaliação cruzada de uma lista ampla de fontes (locais + globais) contra o estado real do app.
+**Achado-chave:** boa parte da "camada global/macro" **já é coletada para o cripto** — o trabalho
+não é construir do zero, é **plugar no módulo B3** + somar o que é genuinamente brasileiro.
+Tudo abaixo respeita [[scale-with-revenue]] (grátis primeiro, pago só com receita),
+[[orbeview-visual-standard]] (reusar componentes) e [[relevance-first]].
+
+### Já existe (não rebuildar)
+- **B3 core (`b3-data`):** Yahoo (cotação/candles/dividendos), Fundamentus (fundamentos da bolsa
+  toda), StatusInvest (proventos tipados + agenda), BCB (Selic/IPCA/PTAX + Focus), ADR premium
+  (proxy do estrangeiro), comparação setorial, leitura de ação (força vs IBOV/MAs/S-R).
+- **Global/macro já coletado p/ cripto:** `macro-fred` → VIX, DXY, US10Y, M2, net liquidity, NFCI,
+  HY spread, 2s10s · `econ-calendar` (ForexFactory) · Alternative.me F&G · CFTC COT (CME cripto).
+
+### Veredito por fonte (free? viável? onde encaixa)
+
+| Fonte | Custo | Endpoint | Freq. | Veredito |
+|---|---|---|---|---|
+| **BCB SGS** (CDI 4389, IBC-Br 24364, desemprego 24369) | grátis, s/ chave | `api.bcb.gov.br/dados/serie/bcdata.sgs.{N}/dados/ultimos/{n}` | diária/mensal | ✅ **FEITO (Onda 1)** |
+| **Commodities** (Brent BZ=F, Cobre HG=F, Ouro GC=F) | grátis, s/ chave | Yahoo chart (já proxiado) | intradiário | ✅ **FEITO (Onda 1)** — linkage PETR4/VALE3 |
+| **FRED** (VIX/DXY/yields/M2/CPI) | grátis (chave no `app_secrets`) | `macro-fred` → `macro_assets`/`macro_global` | diária (cron job 6) | ⏳ **SURFACE** — dado já no banco; falta expor no cockpit B3 |
+| **EIA** (petróleo WTI/Brent + estoques → PETR4) | grátis c/ **API key** | `api.eia.gov/v2/...` | semanal | ⏳ pendente: key do dono |
+| **CFTC COT** (DXY/ouro/petróleo) | grátis | API CFTC pública (temos o padrão `cftc_cot`) | semanal | ⏳ aba Macro B3 — relevante p/ WDO |
+| **CVM** (carteiras de fundos) | grátis | `dados.cvm.gov.br` (CSV/zip) | mensal, **lag 1–3m** | 🔮 Fase 2 — pesado; é tendência, não tempo real |
+| **CBOE** (put/call S&P) | grátis | download diário CBOE | diária | 🔵 opcional — sentimento US |
+| **Minério de ferro** (→VALE3) | ❌ sem feed grátis bom | — | — | ⚠️ usar **cobre** como proxy (feito) |
+| **B3 UP2DATA / dadosdemercado** (fluxo por investidor) | **pago/comercial** | contato comercial | diária | 🔒 **defer** — maior diferencial, mas custa (P2) |
+| **brapi** gregas/IV de opções B3 | **virou pago** | brapi.dev | — | ⚠️ saímos da brapi; gamma B3 = OpLab (P2) |
+| **MacroMicro** F&G Brasil | ❌ sem API pública | — | — | 🛠️ **construir o nosso** (breadth IBOV + vol + momentum) |
+| **Investing.com** calendário | scraping/ToS | — | — | ⛔ pular — já temos `econ-calendar` |
+
+### Ondas (grátis, priorizado)
+- **Onda 1 — FEITO 25/jun:** BCB completo (CDI/IBC-Br/desemprego) + strip "Commodities que movem o
+  IBOV" (Brent/cobre/ouro com mapeamento p/ PETR4/VALE3/siderúrgicas) no cockpit B3.
+- **Onda 2 — diferencial nosso:** (a) surface do contexto global já coletado (VIX/DXY/yields/M2) no
+  cockpit B3 com barra risk-on/off; (b) **Fear & Greed Brasil próprio** (breadth/vol/momentum do
+  IBOV — ninguém tem, e sob nosso controle); (c) COT (DXY/ouro/petróleo) na aba Macro;
+  (d) enriquecer o **Cockpit Report B3** (`b3-report`, já existe) sintetizando tudo em PT.
+- **Onda 3 — com receita:** fluxo por investidor (UP2DATA/dadosdemercado) + gamma/opções (OpLab) —
+  os dois maiores trunfos, ambos pagos.
+
+**Honestidade:** "nenhuma plataforma integra tudo" é real e atingível — mas os dois maiores trunfos
+(fluxo por investidor + gamma B3) são pagos, e F&G-Brasil-pronto (MacroMicro) e minério grátis
+**não existem como API**. O caminho gratuito forte = contexto global (temos) + commodity-linkage +
+F&G-Brasil-nosso + síntese em PT.
+
+---
+
 ## P2 — diferenciais pagos (o que falta para o módulo ficar "completo")
 
 ### 1. Fluxo por tipo de investidor (estrangeiro · institucional · PF) — **maior diferencial**
