@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "../lib/supabase";
+import type { ModuleId } from "../lib/modules";
 
 export interface NotificationRow {
   id: string;
@@ -10,18 +11,22 @@ export interface NotificationRow {
   asset: string | null;
   metric: string | null;
   value: string | null;
+  module: string | null;
   read_at: string | null;
   created_at: string;
 }
 
 /** Central de notificações in-app: carrega as últimas, escuta novas ao vivo
  *  (Supabase Realtime) e expõe contagem de não-lidas + marcar como lidas.
- *  `onNew` é chamado para cada notificação que chega ao vivo (usado pelo toast). */
-export function useNotifications(user: User | null, onNew?: (n: NotificationRow) => void) {
+ *  `modules` = módulos que o usuário acessa → só mostra notificações desses
+ *  módulos (isolamento de módulos). `onNew` é chamado para cada notificação que
+ *  chega ao vivo (usado pelo toast). */
+export function useNotifications(user: User | null, modules: ModuleId[], onNew?: (n: NotificationRow) => void) {
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const onNewRef = useRef(onNew);
   onNewRef.current = onNew;
+  const modKey = modules.join(","); // dep estável p/ os efeitos
 
   const load = useCallback(async () => {
     if (!user) {
@@ -31,12 +36,13 @@ export function useNotifications(user: User | null, onNew?: (n: NotificationRow)
     }
     const { data } = await supabase
       .from("notifications")
-      .select("id, title, body, asset, metric, value, read_at, created_at")
+      .select("id, title, body, asset, metric, value, module, read_at, created_at")
+      .in("module", modKey.split(","))
       .order("created_at", { ascending: false })
       .limit(30);
     setItems((data as NotificationRow[]) ?? []);
     setLoading(false);
-  }, [user]);
+  }, [user, modKey]);
 
   useEffect(() => {
     void load();
@@ -52,6 +58,8 @@ export function useNotifications(user: User | null, onNew?: (n: NotificationRow)
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
         (payload) => {
           const n = payload.new as NotificationRow;
+          // Isolamento de módulos: ignora notificação de um módulo que o usuário não acessa.
+          if (n.module && !modKey.split(",").includes(n.module)) return;
           setItems((prev) => [n, ...prev].slice(0, 30));
           onNewRef.current?.(n);
         },
@@ -60,7 +68,7 @@ export function useNotifications(user: User | null, onNew?: (n: NotificationRow)
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, modKey]);
 
   const unread = items.reduce((acc, n) => acc + (n.read_at ? 0 : 1), 0);
 

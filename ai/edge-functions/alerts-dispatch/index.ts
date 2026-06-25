@@ -22,6 +22,7 @@ interface AlertRow {
   asset: string;
   metric: string; // 'price' | 'funding' | 'gamma_regime'
   condition: { op?: string; value?: number; equals?: string };
+  module: string | null; // crypto | b3 | forex — isolamento de módulos
   last_triggered_at: string | null;
 }
 
@@ -145,7 +146,7 @@ Deno.serve(async (req) => {
 
   const { data: alerts } = await admin
     .from("alerts")
-    .select("id, user_id, asset, metric, condition, last_triggered_at")
+    .select("id, user_id, asset, metric, condition, module, last_triggered_at")
     .eq("active", true);
   if (!alerts?.length) {
     return new Response(JSON.stringify({ evaluated: 0 }), { status: 200 });
@@ -189,6 +190,7 @@ Deno.serve(async (req) => {
       asset: alert.asset,
       metric: alert.metric,
       value: String(value),
+      module: alert.module ?? "crypto",
     });
     // marca o cooldown
     await admin.from("alerts").update({ last_triggered_at: new Date().toISOString() }).eq("id", alert.id);

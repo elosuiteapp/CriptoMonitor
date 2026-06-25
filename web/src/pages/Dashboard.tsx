@@ -67,6 +67,7 @@ import type { ChartType, Timeframe } from "../lib/marketData";
 import { useGlossary } from "../lib/glossary";
 import { cockpitSynthesis } from "../lib/cockpitSynthesis";
 import { layerAccess, LAYER_KEYS } from "../lib/layers";
+import { accessibleModules } from "../lib/modules";
 import { useT } from "../lib/i18n";
 
 const OPTION_ASSETS = ["BTC", "ETH", "SOL", "BNB"]; // gamma: BTC/ETH (Deribit) + SOL (Bybit) + BNB (Binance), via relay
@@ -155,6 +156,9 @@ export default function Dashboard() {
   // Expert (canSmart) no módulo cripto. Alimenta o badge do header (todas as abas) e
   // a aba Leitura do Mercado — mesmos números, sem dupla computação.
   const marketRead = useMarketRead(asset, payload ?? null, bookImbalance, market === "crypto" && canSmart);
+  // Isolamento de módulos: o sino só mostra notificações dos módulos que o usuário
+  // acessa (hoje crypto p/ todos; B3/Forex só admin). Ver lib/modules.accessibleModules.
+  const notifModules = useMemo(() => accessibleModules(isAdmin), [isAdmin]);
 
   if (planLoading || !plan) {
     return <div className="grid h-full place-items-center text-muted-foreground">{tr.header.loadingPlan}</div>;
@@ -202,7 +206,7 @@ export default function Dashboard() {
             to={market === "b3" ? "/b3-analysis" : "/analysis"}
             dailyLimit={market === "b3" ? undefined : plan.ai_daily_limit}
           />
-          {user && <NotificationsBell user={user} />}
+          {user && <NotificationsBell user={user} modules={notifModules} />}
           <button
             onClick={() => setAlertsOpen(true)}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"

@@ -60,3 +60,12 @@ export const MODULES: MarketModule[] = [
 ];
 
 export const DEFAULT_MODULE: ModuleId = "crypto";
+
+/** Módulos que o usuário PODE acessar — fonte única do isolamento de módulos
+ *  (alertas/notificações só aparecem dos módulos contratados). Hoje: crypto p/
+ *  todos; B3/Forex são preview só do admin (espelha o gating do ModuleSwitcher).
+ *  QUANDO B3/Forex virarem produto vendável, trocar esta regra para ler a
+ *  assinatura/entitlement do usuário (este é o único ponto a mudar). */
+export function accessibleModules(isAdmin: boolean): ModuleId[] {
+  return isAdmin ? ["crypto", "b3", "forex"] : ["crypto"];
+}

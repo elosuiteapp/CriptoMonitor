@@ -7,6 +7,7 @@ import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useNotifications, type NotificationRow } from "../hooks/useNotifications";
 import { usePush } from "../hooks/usePush";
 import { useT } from "../lib/i18n";
+import type { ModuleId } from "../lib/modules";
 import { playAlertSound } from "../lib/sound";
 
 const fmtTime = (iso: string) => {
@@ -21,7 +22,7 @@ const fmtTime = (iso: string) => {
 
 /** Sino de notificações: contador de não-lidas, central (dropdown), toggle de
  *  push do navegador e toast quando chega alerta novo ao vivo. */
-export default function NotificationsBell({ user }: { user: User }) {
+export default function NotificationsBell({ user, modules }: { user: User; modules: ModuleId[] }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [toasts, setToasts] = useState<NotificationRow[]>([]);
@@ -33,7 +34,7 @@ export default function NotificationsBell({ user }: { user: User }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 6500);
   }, []);
 
-  const { items, unread, markAllRead, clearAll } = useNotifications(user, pushToast);
+  const { items, unread, markAllRead, clearAll } = useNotifications(user, modules, pushToast);
   const push = usePush(user);
 
   useEscapeKey(() => setOpen(false), open);
