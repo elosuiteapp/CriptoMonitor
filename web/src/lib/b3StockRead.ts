@@ -40,6 +40,7 @@ export interface StockRead {
   vol: VolumeRead | null;
   support: SRLevel | null;
   resistance: SRLevel | null;
+  beta: number | null; // beta vs IBOV (~1 ano de retornos diários); >1 amplifica o índice
 }
 
 const pctChange = (closes: number[], n: number): number | null => {
@@ -127,6 +128,34 @@ function supportResistance(candles: Candle[]): { support: SRLevel | null; resist
   return { support: mk(supBelow), resistance: mk(resAbove) };
 }
 
+/** Beta vs IBOV — sensibilidade do ativo ao índice (cov/var dos retornos diários,
+ *  ~1 ano). >1 amplifica o IBOV; <1 é mais defensivo. Pareia por pregão (mesma B3). */
+function computeBeta(candles: Candle[], ibovCandles: Candle[]): number | null {
+  const m = Math.min(candles.length, ibovCandles.length);
+  if (m < 60) return null;
+  const s = candles.slice(-m).map((c) => c.close);
+  const b = ibovCandles.slice(-m).map((c) => c.close);
+  const sr: number[] = [];
+  const br: number[] = [];
+  for (let i = Math.max(1, m - 252); i < m; i++) {
+    if (s[i - 1] > 0 && b[i - 1] > 0) {
+      sr.push((s[i] - s[i - 1]) / s[i - 1]);
+      br.push((b[i] - b[i - 1]) / b[i - 1]);
+    }
+  }
+  if (sr.length < 30) return null;
+  const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+  const ms = mean(sr);
+  const mb = mean(br);
+  let cov = 0;
+  let varb = 0;
+  for (let i = 0; i < sr.length; i++) {
+    cov += (sr[i] - ms) * (br[i] - mb);
+    varb += (br[i] - mb) ** 2;
+  }
+  return varb > 0 ? cov / varb : null;
+}
+
 /** Leitura completa da ação a partir dos candles diários do ativo e do IBOV. */
 export function computeStockRead(candles: Candle[], ibovCandles: Candle[]): StockRead {
   const closes = candles.map((c) => c.close);
@@ -138,5 +167,6 @@ export function computeStockRead(candles: Candle[], ibovCandles: Candle[]): Stoc
     vol: volumeRead(candles),
     support,
     resistance,
+    beta: computeBeta(candles, ibovCandles),
   };
 }

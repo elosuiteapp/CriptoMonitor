@@ -10,7 +10,8 @@ import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
-import { Cell, fmtAssetPrice, fmtBig, fmtBRL, fmtMult, fmtNum, fmtPct, fmtPctRaw, fmtVol, selicAA, toneCls } from "./B3Shared";
+import B3SectorRotation from "./B3SectorRotation";
+import { Cell, fmtAssetPrice, fmtBig, fmtBRL, fmtMult, fmtNum, fmtPct, fmtPctRaw, fmtVol, RangeBar, selicAA, toneCls } from "./B3Shared";
 
 /** Cockpit Principal da B3: macro BR + ativo + gráfico + fundamentos completos + screener. */
 export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
@@ -118,6 +119,14 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     return { price, deltaPct: (price / fiiDetail.vpCota - 1) * 100, deltaBRL: price - fiiDetail.vpCota };
   }, [assetIsFii, fiiDetail, fiiFund, selQuote]);
 
+  // Payout do FII = rendimento distribuído ÷ FFO (ambos por cota, 12m). >100% = distribui
+  // mais do que gera de caixa (usando reserva/ganho de capital) — sinal de sustentabilidade.
+  const fiiPayout = useMemo(() => {
+    const ffo = fiiDetail?.ffoCota;
+    const div = fiiDetail?.divCota;
+    return ffo && div && ffo > 0 ? (div / ffo) * 100 : null;
+  }, [fiiDetail]);
+
   if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
   if (!ov) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
 
@@ -159,6 +168,9 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       )}
 
+      {/* Rotação setorial — para onde o capital girou nos últimos 30 dias */}
+      <B3SectorRotation quotes={ov.quotes} onAsset={onAsset} />
+
       {/* Ativo selecionado */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -197,6 +209,15 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       </div>
 
+      {/* Faixa de 52 semanas — posição do preço atual no range do ano (ações, índice e FIIs) */}
+      {selQuote?.price != null && selQuote.fl52 != null && selQuote.fh52 != null && selQuote.fh52 > selQuote.fl52 && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Faixa de 52 semanas · {asset}</h3>
+          <RangeBar low={selQuote.fl52} high={selQuote.fh52} current={selQuote.price} fmt={(n) => fmtAssetPrice(asset, n)} />
+          <p className="mt-2 text-[11px] text-muted-foreground">Onde o preço de hoje está entre a mínima e a máxima dos últimos 12 meses. Perto da máxima = momento forte/esticado; perto da mínima = descontado/pressionado. Fonte: Yahoo Finance.</p>
+        </div>
+      )}
+
       {/* Fundamentos de FII */}
       {assetIsFii && fiiFund && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
@@ -211,10 +232,12 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             <Cell label="Cap Rate" value={fmtPctRaw(fiiFund.capRate)} sub="renda / valor" />
             <Cell label="Vacância" value={<span className={fiiFund.vacancia != null && fiiFund.vacancia > 15 ? "text-rose-500" : "text-foreground"}>{fmtPctRaw(fiiFund.vacancia)}</span>} sub="média" />
             <Cell label="Qtd de imóveis" value={fiiFund.qtdImoveis != null ? fmtNum(fiiFund.qtdImoveis, 0) : "—"} />
+            {fiiFund.precoM2 != null && <Cell label="Preço do m²" value={fmtBRL(fiiFund.precoM2)} sub="dos imóveis" />}
+            {fiiFund.aluguelM2 != null && <Cell label="Aluguel do m²" value={fmtBRL(fiiFund.aluguelM2)} sub="por mês" />}
             <Cell label="Valor de mercado" value={fmtBig(fiiFund.valorMercado)} />
             <Cell label="Liquidez (dia)" value={fmtBig(fiiFund.liquidez)} sub="negociação média" />
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. FII paga proventos mensais — ver aba Dividendos. Verde = DY≥9% / P/VP&lt;1.</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">Fonte: Fundamentus. FII paga proventos mensais — ver aba Dividendos. Verde = DY≥9% / P/VP&lt;1. Preço/aluguel do m² só em FII de tijolo.</p>
         </div>
       )}
 
@@ -250,7 +273,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
         </div>
       )}
 
-      {/* Detalhe do fundo (por FII) — VP/Cota, deságio/ágio, patrimônio, nº de cotas */}
+      {/* Detalhe do fundo (por FII) — VP/Cota, deságio/ágio, patrimônio, nº de cotas, payout */}
       {assetIsFii && fiiDetail && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
           <h3 className="mb-2 text-sm font-semibold text-foreground">Detalhe do fundo · {asset}</h3>
@@ -265,9 +288,16 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             <Cell label="Nº de cotas" value={fmtVol(fiiDetail.numCotas)} />
             <Cell label="FFO/Cota" value={fmtBRL(fiiDetail.ffoCota)} sub="caixa por cota" />
             <Cell label="Dividendo/cota" value={fmtBRL(fiiDetail.divCota)} sub="rend. 12m / cota" />
+            {fiiPayout != null && (
+              <Cell
+                label="Payout (rend/FFO)"
+                value={<span className={fiiPayout <= 105 ? "text-emerald-500" : fiiPayout <= 120 ? "text-amber-500" : "text-rose-500"}>{`${fiiPayout.toFixed(0)}%`}</span>}
+                sub={fiiPayout <= 105 ? "coberto pela geração" : "acima do FFO (reserva)"}
+              />
+            )}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Deságio (verde) = preço abaixo do valor patrimonial por cota — comprando R$1 de patrimônio por menos de R$1. Fonte: Fundamentus (detalhe por fundo).
+            Deságio (verde) = preço abaixo do valor patrimonial por cota — comprando R$1 de patrimônio por menos de R$1. Payout = rendimento distribuído ÷ FFO (geração de caixa): acima de 100% o fundo distribui mais do que gera (usando reserva/ganho de capital — checar a sustentabilidade). Fonte: Fundamentus (detalhe por fundo).
           </p>
         </div>
       )}
@@ -282,11 +312,15 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             <Cell label="P/L" value={fund.pl != null ? fund.pl.toFixed(1) : "—"} sub="preço / lucro" />
             <Cell label="P/VP" value={fmtMult(fund.pvp)} sub="preço / patrimônio" />
+            <Cell label="P/Receita" value={fmtMult(fund.psr)} sub="preço / vendas (PSR)" />
             <Cell label="Dividend Yield" value={<span className={fund.dy != null && fund.dy >= 6 ? "text-emerald-500" : "text-foreground"}>{fmtPctRaw(fund.dy)}</span>} sub="proventos 12m" />
             <Cell label="ROE" value={<span className={fund.roe != null && fund.roe >= 15 ? "text-emerald-500" : "text-foreground"}>{fmtPctRaw(fund.roe)}</span>} sub="retorno s/ patrimônio" />
             <Cell label="ROIC" value={fmtPctRaw(fund.roic)} sub="retorno s/ capital" />
-            <Cell label="Margem líquida" value={fmtPctRaw(fund.mrgLiq)} sub="lucro / receita" />
+            <Cell label="Margem bruta" value={fmtPctRaw(fund.mrgBruta)} sub="receita − custos" />
             <Cell label="Margem EBIT" value={fmtPctRaw(fund.mrgEbit)} sub="operacional" />
+            <Cell label="Margem líquida" value={fmtPctRaw(fund.mrgLiq)} sub="lucro / receita" />
+            <Cell label="P/EBIT" value={fmtMult(fund.pEbit)} sub="preço / operacional" />
+            <Cell label="EV/EBIT" value={fmtMult(fund.evEbit)} sub="firma / operacional" />
             <Cell label="EV/EBITDA" value={fmtMult(fund.evEbitda)} sub="valor da firma" />
             <Cell label="Dív.Líq/PL" value={fund.divLiqPatrim != null ? fund.divLiqPatrim.toFixed(2) : "—"} sub="endividamento" tone={fund.divLiqPatrim != null ? -fund.divLiqPatrim : null} />
             <Cell label="Cresc. Rec. (5a)" value={<span className={toneCls(fund.crescRec5a)}>{fmtPctRaw(fund.crescRec5a)}</span>} sub="receita 5 anos" />

@@ -19,7 +19,7 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function B3StockReadPanel({ asset, read }: { asset: string; read: StockRead }) {
-  const { rel, ma, vol, support, resistance } = read;
+  const { rel, ma, vol, support, resistance, beta } = read;
   const hasAny = rel || ma || vol || support || resistance;
   if (!hasAny) return null;
 
@@ -48,6 +48,14 @@ export default function B3StockReadPanel({ asset, read }: { asset: string; read:
                   </div>
                 ))}
               </div>
+              {beta != null && (
+                <div className="mt-1.5 flex items-center justify-between border-t border-border/50 pt-1.5 text-[11px]">
+                  <span className="text-muted-foreground">Beta (1 ano)</span>
+                  <span className="num text-foreground">
+                    {beta.toFixed(2)} <span className="text-muted-foreground">· {beta >= 1.1 ? "amplifica o IBOV" : beta <= 0.9 ? "mais defensivo" : "anda com o IBOV"}</span>
+                  </span>
+                </div>
+              )}
             </>
           ) : (
             <div className="text-xs text-muted-foreground">Histórico insuficiente.</div>

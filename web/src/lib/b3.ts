@@ -14,6 +14,8 @@ export interface B3Quote {
   w1?: number | null; // 7 dias
   d15?: number | null; // 15 dias
   d30?: number | null; // 30 dias
+  fh52?: number | null; // máxima 52 semanas (Yahoo meta)
+  fl52?: number | null; // mínima 52 semanas (Yahoo meta)
 }
 export interface B3Candle {
   time: number; // epoch (s) — formato Lightweight Charts
@@ -210,7 +212,11 @@ export interface B3Fund {
   pl: number | null; // P/L
   pvp: number | null; // P/VP
   dy: number | null; // Dividend Yield (%)
+  psr: number | null; // P/Receita (preço sobre vendas)
+  pEbit: number | null; // P/EBIT
+  evEbit: number | null; // EV/EBIT
   evEbitda: number | null;
+  mrgBruta: number | null; // margem bruta (%)
   mrgEbit: number | null; // margem EBIT (%)
   mrgLiq: number | null; // margem líquida (%)
   liqCorr: number | null; // liquidez corrente
@@ -246,6 +252,8 @@ export interface B3FiiFund {
   qtdImoveis: number | null;
   capRate: number | null; // %
   vacancia: number | null; // vacância média (%)
+  precoM2: number | null; // preço do m² (R$) — só FII de tijolo
+  aluguelM2: number | null; // aluguel do m² (R$) — só FII de tijolo
 }
 export type B3FiiFunds = Record<string, B3FiiFund>;
 

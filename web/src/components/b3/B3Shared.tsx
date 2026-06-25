@@ -47,6 +47,30 @@ export function Cell({ label, value, sub, tone }: { label: string; value: ReactN
   );
 }
 
+/** Barra de posição numa faixa (mín — atual — máx). Reutilizável: faixa de 52 sem,
+ *  preço no range etc. Gradiente verde(barato)→cinza→vermelho(esticado) + marcador. */
+export function RangeBar({ low, high, current, lowLabel = "mín", highLabel = "máx", fmt = fmtBRL }: { low: number; high: number; current: number; lowLabel?: string; highLabel?: string; fmt?: (n: number | null) => string }) {
+  const span = high - low;
+  const pos = span > 0 ? Math.max(0, Math.min(1, (current - low) / span)) : 0.5;
+  const pct = Math.round(pos * 100);
+  const word = pct >= 85 ? "perto da máxima" : pct <= 15 ? "perto da mínima" : pct >= 60 ? "metade superior" : pct <= 40 ? "metade inferior" : "no meio";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Posição na faixa</span>
+        <span className="num text-foreground">{pct}% · <span className="text-muted-foreground">{word}</span></span>
+      </div>
+      <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(to right, rgba(16,185,129,0.45), rgba(148,163,184,0.30), rgba(244,63,94,0.45))" }}>
+        <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-border bg-background shadow-card" style={{ left: `${pos * 100}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px]">
+        <span className="num text-emerald-600 dark:text-emerald-400">{fmt(low)} <span className="text-muted-foreground">{lowLabel}</span></span>
+        <span className="num text-rose-600 dark:text-rose-400">{fmt(high)} <span className="text-muted-foreground">{highLabel}</span></span>
+      </div>
+    </div>
+  );
+}
+
 export type Tone = "bull" | "bear" | "neutral";
 export const biasTone = (bias: number): Tone => (bias >= 12 ? "bull" : bias <= -12 ? "bear" : "neutral");
 export const toneText = (t: Tone) => (t === "bull" ? "text-emerald-500" : t === "bear" ? "text-rose-500" : "text-muted-foreground");

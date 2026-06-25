@@ -162,6 +162,9 @@ function quoteOf(j: any, label: string, kind: string) {
     w1: pct(ago(7)),
     d15: pct(ago(15)),
     d30: pct(ago(30)),
+    // Faixa de 52 semanas (já vem no meta do Yahoo, sem chamada extra) — p/ "posição na faixa".
+    fh52: Number.isFinite(m.fiftyTwoWeekHigh) ? m.fiftyTwoWeekHigh : null,
+    fl52: Number.isFinite(m.fiftyTwoWeekLow) ? m.fiftyTwoWeekLow : null,
   };
 }
 async function bcb(code: number): Promise<number | null> {
@@ -363,7 +366,8 @@ function parseBR(s: string | undefined): number | null {
 }
 interface Fund {
   price: number | null; pl: number | null; pvp: number | null; dy: number | null;
-  evEbitda: number | null; mrgEbit: number | null; mrgLiq: number | null; liqCorr: number | null;
+  psr: number | null; pEbit: number | null; evEbit: number | null; evEbitda: number | null;
+  mrgBruta: number | null; mrgEbit: number | null; mrgLiq: number | null; liqCorr: number | null;
   roic: number | null; roe: number | null; liq2m: number | null; patrimLiq: number | null;
   divLiqPatrim: number | null; crescRec5a: number | null;
 }
@@ -391,7 +395,8 @@ async function fundamentals(only: Set<string>): Promise<Record<string, Fund>> {
       if (tds.length < 21) continue;
       out[papel] = {
         price: parseBR(tds[0]), pl: parseBR(tds[1]), pvp: parseBR(tds[2]), dy: parseBR(tds[4]),
-        evEbitda: parseBR(tds[10]), mrgEbit: parseBR(tds[12]), mrgLiq: parseBR(tds[13]), liqCorr: parseBR(tds[14]),
+        psr: parseBR(tds[3]), pEbit: parseBR(tds[7]), evEbit: parseBR(tds[9]), evEbitda: parseBR(tds[10]),
+        mrgBruta: parseBR(tds[11]), mrgEbit: parseBR(tds[12]), mrgLiq: parseBR(tds[13]), liqCorr: parseBR(tds[14]),
         roic: parseBR(tds[15]), roe: parseBR(tds[16]), liq2m: parseBR(tds[17]), patrimLiq: parseBR(tds[18]),
         divLiqPatrim: parseBR(tds[19]), crescRec5a: parseBR(tds[20]),
       };
@@ -408,7 +413,7 @@ async function fundamentals(only: Set<string>): Promise<Record<string, Fund>> {
 interface FiiFund {
   segmento: string | null; price: number | null; ffoYield: number | null; dy: number | null;
   pvp: number | null; valorMercado: number | null; liquidez: number | null; qtdImoveis: number | null;
-  capRate: number | null; vacancia: number | null;
+  capRate: number | null; vacancia: number | null; precoM2: number | null; aluguelM2: number | null;
 }
 async function fundamentalsFii(only: Set<string>): Promise<Record<string, FiiFund>> {
   try {
@@ -433,18 +438,23 @@ async function fundamentalsFii(only: Set<string>): Promise<Record<string, FiiFun
       const physical = (qtd ?? 0) > 0; // FII de tijolo (tem imóvel) vs papel/CRI/FOF
       let capRate = parseBR(tds[10]);
       let vacancia = parseBR(tds[11]);
+      // Preço/m² (tds[8]) e aluguel/m² (tds[9]) só fazem sentido em FII de tijolo.
+      let precoM2 = parseBR(tds[8]);
+      let aluguelM2 = parseBR(tds[9]);
       // Cap rate e vacância só fazem sentido em FII de tijolo. Vacância >50% no Fundamentus
       // é erro de dado (FII líquido não opera ~vazio) → anula em vez de exibir lixo.
       if (!physical) {
         capRate = null;
         vacancia = null;
+        precoM2 = null;
+        aluguelM2 = null;
       } else if (vacancia != null && vacancia > 50) {
         vacancia = null;
       }
       out[papel] = {
         segmento: tds[0]?.trim() || null, price: parseBR(tds[1]), ffoYield: parseBR(tds[2]), dy: parseBR(tds[3]),
         pvp: parseBR(tds[4]), valorMercado: parseBR(tds[5]), liquidez: parseBR(tds[6]), qtdImoveis: qtd,
-        capRate, vacancia,
+        capRate, vacancia, precoM2, aluguelM2,
       };
     }
     return out;
