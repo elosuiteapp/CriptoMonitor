@@ -39,6 +39,7 @@ import VolumeDeltaSubchart from "../components/VolumeDeltaSubchart";
 import { useAuth } from "../hooks/useAuth";
 import { useCvd } from "../hooks/useCvd";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import { useMarketRead } from "../hooks/useMarketRead";
 import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
 import { useBookPressureSeries } from "../hooks/useBookPressureSeries";
@@ -144,6 +145,17 @@ export default function Dashboard() {
 
   const fng = useMemo<Reading>(() => readFng(payload?.sentiment?.fng_value), [payload]);
 
+  // Pressão do book consolidada (varejo + institucional, faixa ±2%) — alimenta o motor.
+  const bookImbalance = useMemo(() => {
+    const bid = (imbalance.varejo?.bid_wide_usd ?? 0) + (imbalance.institucional?.bid_wide_usd ?? 0);
+    const ask = (imbalance.varejo?.ask_wide_usd ?? 0) + (imbalance.institucional?.ask_wide_usd ?? 0);
+    return bid + ask > 0 ? (bid - ask) / (bid + ask) : null;
+  }, [imbalance]);
+  // Leitura do Mercado computada UMA vez no cockpit (motor de confluência), só para
+  // Expert (canSmart) no módulo cripto. Alimenta o badge do header (todas as abas) e
+  // a aba Leitura do Mercado — mesmos números, sem dupla computação.
+  const marketRead = useMarketRead(asset, payload ?? null, bookImbalance, market === "crypto" && canSmart);
+
   if (planLoading || !plan) {
     return <div className="grid h-full place-items-center text-muted-foreground">{tr.header.loadingPlan}</div>;
   }
@@ -214,14 +226,28 @@ export default function Dashboard() {
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
           <>
-        <PriceHeader asset={asset} payload={payload} updatedAt={updatedAt} livePrice={livePrice} />
+        <PriceHeader
+          asset={asset}
+          payload={payload}
+          updatedAt={updatedAt}
+          livePrice={livePrice}
+          read={marketRead.read}
+          readLoading={canSmart && marketRead.loading}
+          onOpenRead={() => setTab("indicadores")}
+        />
 
         <TabBar tab={tab} onTab={setTab} advanced={advanced} canSmart={canSmart} />
 
         {tab === "macro" && <MacroTab asset={asset} pro={advanced} />}
         {tab === "indicadores" &&
           (canSmart ? (
-            <IndicatorsTab asset={asset} payload={payload ?? null} plan={plan} />
+            <IndicatorsTab
+              asset={asset}
+              read={marketRead.read}
+              leans={marketRead.leans}
+              biasHist={marketRead.biasHist}
+              loading={marketRead.loading}
+            />
           ) : (
             <LockedTab title={tr.tabs.indicators} plan="Expert" />
           ))}

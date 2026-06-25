@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
+import MarketReadBadge from "./MarketReadBadge";
 import { ASSET_NAME, fmtPct, fmtPrice, isInstitutional } from "../lib/format";
 import { useT } from "../lib/i18n";
+import type { MarketRead } from "../lib/indicators/confluence";
 import { fetch24hChange } from "../lib/marketData";
 import type { SnapshotPayload } from "../lib/types";
 
@@ -10,9 +12,12 @@ interface Props {
   payload: SnapshotPayload | null;
   updatedAt: string | null;
   livePrice?: number | null; // preço ao vivo vindo do gráfico (WS) — espelha o gráfico
+  read?: MarketRead | null; // Leitura do Mercado (Expert) — badge de viés/convicção
+  readLoading?: boolean;
+  onOpenRead?: () => void; // abre a aba Leitura do Mercado
 }
 
-export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Props) {
+export default function PriceHeader({ asset, payload, updatedAt, livePrice, read, readLoading, onOpenRead }: Props) {
   const { t, isEn } = useT();
   const binance = payload?.price?.binance;
   const coinbase = payload?.price?.coinbase;
@@ -68,17 +73,22 @@ export default function PriceHeader({ asset, payload, updatedAt, livePrice }: Pr
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {when ? (
-          <>
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            <span>
-              {t.priceHeader.updated} <span className="num">{when}</span>
-            </span>
-          </>
-        ) : (
-          t.priceHeader.waiting
+      <div className="flex flex-col items-end gap-2">
+        {(read || readLoading) && (
+          <MarketReadBadge read={read ?? null} loading={readLoading} onClick={onOpenRead} />
         )}
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {when ? (
+            <>
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              <span>
+                {t.priceHeader.updated} <span className="num">{when}</span>
+              </span>
+            </>
+          ) : (
+            t.priceHeader.waiting
+          )}
+        </div>
       </div>
     </div>
   );

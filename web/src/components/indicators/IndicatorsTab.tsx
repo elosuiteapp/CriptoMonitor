@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
-import { computeMarketRead, timeframeLean, type AxisSignal, type LiquidityTarget, type TfLean } from "../../lib/indicators/confluence";
+import BiasGauge from "../BiasGauge";
+import { type AxisSignal, type LiquidityTarget, type MarketRead, type TfLean } from "../../lib/indicators/confluence";
 import { fmtPrice } from "../../lib/format";
 import { useT } from "../../lib/i18n";
-import { useOrderbookImbalance } from "../../hooks/useOrderbookImbalance";
-import { fetchKlines, type Candle } from "../../lib/marketData";
-import { supabase } from "../../lib/supabase";
-import type { Plan, SnapshotPayload } from "../../lib/types";
 
 interface Props {
   asset: string;
-  payload: SnapshotPayload | null;
-  plan: Plan;
+  // A leitura é computada UMA vez no cockpit (useMarketRead) e injetada aqui, para
+  // que esta aba e o badge do header mostrem exatamente os mesmos números.
+  read: MarketRead | null;
+  leans: TfLean[];
+  biasHist: number[];
+  loading: boolean;
 }
 
 const toneText = (tone: "bull" | "bear" | "neutral") =>
@@ -36,27 +37,6 @@ function BiasSparkline({ data }: { data: number[] }) {
     <svg viewBox={`0 0 ${w} ${h}`} className="h-6 w-28" preserveAspectRatio="none">
       <line x1="0" y1={h / 2} x2={w} y2={h / 2} className="stroke-border" strokeWidth="0.5" strokeDasharray="2 2" />
       <polyline points={pts} fill="none" stroke={up ? "#10b981" : "#f43f5e"} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Gauge semicircular do viés (-100..+100): arcos vermelho/neutro/verde + agulha. */
-function BiasGauge({ value, tone }: { value: number; tone: "bull" | "bear" | "neutral" }) {
-  const v = Math.max(-100, Math.min(100, value));
-  const a = ((90 - v * 0.9) * Math.PI) / 180;
-  const cx = 110;
-  const cy = 110;
-  const r = 78;
-  const nx = cx + r * Math.cos(a);
-  const ny = cy - r * Math.sin(a);
-  const needle = tone === "bull" ? "#10b981" : tone === "bear" ? "#f43f5e" : "#94a3b8";
-  return (
-    <svg viewBox="0 0 220 124" className="h-28 w-56">
-      <path d="M 32 110 A 78 78 0 0 1 71 42.5" fill="none" stroke="#f43f5e" strokeOpacity="0.55" strokeWidth="10" strokeLinecap="round" />
-      <path d="M 71 42.5 A 78 78 0 0 1 149 42.5" fill="none" stroke="currentColor" className="text-muted" strokeWidth="10" strokeLinecap="round" />
-      <path d="M 149 42.5 A 78 78 0 0 1 188 110" fill="none" stroke="#10b981" strokeOpacity="0.55" strokeWidth="10" strokeLinecap="round" />
-      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={needle} strokeWidth="3" strokeLinecap="round" />
-      <circle cx={cx} cy={cy} r="5" fill={needle} />
     </svg>
   );
 }
@@ -114,130 +94,13 @@ function TargetRow({ t, current }: { t: LiquidityTarget; current?: boolean }) {
 }
 
 /** Aba "Leitura do Mercado" (Expert) — leitura sintetizada e multi-timeframe. */
-export default function IndicatorsTab({ asset, payload, plan }: Props) {
+export default function IndicatorsTab({ asset, read, leans, biasHist, loading }: Props) {
   const { isEn } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
-  const [c1d, setC1d] = useState<Candle[]>([]);
-  const [c4h, setC4h] = useState<Candle[]>([]);
-  const [c1h, setC1h] = useState<Candle[]>([]);
-  const [oiDelta, setOiDelta] = useState<number | null>(null);
-  const [macro, setMacro] = useState<{ vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null>(null);
-  const [biasHist, setBiasHist] = useState<number[]>([]);
-  const [btcChg7d, setBtcChg7d] = useState<number | null>(null); // 7d do BTC (rotação de liderança)
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    (async () => {
-      const [d, h4, h1, btc] = await Promise.all([
-        fetchKlines(asset, "1d", 365).catch(() => [] as Candle[]),
-        fetchKlines(asset, "4h", 300).catch(() => [] as Candle[]),
-        fetchKlines(asset, "1h", 300).catch(() => [] as Candle[]),
-        asset === "BTC" ? Promise.resolve([] as Candle[]) : fetchKlines("BTC", "1d", 10).catch(() => [] as Candle[]),
-      ]);
-      const bChg7d = btc.length >= 8 ? (btc[btc.length - 1].close - btc[btc.length - 8].close) / btc[btc.length - 8].close : null;
-      // OI-delta 24h (tabela derivatives — convicção do movimento). Opcional.
-      let oi: number | null = null;
-      try {
-        const { data } = await supabase
-          .from("derivatives")
-          .select("open_interest, ts")
-          .eq("asset", asset)
-          .order("ts", { ascending: false })
-          .limit(300);
-        const rows = (data ?? []) as Array<{ open_interest: number | null; ts: string }>;
-        if (rows.length) {
-          const now = Number(rows[0].open_interest);
-          const cutoff = Date.now() - 24 * 3600 * 1000;
-          const old = rows.find((r) => new Date(r.ts).getTime() <= cutoff);
-          const oldOi = old ? Number(old.open_interest) : NaN;
-          if (Number.isFinite(now) && Number.isFinite(oldOi) && oldOi > 0) oi = ((now - oldOi) / oldOi) * 100;
-        }
-      } catch {
-        /* OI é opcional */
-      }
-      // Maré macro (VIX/DXY/juros via macro_assets — risk-on/off). Opcional.
-      let macroCtx: { vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null = null;
-      try {
-        const { data } = await supabase
-          .from("macro_assets")
-          .select("symbol, change_7d, ts")
-          .in("symbol", ["VIX", "DXY", "US10Y"])
-          .order("ts", { ascending: false })
-          .limit(30);
-        const rows = (data ?? []) as Array<{ symbol: string; change_7d: number | null; ts: string }>;
-        if (rows.length) {
-          const latestTs = rows[0].ts;
-          const at = rows.filter((r) => r.ts === latestTs);
-          const g = (s: string) => Number(at.find((r) => r.symbol === s)?.change_7d);
-          const vix = g("VIX");
-          const dxy = g("DXY");
-          const us10y = g("US10Y");
-          if ([vix, dxy, us10y].every((v) => Number.isFinite(v))) macroCtx = { vixChg: vix, dxyChg: dxy, us10yChg: us10y };
-        }
-        // Maré de liquidez do Fed (FRED via macro_global) — junta na maré macro.
-        const { data: mg } = await supabase
-          .from("macro_global")
-          .select("nl_chg_30d_pct, nfci")
-          .order("ts", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (macroCtx && mg) {
-          macroCtx.nlChg = (mg as { nl_chg_30d_pct: number | null }).nl_chg_30d_pct;
-          macroCtx.nfci = (mg as { nfci: number | null }).nfci;
-        }
-      } catch {
-        /* macro opcional */
-      }
-      // Histórico do viés p/ sparkline (market_read — Fase 2). Opcional.
-      let bh: number[] = [];
-      try {
-        const { data } = await supabase
-          .from("market_read")
-          .select("bias, ts")
-          .eq("asset", asset)
-          .order("ts", { ascending: false })
-          .limit(48);
-        bh = ((data ?? []) as Array<{ bias: number }>).map((r) => Number(r.bias)).filter((v) => Number.isFinite(v)).reverse();
-      } catch {
-        /* opcional */
-      }
-      if (!alive) return;
-      setC1d(d);
-      setC4h(h4);
-      setC1h(h1);
-      setOiDelta(oi);
-      setMacro(macroCtx);
-      setBiasHist(bh);
-      setBtcChg7d(bChg7d);
-      setLoading(false);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [asset]);
-
-  const imbalance = useOrderbookImbalance(asset, plan);
-  const bookImbalance = useMemo(() => {
-    const bid = (imbalance.varejo?.bid_wide_usd ?? 0) + (imbalance.institucional?.bid_wide_usd ?? 0);
-    const ask = (imbalance.varejo?.ask_wide_usd ?? 0) + (imbalance.institucional?.ask_wide_usd ?? 0);
-    return bid + ask > 0 ? (bid - ask) / (bid + ask) : null;
-  }, [imbalance]);
-
-  const read = useMemo(
-    () => computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d),
-    // isEn nas deps: a leitura monta strings traduzidas (confluence.ts via getLocale),
-    // então precisa recomputar ao trocar de idioma.
-    [c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d, isEn],
-  );
-  const leans: TfLean[] = useMemo(
-    () => [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)],
-    [c1d, c4h, c1h, isEn],
-  );
-  const aligned = leans.every((l) => l.dir > 0) || leans.every((l) => l.dir < 0);
-  const sortedTargets = useMemo(() => [...read.targets].sort((a, b) => b.price - a.price), [read.targets]);
-  const firstBelow = sortedTargets.findIndex((t) => read.price != null && t.price < read.price);
+  const aligned = leans.length > 0 && (leans.every((l) => l.dir > 0) || leans.every((l) => l.dir < 0));
+  const sortedTargets = useMemo(() => (read ? [...read.targets].sort((a, b) => b.price - a.price) : []), [read]);
+  const firstBelow = sortedTargets.findIndex((t) => read?.price != null && t.price < read.price);
 
   return (
     <section className="space-y-4">
@@ -253,7 +116,7 @@ export default function IndicatorsTab({ asset, payload, plan }: Props) {
 
       {loading ? (
         <div className="h-40 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
-      ) : !read.hasData ? (
+      ) : !read || !read.hasData ? (
         <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
           {tt("Sem dados suficientes para a leitura deste ativo no momento.", "Not enough data for this asset's read right now.")}
         </div>
