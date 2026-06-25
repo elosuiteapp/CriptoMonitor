@@ -92,13 +92,13 @@ const COMMODITIES: [string, string, string][] = [
 ];
 
 // Timeframe → (intervalo, janela) do Yahoo. 4h não existe no Yahoo → agrega 1h.
-// Janelas generosas (mais histórico), respeitando os limites do Yahoo por intervalo
-// (15m até 60d; 60m/1h até 730d; diário/semanal/mensal até "max").
+// Janelas no MÁXIMO que o Yahoo permite por intervalo (15m até 60d; 60m/1h até 730d;
+// diário/semanal/mensal até "max") — carrega o máximo de histórico p/ o zoom-out.
 const TF_MAP: Record<string, { interval: string; range: string; agg?: number }> = {
-  "15m": { interval: "15m", range: "1mo" },
-  "1h": { interval: "60m", range: "6mo" },
-  "4h": { interval: "60m", range: "1y", agg: 4 },
-  "1d": { interval: "1d", range: "5y" },
+  "15m": { interval: "15m", range: "2mo" },
+  "1h": { interval: "60m", range: "2y" },
+  "4h": { interval: "60m", range: "2y", agg: 4 },
+  "1d": { interval: "1d", range: "max" },
   "1w": { interval: "1wk", range: "max" },
   "1M": { interval: "1mo", range: "max" },
 };

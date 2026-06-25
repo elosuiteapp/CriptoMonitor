@@ -10,6 +10,7 @@ import type { ChartType } from "../../lib/marketData";
 
 const UP = "#10b981";
 const DOWN = "#f43f5e";
+const VISIBLE_BARS = 120; // candles visíveis ao abrir (foco no momento atual; resto no zoom-out)
 const EMAS = [
   { p: 9, color: "#eab308" },
   { p: 21, color: "#3b82f6" },
@@ -135,7 +136,11 @@ export default function B3Chart({ candles, chartType, showEma, showVolume, showB
         created.push(vol);
       }
 
-      chart.timeScale().fitContent();
+      // Abre focado nos últimos candles; o histórico profundo fica disponível no zoom-out.
+      const total = sorted.length;
+      if (total > 0) {
+        chart.timeScale().setVisibleLogicalRange({ from: total - Math.min(total, VISIBLE_BARS), to: total + 4 });
+      }
     } catch {
       /* dados inválidos neste ciclo — não derruba a tela */
     }

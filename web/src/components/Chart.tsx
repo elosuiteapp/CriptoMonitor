@@ -19,7 +19,10 @@ import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
 import { buildLiquidationGrid, heatColor, liquidationMagnets, HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
 import {
+  ANALYSIS_BARS,
   computeVolumeProfile,
+  DEEP_HISTORY_BARS,
+  DEFAULT_VISIBLE_BARS,
   fetchKlines,
   subscribeKline,
   type Candle,
@@ -161,15 +164,21 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     (async () => {
       try {
         setError(null);
-        const candles = await fetchKlines(asset, timeframe);
+        // Histórico profundo p/ exibição (zoom-out vê o passado); análise na janela recente.
+        const display = await fetchKlines(asset, timeframe, DEEP_HISTORY_BARS);
         if (cancelled) return;
-        series.setData(toSeriesData(candles) as never);
-        const dec = priceDecimals(candles[candles.length - 1]?.close);
+        series.setData(toSeriesData(display) as never);
+        const dec = priceDecimals(display[display.length - 1]?.close);
         series.applyOptions({ priceFormat: { type: "price", precision: dec, minMove: Math.pow(10, -dec) } });
-        chart.timeScale().fitContent();
-        setVp(computeVolumeProfile(candles));
-        setCandles(candles);
-        emitPrice(candles[candles.length - 1]?.close, true); // topo já casa com o gráfico
+        // Abre focado nos últimos candles (momento atual); o histórico fica no zoom-out.
+        const total = display.length;
+        if (total > 0) {
+          chart.timeScale().setVisibleLogicalRange({ from: total - Math.min(total, DEFAULT_VISIBLE_BARS), to: total + 4 });
+        }
+        const recent = total > ANALYSIS_BARS ? display.slice(-ANALYSIS_BARS) : display;
+        setVp(computeVolumeProfile(recent));
+        setCandles(recent);
+        emitPrice(display[display.length - 1]?.close, true); // topo já casa com o gráfico
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
           if (chartType === "line" || chartType === "area") {

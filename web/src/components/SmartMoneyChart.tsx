@@ -17,7 +17,7 @@ import { priceDecimals } from "../lib/format";
 import { useT } from "../lib/i18n";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
 import { HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
-import { subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
+import { DEFAULT_VISIBLE_BARS, subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
 const UP = "#22c55e";
@@ -149,7 +149,9 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
     if (viewKey !== lastViewKey.current) {
       lastViewKey.current = viewKey;
       chart.priceScale("right").applyOptions({ autoScale: true });
-      chart.timeScale().fitContent();
+      // Abre focado nos últimos candles; o histórico fica disponível no zoom-out.
+      const total = candles.length;
+      chart.timeScale().setVisibleLogicalRange({ from: total - Math.min(total, DEFAULT_VISIBLE_BARS), to: total + 4 });
     }
   }, [candles, viewKey]);
 

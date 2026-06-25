@@ -79,14 +79,14 @@ const SYMBOL: Record<string, string> = Object.fromEntries(
   SMC_ASSETS.map((a) => [a, `${a}USDT`]),
 );
 
-export async function fetchKlines(asset: string, tf: Timeframe, limit = 1000): Promise<Candle[]> {
-  const symbol = SYMBOL[asset];
-  if (!symbol) return [];
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Binance klines ${res.status}`);
-  const raw = (await res.json()) as unknown[][];
-  return raw.map((k) => ({
+// Candles visíveis ao abrir o gráfico (foco no momento atual; o resto fica no zoom-out)
+// e janela de análise (volume profile/leitura) — independente do histórico exibido.
+export const DEFAULT_VISIBLE_BARS = 120;
+export const DEEP_HISTORY_BARS = 5000; // histórico carregado p/ exibição (pagina a Binance)
+export const ANALYSIS_BARS = 1000; // janela usada nos cálculos (não muda com o histórico extra)
+
+const mapKlines = (raw: unknown[][]): Candle[] =>
+  raw.map((k) => ({
     time: Math.floor((k[0] as number) / 1000),
     open: Number(k[1]),
     high: Number(k[2]),
@@ -94,6 +94,34 @@ export async function fetchKlines(asset: string, tf: Timeframe, limit = 1000): P
     close: Number(k[4]),
     volume: Number(k[5]),
   }));
+
+/** Klines da Binance. Até 1000 numa chamada; acima disso pagina para trás (endTime)
+ *  até o limite ou o início do histórico do par — para carregar o máximo possível. */
+export async function fetchKlines(asset: string, tf: Timeframe, limit = 1000): Promise<Candle[]> {
+  const symbol = SYMBOL[asset];
+  if (!symbol) return [];
+  const base = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}`;
+  if (limit <= 1000) {
+    const res = await fetch(`${base}&limit=${limit}`);
+    if (!res.ok) throw new Error(`Binance klines ${res.status}`);
+    return mapKlines((await res.json()) as unknown[][]);
+  }
+  let all: Candle[] = [];
+  let endTime: number | undefined;
+  while (all.length < limit) {
+    const url = endTime ? `${base}&limit=1000&endTime=${endTime}` : `${base}&limit=1000`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      if (all.length) break; // já temos histórico suficiente — usa o que veio
+      throw new Error(`Binance klines ${res.status}`);
+    }
+    const chunk = mapKlines((await res.json()) as unknown[][]); // ascendente por openTime
+    if (!chunk.length) break;
+    all = endTime ? [...chunk, ...all] : chunk; // páginas seguintes são mais antigas → prepend
+    if (chunk.length < 1000) break; // chegou ao início do histórico do par
+    endTime = (chunk[0].time - 1) * 1000; // próxima página termina antes da vela mais antiga
+  }
+  return all.slice(-limit);
 }
 
 export interface CvdPoint {
