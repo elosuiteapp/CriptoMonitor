@@ -314,6 +314,57 @@ export default function GammaPanel({ gamma, asset }: Props) {
             </span>
           </div>
         )}
+
+        {view === "bars" && (
+          <div className="mt-3 space-y-2 border-t border-border/60 pt-2.5">
+            {/* Legenda de cores */}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-3 rounded bg-emerald-500/80" />
+                {tt("Calls · resistência (GEX +)", "Calls · resistance (GEX +)")}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-3 rounded bg-rose-500/80" />
+                {tt("Puts · suporte (GEX −)", "Puts · support (GEX −)")}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-3 rounded bg-emerald-500" />
+                <span className="h-2 w-3 rounded bg-rose-500" />
+                {tt("parede (maior GEX do lado)", "wall (largest GEX on the side)")}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2.5 w-px bg-primary/70" />
+                {tt("preço atual", "current price")}
+              </span>
+            </div>
+            {/* Como ler — com leitura ao vivo do regime no spot */}
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              <span className="font-semibold text-foreground">{tt("Como ler:", "How to read:")}</span>{" "}
+              {tt(
+                "cada barra é o GEX líquido naquele strike — o tamanho da posição que os dealers precisam equilibrar ali. Quanto maior a barra, mais forte o ímã. As ",
+                "each bar is the net GEX at that strike — the size of the position dealers must hedge there. The bigger the bar, the stronger the magnet. The ",
+              )}
+              <span className="font-medium text-foreground">{tt("paredes", "walls")}</span>
+              {tt(
+                " (maior GEX de cada lado) costumam frear o preço — a Call Wall age como teto, a Put Wall como piso — e o preço tende a ser puxado para elas e a grudar onde o GEX é alto. ",
+                " (largest GEX on each side) tend to slow price down — the Call Wall acts as a ceiling, the Put Wall as a floor — and price tends to be pulled toward them and to pin where GEX is high. ",
+              )}
+              {gamma.net_gex_spot != null && gamma.net_gex_spot < 0 ? (
+                <>
+                  {tt("Agora, com ", "Right now, with ")}
+                  <span className="text-rose-600 dark:text-rose-400">{tt("GEX líquido negativo", "negative net GEX")}</span>
+                  {tt(" no spot, os dealers amplificam os movimentos — mercado mais volátil.", " at spot, dealers amplify moves — a more volatile market.")}
+                </>
+              ) : gamma.net_gex_spot != null ? (
+                <>
+                  {tt("Agora, com ", "Right now, with ")}
+                  <span className="text-emerald-600 dark:text-emerald-400">{tt("GEX líquido positivo", "positive net GEX")}</span>
+                  {tt(" no spot, os dealers amortecem os movimentos — mercado mais calmo.", " at spot, dealers dampen moves — a calmer market.")}
+                </>
+              ) : null}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Fluxo de opções (proxy HIRO) — BTC/ETH (Deribit) + SOL (Bybit); BNB não tem */}
