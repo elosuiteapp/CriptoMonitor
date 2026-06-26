@@ -16,6 +16,7 @@ import FundingStrip from "../components/FundingStrip";
 import GammaPanel from "../components/GammaPanel";
 import LayerToggles from "../components/LayerToggles";
 import LiquidationsStrip from "../components/LiquidationsStrip";
+import OrderbookWallsLadder from "../components/OrderbookWallsLadder";
 import LockedCard from "../components/LockedCard";
 import LockedSubchart from "../components/LockedSubchart";
 import LockedTab from "../components/LockedTab";
@@ -311,6 +312,7 @@ export default function Dashboard() {
           )}
           {canUseLayers && effectiveLayers.funding && <FundingStrip data={series.funding} />}
           {canUseLayers && effectiveLayers.liquidations && <LiquidationsStrip data={series.liquidations} />}
+          {canUseLayers && effectiveLayers.orderbookWalls && <OrderbookWallsLadder walls={walls} price={livePrice} />}
         </section>
 
         {/* Painel Gamma (BTC/ETH/SOL, Pro+). Bloqueado, mostra os recursos do módulo

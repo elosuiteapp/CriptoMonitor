@@ -30,6 +30,7 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
+import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
 import type { GammaData, OrderbookWall } from "../lib/types";
 
 export interface ActiveLayers {
@@ -471,27 +472,10 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       return;
     }
 
-    // Agrega paredes em ZONAS: mesmo lado + preços próximos viram UMA só, SOMANDO o
-    // notional. Antes o dedup mantinha só a maior e descartava as outras — então
-    // Binance+Coinbase+OKX no mesmo preço (parede forte de verdade) aparecia como uma.
-    // Agora a zona "cheia" = barra maior = onde tem MAIS parede. Guarda nº de ordens
-    // e de exchanges (confluência) p/ o destaque visual.
-    const ZONE_TOL = 0.0018; // ~0,18% do preço — paredes dentro disso são a mesma zona
-    type Zone = { side: "bid" | "ask"; price: number; notional: number; venues: Set<string>; count: number };
-    const zones: Zone[] = [];
-    for (const w of [...walls].sort((a, b) => b.notional_usd - a.notional_usd)) {
-      const z = zones.find((zz) => zz.side === w.side && Math.abs(zz.price - w.price) / w.price <= ZONE_TOL);
-      if (z) {
-        z.price = (z.price * z.notional + w.price * w.notional_usd) / (z.notional + w.notional_usd); // média ponderada
-        z.notional += w.notional_usd;
-        z.venues.add(w.exchange);
-        z.count += 1;
-      } else {
-        zones.push({ side: w.side, price: w.price, notional: w.notional_usd, venues: new Set([w.exchange]), count: 1 });
-      }
-    }
-    zones.sort((a, b) => b.notional - a.notional);
-    const picked = zones.slice(0, 8);
+    // Agrega paredes em ZONAS (mesma lógica do painel "escada de liquidez" — fonte
+    // única em lib/orderbookWalls). Soma o notional de paredes coladas: a zona mais
+    // "cheia" = barra maior = onde tem MAIS parede.
+    const picked = aggregateWalls(walls).slice(0, 8);
     const maxNot = picked[0]?.notional || 1;
     const labelBid = isDark ? "#4ade80" : "#15803d";
     const labelAsk = isDark ? "#f87171" : "#b91c1c";
@@ -528,7 +512,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       // o RÓTULO é espalhado p/ não colar e ligado à barra por uma linha-guia.
       const items = picked
         .map((z, i) => ({ z, y: ys[i] as number | null }))
-        .filter((it): it is { z: Zone; y: number } => it.y != null && it.y >= 4 && it.y <= H - 4)
+        .filter((it): it is { z: WallZone; y: number } => it.y != null && it.y >= 4 && it.y <= H - 4)
         .sort((a, b) => a.y - b.y);
       if (!items.length) return;
 
