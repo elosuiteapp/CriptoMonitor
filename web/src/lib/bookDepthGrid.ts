@@ -129,3 +129,39 @@ export function bookHeatColor(t: number): [number, number, number] {
   }
   return THERMAL[THERMAL.length - 1][1];
 }
+
+// ─── Desequilíbrio do book (Order Book Imbalance) ────────────────────────────
+export interface BookImbalance {
+  bid: number; // notional de bids no band (±bandPct do preço), somando exchanges
+  ask: number; // notional de asks no band
+  mid: number;
+  tilt: number; // (bid − ask)/(bid + ask), −1..+1 (>0 = comprador, <0 = vendedor)
+}
+
+/** Pressão de CURTÍSSIMO prazo: soma bid vs ask perto do preço (±bandPct) do
+ *  ÚLTIMO snapshot. Sinal de OBI — fraco, ruidoso e SPOOFÁVEL (não é previsão). */
+export function latestBookImbalance(rows: OrderbookDepthRow[] | null, bandPct = 0.02): BookImbalance | null {
+  if (!rows || rows.length === 0) return null;
+  let latestTs = "";
+  for (const r of rows) if (r.ts > latestTs) latestTs = r.ts;
+  const snap = rows.filter((r) => r.ts === latestTs);
+  const mids = snap.map((r) => r.mid).filter((m): m is number => m != null && Number.isFinite(m));
+  if (mids.length === 0) return null;
+  const mid = mids.reduce((a, b) => a + b, 0) / mids.length;
+  const lo = mid * (1 - bandPct);
+  const hi = mid * (1 + bandPct);
+  let bid = 0;
+  let ask = 0;
+  for (const r of snap) {
+    for (const k in r.bids ?? {}) {
+      const p = Number(k);
+      if (p >= lo && p <= hi) bid += Number(r.bids[k]) || 0;
+    }
+    for (const k in r.asks ?? {}) {
+      const p = Number(k);
+      if (p >= lo && p <= hi) ask += Number(r.asks[k]) || 0;
+    }
+  }
+  if (bid + ask <= 0) return null;
+  return { bid, ask, mid, tilt: (bid - ask) / (bid + ask) };
+}

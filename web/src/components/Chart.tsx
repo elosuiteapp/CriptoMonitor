@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ColorType,
   CrosshairMode,
@@ -30,7 +30,7 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
-import { buildBookDepthGrid, bookHeatColor, BOOK_HEAT_GRADIENT } from "../lib/bookDepthGrid";
+import { buildBookDepthGrid, bookHeatColor, BOOK_HEAT_GRADIENT, latestBookImbalance } from "../lib/bookDepthGrid";
 import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
 import type { GammaData, OrderbookDepthRow, OrderbookWall } from "../lib/types";
 
@@ -83,6 +83,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const { isDark } = useTheme();
   const { isEn } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
+  // Desequilíbrio do book (±2%) do último snapshot — mini-medidor de pressão de curto prazo.
+  const bookImb = useMemo(() => latestBookImbalance(depth ?? null, 0.02), [depth]);
 
   // Espelhamento do preço ao vivo para o topo: ref evita re-subscrever o WS, e o
   // throttle (~1s) evita re-render do Dashboard a cada tick.
@@ -837,6 +839,45 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             {tt("Heatmap de book · liquidez parada REAL (snapshots 1 min)", "Book heatmap · real resting liquidity (1-min snapshots)")}
           </div>
+          {/* Mini-medidor de desequilíbrio (OBI): bid vs ask ±2% do último snapshot.
+              Pressão de CURTO PRAZO — spoofável, não é previsão (daí o title). */}
+          {bookImb &&
+            (() => {
+              const total = bookImb.bid + bookImb.ask;
+              const bidPct = Math.round((bookImb.bid / total) * 100);
+              const lead = bookImb.tilt > 0.08 ? "bid" : bookImb.tilt < -0.08 ? "ask" : "flat";
+              const leadPct = lead === "ask" ? 100 - bidPct : bidPct;
+              const word =
+                lead === "bid"
+                  ? tt("compra", "bids")
+                  : lead === "ask"
+                    ? tt("venda", "asks")
+                    : tt("equilíbrio", "balanced");
+              const wordCls =
+                lead === "bid"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : lead === "ask"
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-muted-foreground";
+              return (
+                <div
+                  className="absolute left-2 top-8 z-10 flex items-center gap-1.5 rounded bg-background/80 px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                  title={tt(
+                    "Pressão do book (bid vs ask ±2% do preço, último snapshot). Sinal de curtíssimo prazo e SPOOFÁVEL — inclina as chances, não é previsão.",
+                    "Order-book pressure (bid vs ask within ±2% of price, latest snapshot). Very short-term and SPOOFABLE — tilts the odds, not a prediction.",
+                  )}
+                >
+                  <span>{tt("pressão ±2%", "pressure ±2%")}</span>
+                  <span className="relative h-2 w-16 overflow-hidden rounded-full bg-rose-500/70">
+                    <span className="absolute inset-y-0 left-0 bg-emerald-500/80" style={{ width: `${bidPct}%` }} />
+                  </span>
+                  <span className={`font-semibold ${wordCls}`}>
+                    {word}
+                    {lead !== "flat" ? ` ${leadPct}%` : ""}
+                  </span>
+                </div>
+              );
+            })()}
           {/* Legenda (estilo Bookmap): escala térmica única, brilho = tamanho da liquidez.
               O LADO vem da posição vs preço (abaixo = compra, acima = venda). */}
           <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
