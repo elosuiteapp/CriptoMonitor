@@ -237,23 +237,33 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
                 const raw = data.map((r) => (r[s.key] != null ? Number(r[s.key]) : null));
                 const sm = smooth(raw, 5);
                 const pts: string[] = [];
+                let last: { x: number; y: number } | null = null;
                 data.forEach((r, i) => {
                   const v = sm[i];
-                  if (v != null) pts.push(`${xFor(r.ts).toFixed(1)},${yFor(clamp(v)).toFixed(1)}`);
+                  if (v != null) {
+                    const x = xFor(r.ts);
+                    const y = yFor(clamp(v));
+                    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+                    last = { x, y };
+                  }
                 });
                 if (pts.length < 2) return null;
                 return (
-                  <path
-                    key={s.key}
-                    d={`M ${pts.join(" L ")}`}
-                    fill="none"
-                    stroke={s.color}
-                    strokeWidth={s.width}
-                    strokeDasharray={s.dash ? "5 3" : undefined}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    opacity={s.core ? 1 : 0.85}
-                  />
+                  <g key={s.key}>
+                    <path
+                      d={`M ${pts.join(" L ")}`}
+                      fill="none"
+                      stroke={s.color}
+                      strokeWidth={s.width}
+                      strokeDasharray={s.dash ? "5 3" : undefined}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      opacity={s.core ? 1 : 0.85}
+                    />
+                    {last && (
+                      <circle cx={(last as { x: number; y: number }).x} cy={(last as { x: number; y: number }).y} r={s.core ? 3 : 2.4} fill={s.color} stroke="#0b0f17" strokeWidth="1" />
+                    )}
+                  </g>
                 );
               })}
 

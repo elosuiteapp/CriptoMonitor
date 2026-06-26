@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { fmtPrice } from "../lib/format";
+import { fmtPrice, fmtUsd } from "../lib/format";
 import { useT } from "../lib/i18n";
 import type { GammaData } from "../lib/types";
 
@@ -145,6 +145,23 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
           {/* Curva do perfil */}
           <path d={areaD} fill="url(#gexProfileGrad)" stroke="none" />
           <path d={lineD} fill="none" stroke="#e2e8f0" strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
+
+          {/* Picos das paredes: ponto + magnitude do GEX (onde o dealer mais hedgeia) */}
+          {[{ s: callWall, c: "#22c55e" }, { s: putWall, c: "#ef4444" }].map(({ s, c }) => {
+            const p = s != null ? pts.find((pt) => pt.strike === s) : undefined;
+            if (!p) return null;
+            const x = xFor(p.strike);
+            const y = yFor(p.gex);
+            const lx = Math.min(w - 30, Math.max(30, x));
+            return (
+              <g key={`wallpeak-${c}`}>
+                <circle cx={x} cy={y} r="3.4" fill={c} stroke="#0b0f17" strokeWidth="1.2" />
+                <text x={lx} y={p.gex >= 0 ? y - 7 : y + 14} fontSize="8.5" fontWeight="700" fill={c} textAnchor="middle">
+                  {fmtUsd(p.gex)}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Linhas verticais dos níveis + rótulos escalonados */}
           {levels.map((l) => {

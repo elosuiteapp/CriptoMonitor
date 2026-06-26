@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import {
   fmtPct,
@@ -88,6 +88,18 @@ export default function GammaPanel({ gamma, asset }: Props) {
   const maxAbs = Math.max(1, ...bars.map((b) => Math.abs(b.gex)));
   const spot = gamma.spot_price ?? null;
   const fmtStrike = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(0)}k` : `${s}`);
+
+  // Paredes e totais derivados do perfil (mesma regra do coletor: maior/menor GEX líquido).
+  const callWallStrike = bars.length ? bars.reduce((m, b) => (b.gex > m.gex ? b : m), bars[0]).strike : null;
+  const putWallStrike = bars.length ? bars.reduce((m, b) => (b.gex < m.gex ? b : m), bars[0]).strike : null;
+  const callGex = bars.reduce((s, b) => (b.gex > 0 ? s + b.gex : s), 0);
+  const putGex = bars.reduce((s, b) => (b.gex < 0 ? s - b.gex : s), 0);
+  const domLabel =
+    callGex > 0 && putGex > 0
+      ? callGex >= putGex
+        ? tt(`calls dominam ${(callGex / putGex).toFixed(1)}:1`, `calls lead ${(callGex / putGex).toFixed(1)}:1`)
+        : tt(`puts dominam ${(putGex / callGex).toFixed(1)}:1`, `puts lead ${(putGex / callGex).toFixed(1)}:1`)
+      : "";
 
   return (
     <div className="space-y-4">
@@ -188,7 +200,27 @@ export default function GammaPanel({ gamma, asset }: Props) {
               ))}
             </div>
           </div>
-          <span>{tt("GEX líquido no spot:", "Net GEX at spot:")} <span className="num">{fmtUsd(gamma.net_gex_spot)}</span></span>
+          <span className="flex items-center gap-1.5">
+            {tt("GEX líquido no spot:", "Net GEX at spot:")}
+            <span
+              className={`num rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                gamma.net_gex_spot == null
+                  ? "bg-muted text-muted-foreground"
+                  : gamma.net_gex_spot < 0
+                    ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                    : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              }`}
+              title={
+                gamma.net_gex_spot == null
+                  ? undefined
+                  : gamma.net_gex_spot < 0
+                    ? tt("Dealers short gamma — movimentos amplificam (mais volátil)", "Dealers short gamma — moves amplify (more volatile)")
+                    : tt("Dealers long gamma — preço tende a grudar (mais calmo)", "Dealers long gamma — price tends to pin (calmer)")
+              }
+            >
+              {fmtUsd(gamma.net_gex_spot)}
+            </span>
+          </span>
         </div>
 
         {view === "levels" ? (
@@ -201,31 +233,85 @@ export default function GammaPanel({ gamma, asset }: Props) {
           <div className="text-xs text-muted-foreground">{tt("Sem dados de perfil.", "No profile data.")}</div>
         ) : (
           <div className="space-y-0.5">
-            {bars.map((b) => {
+            {bars.map((b, i) => {
               const pct = (Math.abs(b.gex) / maxAbs) * 50; // metade da largura
               const positive = b.gex >= 0;
               const isSpot = spot != null && Math.abs(b.strike - spot) < spot * 0.0025;
+              const isCallWall = b.strike === callWallStrike && b.gex > 0;
+              const isPutWall = b.strike === putWallStrike && b.gex < 0;
+              const distPct = spot != null && spot > 0 ? ((b.strike - spot) / spot) * 100 : null;
+              // Divisor do preço atual: entre o strike logo acima e o logo abaixo do spot.
+              const showSpotLine = spot != null && i > 0 && bars[i - 1].strike >= spot && b.strike < spot;
               return (
-                <div key={b.strike} className="flex items-center gap-2 text-[10px]">
-                  <div className="flex h-3 flex-1 items-center justify-end">
-                    {!positive && <div className="h-2 rounded-l bg-rose-500/80" style={{ width: `${pct}%` }} />}
+                <Fragment key={b.strike}>
+                  {showSpotLine && (
+                    <div className="flex items-center gap-2 py-0.5" aria-hidden>
+                      <div className="h-px flex-1 bg-primary/40" />
+                      <span className="num whitespace-nowrap rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                        {tt("preço", "spot")} {fmtPrice(spot)}
+                      </span>
+                      <div className="h-px flex-1 bg-primary/40" />
+                    </div>
+                  )}
+                  <div
+                    className="flex items-center gap-2 text-[10px]"
+                    title={`Strike ${fmtStrike(b.strike)} — GEX ${fmtUsd(b.gex)}${
+                      distPct != null ? ` · ${distPct >= 0 ? "+" : ""}${distPct.toFixed(1)}% ${tt("do spot", "from spot")}` : ""
+                    }${isCallWall ? ` · ${tt("Call Wall", "Call Wall")}` : ""}${isPutWall ? ` · ${tt("Put Wall", "Put Wall")}` : ""}`}
+                  >
+                    <div className="flex h-3.5 flex-1 items-center justify-end gap-1">
+                      {!positive && <span className="num text-rose-600/55 dark:text-rose-400/45">{fmtUsd(Math.abs(b.gex))}</span>}
+                      {!positive && (
+                        <div className={`h-2 rounded-l ${isPutWall ? "bg-rose-500" : "bg-rose-500/70"}`} style={{ width: `${pct}%` }} />
+                      )}
+                    </div>
+                    <div
+                      className={`w-16 text-center num ${
+                        isSpot
+                          ? "font-bold text-primary"
+                          : isCallWall
+                            ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                            : isPutWall
+                              ? "font-semibold text-rose-600 dark:text-rose-400"
+                              : "text-muted-foreground"
+                      }`}
+                    >
+                      {fmtStrike(b.strike)}
+                    </div>
+                    <div className="flex h-3.5 flex-1 items-center gap-1">
+                      {positive && (
+                        <div className={`h-2 rounded-r ${isCallWall ? "bg-emerald-500" : "bg-emerald-500/70"}`} style={{ width: `${pct}%` }} />
+                      )}
+                      {positive && <span className="num text-emerald-600/55 dark:text-emerald-400/45">{fmtUsd(b.gex)}</span>}
+                    </div>
                   </div>
-                  <div className={`w-16 text-center num ${isSpot ? "font-bold text-primary" : "text-muted-foreground"}`}>
-                    {fmtStrike(b.strike)}
-                  </div>
-                  <div className="flex h-3 flex-1 items-center">
-                    {positive && <div className="h-2 rounded-r bg-emerald-500/80" style={{ width: `${pct}%` }} />}
-                  </div>
-                </div>
+                </Fragment>
               );
             })}
           </div>
         )}
 
         {view === "bars" && (
-          <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
-            <span>◀ {tt("Puts (suporte)", "Puts (support)")}</span>
-            <span>{tt("Calls (resistência)", "Calls (resistance)")} ▶</span>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+            <span>
+              ◀ {tt("Puts (suporte)", "Puts (support)")} <span className="num text-rose-600/80 dark:text-rose-400/80">{fmtUsd(putGex)}</span>
+              {putWallStrike != null && (
+                <>
+                  {" · "}
+                  {tt("parede", "wall")} <span className="text-foreground">{fmtStrike(putWallStrike)}</span>
+                </>
+              )}
+            </span>
+            {domLabel && <span className="text-muted-foreground">{domLabel}</span>}
+            <span>
+              {callWallStrike != null && (
+                <>
+                  {tt("parede", "wall")} <span className="text-foreground">{fmtStrike(callWallStrike)}</span>
+                  {" · "}
+                </>
+              )}
+              {tt("Calls (resistência)", "Calls (resistance)")} <span className="num text-emerald-600/80 dark:text-emerald-400/80">{fmtUsd(callGex)}</span> ▶
+            </span>
           </div>
         )}
       </div>

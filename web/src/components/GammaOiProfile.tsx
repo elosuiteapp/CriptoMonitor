@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { getLocale } from "../hooks/useLocale";
+import { fmtPrice } from "../lib/format";
 import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
 
@@ -87,19 +88,30 @@ export default function GammaOiProfile({
       </p>
 
       <div className="space-y-0.5">
-        {aggs.map((a) => {
+        {aggs.map((a, i) => {
           const callPct = (a.call / maxSide) * 50;
           const putPct = (a.put / maxSide) * 50;
           const isSpot = spot != null && Math.abs(a.strike - spot) < spot * 0.0025;
           const isMaxPain = maxPain != null && a.strike === maxPain;
           const isCallWall = a.strike === callWall.strike && a.call > 0;
           const isPutWall = a.strike === putWall.strike && a.put > 0;
+          // Divisor do preço atual: entre o strike logo acima e o logo abaixo do spot.
+          const showSpotLine = spot != null && i > 0 && aggs[i - 1].strike >= spot && a.strike < spot;
           return (
-            <div
-              key={a.strike}
-              className="flex items-center gap-2 text-[10px]"
-              title={`Strike ${fmtStrike(a.strike)} — Calls ${fmtOi(a.call)} · Puts ${fmtOi(a.put)}`}
-            >
+            <Fragment key={a.strike}>
+              {showSpotLine && (
+                <div className="flex items-center gap-2 py-0.5" aria-hidden>
+                  <div className="h-px flex-1 bg-primary/40" />
+                  <span className="num whitespace-nowrap rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                    {getLocale() === "en" ? "spot" : "preço"} {fmtPrice(spot)}
+                  </span>
+                  <div className="h-px flex-1 bg-primary/40" />
+                </div>
+              )}
+              <div
+                className="flex items-center gap-2 text-[10px]"
+                title={`Strike ${fmtStrike(a.strike)} — Calls ${fmtOi(a.call)} · Puts ${fmtOi(a.put)}`}
+              >
               <div className="flex h-3 flex-1 items-center justify-end gap-1">
                 {a.put > 0 && <span className="num text-rose-600/70 dark:text-rose-400/50">{fmtOi(a.put)}</span>}
                 <div
@@ -120,8 +132,9 @@ export default function GammaOiProfile({
                   style={{ width: `${callPct}%` }}
                 />
                 {a.call > 0 && <span className="num text-emerald-600/70 dark:text-emerald-400/50">{fmtOi(a.call)}</span>}
+                </div>
               </div>
-            </div>
+            </Fragment>
           );
         })}
       </div>
@@ -132,7 +145,9 @@ export default function GammaOiProfile({
           <span className="text-foreground">{fmtStrike(putWall.strike)}</span>
         </span>
         <span className="text-muted-foreground">
-          {expiry ? `${t.gammaChart.expiryPrefix} ${new Date(expiry).toLocaleDateString(getLocale() === "en" ? "en-US" : "pt-BR")}` : ""} · {t.gammaChart.oiInContracts}
+          {expiry ? `${t.gammaChart.expiryPrefix} ${new Date(expiry).toLocaleDateString(getLocale() === "en" ? "en-US" : "pt-BR")} · ` : ""}
+          {totalCall > 0 && <>P/C <span className="text-foreground">{(totalPut / totalCall).toFixed(2)}</span> · </>}
+          {t.gammaChart.oiInContracts}
         </span>
         <span>
           {t.gammaChart.wall} <span className="text-foreground">{fmtStrike(callWall.strike)}</span> · {t.gammaChart.calls}{" "}
