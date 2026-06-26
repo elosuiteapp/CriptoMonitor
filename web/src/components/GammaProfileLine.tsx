@@ -20,6 +20,7 @@ const fmtK = (s: number) => (s >= 1000 ? `${(s / 1000).toFixed(s % 1000 === 0 ? 
  *  tende a ser puxado. */
 export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
   const { t, isEn } = useT();
+  const tt = (pt: string, en: string) => (isEn ? en : pt);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(900);
 
@@ -82,6 +83,28 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
   const zeroY = yFor(0);
   const zeroFrac = Math.min(0.999, Math.max(0.001, (zeroY - padT) / plotH));
 
+  // Zona de decisão: Spot colado no Zero Gamma → preço na virada de regime.
+  const flipNear = zeroGamma != null && Math.abs(spot - zeroGamma) <= spot * 0.025;
+  const zoneLevels = flipNear
+    ? ([spot, zeroGamma, putWall, maxPain] as (number | null)[]).filter(
+        (v): v is number => v != null && Math.abs(v - spot) <= spot * 0.03,
+      )
+    : [];
+  let zoneX: { x0: number; x1: number; mid: number } | null = null;
+  if (flipNear && zoneLevels.length) {
+    let x0 = xFor(Math.max(domLo, Math.min(...zoneLevels)));
+    let x1 = xFor(Math.min(domHi, Math.max(...zoneLevels)));
+    const minW = 24;
+    if (x1 - x0 < minW) {
+      const mid = (x0 + x1) / 2;
+      x0 = mid - minW / 2;
+      x1 = mid + minW / 2;
+    }
+    x0 = Math.max(padL, x0);
+    x1 = Math.min(w - padR, x1);
+    zoneX = { x0, x1, mid: (x0 + x1) / 2 };
+  }
+
   const coords = pts.map((p) => `${xFor(p.strike).toFixed(1)},${yFor(p.gex).toFixed(1)}`);
   const lineD = `M ${coords.join(" L ")}`;
   const areaD = `M ${xFor(pts[0].strike).toFixed(1)},${zeroY.toFixed(1)} L ${coords.join(
@@ -139,6 +162,20 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
             />
           )}
 
+          {/* Zona de decisão (preço na virada): realce âmbar atrás da curva */}
+          {zoneX && (
+            <rect
+              x={zoneX.x0}
+              y={padT}
+              width={Math.max(0, zoneX.x1 - zoneX.x0)}
+              height={plotH}
+              fill="rgba(245,158,11,0.10)"
+              stroke="rgba(245,158,11,0.45)"
+              strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+          )}
+
           {/* Linha de base (GEX = 0) */}
           <line x1={padL} y1={zeroY} x2={w - padR} y2={zeroY} stroke="rgba(148,163,184,0.35)" strokeWidth="1" strokeDasharray="3 3" />
 
@@ -185,6 +222,29 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
               {fmtK(t)}
             </text>
           ))}
+
+          {/* Rótulo da zona de decisão (topo da faixa, em espaço livre) */}
+          {zoneX &&
+            (() => {
+              const label = tt("zona de decisão", "decision zone");
+              const chipW = label.length * 5.6 + 16;
+              const cx = Math.min(w - padR - chipW / 2, Math.max(padL + chipW / 2, zoneX.mid));
+              const top = padT + 4;
+              return (
+                <g>
+                  <title>
+                    {tt(
+                      "Spot, Zero Gamma e as paredes colados — o preço está na virada de regime. Setup de rompimento, não de pino calmo.",
+                      "Spot, Zero Gamma and the walls clustered — price is on the regime flip. A breakout setup, not a calm pin.",
+                    )}
+                  </title>
+                  <rect x={cx - chipW / 2} y={top} width={chipW} height={15} rx={7.5} fill="rgba(245,158,11,0.16)" stroke="rgba(245,158,11,0.5)" strokeWidth="1" />
+                  <text x={cx} y={top + 10.5} fontSize="9" fontWeight="700" fill="#f59e0b" textAnchor="middle">
+                    {label}
+                  </text>
+                </g>
+              );
+            })()}
         </svg>
       </div>
 
@@ -205,6 +265,16 @@ export default function GammaProfileLine({ gamma }: { gamma: GammaData }) {
         {t.gammaChart.readToLeft} <span className="text-rose-600 dark:text-rose-400">{t.gammaChart.readLeft}</span>{" "}
         <span className="text-rose-600 dark:text-rose-400">{t.gammaChart.readShort}</span> {t.gammaChart.readTail}
       </p>
+
+      {flipNear && (
+        <p className="mt-1.5 text-[11px] leading-snug text-amber-600 dark:text-amber-400/90">
+          <span className="font-semibold">{tt("⚠ Zona de decisão:", "⚠ Decision zone:")}</span>{" "}
+          {tt(
+            "Spot, Zero Gamma e as paredes estão colados — o preço está na virada de regime, não num pino calmo. Leia como rompimento: reconquistar o Ponto Zero inclina pro lado calmo (verde); perdê-lo, pro lado volátil (vermelho).",
+            "Spot, Zero Gamma and the walls are clustered — price is on the regime flip, not a calm pin. Read it as a breakout: reclaiming the Zero Point leans to the calm side (green); losing it, to the volatile side (red).",
+          )}
+        </p>
+      )}
     </div>
   );
 }
