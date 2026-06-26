@@ -30,7 +30,7 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
-import { buildBookDepthGrid } from "../lib/bookDepthGrid";
+import { buildBookDepthGrid, bookHeatColor, BOOK_HEAT_GRADIENT } from "../lib/bookDepthGrid";
 import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
 import type { GammaData, OrderbookDepthRow, OrderbookWall } from "../lib/types";
 
@@ -526,12 +526,13 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           continue;
         }
         const r = Math.sqrt(ratio);
-        // bid (suporte) → rampa verde ("short"); ask (resistência) → rampa vermelha ("long").
-        const [cr, cg, cb] = heatColor(r, vb >= va ? "short" : "long");
+        // Paleta térmica única (Bookmap): brilho/calor = tamanho; o LADO vem da
+        // posição vs preço (abaixo = compra, acima = venda), não da cor.
+        const [cr, cg, cb] = bookHeatColor(r);
         img.data[px] = cr;
         img.data[px + 1] = cg;
         img.data[px + 2] = cb;
-        img.data[px + 3] = Math.round(110 + 130 * r); // 43% → 94% de opacidade
+        img.data[px + 3] = Math.round(120 + 130 * r); // 47% → 98% de opacidade
       }
     }
     octx.putImageData(img, 0, 0);
@@ -836,17 +837,15 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             {tt("Heatmap de book · liquidez parada REAL (snapshots 1 min)", "Book heatmap · real resting liquidity (1-min snapshots)")}
           </div>
-          {/* Legenda: cor = LADO (compra/suporte verde · venda/resistência vermelho), brilho = tamanho. */}
-          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+          {/* Legenda (estilo Bookmap): escala térmica única, brilho = tamanho da liquidez.
+              O LADO vem da posição vs preço (abaixo = compra, acima = venda). */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              {tt("compra ↓", "bids ↓")}
-              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_SHORT }} />
+              {tt("menos", "less")}
+              <span className="h-2 w-16 rounded" style={{ background: BOOK_HEAT_GRADIENT }} />
+              {tt("mais liquidez", "more liquidity")}
             </span>
-            <span className="flex items-center gap-1">
-              {tt("venda ↑", "asks ↑")}
-              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_LONG }} />
-            </span>
-            <span className="opacity-70">{tt("fraco→forte", "weak→strong")}</span>
+            <span className="opacity-70">{tt("· abaixo do preço = compra · acima = venda", "· below price = bids · above = asks")}</span>
           </div>
           <div
             ref={bookTipRef}

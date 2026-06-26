@@ -94,3 +94,38 @@ export function buildBookDepthGrid(rows: OrderbookDepthRow[] | null): BookGrid |
 
   return { cols, nBins, priceTop, priceBottom, bid, ask, max };
 }
+
+// ─── Paleta térmica única (estilo Bookmap) ───────────────────────────────────
+// Frio/escuro = pouca liquidez → quente/claro = muita. O LADO não vem da cor —
+// vem da POSIÇÃO vs preço (abaixo = compra/suporte, acima = venda/resistência).
+type Stop = [number, [number, number, number]];
+const THERMAL: Stop[] = [
+  [0.0, [12, 16, 48]], // navy escuro (frio)
+  [0.25, [70, 24, 104]], // roxo
+  [0.5, [168, 44, 72]], // magenta-vermelho
+  [0.7, [232, 104, 34]], // laranja
+  [0.85, [250, 186, 48]], // âmbar
+  [1.0, [255, 246, 206]], // branco quente
+];
+
+/** Gradiente CSS pronto p/ a legenda (frio → quente). */
+export const BOOK_HEAT_GRADIENT =
+  "linear-gradient(to right, rgb(12,16,48), rgb(70,24,104), rgb(168,44,72), rgb(232,104,34), rgb(250,186,48), rgb(255,246,206))";
+
+/** Cor térmica pela intensidade (0..1) — brilho/calor ∝ tamanho da liquidez. */
+export function bookHeatColor(t: number): [number, number, number] {
+  const v = t < 0 ? 0 : t > 1 ? 1 : t;
+  for (let i = 1; i < THERMAL.length; i++) {
+    if (v <= THERMAL[i][0]) {
+      const [a0, c0] = THERMAL[i - 1];
+      const [a1, c1] = THERMAL[i];
+      const f = (v - a0) / (a1 - a0 || 1);
+      return [
+        Math.round(c0[0] + (c1[0] - c0[0]) * f),
+        Math.round(c0[1] + (c1[1] - c0[1]) * f),
+        Math.round(c0[2] + (c1[2] - c0[2]) * f),
+      ];
+    }
+  }
+  return THERMAL[THERMAL.length - 1][1];
+}
