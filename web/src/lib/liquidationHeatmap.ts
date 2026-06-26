@@ -85,9 +85,9 @@ export function runLiquidationHeatmap(p: Params): () => void {
         img.data[px + 3] = 0;
         continue;
       }
-      // (C) sqrt revela zonas médias; cor = intensidade (paleta térmica única).
+      // (C) sqrt revela zonas médias; cor = LADO dominante, brilho = intensidade.
       const r = Math.sqrt((ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR));
-      const [cr, cg, cb] = heatColor(r);
+      const [cr, cg, cb] = heatColor(r, vs >= vl ? "short" : "long");
       img.data[px] = cr;
       img.data[px + 1] = cg;
       img.data[px + 2] = cb;

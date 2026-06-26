@@ -553,37 +553,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Gráfico SMC */}
       <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
-        {/* Camadas (esquerda) + timeframe (direita) — controlam o gráfico abaixo */}
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {LAYER_KEYS.map((key) => (
-              <span
-                key={key}
-                className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                  layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
-                }`}
-              >
-                <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
-                  {t.smart.layers[key].label}
-                </button>
-                <InfoTip text={t.smart.layers[key].help} />
-              </span>
-            ))}
-            <span className="mx-0.5 h-4 w-px bg-border" />
-            {MARKET_KEYS.map((key) => (
-              <span
-                key={key}
-                className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                  layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
-                }`}
-              >
-                <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
-                  {t.smart.layers[key].label}
-                </button>
-                <InfoTip text={t.smart.layers[key].help} />
-              </span>
-            ))}
-          </div>
+        {/* Timeframe ACIMA do gráfico (as camadas vão ABAIXO, seguindo o cockpit) */}
+        <div className="mb-2 flex justify-end">
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
             {TFS.map((tfo) => (
               <button
@@ -603,6 +574,36 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         ) : (
           <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} htfLevels={htfLevels} />
         )}
+        {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do módulo cockpit */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {LAYER_KEYS.map((key) => (
+            <span
+              key={key}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
+                {t.smart.layers[key].label}
+              </button>
+              <InfoTip text={t.smart.layers[key].help} />
+            </span>
+          ))}
+          <span className="mx-0.5 h-4 w-px bg-border" />
+          {MARKET_KEYS.map((key) => (
+            <span
+              key={key}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
+                {t.smart.layers[key].label}
+              </button>
+              <InfoTip text={t.smart.layers[key].help} />
+            </span>
+          ))}
+        </div>
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           {t.smart.legendZones}: <span className="text-emerald-600 dark:text-emerald-400">{t.smart.legendDemand}</span> ·{" "}
           <span className="text-rose-600 dark:text-rose-400">{t.smart.legendSupply}</span> ·{" "}

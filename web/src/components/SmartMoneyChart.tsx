@@ -16,7 +16,7 @@ import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/c
 import { priceDecimals } from "../lib/format";
 import { useT } from "../lib/i18n";
 import { runLiquidationHeatmap } from "../lib/liquidationHeatmap";
-import { HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
+import { HEAT_GRADIENT_LONG, HEAT_GRADIENT_SHORT, type OiPoint } from "../lib/liquidationModel";
 import { DEFAULT_VISIBLE_BARS, subscribeKline, type Candle, type Timeframe, type VolumeProfile } from "../lib/marketData";
 import type { SmcResult } from "../lib/smc";
 
@@ -470,20 +470,18 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             {t.smart.heatmapTitle}
           </div>
-          {/* Legenda: o fundo (térmico) = intensidade; as linhas das zonas = lado. (Igual ao cockpit.) */}
+          {/* Legenda: cor = LADO (longs vermelho / shorts verde), brilho = intensidade. (Igual ao cockpit.) */}
           <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              {t.smart.heatWeak}
-              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT }} />
-              {t.smart.heatStrong}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#ef4444" }} />
               {t.smart.heatLongs}
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_LONG }} />
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#10b981" }} />
               {t.smart.heatShorts}
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_SHORT }} />
+            </span>
+            <span className="opacity-70">
+              {t.smart.heatWeak}→{t.smart.heatStrong}
             </span>
           </div>
           <div

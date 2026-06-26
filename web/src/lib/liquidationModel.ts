@@ -167,11 +167,13 @@ export function buildLiquidationGrid(candles: Candle[], oiSeries: OiPoint[] = []
   return { nCols: n, nBins, priceTop, priceBottom, refHigh: hi, refLow: lo, longValues, shortValues, values, max };
 }
 
-// ─── Cor por INTENSIDADE (paleta única "térmica", âmbar) ─────────────────────
-// escuro/quente → laranja-queimado → laranja → âmbar → amarelo. O LADO
-// (long/short) é comunicado pelas zonas-ímã rotuladas (verde/vermelho) e pelo
-// tooltip — não pelo preenchimento. Uma cor só deixa o fundo limpo e faz as
-// linhas verde/vermelho das zonas saltarem por cima (mais legível).
+// ─── Cor por LADO (longs vermelho / shorts verde) × INTENSIDADE (brilho) ─────
+// Antes era uma paleta âmbar única e o lado vinha só das linhas pontilhadas.
+// Agora o próprio preenchimento carrega o LADO dominante da célula: zonas de
+// liquidação de SHORTs (acima do preço) em tons de verde, de LONGs (abaixo) em
+// tons de vermelho — o brilho continua comunicando a intensidade. Casa com os
+// rótulos do eixo (↑ shorts verde / ↓ longs vermelho) e deixa o lado legível
+// batendo o olho, sem precisar cruzar com as linhas pontilhadas.
 type Stops = [number, [number, number, number]][];
 
 function rampColor(stops: Stops, x: number): [number, number, number] {
@@ -191,21 +193,29 @@ function rampColor(stops: Stops, x: number): [number, number, number] {
   return stops[stops.length - 1][1];
 }
 
-const INTENSITY_STOPS: Stops = [
-  [0.0, [26, 14, 10]],
-  [0.3, [122, 46, 18]],
-  [0.6, [234, 115, 23]],
-  [0.8, [245, 158, 11]],
-  [1.0, [253, 224, 71]],
+// LONGs (abaixo do preço) — família VERMELHA (rose-500 no meio), fraco escuro → forte claro.
+const LONG_STOPS: Stops = [
+  [0.0, [50, 12, 16]],
+  [0.4, [120, 28, 38]],
+  [0.7, [239, 68, 68]],
+  [1.0, [253, 164, 175]],
+];
+// SHORTs (acima do preço) — família VERDE (emerald-500 no meio), fraco escuro → forte claro.
+const SHORT_STOPS: Stops = [
+  [0.0, [6, 40, 30]],
+  [0.4, [12, 110, 80]],
+  [0.7, [16, 185, 129]],
+  [1.0, [110, 231, 183]],
 ];
 
-// Gradiente CSS pronto para a legenda (mesmas cores da rampa acima).
-export const HEAT_GRADIENT =
-  "linear-gradient(to right, rgb(26,14,10), rgb(122,46,18), rgb(234,115,23), rgb(245,158,11), rgb(253,224,71))";
+// Gradientes CSS prontos para a legenda (fraca → forte), um por lado.
+export const HEAT_GRADIENT_LONG = "linear-gradient(to right, rgb(50,12,16), rgb(239,68,68), rgb(253,164,175))";
+export const HEAT_GRADIENT_SHORT = "linear-gradient(to right, rgb(6,40,30), rgb(16,185,129), rgb(110,231,183))";
 
-/** Cor de uma célula do heatmap pela `intensity` (0..1): fraco escuro → forte amarelo. */
-export function heatColor(intensity: number): [number, number, number] {
-  return rampColor(INTENSITY_STOPS, intensity);
+/** Cor de uma célula do heatmap pela `intensity` (0..1) e pelo `side` dominante da
+ *  célula: longs → rampa vermelha, shorts → rampa verde (fraco escuro → forte claro). */
+export function heatColor(intensity: number, side: "long" | "short"): [number, number, number] {
+  return rampColor(side === "short" ? SHORT_STOPS : LONG_STOPS, intensity);
 }
 
 // ─── Zonas-ímã (rótulos) ─────────────────────────────────────────────────────

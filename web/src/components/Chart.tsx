@@ -17,7 +17,7 @@ import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/c
 import { useT } from "../lib/i18n";
 import { fmtUsd, priceDecimals } from "../lib/format";
 import { gammaLevels } from "../lib/gammaLevels";
-import { buildLiquidationGrid, heatColor, liquidationMagnets, HEAT_GRADIENT, type OiPoint } from "../lib/liquidationModel";
+import { buildLiquidationGrid, heatColor, liquidationMagnets, HEAT_GRADIENT_LONG, HEAT_GRADIENT_SHORT, type OiPoint } from "../lib/liquidationModel";
 import {
   ANALYSIS_BARS,
   computeVolumeProfile,
@@ -353,7 +353,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         // (C) compressão sqrt: revela as zonas médias (linear deixava 2-3 gigantes
         // ofuscando o resto). Cor = intensidade (paleta térmica única).
         const r = Math.sqrt((ratio - HEAT_FLOOR) / (1 - HEAT_FLOOR));
-        const [cr, cg, cb] = heatColor(r);
+        const [cr, cg, cb] = heatColor(r, vs >= vl ? "short" : "long");
         img.data[px] = cr;
         img.data[px + 1] = cg;
         img.data[px + 2] = cb;
@@ -617,21 +617,17 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
             {tt("Heatmap de liquidações · estimativa (modelo de alavancagem)", "Liquidations heatmap · estimate (leverage model)")}
           </div>
-          {/* Legenda: o fundo (térmico) = intensidade; as linhas das zonas = lado. */}
+          {/* Legenda: cor = LADO (longs vermelho / shorts verde), brilho = intensidade. */}
           <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              {tt("fraco", "weak")}
-              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT }} />
-              {tt("forte", "strong")}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#ef4444" }} />
               longs ↓
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_LONG }} />
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block w-3 border-t border-dotted" style={{ borderColor: "#10b981" }} />
               shorts ↑
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_SHORT }} />
             </span>
+            <span className="opacity-70">{tt("fraco→forte", "weak→strong")}</span>
           </div>
           <div
             ref={heatTipRef}
