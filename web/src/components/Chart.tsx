@@ -368,18 +368,34 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     const tscale = chart.timeScale();
     let lastSig = "";
     let raf = 0;
+    // Geometria da grade no último frame (px) — o tooltip usa pra achar a coluna sob
+    // o cursor sem depender de param.logical (que é da série inteira, não da grade).
+    let gridX0 = 0;
+    let gridCellW = 0;
 
     const draw = () => {
       const dpr = window.devicePixelRatio || 1;
       const W = wrap.clientWidth;
       const H = wrap.clientHeight;
-      const x0 = tscale.logicalToCoordinate(0 as Logical);
-      const xN = tscale.logicalToCoordinate((grid.nCols - 1) as Logical);
+      // A grade cobre os ÚLTIMOS grid.nCols candles, mas a série pode ter histórico
+      // bem mais profundo (logical 0 = candle mais ANTIGO da série). Por isso não dá
+      // pra mapear a coluna 0 da grade em logical 0: ancoramos a ÚLTIMA coluna no
+      // TEMPO do último candle da grade e medimos a largura de coluna pelo espaçamento
+      // de barras (diferença entre dois logicals adjacentes), que é uniforme e imune
+      // ao offset série×grade e ao avanço dos candles ao vivo.
+      const c0 = tscale.logicalToCoordinate(0 as Logical);
+      const c1 = tscale.logicalToCoordinate(1 as Logical);
+      const lastTime = candles[candles.length - 1]?.time;
+      const xN = lastTime != null ? tscale.timeToCoordinate(lastTime as Time) : null;
       // mapeia a partir de dois preços in-range (high/low dos candles) e extrapola
       // até o topo/fundo da grade — robusto à auto-escala do eixo de preço
       const yHi = series.priceToCoordinate(grid.refHigh);
       const yLo = series.priceToCoordinate(grid.refLow);
-      if (x0 == null || xN == null || yHi == null || yLo == null) return;
+      if (c0 == null || c1 == null || xN == null || yHi == null || yLo == null) return;
+      const cellW = c1 - c0; // px por coluna (espaçamento de barras), imune ao offset
+      const x0 = xN - (grid.nCols - 1) * cellW; // 1ª coluna da grade, a partir da última
+      gridX0 = x0;
+      gridCellW = cellW;
       const slope = (yLo - yHi) / (grid.refLow - grid.refHigh); // px por unidade de preço
       const yTop = yHi + (grid.priceTop - grid.refHigh) * slope;
       const yBot = yHi + (grid.priceBottom - grid.refHigh) * slope;
@@ -396,7 +412,6 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      const cellW = (xN - x0) / Math.max(1, grid.nCols - 1);
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(off, 0, 0, grid.nCols, grid.nBins, x0 - cellW / 2, yTop, xN - x0 + cellW, yBot - yTop);
     };
@@ -418,8 +433,11 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         return;
       }
       const bin = Math.floor(((grid.priceTop - price) / span) * grid.nBins);
-      const col = Math.max(0, Math.min(grid.nCols - 1, Math.round(param.logical)));
-      const inRange = bin >= 0 && bin < grid.nBins;
+      // Coluna pela posição do cursor relativa à grade desenhada (não por param.logical,
+      // que indexa a série inteira e não a janela recente da grade).
+      const rawCol = gridCellW > 0 ? Math.round((param.point.x - gridX0) / gridCellW) : grid.nCols - 1;
+      const col = Math.max(0, Math.min(grid.nCols - 1, rawCol));
+      const inRange = bin >= 0 && bin < grid.nBins && rawCol >= 0 && rawCol < grid.nCols;
       const idx = col * grid.nBins + bin;
       const vl = inRange ? grid.longValues[idx] : 0;
       const vs = inRange ? grid.shortValues[idx] : 0;
