@@ -83,8 +83,10 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const onPriceRef = useRef(onPrice);
   onPriceRef.current = onPrice;
   const lastEmitRef = useRef(0);
+  const livePriceRef = useRef<number | null>(null); // preço ao vivo p/ classificar suporte×resistência
   const emitPrice = (price: number | undefined, force = false) => {
     if (typeof price !== "number" || !Number.isFinite(price)) return;
+    livePriceRef.current = price; // sempre atualiza (mesmo com o throttle do onPrice abaixo)
     const now = Date.now();
     if (!force && now - lastEmitRef.current < 1000) return;
     lastEmitRef.current = now;
@@ -530,12 +532,15 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         .sort((a, b) => a.y - b.y);
       if (!items.length) return;
 
-      // Y dos rótulos por LADO: VENDA (vermelho) abre PRA CIMA, COMPRA (verde) PRA BAIXO.
-      const meta = items.map((it, i) => ({ i, y: it.y, ask: it.z.side === "ask" }));
+      // SUPORTE (abaixo do preço) × RESISTÊNCIA (acima) pela posição relativa ao preço
+      // AO VIVO — não pelo lado do snapshot (que aparecia "verde acima" quando o preço
+      // caía através de uma parede de compra). Resistência abre o rótulo PRA CIMA, suporte PRA BAIXO.
+      const cur = livePriceRef.current ?? candles[candles.length - 1]?.close ?? null;
+      const meta = items.map((it, i) => ({ i, y: it.y, above: cur != null ? it.z.price >= cur : it.z.side === "ask" }));
       const labelYs = new Array<number>(items.length);
 
-      // Vermelho (venda): de baixo p/ cima, empurrando PRA CIMA.
-      const asks = meta.filter((m) => m.ask).sort((a, b) => b.y - a.y);
+      // Resistência (acima): de baixo p/ cima, empurrando PRA CIMA.
+      const asks = meta.filter((m) => m.above).sort((a, b) => b.y - a.y);
       let pa = Infinity;
       for (const m of asks) {
         const ly = Math.min(m.y, pa - LABEL_GAP);
@@ -547,8 +552,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         if (top < 8) for (const m of asks) labelYs[m.i] += 8 - top;
       }
 
-      // Verde (compra): de cima p/ baixo, empurrando PRA BAIXO.
-      const bids = meta.filter((m) => !m.ask).sort((a, b) => a.y - b.y);
+      // Suporte (abaixo): de cima p/ baixo, empurrando PRA BAIXO.
+      const bids = meta.filter((m) => !m.above).sort((a, b) => a.y - b.y);
       let pb = -Infinity;
       for (const m of bids) {
         const ly = Math.max(m.y, pb + LABEL_GAP);
@@ -565,15 +570,16 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       for (let i = 0; i < items.length; i++) {
         const { z, y } = items[i];
         const ly = labelYs[i];
-        const isBid = z.side === "bid";
+        // suporte = abaixo do preço ao vivo (verde) · resistência = acima (vermelho)
+        const isSupport = cur != null ? z.price < cur : z.side === "bid";
         const ratio = z.notional / maxNot; // 0..1 — força relativa da zona
         const len = Math.max(12, ratio * MAX_BAR);
         const bh = 4 + Math.round(7 * Math.sqrt(ratio)); // espessura ∝ tamanho (4..11px)
         const confluent = z.venues.size >= 2; // várias exchanges no mesmo preço = parede forte
         const x0 = plotRight - len;
         const a = 0.42 + 0.5 * ratio; // mais cheia = mais opaca
-        const soft = isBid ? `rgba(34,197,94,${a.toFixed(2)})` : `rgba(239,68,68,${a.toFixed(2)})`;
-        const strong = isBid ? "rgba(34,197,94,0.98)" : "rgba(239,68,68,0.98)";
+        const soft = isSupport ? `rgba(34,197,94,${a.toFixed(2)})` : `rgba(239,68,68,${a.toFixed(2)})`;
+        const strong = isSupport ? "rgba(34,197,94,0.98)" : "rgba(239,68,68,0.98)";
 
         // barra no PREÇO real (ancorada à direita); espessura comunica o tamanho
         ctx.fillStyle = soft;
@@ -582,7 +588,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         ctx.fillRect(plotRight - 3, y - bh / 2, 3, bh);
         // confluência (≥2 exchanges no mesmo preço): contorno claro destaca a zona forte
         if (confluent) {
-          ctx.strokeStyle = isBid ? "rgba(134,239,172,0.95)" : "rgba(252,165,165,0.95)";
+          ctx.strokeStyle = isSupport ? "rgba(134,239,172,0.95)" : "rgba(252,165,165,0.95)";
           ctx.lineWidth = 1;
           ctx.strokeRect(x0 - 0.5, y - bh / 2 - 0.5, len + 1, bh + 1);
         }
@@ -601,7 +607,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         const padX = 5;
         ctx.fillStyle = isDark ? "rgba(10,11,16,0.82)" : "rgba(255,255,255,0.92)";
         ctx.fillRect(labelX - tw - padX * 2, ly - 8, tw + padX * 2, 16);
-        ctx.fillStyle = isBid ? labelBid : labelAsk;
+        ctx.fillStyle = isSupport ? labelBid : labelAsk;
         ctx.textAlign = "right";
         ctx.fillText(txt, labelX - padX, ly);
       }
@@ -627,10 +633,10 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       {canUseLayers && layers.orderbookWalls && walls && walls.length > 0 && (
         <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-2.5 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(34,197,94,0.7)" }} /> {tt("parede compra", "buy wall")}
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(34,197,94,0.7)" }} /> {tt("suporte (abaixo)", "support (below)")}
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> {tt("parede venda", "sell wall")}
+            <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> {tt("resistência (acima)", "resistance (above)")}
           </span>
           <span>· {tt("barra = tamanho", "bar = size")}</span>
           <span>· {tt("·N = ordens somadas", "·N = merged orders")}</span>
