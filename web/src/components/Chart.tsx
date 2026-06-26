@@ -585,8 +585,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         ctx.lineTo(labelX + 5, ly);
         ctx.stroke();
 
-        // rótulo com chip de fundo (legível por cima das velas) + nº de ordens da zona
-        const txt = z.count > 1 ? `${fmtUsd(z.notional)} ·${z.count}` : fmtUsd(z.notional);
+        // rótulo: notional total da zona (multi-corretora é sinalizado pelo contorno)
+        const txt = fmtUsd(z.notional);
         const tw = ctx.measureText(txt).width;
         const padX = 5;
         ctx.fillStyle = isDark ? "rgba(10,11,16,0.82)" : "rgba(255,255,255,0.92)";
@@ -622,9 +622,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           <span className="flex items-center gap-1">
             <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> {tt("resistência (acima)", "resistance (above)")}
           </span>
-          <span>· {tt("barra = tamanho", "bar = size")}</span>
-          <span>· {tt("·N = ordens somadas", "·N = merged orders")}</span>
-          <span>· {tt("contorno = +1 exchange", "outline = multi-venue")}</span>
+          <span>· {tt("barra = tamanho (notional)", "bar = size (notional)")}</span>
+          <span>· {tt("contorno = +1 corretora", "outline = multi-venue")}</span>
         </div>
       )}
       {canUseLayers && layers.liquidations && (

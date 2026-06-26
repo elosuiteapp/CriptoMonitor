@@ -4,6 +4,10 @@ import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
 import type { OrderbookWall } from "../lib/types";
 
 type Tt = (pt: string, en: string) => string;
+// Nomes curtos das corretoras (o notional da zona soma as que aparecem aqui).
+const VENUE_SHORT: Record<string, string> = { binance: "Bin", coinbase: "CB", okx: "OKX" };
+const venueLabel = (venues: Set<string>) => [...venues].map((v) => VENUE_SHORT[v] ?? v).join("·");
+
 interface Row {
   z: WallZone;
   support: boolean; // abaixo do preço atual = suporte
@@ -70,8 +74,8 @@ export default function OrderbookWallsLadder({ walls, price }: { walls: Orderboo
       </div>
       <p className="mt-1 px-1 text-[10px] text-muted-foreground">
         {tt(
-          "Paredes somadas por zona (·N = ordens · ✦ = +1 exchange). Liquidez parada que tende a frear/atrair o preço — não é ordem garantida.",
-          "Walls summed by zone (·N = orders · ✦ = multi-venue). Resting liquidity that tends to slow/attract price — not a guaranteed order.",
+          "Notional = total parado na zona (soma das corretoras listadas). Liquidez parada que tende a frear/atrair o preço — não é ordem garantida. As maiores zonas costumam ficar perto do preço (book mais denso no toque).",
+          "Notional = total resting in the zone (summed across the listed venues). Resting liquidity that tends to slow/attract price — not a guaranteed order. The biggest zones tend to sit near price (book is densest at the touch).",
         )}
       </p>
     </div>
@@ -94,9 +98,11 @@ function LadderRow({ r, maxNot, strongest, tt }: { r: Row; maxNot: number; stron
         <div className={`h-full rounded-full ${support ? "bg-emerald-500" : "bg-rose-500"}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="num w-16 shrink-0 text-right text-xs font-medium text-foreground">{fmtUsd(z.notional)}</span>
-      <span className="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
-        {z.count > 1 ? `·${z.count}` : ""}
-        {z.venues.size >= 2 ? " ✦" : ""}
+      <span
+        className={`hidden w-24 shrink-0 text-right text-[10px] sm:block ${z.venues.size >= 2 ? "text-primary" : "text-muted-foreground"}`}
+        title={[...z.venues].join(", ")}
+      >
+        {venueLabel(z.venues)}
       </span>
       <span className="num w-12 shrink-0 text-right text-[11px] text-muted-foreground">
         {distPct >= 0 ? "+" : ""}
