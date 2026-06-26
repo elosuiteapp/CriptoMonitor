@@ -19,7 +19,7 @@ export function useOrderbookWalls(asset: string, plan: Plan | null): OrderbookWa
       .select("exchange, side, price, notional_usd, ts")
       .eq("asset", asset)
       .order("ts", { ascending: false })
-      .limit(40)
+      .limit(200) // até 20 buckets × 2 lados × 3 corretoras por snapshot (~120)
       .then(({ data }) => {
         if (!active) return;
         const rows = (data as (OrderbookWall & { ts: string })[]) ?? [];

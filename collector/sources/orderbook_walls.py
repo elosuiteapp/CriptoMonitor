@@ -44,7 +44,9 @@ _NEAR = 0.035  # faixas a ±3,5% do preço — espalha as paredes no eixo (menos
                # A Coinbase (book cheio) cobre essa faixa; o depth da Binance (limit=1000)
                # alcança ~1% perto do preço, então acima disso valem Coinbase/OKX. Ir mais
                # longe exigiria limit=5000 (5× o peso de API) — evitado por ora.
-_TOP = 5       # máx. de paredes por lado/exchange
+_TOP = 20      # máx. de paredes por lado/exchange — top-20 por notional capta paredes
+               # mais distantes (não só a densidade do toque). Ainda filtra por threshold,
+               # então faixas longes só entram se >= o mínimo do ativo.
 
 
 def _walls(levels, side, exchange, asset, mid, ts) -> list[dict]:

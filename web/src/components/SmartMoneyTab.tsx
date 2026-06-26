@@ -167,7 +167,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             .select("side, price, notional_usd, ts")
             .eq("asset", smcAsset)
             .order("ts", { ascending: false })
-            .limit(40),
+            .limit(200), // top-20 buckets × 2 lados × 3 corretoras por snapshot (~120)
         ]);
         if (!active) return;
         const gamma = (gammaRes.data as GammaLevels | null) ?? null;
