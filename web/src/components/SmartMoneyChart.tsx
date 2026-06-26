@@ -52,7 +52,8 @@ export const DEFAULT_LAYERS: SmcLayers = {
 };
 
 interface Props {
-  candles: Candle[];
+  candles: Candle[]; // série EXIBIDA (histórico profundo; zoom-out vê o passado)
+  analysisCandles?: Candle[]; // janela recente p/ o heatmap (cai p/ `candles` se ausente) — igual ao cockpit
   smc: SmcResult | null;
   layers?: SmcLayers;
   viewKey?: string; // muda só na troca de ativo/timeframe → re-enquadra; refresh silencioso preserva o zoom
@@ -73,7 +74,9 @@ const kfmt = (v: number) => {
 
 /** Gráfico da aba Smart Money, estilo TradingView: candles + zonas preenchidas
  *  num <canvas> sincronizado com pan/zoom. Camadas controláveis por `layers`. */
-export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [], asset, tf, htfLevels = [] }: Props) {
+export default function SmartMoneyChart({ candles, analysisCandles, smc, layers = DEFAULT_LAYERS, viewKey, vp = null, oiSeries = [], asset, tf, htfLevels = [] }: Props) {
+  // Heatmap/análise na janela recente (igual ao cockpit); a série exibe o histórico profundo.
+  const heatCandles = analysisCandles ?? candles;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -234,7 +237,7 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
     const canvas = heatRef.current;
     const wrap = wrapRef.current;
     if (!chart || !series || !canvas || !wrap) return;
-    if (!layers.liquidations || candles.length < 10) {
+    if (!layers.liquidations || heatCandles.length < 10) {
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -242,8 +245,8 @@ export default function SmartMoneyChart({ candles, smc, layers = DEFAULT_LAYERS,
       }
       return;
     }
-    return runLiquidationHeatmap({ chart, series, canvas, wrap, tip: heatTipRef.current, candles, oiSeries });
-  }, [candles, oiSeries, layers.liquidations]);
+    return runLiquidationHeatmap({ chart, series, canvas, wrap, tip: heatTipRef.current, candles: heatCandles, oiSeries });
+  }, [heatCandles, oiSeries, layers.liquidations]);
 
   // ─── Zonas preenchidas (canvas overlay) ──────────────────────────────────────
   useEffect(() => {

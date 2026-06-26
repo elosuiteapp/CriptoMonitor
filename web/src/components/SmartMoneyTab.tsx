@@ -11,7 +11,7 @@ import { useStablecoins } from "../hooks/useStablecoins";
 import { useUnlocks } from "../hooks/useUnlocks";
 import { fmtCompact, fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
-import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, type Candle, type Timeframe } from "../lib/marketData";
+import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, DEEP_HISTORY_BARS, ANALYSIS_BARS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
@@ -145,10 +145,13 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         setError(null);
       }
       try {
-        const klines = await fetchKlines(smcAsset, tf, 320);
+        // Mesma quantidade que o cockpit: histórico PROFUNDO p/ exibição (zoom-out vê o
+        // passado) e janela RECENTE p/ a análise (SMC/VP/heatmap) — não muda com o extra.
+        const display = await fetchKlines(smcAsset, tf, DEEP_HISTORY_BARS);
         if (!active) return;
-        setCandles(klines);
-        setSmc(computeSmc(klines));
+        const recent = display.length > ANALYSIS_BARS ? display.slice(-ANALYSIS_BARS) : display;
+        setCandles(display);
+        setSmc(computeSmc(recent));
 
         // Confluência: gamma (opções) + paredes do book — dados que a plataforma já coleta
         const [gammaRes, wallsRes] = await Promise.all([
@@ -205,7 +208,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       const out = await Promise.all(
         tfs.map(async (t) => {
           try {
-            const k = await fetchKlines(smcAsset, t, 320);
+            const k = await fetchKlines(smcAsset, t, ANALYSIS_BARS);
             const r = computeSmc(k);
             return { tf: t, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral" };
           } catch {
@@ -228,7 +231,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       return;
     }
     let active = true;
-    fetchKlines(smcAsset, up, 320)
+    fetchKlines(smcAsset, up, ANALYSIS_BARS)
       .then((k) => active && setHtfSmc(computeSmc(k)))
       .catch(() => active && setHtfSmc(null));
     return () => {
@@ -253,8 +256,15 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     return out;
   }, [htfSmc, tf, t]);
 
-  // Volume Profile (POC/VA) dos candles — reusado na confluência e no gráfico.
-  const vp = useMemo(() => (candles.length ? computeVolumeProfile(candles) : null), [candles]);
+  // Janela RECENTE p/ a análise (SMC/VP/heatmap/confluência) — não muda com o histórico
+  // profundo carregado p/ exibição. Mesma divisão do cockpit (ANALYSIS_BARS).
+  const analysisCandles = useMemo(
+    () => (candles.length > ANALYSIS_BARS ? candles.slice(-ANALYSIS_BARS) : candles),
+    [candles],
+  );
+
+  // Volume Profile (POC/VA) da janela recente — reusado na confluência e no gráfico.
+  const vp = useMemo(() => (analysisCandles.length ? computeVolumeProfile(analysisCandles) : null), [analysisCandles]);
 
   // Confluência enriquecida: gamma + book (sources) + POC/Value Area + liquidação + HTF
   const allSources = useMemo(() => {
@@ -264,14 +274,14 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       extra.push({ kind: "vp", label: "VA High", price: vp.vah });
       extra.push({ kind: "vp", label: "VA Low", price: vp.val });
     }
-    if (candles.length) {
-      liqMagnets(candles, oiSeries).forEach((p, i) =>
+    if (analysisCandles.length) {
+      liqMagnets(analysisCandles, oiSeries).forEach((p, i) =>
         extra.push({ kind: "liq", label: i === 0 ? t.smart.confLiqStrong : t.smart.confLiq, price: p }),
       );
     }
     htfLevels.forEach((l) => extra.push({ kind: "htf", label: l.label, price: l.price }));
     return [...sources, ...extra];
-  }, [sources, candles, oiSeries, vp, htfLevels, t]);
+  }, [sources, analysisCandles, oiSeries, vp, htfLevels, t]);
 
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
@@ -572,7 +582,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         {loading && candles.length === 0 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">{t.smart.loadingStructure}</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} htfLevels={htfLevels} />
+          <SmartMoneyChart candles={candles} analysisCandles={analysisCandles} smc={smc} layers={layers} viewKey={`${smcAsset}-${tf}`} vp={vp} oiSeries={oiSeries} asset={smcAsset} tf={tf} htfLevels={htfLevels} />
         )}
         {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do módulo cockpit */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
