@@ -845,20 +845,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
             (() => {
               const total = bookImb.bid + bookImb.ask;
               const bidPct = Math.round((bookImb.bid / total) * 100);
+              const askPct = 100 - bidPct;
               const lead = bookImb.tilt > 0.08 ? "bid" : bookImb.tilt < -0.08 ? "ask" : "flat";
-              const leadPct = lead === "ask" ? 100 - bidPct : bidPct;
-              const word =
-                lead === "bid"
-                  ? tt("compra", "bids")
-                  : lead === "ask"
-                    ? tt("venda", "asks")
-                    : tt("equilíbrio", "balanced");
-              const wordCls =
-                lead === "bid"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : lead === "ask"
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-muted-foreground";
+              const arrow = lead === "bid" ? "▲" : lead === "ask" ? "▼" : "▬";
               return (
                 <div
                   className="absolute left-2 top-8 z-10 flex items-center gap-1.5 rounded bg-background/80 px-1.5 py-0.5 text-[9px] text-muted-foreground"
@@ -871,9 +860,15 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
                   <span className="relative h-2 w-16 overflow-hidden rounded-full bg-rose-500/70">
                     <span className="absolute inset-y-0 left-0 bg-emerald-500/80" style={{ width: `${bidPct}%` }} />
                   </span>
-                  <span className={`font-semibold ${wordCls}`}>
-                    {word}
-                    {lead !== "flat" ? ` ${leadPct}%` : ""}
+                  <span className={`num ${lead === "bid" ? "font-bold " : ""}text-emerald-600 dark:text-emerald-400`}>
+                    {tt("compra", "bids")} {bidPct}%
+                  </span>
+                  <span className="opacity-40">·</span>
+                  <span className={`num ${lead === "ask" ? "font-bold " : ""}text-rose-600 dark:text-rose-400`}>
+                    {tt("venda", "asks")} {askPct}%
+                  </span>
+                  <span className={lead === "bid" ? "text-emerald-500" : lead === "ask" ? "text-rose-500" : "text-muted-foreground"}>
+                    {arrow}
                   </span>
                 </div>
               );
