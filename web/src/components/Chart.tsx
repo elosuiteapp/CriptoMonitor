@@ -469,14 +469,28 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       return;
     }
 
-    // Top paredes por tamanho, deduplicando preços muito colados (mantém a maior).
-    const sorted = [...walls].sort((a, b) => b.notional_usd - a.notional_usd);
-    const picked: OrderbookWall[] = [];
-    for (const w of sorted) {
-      if (picked.every((p) => Math.abs(p.price - w.price) / w.price > 0.0012)) picked.push(w);
-      if (picked.length >= 7) break;
+    // Agrega paredes em ZONAS: mesmo lado + preços próximos viram UMA só, SOMANDO o
+    // notional. Antes o dedup mantinha só a maior e descartava as outras — então
+    // Binance+Coinbase+OKX no mesmo preço (parede forte de verdade) aparecia como uma.
+    // Agora a zona "cheia" = barra maior = onde tem MAIS parede. Guarda nº de ordens
+    // e de exchanges (confluência) p/ o destaque visual.
+    const ZONE_TOL = 0.0018; // ~0,18% do preço — paredes dentro disso são a mesma zona
+    type Zone = { side: "bid" | "ask"; price: number; notional: number; venues: Set<string>; count: number };
+    const zones: Zone[] = [];
+    for (const w of [...walls].sort((a, b) => b.notional_usd - a.notional_usd)) {
+      const z = zones.find((zz) => zz.side === w.side && Math.abs(zz.price - w.price) / w.price <= ZONE_TOL);
+      if (z) {
+        z.price = (z.price * z.notional + w.price * w.notional_usd) / (z.notional + w.notional_usd); // média ponderada
+        z.notional += w.notional_usd;
+        z.venues.add(w.exchange);
+        z.count += 1;
+      } else {
+        zones.push({ side: w.side, price: w.price, notional: w.notional_usd, venues: new Set([w.exchange]), count: 1 });
+      }
     }
-    const maxNot = picked[0]?.notional_usd || 1;
+    zones.sort((a, b) => b.notional - a.notional);
+    const picked = zones.slice(0, 8);
+    const maxNot = picked[0]?.notional || 1;
     const labelBid = isDark ? "#4ade80" : "#15803d";
     const labelAsk = isDark ? "#f87171" : "#b91c1c";
 
@@ -503,22 +517,21 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       ctx.clearRect(0, 0, W, H);
 
       const plotRight = W - psw - 1; // borda direita da área de velas (antes do eixo)
-      const MAX_BAR = Math.min(150, (W - psw) * 0.3);
-      const BAR_H = 7;
-      const LABEL_GAP = 15; // distância mínima entre rótulos (anti-sobreposição)
+      const MAX_BAR = Math.min(170, (W - psw) * 0.34);
+      const LABEL_GAP = 16; // distância mínima entre rótulos (anti-sobreposição)
       ctx.font = "600 10px system-ui, sans-serif";
       ctx.textBaseline = "middle";
 
       // Paredes visíveis, ordenadas pelo Y real (preço). A barra fica no preço real;
       // o RÓTULO é espalhado p/ não colar e ligado à barra por uma linha-guia.
       const items = picked
-        .map((w, i) => ({ w, y: ys[i] as number | null }))
-        .filter((it): it is { w: OrderbookWall; y: number } => it.y != null && it.y >= 4 && it.y <= H - 4)
+        .map((z, i) => ({ z, y: ys[i] as number | null }))
+        .filter((it): it is { z: Zone; y: number } => it.y != null && it.y >= 4 && it.y <= H - 4)
         .sort((a, b) => a.y - b.y);
       if (!items.length) return;
 
       // Y dos rótulos por LADO: VENDA (vermelho) abre PRA CIMA, COMPRA (verde) PRA BAIXO.
-      const meta = items.map((it, i) => ({ i, y: it.y, ask: it.w.side === "ask" }));
+      const meta = items.map((it, i) => ({ i, y: it.y, ask: it.z.side === "ask" }));
       const labelYs = new Array<number>(items.length);
 
       // Vermelho (venda): de baixo p/ cima, empurrando PRA CIMA.
@@ -550,19 +563,29 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       const labelX = plotRight - MAX_BAR - 12; // coluna fixa dos rótulos, à esquerda das barras
 
       for (let i = 0; i < items.length; i++) {
-        const { w, y } = items[i];
+        const { z, y } = items[i];
         const ly = labelYs[i];
-        const isBid = w.side === "bid";
-        const len = Math.max(10, (w.notional_usd / maxNot) * MAX_BAR);
+        const isBid = z.side === "bid";
+        const ratio = z.notional / maxNot; // 0..1 — força relativa da zona
+        const len = Math.max(12, ratio * MAX_BAR);
+        const bh = 4 + Math.round(7 * Math.sqrt(ratio)); // espessura ∝ tamanho (4..11px)
+        const confluent = z.venues.size >= 2; // várias exchanges no mesmo preço = parede forte
         const x0 = plotRight - len;
-        const soft = isBid ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)";
-        const strong = isBid ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)";
+        const a = 0.42 + 0.5 * ratio; // mais cheia = mais opaca
+        const soft = isBid ? `rgba(34,197,94,${a.toFixed(2)})` : `rgba(239,68,68,${a.toFixed(2)})`;
+        const strong = isBid ? "rgba(34,197,94,0.98)" : "rgba(239,68,68,0.98)";
 
-        // barra no PREÇO real (ancorada à direita)
+        // barra no PREÇO real (ancorada à direita); espessura comunica o tamanho
         ctx.fillStyle = soft;
-        ctx.fillRect(x0, y - BAR_H / 2, len, BAR_H);
+        ctx.fillRect(x0, y - bh / 2, len, bh);
         ctx.fillStyle = strong;
-        ctx.fillRect(plotRight - 2.5, y - BAR_H / 2, 2.5, BAR_H);
+        ctx.fillRect(plotRight - 3, y - bh / 2, 3, bh);
+        // confluência (≥2 exchanges no mesmo preço): contorno claro destaca a zona forte
+        if (confluent) {
+          ctx.strokeStyle = isBid ? "rgba(134,239,172,0.95)" : "rgba(252,165,165,0.95)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x0 - 0.5, y - bh / 2 - 0.5, len + 1, bh + 1);
+        }
 
         // linha-guia: do início da barra (preço real) até o rótulo espalhado
         ctx.strokeStyle = soft;
@@ -572,8 +595,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         ctx.lineTo(labelX + 5, ly);
         ctx.stroke();
 
-        // rótulo com chip de fundo (legível por cima das velas)
-        const txt = fmtUsd(w.notional_usd);
+        // rótulo com chip de fundo (legível por cima das velas) + nº de ordens da zona
+        const txt = z.count > 1 ? `${fmtUsd(z.notional)} ·${z.count}` : fmtUsd(z.notional);
         const tw = ctx.measureText(txt).width;
         const padX = 5;
         ctx.fillStyle = isDark ? "rgba(10,11,16,0.82)" : "rgba(255,255,255,0.92)";
@@ -610,6 +633,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
             <span className="h-2 w-3 rounded-sm" style={{ background: "rgba(239,68,68,0.7)" }} /> {tt("parede venda", "sell wall")}
           </span>
           <span>· {tt("barra = tamanho", "bar = size")}</span>
+          <span>· {tt("·N = ordens somadas", "·N = merged orders")}</span>
+          <span>· {tt("contorno = +1 exchange", "outline = multi-venue")}</span>
         </div>
       )}
       {canUseLayers && layers.liquidations && (

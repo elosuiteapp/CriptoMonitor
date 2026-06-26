@@ -40,7 +40,10 @@ _OKX_SYM = {"BTC": "BTC-USDT", "ETH": "ETH-USDT", "SOL": "SOL-USDT"}
 # passo do bucket de preço e notional mínimo (USD) por ativo
 _STEP = {"BTC": 50.0, "ETH": 5.0, "SOL": 0.5, "BNB": 1.0}
 _THRESHOLD = {"BTC": 1_000_000.0, "ETH": 500_000.0, "SOL": 100_000.0, "BNB": 200_000.0}
-_NEAR = 0.02   # só faixas a ±2% do preço (relevantes ao gráfico)
+_NEAR = 0.035  # faixas a ±3,5% do preço — espalha as paredes no eixo (menos "espremido").
+               # A Coinbase (book cheio) cobre essa faixa; o depth da Binance (limit=1000)
+               # alcança ~1% perto do preço, então acima disso valem Coinbase/OKX. Ir mais
+               # longe exigiria limit=5000 (5× o peso de API) — evitado por ora.
 _TOP = 5       # máx. de paredes por lado/exchange
 
 
