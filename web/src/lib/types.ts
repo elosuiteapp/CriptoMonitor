@@ -107,6 +107,16 @@ export interface OrderbookWall {
   notional_usd: number;
 }
 
+/** Snapshot da escada COMPLETA do book (heatmap de book) — uma linha por
+ *  ativo×exchange×ts; bids/asks = {preço_do_bucket: notional_usd}. */
+export interface OrderbookDepthRow {
+  ts: string;
+  exchange: string;
+  mid: number | null;
+  bids: Record<string, number>;
+  asks: Record<string, number>;
+}
+
 export interface OrderbookImbalance {
   exchange: string; // 'binance' (varejo) | 'coinbase' (institucional)
   bid_near_usd: number; // bids dentro de ±0,5% do preço

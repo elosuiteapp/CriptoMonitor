@@ -30,8 +30,9 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
+import { buildBookDepthGrid } from "../lib/bookDepthGrid";
 import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
-import type { GammaData, OrderbookWall } from "../lib/types";
+import type { GammaData, OrderbookDepthRow, OrderbookWall } from "../lib/types";
 
 export interface ActiveLayers {
   gex: boolean; // Call Wall + Put Wall
@@ -43,6 +44,7 @@ export interface ActiveLayers {
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
   bookPressure: boolean; // sub-gráfico de pressão do book (bid×ask) no tempo
   liquidations: boolean; // heatmap de liquidações (estimado) sobre o gráfico
+  bookHeatmap: boolean; // heatmap de book REAL (liquidez parada) — preço × tempo
 }
 
 interface ChartProps {
@@ -53,6 +55,7 @@ interface ChartProps {
   layers: ActiveLayers;
   canUseLayers: boolean;
   walls?: OrderbookWall[];
+  depth?: OrderbookDepthRow[] | null; // escada do book (heatmap de liquidez parada)
   oiSeries?: OiPoint[];
   // Emite o último preço (close do candle em formação, ao vivo via WS) para o pai —
   // assim o preço do topo (PriceHeader) espelha EXATAMENTE o do gráfico, em tempo real.
@@ -62,12 +65,14 @@ interface ChartProps {
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, oiSeries, onPrice }: ChartProps) {
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, depth, oiSeries, onPrice }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bookCanvasRef = useRef<HTMLCanvasElement | null>(null); // heatmap de book (liquidez parada)
   const wallsCanvasRef = useRef<HTMLCanvasElement | null>(null); // barras de liquidez (Paredes do book)
   const heatTipRef = useRef<HTMLDivElement | null>(null);
+  const bookTipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
@@ -468,6 +473,163 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     };
   }, [candles, oiSeries, layers.liquidations, canUseLayers, chartType, gamma, vp, walls, isEn]);
 
+  // ─── Heatmap de BOOK — liquidez parada REAL (preço × tempo) ──────────────────
+  // Desenha numa <canvas> ATRÁS das velas a escada do book (orderbook_depth, snapshots
+  // 1 min, exchanges somadas por bucket). Eixo X = tempo dos snapshots, Y = preço.
+  // bid (suporte, abaixo) = verde, ask (resistência, acima) = vermelho; brilho =
+  // notional. Mapeia por TEMPO/PREÇO ancorado no último candle + espaçamento de barras
+  // (nunca por logical absoluto — robusto ao histórico profundo e ao avanço ao vivo).
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const canvas = bookCanvasRef.current;
+    const wrap = wrapRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!chart || !series || !canvas || !wrap || !ctx) return;
+
+    const clear = () => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+    if (!canUseLayers || !layers.bookHeatmap || candles.length < 2) {
+      clear();
+      return;
+    }
+    const grid = buildBookDepthGrid(depth ?? null);
+    if (!grid) {
+      clear();
+      return;
+    }
+
+    const nCols = grid.cols.length;
+    const off = document.createElement("canvas");
+    off.width = nCols;
+    off.height = grid.nBins;
+    const octx = off.getContext("2d");
+    if (!octx) {
+      clear();
+      return;
+    }
+    // Piso de intensidade (despolui) + compressão sqrt (revela as zonas médias).
+    const FLOOR = 0.05;
+    const img = octx.createImageData(nCols, grid.nBins);
+    for (let c = 0; c < nCols; c++) {
+      for (let b = 0; b < grid.nBins; b++) {
+        const idx = c * grid.nBins + b;
+        const vb = grid.bid[idx];
+        const va = grid.ask[idx];
+        const tot = vb + va;
+        const ratio = tot / grid.max;
+        const px = (b * nCols + c) * 4;
+        if (ratio < FLOOR) {
+          img.data[px + 3] = 0;
+          continue;
+        }
+        const r = Math.sqrt(ratio);
+        // bid (suporte) → rampa verde ("short"); ask (resistência) → rampa vermelha ("long").
+        const [cr, cg, cb] = heatColor(r, vb >= va ? "short" : "long");
+        img.data[px] = cr;
+        img.data[px + 1] = cg;
+        img.data[px + 2] = cb;
+        img.data[px + 3] = Math.round(110 + 130 * r); // 43% → 94% de opacidade
+      }
+    }
+    octx.putImageData(img, 0, 0);
+
+    const tscale = chart.timeScale();
+    let lastSig = "";
+    let raf = 0;
+    let gx0 = 0;
+    let gx1 = 0;
+
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const W = wrap.clientWidth;
+      const H = wrap.clientHeight;
+      // x por TEMPO: ancora o último candle (coord válida) e mede px/segundo pelo
+      // espaçamento de barras ÷ intervalo do candle → posiciona qualquer ts (inclusive
+      // snapshots mais novos que o último candle) sem null e sem o offset série×grade.
+      const tLast = candles[candles.length - 1].time as number;
+      const tStep = (candles[candles.length - 1].time as number) - (candles[candles.length - 2].time as number);
+      const xLast = tscale.timeToCoordinate(tLast as Time);
+      const c0 = tscale.logicalToCoordinate(0 as Logical);
+      const c1 = tscale.logicalToCoordinate(1 as Logical);
+      const yT = series.priceToCoordinate(grid.priceTop);
+      const yB = series.priceToCoordinate(grid.priceBottom);
+      if (xLast == null || c0 == null || c1 == null || yT == null || yB == null || tStep <= 0) return;
+      const barW = c1 - c0;
+      const pxPerSec = barW / tStep;
+      const xOf = (ts: number) => xLast + (ts - tLast) * pxPerSec;
+      const xL = xOf(grid.cols[0]);
+      const xR = xOf(grid.cols[nCols - 1]);
+      gx0 = xL;
+      gx1 = xR;
+
+      const sig = `${W}x${H}|${xL}|${xR}|${yT}|${yB}`;
+      if (sig === lastSig) return;
+      lastSig = sig;
+
+      if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        canvas.style.width = `${W}px`;
+        canvas.style.height = `${H}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      ctx.imageSmoothingEnabled = true;
+      const colW = nCols > 1 ? (xR - xL) / (nCols - 1) : Math.max(2, barW);
+      ctx.drawImage(off, 0, 0, nCols, grid.nBins, xL - colW / 2, yT, xR - xL + colW, yB - yT);
+    };
+
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+
+    // Tooltip: lê o notional parado da célula sob o cursor.
+    const span = grid.priceTop - grid.priceBottom;
+    const onCrosshair = (param: MouseEventParams<Time>) => {
+      const tip = bookTipRef.current;
+      if (!tip) return;
+      const price = param.point ? series.coordinateToPrice(param.point.y) : null;
+      if (!param.point || price == null || gx1 <= gx0) {
+        tip.style.display = "none";
+        return;
+      }
+      const colW = nCols > 1 ? (gx1 - gx0) / (nCols - 1) : 1;
+      const c = Math.round((param.point.x - gx0) / colW);
+      const bin = Math.floor(((grid.priceTop - price) / span) * grid.nBins);
+      if (c < 0 || c >= nCols || bin < 0 || bin >= grid.nBins) {
+        tip.style.display = "none";
+        return;
+      }
+      const idx = c * grid.nBins + bin;
+      const vb = grid.bid[idx];
+      const va = grid.ask[idx];
+      const tot = vb + va;
+      if (grid.max <= 0 || tot / grid.max < 0.04) {
+        tip.style.display = "none";
+        return;
+      }
+      const side = vb >= va ? tt("compra · suporte", "bids · support") : tt("venda · resistência", "asks · resistance");
+      const px = Math.round(price).toLocaleString(isEn ? "en-US" : "pt-BR");
+      tip.textContent = `${tt("Book", "Book")} ${side} · ~$${px} · ${fmtUsd(tot)}`;
+      tip.style.display = "block";
+      tip.style.left = `${param.point.x + 12}px`;
+      tip.style.top = `${param.point.y + 12}px`;
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      chart.unsubscribeCrosshairMove(onCrosshair);
+      if (bookTipRef.current) bookTipRef.current.style.display = "none";
+      clear();
+    };
+  }, [depth, layers.bookHeatmap, canUseLayers, chartType, candles, isEn]);
+
   // ─── Paredes do book — barras de liquidez na borda direita ───────────────────
   // Cada parede vira uma barra horizontal ancorada à direita; comprimento ∝ tamanho
   // (notional). Verde = compra (suporte), vermelho = venda (resistência). Alinhada
@@ -630,6 +792,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   return (
     <div ref={wrapRef} className="relative h-[360px] w-full">
       <canvas ref={heatCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
+      <canvas ref={bookCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
       <canvas ref={wallsCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 2 }} />
       {canUseLayers && layers.orderbookWalls && walls && walls.length > 0 && (
@@ -663,6 +826,30 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           </div>
           <div
             ref={heatTipRef}
+            className="pointer-events-none absolute z-20 rounded bg-background/95 px-2 py-1 text-[10px] text-foreground shadow-lg ring-1 ring-border"
+            style={{ display: "none" }}
+          />
+        </>
+      )}
+      {canUseLayers && layers.bookHeatmap && (
+        <>
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
+            {tt("Heatmap de book · liquidez parada REAL (snapshots 1 min)", "Book heatmap · real resting liquidity (1-min snapshots)")}
+          </div>
+          {/* Legenda: cor = LADO (compra/suporte verde · venda/resistência vermelho), brilho = tamanho. */}
+          <div className="pointer-events-none absolute bottom-8 left-2 z-10 flex items-center gap-3 rounded bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              {tt("compra ↓", "bids ↓")}
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_SHORT }} />
+            </span>
+            <span className="flex items-center gap-1">
+              {tt("venda ↑", "asks ↑")}
+              <span className="h-2 w-12 rounded" style={{ background: HEAT_GRADIENT_LONG }} />
+            </span>
+            <span className="opacity-70">{tt("fraco→forte", "weak→strong")}</span>
+          </div>
+          <div
+            ref={bookTipRef}
             className="pointer-events-none absolute z-20 rounded bg-background/95 px-2 py-1 text-[10px] text-foreground shadow-lg ring-1 ring-border"
             style={{ display: "none" }}
           />

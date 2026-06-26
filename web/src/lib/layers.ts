@@ -13,10 +13,12 @@ export const LAYER_KEYS: LayerKey[] = [
   "cvd",
   "bookPressure",
   "liquidations",
+  "bookHeatmap",
 ];
 
 // Camadas "de fluxo" — exclusivas do Expert quando o acesso vem por advanced_metrics.
 // (O Free ganha cvd/bookPressure pela vitrine, mas só do VAREJO — ver gating no RLS.)
+// bookHeatmap fica no degrau Pro (como as paredes do book): liquidez parada estrutural.
 const EXPERT_TIER: LayerKey[] = ["funding", "cvd", "bookPressure", "liquidations"];
 
 /**

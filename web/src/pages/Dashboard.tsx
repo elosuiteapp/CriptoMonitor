@@ -44,6 +44,7 @@ import { useModule } from "../hooks/useModule";
 import { useOpenInterest } from "../hooks/useOpenInterest";
 import { useBookPressureSeries } from "../hooks/useBookPressureSeries";
 import { useOrderbookImbalance } from "../hooks/useOrderbookImbalance";
+import { useOrderbookDepth } from "../hooks/useOrderbookDepth";
 import { useOrderbookWalls } from "../hooks/useOrderbookWalls";
 import { usePlan } from "../hooks/usePlan";
 import { useSeries } from "../hooks/useSeries";
@@ -100,6 +101,7 @@ export default function Dashboard() {
     cvd: false,
     bookPressure: false,
     liquidations: false,
+    bookHeatmap: false,
   });
 
   // Garante que o ativo selecionado pertence ao plano
@@ -138,6 +140,8 @@ export default function Dashboard() {
   // camada liga. No Free o book é só do VAREJO (Coinbase = teaser institucional).
   const cvdSeries = useCvd(asset, timeframe, canUseLayers && effectiveLayers.cvd);
   const bookSeries = useBookPressureSeries(asset, canUseLayers && effectiveLayers.bookPressure, !advanced);
+  // Escada do book (heatmap de liquidez parada) — só busca quando a camada liga.
+  const depth = useOrderbookDepth(asset, plan, canUseLayers && effectiveLayers.bookHeatmap);
   const isOptionAsset = OPTION_ASSETS.includes(asset);
   const isVolAsset = VOL_ASSETS.includes(asset);
 
@@ -287,6 +291,7 @@ export default function Dashboard() {
             layers={effectiveLayers}
             canUseLayers={canUseLayers}
             walls={walls}
+            depth={depth}
             oiSeries={oiSeries}
             onPrice={setLivePrice}
           />

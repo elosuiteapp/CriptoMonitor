@@ -25,6 +25,7 @@ const ITEMS: { key: keyof ActiveLayers; color: string; tier: "pro" | "expert" }[
   { key: "cvd", color: "bg-emerald-500", tier: "expert" },
   { key: "bookPressure", color: "bg-teal-500", tier: "expert" },
   { key: "liquidations", color: "bg-rose-500", tier: "expert" },
+  { key: "bookHeatmap", color: "bg-emerald-500", tier: "pro" },
 ];
 
 export default function LayerToggles({ layers, onToggle, access, showUpsell }: Props) {
