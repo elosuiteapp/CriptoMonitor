@@ -34,6 +34,7 @@ from lib.logger import get_logger          # noqa: E402
 from lib.supabase_client import get_supabase, upsert  # noqa: E402
 from lib.timeutil import now_utc, to_iso    # noqa: E402
 from sources import SourceResult, build_sources  # noqa: E402
+from sources.orderbook_depth import DEPTH_ASSETS, OrderbookDepthSource  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 log = get_logger("aggregator")
@@ -161,6 +162,8 @@ class Collector:
     def __init__(self) -> None:
         self.assets = _assets()
         self.sources = build_sources()
+        # Escada do book (heatmap): cadência própria (1 min), fora do ciclo de 5 min.
+        self.depth_source = OrderbookDepthSource()
         self.macro_interval = int(os.getenv("MACRO_INTERVAL_MINUTES", "15"))
         self._last_macro_minute: int | None = None
 
@@ -331,6 +334,31 @@ class Collector:
                  ok, len(results), written, len(snapshots))
         return results
 
+    async def run_depth_cycle(self) -> None:
+        """Ciclo dedicado da escada do book (1 min) → heatmap de liquidez parada.
+        Separado do ciclo de 5 min p/ não pesar o resto; ts ancorado à grade de 1 min
+        (restart no mesmo minuto colapsa na MESMA linha via o PK asset,exchange,ts)."""
+        now = now_utc()
+        ts = to_iso(now.replace(second=0, microsecond=0))
+        assets = [a for a in self.assets if a in DEPTH_ASSETS]
+        if not assets:
+            return
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}) as http:
+                result = await self.depth_source.collect(http, assets)
+            if not result.ok:
+                return
+            for output in result.outputs:
+                for row in output.rows:
+                    row["ts"] = ts
+                try:
+                    upsert(output.table, output.rows, output.on_conflict)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("falha no upsert de %s (%d linhas): %s",
+                                output.table, len(output.rows), exc)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ciclo de depth falhou (ignorado): %s", exc)
+
 
 async def _main_async(once: bool) -> None:
     collector = Collector()
@@ -342,8 +370,13 @@ async def _main_async(once: bool) -> None:
     interval = int(os.getenv("COLLECT_INTERVAL_MINUTES", "5"))
     scheduler.add_job(collector.run_cycle, CronTrigger(minute=f"*/{interval}"),
                       max_instances=1, coalesce=True)
+    # Escada do book em cadência própria (1 min) p/ o heatmap de liquidez parada.
+    depth_interval = int(os.getenv("DEPTH_INTERVAL_MINUTES", "1"))
+    scheduler.add_job(collector.run_depth_cycle, CronTrigger(minute=f"*/{depth_interval}"),
+                      max_instances=1, coalesce=True)
     scheduler.start()
-    log.info("scheduler iniciado · ciclo a cada %d min · Ctrl+C para sair", interval)
+    log.info("scheduler iniciado · ciclo a cada %d min · book a cada %d min · Ctrl+C para sair",
+             interval, depth_interval)
 
     # Desligamento LIMPO: em SIGTERM/SIGINT (deploy/scale/parada do host) saímos com
     # código 0, para a política ON_FAILURE do Railway não contar parada planejada como
