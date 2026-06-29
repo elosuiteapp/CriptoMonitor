@@ -6,6 +6,7 @@ import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import ForexChart from "./ForexChart";
+import ForexNewsBlock from "./ForexNewsBlock";
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
 const fmtPx = (v: number | null | undefined, dec: number) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
@@ -199,6 +200,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
         );
       })()}
 
+      <ForexNewsBlock />
     </div>
   );
 }

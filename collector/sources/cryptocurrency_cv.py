@@ -25,19 +25,37 @@ from .base import BaseSource, TableRows
 log = get_logger("news")
 _UA = "Mozilla/5.0 (compatible; CryptoMonitor/1.0)"
 
-# Feeds por idioma. PT = fontes brasileiras; EN = fontes globais de cripto.
-# Configurável por NEWS_FEED_URL (PT) e NEWS_FEED_URL_EN (EN), ambos csv de URLs.
-_FEEDS_BY_LANG = {
-    "pt": [
-        "https://portaldobitcoin.uol.com.br/feed/",
-        "https://www.criptofacil.com/feed/",
-        "https://livecoins.com.br/feed/",
-    ],
-    "en": [
-        "https://cointelegraph.com/rss",
-        "https://www.coindesk.com/arc/outboundfeeds/rss?outputType=xml",
-        "https://decrypt.co/feed",
-    ],
+# Feeds por MERCADO e idioma. Cada notícia é isolada por `market` (cripto/B3/forex)
+# para o cockpit de cada módulo mostrar só o que é dele. Cripto: PT (BR) + EN (global);
+# B3: PT (mercado brasileiro); Forex: EN (mercado global de câmbio).
+# Override do CRIPTO por env: NEWS_FEED_URL (PT) e NEWS_FEED_URL_EN (EN), csv de URLs.
+_FEEDS: dict[str, dict[str, list[str]]] = {
+    "crypto": {
+        "pt": [
+            "https://portaldobitcoin.uol.com.br/feed/",
+            "https://www.criptofacil.com/feed/",
+            "https://livecoins.com.br/feed/",
+        ],
+        "en": [
+            "https://cointelegraph.com/rss",
+            "https://www.coindesk.com/arc/outboundfeeds/rss?outputType=xml",
+            "https://decrypt.co/feed",
+        ],
+    },
+    "b3": {
+        "pt": [
+            "https://www.infomoney.com.br/feed/",
+            "https://www.moneytimes.com.br/feed/",
+            "https://www.suno.com.br/noticias/feed/",
+        ],
+    },
+    "forex": {
+        "en": [
+            "https://www.actionforex.com/feed/",
+            "https://www.babypips.com/feed.rss",
+            "https://www.investing.com/rss/news_1.rss",
+        ],
+    },
 }
 
 # Limites de palavra (\b) evitam falsos positivos (ex: "sol" em "solução").
@@ -65,14 +83,14 @@ _ASSET_PATTERNS = {
 }
 
 
-def _feeds_by_lang() -> dict[str, list[str]]:
-    out = {lang: list(urls) for lang, urls in _FEEDS_BY_LANG.items()}
-    pt = os.getenv("NEWS_FEED_URL")
+def _feeds() -> dict[str, dict[str, list[str]]]:
+    out = {mkt: {lang: list(urls) for lang, urls in langs.items()} for mkt, langs in _FEEDS.items()}
+    pt = os.getenv("NEWS_FEED_URL")  # override só do cripto (compatibilidade)
     if pt and pt.strip():
-        out["pt"] = [u.strip() for u in pt.split(",") if u.strip()]
+        out["crypto"]["pt"] = [u.strip() for u in pt.split(",") if u.strip()]
     en = os.getenv("NEWS_FEED_URL_EN")
     if en and en.strip():
-        out["en"] = [u.strip() for u in en.split(",") if u.strip()]
+        out["crypto"]["en"] = [u.strip() for u in en.split(",") if u.strip()]
     return out
 
 
@@ -88,7 +106,8 @@ class CryptocurrencyCvSource(BaseSource):
         now_iso = to_iso(now_utc())
         by_url: dict[str, dict] = {}
 
-        for lang, urls in _feeds_by_lang().items():
+        for market, by_lang in _feeds().items():
+          for lang, urls in by_lang.items():
             for url in urls:
                 try:
                     resp = await http.get(url, headers={"User-Agent": _UA}, timeout=20.0)
@@ -120,7 +139,9 @@ class CryptocurrencyCvSource(BaseSource):
                             "source": source_name,
                             "url": link,
                             "lang": lang,
-                            "assets": _detect_assets(f"{title} {categories} {description}"),
+                            "market": market,
+                            # detecção de ativo é só do cripto; B3/forex usam o `market`
+                            "assets": _detect_assets(f"{title} {categories} {description}") if market == "crypto" else [],
                             "published_at": published_at,
                         }
                 except Exception as exc:  # noqa: BLE001 — um feed fora não derruba os demais

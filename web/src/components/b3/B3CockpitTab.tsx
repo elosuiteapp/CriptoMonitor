@@ -8,6 +8,7 @@ import B3Chart from "./B3Chart";
 import B3IndicatorPanels from "./B3IndicatorPanels";
 import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
+import B3NewsBlock from "./B3NewsBlock";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
 import B3SectorRotation from "./B3SectorRotation";
@@ -338,6 +339,8 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Screener — Ações × FIIs, fundamentos, filtro e ordenação */}
       <B3Screener quotes={ov.quotes} funds={funds} fiis={fiis} asset={asset} onAsset={onAsset} />
+
+      <B3NewsBlock />
 
       <p className="text-[11px] text-muted-foreground">Fonte: Yahoo Finance + Banco Central (BCB) · fundamentos via Fundamentus.</p>
     </div>

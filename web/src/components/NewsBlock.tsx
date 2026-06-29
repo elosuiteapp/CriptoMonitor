@@ -35,6 +35,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       const { data: specific } = await supabase
         .from("news_feed")
         .select(COLS)
+        .eq("market", "crypto")
         .eq("lang", lang)
         .contains("assets", [asset])
         .gte("published_at", since)
@@ -53,6 +54,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       const { data: gen } = await supabase
         .from("news_feed")
         .select(COLS)
+        .eq("market", "crypto")
         .eq("lang", lang)
         .gte("published_at", since)
         .order("published_at", { ascending: false })
