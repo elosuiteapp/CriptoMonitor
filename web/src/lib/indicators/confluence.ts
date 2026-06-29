@@ -149,6 +149,7 @@ export function computeMarketRead(
   let liqTilt: number | null = null;
   let fng: number | null = null;
   let zoneKey: "premium" | "discount" | "equilibrium" | null = null;
+  let relVsBtc: number | null = null; // força relativa vs BTC (pp, 7d) — alts
 
   // ── Eixo TENDÊNCIA (EMA50/200) ──────────────────────────────────────────
   const e50 = last(ema(closes, 50));
@@ -515,6 +516,27 @@ export function computeMarketRead(
     });
   }
 
+  // ── Contexto: FORÇA RELATIVA vs BTC (rotação de capital; não vota) ─────────
+  // Só p/ alts: descolar do BTC = capital rotacionando p/ a moeda; ficar pra trás =
+  // capital preferindo o BTC. Visível SEMPRE (a divergência só acende no extremo ±8pp).
+  if (btcChg7d != null && payload?.asset && payload.asset !== "BTC" && closes.length >= 8) {
+    const a0 = closes[closes.length - 8];
+    const assetChg7d = a0 ? (closes[closes.length - 1] - a0) / a0 : null;
+    if (assetChg7d != null) {
+      relVsBtc = (assetChg7d - btcChg7d) * 100; // pontos percentuais vs BTC (7d)
+      const lead = relVsBtc >= 2 ? tl("liderando", "leading") : relVsBtc <= -2 ? tl("ficando para trás", "lagging") : tl("em linha", "in line");
+      axes.push({
+        key: "rotation",
+        label: tl("Força relativa vs BTC", "Relative strength vs BTC"),
+        group: tl("fluxo", "flow"),
+        dir: 0,
+        strength: clamp01(Math.abs(relVsBtc) / 15),
+        available: true,
+        detail: `${payload.asset} ${relVsBtc >= 0 ? "+" : ""}${relVsBtc.toFixed(1)}pp vs BTC (7d) — ${lead}`,
+      });
+    }
+  }
+
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
   // Pesos reponderados ao incluir a Estrutura (SMC). Tendência (EMA) e Estrutura
   // (price action) são da mesma família direcional → divididas (0,22 + 0,18) p/ não
@@ -654,18 +676,13 @@ export function computeMarketRead(
       divergences.push(tl(`Shorts lotados (L/S ${ls.toFixed(2)}), mas OI ainda subindo — novos longs entrando contra a maioria: possível fundo em formação / zona de batalha.`, `Shorts crowded (L/S ${ls.toFixed(2)}), yet OI still rising — new longs entering against the crowd: possible bottoming / battleground.`));
   }
 
-  // Rotação de liderança (alts): força/fraqueza relativa ao BTC em 7d. Alt descolando
-  // do BTC = rotação de capital; ficando para trás = capital preferindo o BTC.
-  if (btcChg7d != null && payload?.asset && payload.asset !== "BTC" && closes.length >= 8) {
-    const a0 = closes[closes.length - 8];
-    const assetChg7d = a0 ? (closes[closes.length - 1] - a0) / a0 : null;
-    if (assetChg7d != null) {
-      const rel = (assetChg7d - btcChg7d) * 100; // pontos percentuais vs BTC
-      if (rel >= 8)
-        divergences.push(tl(`${payload.asset} liderando — +${rel.toFixed(0)}pp vs BTC em 7d: força relativa (capital rotacionando para fora do BTC).`, `${payload.asset} leading — +${rel.toFixed(0)}pp vs BTC over 7d: relative strength (capital rotating out of BTC).`));
-      else if (rel <= -8)
-        divergences.push(tl(`${payload.asset} ficando para trás — ${rel.toFixed(0)}pp vs BTC em 7d: fraqueza relativa (capital preferindo o BTC).`, `${payload.asset} lagging — ${rel.toFixed(0)}pp vs BTC over 7d: relative weakness (capital favoring BTC).`));
-    }
+  // Rotação de liderança (alts): extremo de força/fraqueza relativa vira divergência
+  // (o eixo de contexto "Força relativa vs BTC" mostra o valor contínuo).
+  if (relVsBtc != null && payload?.asset) {
+    if (relVsBtc >= 8)
+      divergences.push(tl(`${payload.asset} liderando — +${relVsBtc.toFixed(0)}pp vs BTC em 7d: força relativa (capital rotacionando para fora do BTC).`, `${payload.asset} leading — +${relVsBtc.toFixed(0)}pp vs BTC over 7d: relative strength (capital rotating out of BTC).`));
+    else if (relVsBtc <= -8)
+      divergences.push(tl(`${payload.asset} ficando para trás — ${relVsBtc.toFixed(0)}pp vs BTC em 7d: fraqueza relativa (capital preferindo o BTC).`, `${payload.asset} lagging — ${relVsBtc.toFixed(0)}pp vs BTC over 7d: relative weakness (capital favoring BTC).`));
   }
 
   // Divergência de CVD institucional × varejo (QUEM está dirigindo o fluxo executado).
