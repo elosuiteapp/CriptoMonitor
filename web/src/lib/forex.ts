@@ -113,6 +113,39 @@ export function fetchForexCot(currency: string): Promise<ForexCot | null> {
   );
 }
 
+// ── Calendário econômico (ForexFactory via econ-calendar) — multi-moeda p/ FX ──
+export interface ForexEvent {
+  title: string;
+  country: string;
+  date: string;
+  impact: string;
+  forecast: string | null;
+  previous: string | null;
+}
+/** Moedas de um par (base, cotação) + USD (move tudo). Sem duplicar; ignora DXY. */
+export function pairCurrencies(pair: string): string[] {
+  const set = new Set<string>(["USD"]);
+  if (pair !== "DXY" && pair.includes("/")) pair.split("/").forEach((c) => set.add(c));
+  return [...set];
+}
+export function fetchForexCalendar(currencies: string[]): Promise<ForexEvent[]> {
+  const key = currencies.slice().sort().join(",");
+  return cached(
+    `cal:${key}`,
+    600_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("econ-calendar", { body: { countries: currencies } });
+        if (error || !data) return [];
+        return (data as { events?: ForexEvent[] }).events ?? [];
+      } catch {
+        return [];
+      }
+    },
+    (v) => v.length === 0,
+  );
+}
+
 export const isBrlPair = (s: string) => s.endsWith("/BRL");
 /** Casas decimais de cotação do par (JPY = 3, índice = 2, demais = 4/5). */
 export function pairDecimals(s: string): number {

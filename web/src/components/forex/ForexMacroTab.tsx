@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 
-import { fetchForexChart, fetchForexOverview, forexSessions, pairDecimals, type ForexCandle, type ForexQuote } from "../../lib/forex";
+import { fetchForexCalendar, fetchForexChart, fetchForexOverview, forexSessions, pairCurrencies, pairDecimals, type ForexCandle, type ForexEvent, type ForexQuote } from "../../lib/forex";
+
+const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", AUD: "🇦🇺", CAD: "🇨🇦", CHF: "🇨🇭", NZD: "🇳🇿", BRL: "🇧🇷", MXN: "🇲🇽" };
+const evDate = (s: string) => {
+  const t = new Date(s);
+  return Number.isFinite(t.getTime()) ? t.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : s;
+};
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
 const fmtPx = (v: number | null | undefined, dec: number) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
@@ -50,7 +56,17 @@ function CorrBar({ name, c }: { name: string; c: number | null }) {
 export default function ForexMacroTab({ pair }: { pair: string }) {
   const [overview, setOverview] = useState<ForexQuote[]>([]);
   const [corrs, setCorrs] = useState<{ ref: string; c: number | null }[]>([]);
+  const [events, setEvents] = useState<ForexEvent[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setEvents([]);
+    fetchForexCalendar(pairCurrencies(pair)).then((e) => alive && setEvents(e));
+    return () => {
+      alive = false;
+    };
+  }, [pair]);
 
   useEffect(() => {
     let alive = true;
@@ -75,8 +91,45 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
   const dxy = qOf("DXY");
   const dollarPairs = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD"];
 
+  // Barômetro Risk-on / Risk-off: high-beta (AUD/NZD) forte + havens (JPY/CHF) fracos = risco ligado.
+  const riskDrivers = [
+    { sym: "AUD/USD", label: "AUD" },
+    { sym: "NZD/USD", label: "NZD" },
+    { sym: "USD/JPY", label: "JPY fraco" },
+    { sym: "USD/CHF", label: "CHF fraco" },
+  ]
+    .map((d) => ({ ...d, chg: qOf(d.sym)?.changePct ?? null }))
+    .filter((d) => d.chg != null) as { sym: string; label: string; chg: number }[];
+  const riskScore = riskDrivers.length ? riskDrivers.reduce((s, d) => s + d.chg, 0) / riskDrivers.length : null;
+  const riskPct = riskScore == null ? 0 : Math.max(-1, Math.min(1, riskScore / 0.6)); // ±0,6%/dia ≈ extremo
+  const riskLabel = riskScore == null ? "—" : riskScore > 0.1 ? "Risk-on (risco ligado)" : riskScore < -0.1 ? "Risk-off (risco desligado)" : "Neutro";
+  const riskTone = riskScore == null ? "text-muted-foreground" : riskScore > 0.1 ? "text-emerald-500" : riskScore < -0.1 ? "text-rose-500" : "text-muted-foreground";
+
   return (
     <div className="space-y-4">
+      {/* Barômetro Risk-on / Risk-off */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground">Apetite a risco (Risk-on / Risk-off)</h3>
+          <span className={`text-sm font-bold ${riskTone}`}>{riskLabel}</span>
+        </div>
+        <div className="relative h-3 rounded-full bg-gradient-to-r from-rose-500/30 via-muted/40 to-emerald-500/30">
+          <div className="absolute top-1/2 h-5 w-1.5 -translate-y-1/2 rounded-full bg-foreground shadow" style={{ left: `calc(${((riskPct + 1) / 2) * 100}% - 3px)` }} />
+        </div>
+        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+          <span>Risk-off (dólar/iene/franco fortes)</span>
+          <span>Risk-on (AUD/NZD fortes)</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {riskDrivers.map((d) => (
+            <span key={d.sym} className="rounded-lg border border-border/70 bg-background/40 px-2 py-1 text-[11px]">
+              {d.label} <span className={`num ${toneCls(d.chg)}`}>{fmtPct(d.chg)}</span>
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">Quando o risco está ligado, capital flui p/ moedas de maior beta (AUD, NZD) e sai dos portos-seguros (USD, JPY, CHF). Útil p/ saber o "humor" geral antes de operar qualquer par.</p>
+      </div>
+
       {/* Dólar (DXY) + pares principais */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -114,6 +167,28 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
           </div>
         )}
         <p className="mt-2 text-[11px] text-muted-foreground">Correlação de retornos diários. +1 = andam juntos · −1 = ao contrário. Ex.: a maioria dos pares anda contra o DXY.</p>
+      </div>
+
+      {/* Calendário econômico (moedas do par + dólar) */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Calendário econômico · {pairCurrencies(pair).join(" · ")}</h3>
+        {events.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias (ou carregando…).</p>
+        ) : (
+          <div className="divide-y divide-border/60">
+            {events.map((e, i) => (
+              <div key={`${e.title}-${e.date}-${i}`} className="flex items-center gap-3 py-2">
+                <span className="text-sm" title={e.country}>{FLAG[e.country] ?? e.country}</span>
+                <span className={`shrink-0 text-xs ${e.impact === "High" ? "text-rose-500" : "text-amber-500"}`} title={`Impacto ${e.impact === "High" ? "alto" : "médio"}`}>{e.impact === "High" ? "★★★" : "★★"}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-foreground">{e.title}</div>
+                  <div className="text-[11px] text-muted-foreground">{evDate(e.date)}{e.forecast ? ` · prev. ${e.forecast}` : ""}{e.previous ? ` · ant. ${e.previous}` : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-muted-foreground">Alto/médio impacto das moedas do par (e do dólar). Em dias de FOMC/CPI/NFP o macro costuma dominar o gráfico. Fonte: ForexFactory.</p>
       </div>
 
       {/* Sessões */}
