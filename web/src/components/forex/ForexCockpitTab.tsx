@@ -8,6 +8,7 @@ import { PillRow, TogglePill } from "../TogglePill";
 import ForexChart from "./ForexChart";
 import ForexIndicatorPanels from "./ForexIndicatorPanels";
 import ForexNewsBlock from "./ForexNewsBlock";
+import ForexStrengthMeter from "./ForexStrengthMeter";
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
 const fmtPx = (v: number | null | undefined, dec: number) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
@@ -112,6 +113,9 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           );
         })}
       </div>
+
+      {/* Força das moedas (Currency Strength) — qual moeda está forte/fraca agora */}
+      <ForexStrengthMeter quotes={overview} />
 
       {/* Par selecionado + sessões */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">

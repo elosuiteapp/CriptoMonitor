@@ -159,6 +159,28 @@ export function fetchForexCalendar(currencies: string[]): Promise<ForexEvent[]> 
   );
 }
 
+// ── Força das moedas (Currency Strength) — padrão do FX. Para cada moeda, média do
+//    movimento dela contra TODAS as outras (base = +%, cotação = −%). Só preço. ──
+export const STRENGTH_CCYS = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "BRL"];
+export interface CurrencyStrength {
+  ccy: string;
+  score: number; // % médio de variação da moeda contra as demais (>0 = forte)
+  n: number; // quantos pares entraram na conta
+}
+export function computeCurrencyStrength(quotes: ForexQuote[]): CurrencyStrength[] {
+  const acc: Record<string, { sum: number; n: number }> = {};
+  for (const c of STRENGTH_CCYS) acc[c] = { sum: 0, n: 0 };
+  for (const q of quotes) {
+    if (q.pair === "DXY" || !q.pair.includes("/") || q.changePct == null) continue;
+    const [base, quote] = q.pair.split("/");
+    if (acc[base]) { acc[base].sum += q.changePct; acc[base].n += 1; }
+    if (acc[quote]) { acc[quote].sum -= q.changePct; acc[quote].n += 1; }
+  }
+  return STRENGTH_CCYS.map((c) => ({ ccy: c, score: acc[c].n ? acc[c].sum / acc[c].n : 0, n: acc[c].n }))
+    .filter((s) => s.n > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
 export const isBrlPair = (s: string) => s.endsWith("/BRL");
 /** Casas decimais de cotação do par (JPY = 3, índice/alto valor = 2-4, demais = 4/5). */
 export function pairDecimals(s: string): number {
