@@ -6,7 +6,7 @@ import { useTheme } from "../../hooks/useTheme";
 import type { B3Candle } from "../../lib/b3";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
 import { bollinger, ema, sma } from "../../lib/indicators/ta";
-import type { ChartType } from "../../lib/marketData";
+import { computeVolumeProfile, type Candle, type ChartType } from "../../lib/marketData";
 
 const UP = "#10b981";
 const DOWN = "#f43f5e";
@@ -24,11 +24,12 @@ interface Props {
   showVolume: boolean;
   showBollinger?: boolean;
   showLongTrend?: boolean; // MM200 + linhas máx/mín 52 semanas
+  showVolumeProfile?: boolean; // Volume Profile: POC + topo/base do valor
 }
 
 /** Gráfico da B3 — reusa o tema/comportamento do gráfico cripto (Lightweight Charts):
  *  tipos (velas/barras/linha/área), indicadores (EMA 9/21/50) e volume. Sem WS (B3 atrasado). */
-export default function B3Chart({ candles, chartType, showEma, showVolume, showBollinger = false, showLongTrend = false }: Props) {
+export default function B3Chart({ candles, chartType, showEma, showVolume, showBollinger = false, showLongTrend = false, showVolumeProfile = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [expanded, setExpanded] = useState(false); // gráfico em altura ampliada
@@ -129,6 +130,20 @@ export default function B3Chart({ candles, chartType, showEma, showVolume, showB
         if (Number.isFinite(lo)) price.createPriceLine({ price: lo, color: "rgba(244,63,94,0.65)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Mín 52s" });
       }
 
+      // Volume Profile (POC + topo/base da área de valor) na janela visível — zonas de
+      // suporte/resistência por VOLUME negociado. Reusa computeVolumeProfile (compartilhado).
+      if (showVolumeProfile && sorted.length > 10) {
+        const win = sorted.slice(-VISIBLE_BARS);
+        if (win.some((c) => (c.volume || 0) > 0)) {
+          const vp = computeVolumeProfile(win as unknown as Candle[]);
+          if (vp) {
+            price.createPriceLine({ price: vp.poc, color: "rgba(234,179,8,0.85)", lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "POC" });
+            price.createPriceLine({ price: vp.vah, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAH" });
+            price.createPriceLine({ price: vp.val, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAL" });
+          }
+        }
+      }
+
       // Volume só quando há dado (pares de moeda como USD/BRL vêm sem volume no Yahoo).
       if (showVolume && sorted.some((c) => (c.volume || 0) > 0)) {
         const vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
@@ -156,7 +171,7 @@ export default function B3Chart({ candles, chartType, showEma, showVolume, showB
         /* chart já descartado */
       }
     };
-  }, [candles, chartType, showEma, showVolume, showBollinger, showLongTrend]);
+  }, [candles, chartType, showEma, showVolume, showBollinger, showLongTrend, showVolumeProfile]);
 
   return (
     <div className={`relative w-full ${expanded ? "h-[78vh]" : "h-[360px]"}`}>

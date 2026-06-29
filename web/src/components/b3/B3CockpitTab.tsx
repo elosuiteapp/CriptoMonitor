@@ -29,6 +29,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
   const [showVolume, setShowVolume] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
   const [showLongTrend, setShowLongTrend] = useState(false);
+  const [showVolumeProfile, setShowVolumeProfile] = useState(false);
   const [showRsi, setShowRsi] = useState(false);
   const [showMacd, setShowMacd] = useState(false);
 
@@ -193,6 +194,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             )}
             <TogglePill label="Bollinger" active={showBollinger} onToggle={() => setShowBollinger((v) => !v)} color="bg-sky-500" desc="Bandas de Bollinger (média 20 ± 2 desvios) — volatilidade e reversão à média. Aperto das bandas = baixa volatilidade." />
             <TogglePill label="MM200 + 52 sem" active={showLongTrend} onToggle={() => setShowLongTrend((v) => !v)} color="bg-orange-500" desc="Média móvel de 200 períodos (tendência primária) + linhas de máxima e mínima das últimas 52 semanas." />
+            <TogglePill label="Volume Profile" active={showVolumeProfile} onToggle={() => setShowVolumeProfile((v) => !v)} color="bg-fuchsia-500" desc="Perfil de volume da janela visível: POC (preço com mais volume) + topo (VAH) e base (VAL) da área de valor — suportes/resistências por volume negociado." />
             <TogglePill label="RSI" active={showRsi} onToggle={() => setShowRsi((v) => !v)} color="bg-violet-500" desc="Índice de Força Relativa (14) — sobrecompra acima de 70, sobrevenda abaixo de 30. Subgráfico abaixo." />
             <TogglePill label="MACD" active={showMacd} onToggle={() => setShowMacd((v) => !v)} color="bg-blue-500" desc="Convergência/divergência de médias (12/26/9) — tendência e momento. Subgráfico abaixo." />
           </PillRow>
@@ -202,7 +204,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
             <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">Sem candles para {asset}.</div>
           ) : (
             <>
-              <B3Chart candles={candles} chartType={chartType} showEma={showEma} showVolume={showVolume} showBollinger={showBollinger} showLongTrend={showLongTrend} />
+              <B3Chart candles={candles} chartType={chartType} showEma={showEma} showVolume={showVolume} showBollinger={showBollinger} showLongTrend={showLongTrend} showVolumeProfile={showVolumeProfile} />
               <B3IndicatorPanels candles={candles} showRsi={showRsi} showMacd={showMacd} />
             </>
           )}
