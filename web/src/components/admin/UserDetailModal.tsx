@@ -205,7 +205,7 @@ export default function UserDetailModal({
                   </div>
                   <p className="-mt-1 text-[11px] text-muted-foreground sm:col-span-3">
                     Para liberar ou fazer <b>upgrade</b> de um plano, escolha o plano e deixe o status em <b>Ativa</b>. “Cancelada” derruba o acesso (volta para Free).
-                    Marque <b>Cortesia</b> para liberar sem cobrar (sua conta, afiliados, equipe) — não soma no faturamento.
+                    Marque <b>Cortesia</b> para liberar sem cobrar (sua conta, afiliados, equipe) — <b>não gera cobrança no Asaas/cartão</b> nem entra no faturamento.
                   </p>
                   <div className="sm:col-span-3 flex items-center gap-3">
                     <button type="submit" disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
@@ -228,7 +228,15 @@ export default function UserDetailModal({
                   {detail.subscriptions.map((s) => (
                     <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                       <span className="flex items-center gap-2 text-foreground">
-                        {s.plan_name} · <span className="num">{fmtBRL(s.price_cents)}</span>/mês
+                        {s.plan_name} ·{" "}
+                        {s.comp ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="num text-muted-foreground line-through">{fmtBRL(s.price_cents)}</span>
+                            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">sem cobrança</span>
+                          </span>
+                        ) : (
+                          <span><span className="num">{fmtBRL(s.price_cents)}</span>/mês</span>
+                        )}
                         {s.comp ? <Badge tone="accent">cortesia</Badge> : <GatewayBadge gateway={s.gateway} />}
                       </span>
                       <span className="flex items-center gap-3 text-xs text-muted-foreground">
