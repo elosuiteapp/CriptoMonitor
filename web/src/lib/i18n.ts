@@ -673,7 +673,7 @@ const PT: Dict = {
       cvd: { label: "CVD", desc: "Cumulative Volume Delta: fluxo agressor líquido (compras a mercado − vendas a mercado). Varejo (Binance+OKX) × institucional (Coinbase)." },
       bookPressure: { label: "Pressão do book", desc: "Pressão do book no tempo: liquidez parada bid − ask perto do preço (±2%). Verde = book comprador (mais compra), vermelho = vendedor. Diferente do CVD (fluxo executado) — a leitura forte é cruzar os dois." },
       liquidations: { label: "Liquidações (heatmap + barras)", desc: "Heatmap estimado de zonas de liquidação (magnet zones, modelo de alavancagem) + barras de liquidações realizadas embaixo." },
-      bookHeatmap: { label: "Heatmap de book", desc: "Liquidez parada REAL do order book (Binance+Coinbase+OKX somadas) ao longo do tempo, estilo Bookmap: escala térmica única — quanto mais quente/claro, maior a liquidez parada ali. O lado vem da posição: abaixo do preço = compra (suporte), acima = venda (resistência). ≠ do heatmap de liquidação (estimado): aqui é ordem limite de verdade. Janela recente (snapshots de 1 min)." },
+      bookHeatmap: { label: "Heatmap de book", desc: "Liquidez parada REAL do order book (Binance+Coinbase+OKX somadas) ao longo do tempo, estilo Bookmap: escala térmica única — quanto mais quente/claro, maior a liquidez parada ali. O lado vem da posição: abaixo do preço = compra (suporte), acima = venda (resistência). ≠ do heatmap de liquidação (estimado): aqui é ordem limite de verdade. Cobre as últimas 48h (1 coluna ≈ 2 min); em TF alto (1D+) vira uma faixa recente — veja melhor em 15M/1H/4H." },
     },
   },
   book: {
@@ -1138,7 +1138,7 @@ const EN: Dict = {
       cvd: { label: "CVD", desc: "Cumulative Volume Delta: net aggressive flow (market buys − market sells). Retail (Binance+OKX) vs institutional (Coinbase)." },
       bookPressure: { label: "Order-book pressure", desc: "Order-book pressure over time: resting bid − ask liquidity near price (±2%). Green = buy-side book (more bids), red = sell-side. Unlike CVD (executed flow) — the strong read is to cross the two." },
       liquidations: { label: "Liquidations (heatmap + bars)", desc: "Estimated heatmap of liquidation zones (magnet zones, leverage model) + realized-liquidation bars below." },
-      bookHeatmap: { label: "Book heatmap", desc: "REAL resting order-book liquidity (Binance+Coinbase+OKX summed) over time, Bookmap-style: a single thermal scale — the hotter/brighter, the more resting liquidity there. Side comes from position: below price = bids (support), above = asks (resistance). ≠ the liquidation heatmap (estimated): this is actual limit orders. Recent window (1-min snapshots)." },
+      bookHeatmap: { label: "Book heatmap", desc: "REAL resting order-book liquidity (Binance+Coinbase+OKX summed) over time, Bookmap-style: a single thermal scale — the hotter/brighter, the more resting liquidity there. Side comes from position: below price = bids (support), above = asks (resistance). ≠ the liquidation heatmap (estimated): this is actual limit orders. Covers the last 48h (1 column ≈ 2 min); on high TF (1D+) it's a recent band — best seen on 15M/1H/4H." },
     },
   },
   book: {

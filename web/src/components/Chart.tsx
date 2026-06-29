@@ -837,7 +837,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       {canUseLayers && layers.bookHeatmap && (
         <>
           <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-            {tt("Heatmap de book · liquidez parada REAL (snapshots 1 min)", "Book heatmap · real resting liquidity (1-min snapshots)")}
+            {tt("Heatmap de book · liquidez parada REAL (últimas 48h)", "Book heatmap · real resting liquidity (last 48h)")}
           </div>
           {/* Mini-medidor de desequilíbrio (OBI): bid vs ask ±2% do último snapshot.
               Pressão de CURTO PRAZO — spoofável, não é previsão (daí o title). */}
