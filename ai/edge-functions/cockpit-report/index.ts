@@ -169,8 +169,8 @@ Deno.serve(async (req) => {
   // Modo CRON: gera BTC/ETH/SOL em lote (sem usuario), protegido pelo dispatch secret.
   const dispatch = Deno.env.get("DISPATCH_SECRET");
   if (dispatch && req.headers.get("x-dispatch-secret") === dispatch) {
-    const results = [];
-    for (const a of ["BTC", "ETH", "SOL"]) results.push(await generateReport(admin, geminiKey, a));
+    // Gera os 3 em PARALELO (antes era sequencial → 3× mais lento + risco de timeout).
+    const results = await Promise.all(["BTC", "ETH", "SOL"].map((a) => generateReport(admin, geminiKey, a)));
     return json(200, { mode: "cron", results });
   }
 
