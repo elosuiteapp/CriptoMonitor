@@ -8,13 +8,14 @@ import { PillRow, TogglePill } from "../TogglePill";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 
 const TFS: { id: Timeframe; label: string }[] = [
+  { id: "15m", label: "15M" },
   { id: "1h", label: "1H" },
   { id: "4h", label: "4H" },
   { id: "1d", label: "1D" },
   { id: "1w", label: "1S" },
-  { id: "1M", label: "1M" },
+  { id: "1M", label: "1Mês" },
 ];
-const TF_WORD: Record<string, string> = { "1h": "1 hora", "4h": "4 horas", "1d": "diárias", "1w": "semanais", "1M": "mensais" };
+const TF_WORD: Record<string, string> = { "15m": "de 15 min", "1h": "de 1 hora", "4h": "de 4 horas", "1d": "diárias", "1w": "semanais", "1M": "mensais" };
 
 const LAYER_DEFS: { key: keyof SmcLayers; label: string; color: string; desc: string }[] = [
   { key: "structure", label: "Estrutura (BOS/CHoCH)", color: "bg-primary", desc: "Quebras de estrutura — BOS (continuação) e CHoCH (mudança de caráter)." },
@@ -87,28 +88,30 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
 
       {/* Gráfico SMC + timeframe + camadas */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-background/40 p-0.5">
+        {/* Timeframe à DIREITA (camadas vão ABAIXO) — mesmo padrão do Smart Money do cripto */}
+        <div className="mb-2 flex justify-end">
+          <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
             {TFS.map((t) => (
-              <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${tf === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-3 py-1 text-xs transition-colors ${tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
                 {t.label}
               </button>
             ))}
           </div>
         </div>
-        <PillRow label="Camadas:">
-          {LAYER_DEFS.map((l) => (
-            <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggle(l.key)} color={l.color} desc={l.desc} />
-          ))}
-        </PillRow>
+        {loading ? (
+          <div className="h-[380px] animate-pulse rounded-xl bg-muted/40" />
+        ) : candles.length < 60 ? (
+          <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Sem dados suficientes para {pair} em {tf}.</div>
+        ) : (
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${pair}-${tf}`} vp={vp} tf={tf} />
+        )}
+        {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do cockpit/cripto */}
         <div className="mt-2">
-          {loading ? (
-            <div className="h-[380px] animate-pulse rounded-xl bg-muted/40" />
-          ) : candles.length < 60 ? (
-            <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Sem dados suficientes para {pair} em {tf}.</div>
-          ) : (
-            <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${pair}-${tf}`} vp={vp} tf={tf} />
-          )}
+          <PillRow label="Camadas:">
+            {LAYER_DEFS.map((l) => (
+              <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggle(l.key)} color={l.color} desc={l.desc} />
+            ))}
+          </PillRow>
         </div>
         {smc && (
           <p className="mt-2 text-[11px] text-muted-foreground">

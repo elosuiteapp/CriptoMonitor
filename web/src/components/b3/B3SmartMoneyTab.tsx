@@ -15,10 +15,10 @@ import { Cell, ComingSoon, toneCls } from "./B3Shared";
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "15m", label: "15M" },
   { id: "1h", label: "1H" },
-  { id: "4h", label: "4h" },
+  { id: "4h", label: "4H" },
   { id: "1d", label: "1D" },
   { id: "1w", label: "1S" },
-  { id: "1M", label: "1M" },
+  { id: "1M", label: "1Mês" },
 ];
 const TF_LABEL: Record<string, string> = { "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1D", "1w": "1S", "1M": "1Mês" };
 const HIGHER_TF: Partial<Record<Timeframe, Timeframe>> = { "15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M" };
@@ -242,14 +242,9 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         </div>
       )}
 
-      {/* Gráfico SMC + camadas + timeframe (mesma linha, acima do gráfico — padrão do cripto) */}
+      {/* Gráfico SMC — timeframe à DIREITA (camadas ABAIXO), mesmo padrão do Smart Money cripto */}
       <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <PillRow label="Camadas:">
-            {LAYERS.map((l) => (
-              <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggleLayer(l.key)} color={l.color} desc={l.help} />
-            ))}
-          </PillRow>
+        <div className="mb-2 flex justify-end">
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
             {TFS.map((t) => (
               <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-3 py-1 text-xs transition-colors ${tf === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
@@ -258,12 +253,18 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
             ))}
           </div>
         </div>
+        {loading && candles.length === 0 ? (
+          <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
+        ) : (
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} vp={vp} tf={tf} htfLevels={htfLevels} />
+        )}
+        {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do cockpit/cripto */}
         <div className="mt-2">
-          {loading && candles.length === 0 ? (
-            <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
-          ) : (
-            <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} vp={vp} tf={tf} htfLevels={htfLevels} />
-          )}
+          <PillRow label="Camadas:">
+            {LAYERS.map((l) => (
+              <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggleLayer(l.key)} color={l.color} desc={l.help} />
+            ))}
+          </PillRow>
         </div>
         <p className="mt-2 px-1 text-[11px] text-muted-foreground">
           <span className="text-emerald-600 dark:text-emerald-400">verde</span> = demanda/discount · <span className="text-rose-600 dark:text-rose-400">vermelho</span> = oferta/premium · <span className="text-amber-500">âmbar</span> = liquidez · <span className="text-purple-400">violeta</span> = imbalance · EQH/EQL = topos/fundos iguais · setas = BOS/CHoCH. Tudo calculado dos candles.
