@@ -525,16 +525,54 @@ async function fiiDetail(ticker: string): Promise<FiiDetail | null> {
   }
 }
 
+// brapi — candles de B3 mais LIMPOS que o Yahoo (preferido p/ ações/FIIs). Chave em
+// secret BRAPI_TOKEN. 4h é agregado de 60m (agg:4). Vazio/erro/limite → [] (Yahoo assume).
+const BRAPI_TOKEN = Deno.env.get("BRAPI_TOKEN");
+const BRAPI_TF: Record<string, { range: string; interval: string; agg?: number }> = {
+  "15m": { range: "1mo", interval: "15m" },
+  "1h": { range: "3mo", interval: "60m" },
+  "4h": { range: "3mo", interval: "60m", agg: 4 },
+  "1d": { range: "max", interval: "1d" },
+  "1w": { range: "max", interval: "1wk" },
+  "1M": { range: "max", interval: "1mo" },
+};
+async function brapiCandles(ticker: string, tfKey: string): Promise<Candle[]> {
+  if (!BRAPI_TOKEN) return [];
+  const cfg = BRAPI_TF[tfKey] ?? BRAPI_TF["1d"];
+  try {
+    const url = `https://brapi.dev/api/quote/${encodeURIComponent(ticker)}?range=${cfg.range}&interval=${cfg.interval}&token=${BRAPI_TOKEN}`;
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    const hist = j?.results?.[0]?.historicalDataPrice;
+    if (!Array.isArray(hist)) return [];
+    // deno-lint-ignore no-explicit-any
+    let candles: Candle[] = hist
+      .map((d: any) => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume ?? 0 }))
+      .filter((c: Candle) => Number.isFinite(c.time) && c.close != null);
+    candles.sort((a, b) => a.time - b.time);
+    if (cfg.agg) candles = aggregate(candles, cfg.agg);
+    return candles;
+  } catch {
+    return [];
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
 
   if (body.mode === "chart" && body.ticker) {
     const label = String(body.ticker);
+    // brapi (candles mais limpos) p/ ações/FIIs; IBOV/USD-BRL e fallback seguem no Yahoo.
+    if (label !== "IBOV" && label !== "USD/BRL") {
+      const bc = await brapiCandles(label, String(body.tf));
+      if (bc.length > 1) return json({ candles: bc });
+    }
     const sym = TMAP[label] ?? label;
     const tf = TF_MAP[String(body.tf)] ?? TF_MAP["1d"];
     // full=true → histórico completo e denso (period1=0); senão, janela por range.
-    const res = (tf.full ? await yahooFull(sym, tf.interval) : await yahoo(sym, tf.range, tf.interval))?.chart?.result?.[0];
+    const res = (tf.full ? await yahooFull(sym, tf.interval) : await yahoo(sym, tf.range ?? "1mo", tf.interval))?.chart?.result?.[0];
     const ts: number[] = res?.timestamp ?? [];
     const q = res?.indicators?.quote?.[0] ?? {};
     let candles = ts
@@ -543,7 +581,7 @@ Deno.serve(async (req) => {
     // IBOV (^BVSP) é índice e não tem volume no Yahoo → enxerta o volume do ETF
     // BOVA11 (que segue o Ibovespa), casando por timestamp, pra o gráfico ter volume.
     if (label === "IBOV" || sym === "^BVSP") {
-      const vres = (tf.full ? await yahooFull("BOVA11.SA", tf.interval) : await yahoo("BOVA11.SA", tf.range, tf.interval))?.chart?.result?.[0];
+      const vres = (tf.full ? await yahooFull("BOVA11.SA", tf.interval) : await yahoo("BOVA11.SA", tf.range ?? "1mo", tf.interval))?.chart?.result?.[0];
       const vts: number[] = vres?.timestamp ?? [];
       const vvol: (number | null)[] = vres?.indicators?.quote?.[0]?.volume ?? [];
       const volByTime: Record<number, number> = {};
