@@ -34,6 +34,28 @@ export const FOREX_PAIRS: ForexPair[] = [
   { symbol: "DXY", name: "Índice do Dólar", group: "index" },
 ];
 
+// Taxas básicas de juros (aprox., % a.a.) por moeda — o CARRY/diferencial de juros é
+// o motor central do câmbio. ATUALIZAR quando os bancos centrais mexerem (mudam raro).
+export const POLICY_RATES: Record<string, number> = {
+  USD: 4.25, EUR: 2.0, GBP: 4.0, JPY: 0.5, AUD: 3.6, CAD: 2.75, CHF: 0.5, NZD: 3.0, BRL: 13.0,
+};
+export interface Carry {
+  base: string;
+  quote: string;
+  baseRate: number;
+  quoteRate: number;
+  diff: number; // base − cotação (% a.a.). >0 = comprar o par rende juros (carry positivo).
+}
+/** Carry do par = juro da moeda BASE − juro da moeda de COTAÇÃO. */
+export function pairCarry(pair: string): Carry | null {
+  if (pair === "DXY" || !pair.includes("/")) return null;
+  const [base, quote] = pair.split("/");
+  const br = POLICY_RATES[base];
+  const qr = POLICY_RATES[quote];
+  if (br == null || qr == null) return null;
+  return { base, quote, baseRate: br, quoteRate: qr, diff: br - qr };
+}
+
 export const isBrlPair = (s: string) => s.endsWith("/BRL");
 /** Casas decimais de cotação do par (JPY = 3, índice = 2, demais = 4/5). */
 export function pairDecimals(s: string): number {

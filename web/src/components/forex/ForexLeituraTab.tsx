@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchForexChart, fetchForexOverview, type ForexCandle } from "../../lib/forex";
+import { fetchForexChart, fetchForexOverview, pairCarry, type ForexCandle } from "../../lib/forex";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
@@ -100,6 +100,12 @@ function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null
   axes.push({ key: "mom", label: "Momento", score: mom, note: `RSI ${Number.isFinite(r) ? r.toFixed(0) : "—"} · MACD ${hist > 0 ? "positivo" : "negativo"}`, weight: 0.2 });
   const dAxis = dollarAxis(pair, dxyChg);
   if (dAxis) axes.push(dAxis);
+  // Carry (diferencial de juros) — vento a favor/contra de manter o par comprado.
+  const carry = pairCarry(pair);
+  if (carry) {
+    const score = clamp(carry.diff * 8);
+    axes.push({ key: "carry", label: "Carry (juros)", score, note: `${carry.diff >= 0 ? "+" : ""}${carry.diff.toFixed(2)}% a.a. (${carry.base} ${carry.baseRate.toFixed(1)}% − ${carry.quote} ${carry.quoteRate.toFixed(1)}%) — ${carry.diff >= 0 ? "vento a favor de comprar" : "vento contra (paga juros)"}`, weight: 0.14 });
+  }
 
   // Divergências
   const divergences: string[] = [];

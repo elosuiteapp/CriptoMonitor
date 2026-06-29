@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { FOREX_PAIRS, fetchForexChart, fetchForexOverview, forexSessions, pairDecimals, type ForexCandle, type ForexQuote } from "../../lib/forex";
+import { FOREX_PAIRS, fetchForexChart, fetchForexOverview, forexSessions, pairCarry, pairDecimals, type ForexCandle, type ForexQuote } from "../../lib/forex";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
@@ -59,6 +59,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   const quote = overview.find((q) => q.pair === pair);
   const meta = FOREX_PAIRS.find((p) => p.symbol === pair);
   const { sessions, weekend } = forexSessions();
+  const carry = pairCarry(pair);
   const qOf = (sym: string) => overview.find((q) => q.pair === sym);
 
   return (
@@ -117,6 +118,19 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           ))}
           <span className="text-[11px] text-muted-foreground">{weekend ? "· fim de semana (mercado fechado)" : "· horário aproximado (UTC)"}</span>
         </div>
+
+        {/* Carry / diferencial de juros — motor central do FX */}
+        {carry && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-3 text-xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Carry (juros)</span>
+            <span className={`num font-bold ${carry.diff >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{carry.diff >= 0 ? "+" : ""}{carry.diff.toFixed(2)}% a.a.</span>
+            <span className="text-muted-foreground">
+              {carry.base} {carry.baseRate.toFixed(2)}% − {carry.quote} {carry.quoteRate.toFixed(2)}% ·{" "}
+              {carry.diff >= 0 ? `comprar ${pair} RENDE juros (carry positivo)` : `comprar ${pair} PAGA juros (carry negativo — favorece vender)`}
+            </span>
+            <span className="text-[10px] text-muted-foreground/70" title="Taxas básicas aproximadas; atualizar quando os bancos centrais mexerem.">· taxas aprox.</span>
+          </div>
+        )}
 
         {/* Controles + gráfico */}
         <div className="mt-3 space-y-2">
