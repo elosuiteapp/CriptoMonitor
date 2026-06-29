@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { supabase } from "../lib/supabase";
 import type { Plan, PriceRow, SnapshotPayload } from "../lib/types";
@@ -14,6 +14,10 @@ export function useSnapshot(asset: string, plan: Plan | null) {
   const [payload, setPayload] = useState<SnapshotPayload | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // ID único por instância do hook → nomes de canal realtime distintos. Sem isso,
+  // dois consumidores do MESMO ativo/plano (ex.: cockpit + aba Smart Money) criavam
+  // canais homônimos e o 2º `.subscribe()` lançava erro (derrubava a aba).
+  const channelId = useId();
 
   const advanced = plan?.advanced_metrics ?? false;
 
@@ -109,7 +113,7 @@ export function useSnapshot(asset: string, plan: Plan | null) {
 
     const table = advanced ? "market_snapshot" : "prices_cex";
     const channel = supabase
-      .channel(`snapshot-${asset}-${plan.slug}`)
+      .channel(`snapshot-${asset}-${plan.slug}-${channelId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table, filter: `asset=eq.${asset}` },
@@ -121,7 +125,7 @@ export function useSnapshot(asset: string, plan: Plan | null) {
       active = false;
       supabase.removeChannel(channel);
     };
-  }, [asset, plan, advanced]);
+  }, [asset, plan, advanced, channelId]);
 
   return { payload, updatedAt, loading };
 }
