@@ -334,6 +334,70 @@ export interface B3FiiDetail {
   max52: number | null; // máxima 52 semanas (R$)
 }
 /** Detalhe de um FII (VP/Cota, patrimônio, nº de cotas…) via Fundamentus. null se o scrape falhar. */
+// ── Maré macro GLOBAL (FRED via macro_global) — já coletada p/ o cripto; o B3
+//    apenas LÊ a tabela compartilhada (market-wide). Liquidez do Fed, juros real,
+//    spread HY, condições financeiras (NFCI) e curva 2s10s = pano de fundo risk-on/off
+//    que move muito a bolsa BR. Isolado: nenhum arquivo do cripto é alterado. ──
+export interface B3MacroGlobal {
+  netLiquidityBusd: number | null;
+  nlChg30dPct: number | null;
+  realYield10y: number | null;
+  hySpread: number | null;
+  nfci: number | null;
+  yieldCurve: number | null;
+  m2: number | null;
+}
+const _num = (v: unknown): number | null => (v == null || v === "" ? null : Number(v));
+
+export function fetchMacroGlobal(): Promise<B3MacroGlobal | null> {
+  return b3Cached(
+    "macro-global",
+    300_000,
+    async () => {
+      try {
+        const { data, error } = await supabase
+          .from("macro_global")
+          .select("net_liquidity_busd, nl_chg_30d_pct, real_yield_10y, hy_spread, nfci, yield_curve, m2")
+          .order("ts", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error || !data) return null;
+        const d = data as Record<string, unknown>;
+        return {
+          netLiquidityBusd: _num(d.net_liquidity_busd),
+          nlChg30dPct: _num(d.nl_chg_30d_pct),
+          realYield10y: _num(d.real_yield_10y),
+          hySpread: _num(d.hy_spread),
+          nfci: _num(d.nfci),
+          yieldCurve: _num(d.yield_curve),
+          m2: _num(d.m2),
+        };
+      } catch {
+        return null;
+      }
+    },
+    (v) => v == null,
+  );
+}
+
+/** Score risk-on/off (-100..+100) da maré global — favorece (≥) ou pressiona (≤) ativos
+ *  de risco como a B3. Liquidez subindo, NFCI frouxo, HY apertado, juros real baixo e
+ *  curva normal = favorável; o oposto = adverso. */
+export function globalTideScore(mg: B3MacroGlobal | null): { score: number; label: string } | null {
+  if (!mg) return null;
+  let s = 0;
+  let n = 0;
+  if (mg.nlChg30dPct != null) { s += mg.nlChg30dPct >= 0.5 ? 1 : mg.nlChg30dPct <= -0.5 ? -1 : 0; n++; }
+  if (mg.nfci != null) { s += mg.nfci < -0.2 ? 1 : mg.nfci > 0.2 ? -1 : 0; n++; }
+  if (mg.hySpread != null) { s += mg.hySpread < 3.5 ? 1 : mg.hySpread > 5 ? -1 : 0; n++; }
+  if (mg.realYield10y != null) { s += mg.realYield10y < 1.5 ? 1 : mg.realYield10y > 2 ? -1 : 0; n++; }
+  if (mg.yieldCurve != null) { s += mg.yieldCurve < 0 ? -1 : 0; n++; }
+  if (n === 0) return null;
+  const score = Math.round((s / n) * 100);
+  const label = score >= 25 ? "favorável a risco (risk-on)" : score <= -25 ? "adverso (risk-off)" : "misto";
+  return { score, label };
+}
+
 export async function fetchB3FiiDetail(ticker: string): Promise<B3FiiDetail | null> {
   if (!isFii(ticker)) return null;
   try {

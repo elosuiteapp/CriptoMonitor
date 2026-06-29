@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchB3Macro, type B3MacroData } from "../../lib/b3";
+import { fetchB3Macro, fetchMacroGlobal, globalTideScore, type B3MacroData, type B3MacroGlobal } from "../../lib/b3";
 import { Cell, fmtNum, fmtPct, selicAA, toneCls } from "./B3Shared";
 
 /** Barra de correlação (-1 a +1) com linha central. */
@@ -43,13 +43,15 @@ function readMacro(d: B3MacroData): string {
 /** Macro & Correlações da B3: macro BR + macro global + correlações do IBOV. */
 export default function B3MacroTab() {
   const [d, setD] = useState<B3MacroData | null>(null);
+  const [mg, setMg] = useState<B3MacroGlobal | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    fetchB3Macro().then((r) => {
+    Promise.all([fetchB3Macro(), fetchMacroGlobal()]).then(([r, g]) => {
       if (!alive) return;
       setD(r);
+      setMg(g);
       setLoading(false);
     });
     return () => {
@@ -108,6 +110,33 @@ export default function B3MacroTab() {
           </div>
         </div>
       )}
+
+      {/* Maré global (Fed / EUA — FRED) — pano de fundo risk-on/off da bolsa BR */}
+      {mg &&
+        (() => {
+          const tide = globalTideScore(mg);
+          return (
+            <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">Maré global · Fed / EUA</h3>
+                {tide && (
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tide.score >= 25 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : tide.score <= -25 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>
+                    {tide.label}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                <Cell label="Liquidez Fed" value={mg.netLiquidityBusd != null ? `$${(mg.netLiquidityBusd / 1000).toFixed(2)} tri` : "—"} sub={mg.nlChg30dPct != null ? <span className={toneCls(mg.nlChg30dPct)}>{`${mg.nlChg30dPct >= 0 ? "+" : ""}${mg.nlChg30dPct.toFixed(1)}% 30d`}</span> : "var. 30d"} />
+                <Cell label="Juros real 10y" value={mg.realYield10y != null ? `${mg.realYield10y.toFixed(2)}%` : "—"} sub={mg.realYield10y != null ? (mg.realYield10y > 2 ? "alto (pressiona)" : mg.realYield10y < 1.5 ? "baixo (alivia)" : "moderado") : ""} />
+                <Cell label="Spread HY" value={mg.hySpread != null ? `${mg.hySpread.toFixed(2)}%` : "—"} sub={mg.hySpread != null ? (mg.hySpread < 3.5 ? "apertado (calmo)" : mg.hySpread > 5 ? "largo (estresse)" : "moderado") : ""} />
+                <Cell label="Cond. fin. (NFCI)" value={mg.nfci != null ? mg.nfci.toFixed(2) : "—"} sub={mg.nfci != null ? (mg.nfci < 0 ? "frouxas (risk-on)" : "apertadas") : ""} />
+                <Cell label="Curva 2s10s" value={mg.yieldCurve != null ? `${mg.yieldCurve >= 0 ? "+" : ""}${mg.yieldCurve.toFixed(2)}` : "—"} sub={mg.yieldCurve != null ? (mg.yieldCurve < 0 ? "invertida (alerta)" : "normal") : ""} />
+                <Cell label="M2 (EUA)" value={mg.m2 != null ? `$${(mg.m2 / 1000).toFixed(1)} tri` : "—"} sub="oferta de moeda" />
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">Pano de fundo global (Fed/EUA · FRED) — a bolsa BR é ativo de risco e segue a liquidez e os juros lá fora.</p>
+            </div>
+          );
+        })()}
 
       {/* Macro global */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">

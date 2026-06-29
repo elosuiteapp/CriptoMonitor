@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Macro, isFii, type B3Candle, type B3FiiFund, type B3Fund, type B3MacroData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Macro, fetchMacroGlobal, globalTideScore, isFii, type B3Candle, type B3FiiFund, type B3Fund, type B3MacroData, type B3MacroGlobal } from "../../lib/b3";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
@@ -115,7 +115,15 @@ function weightedBias(axes: Axis[]): number {
   return Math.round(clamp(den ? num / den : 0));
 }
 
-function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3Fund | null): Read | null {
+// Eixo "Maré global (Fed/EUA)" — pano de fundo risk-on/off (FRED). Vota com peso modesto.
+function globalTideAxis(mg: B3MacroGlobal | null, weight: number): Axis | null {
+  const tide = mg ? globalTideScore(mg) : null;
+  if (!mg || !tide) return null;
+  const note = `${mg.nlChg30dPct != null ? `liquidez ${mg.nlChg30dPct >= 0 ? "↑" : "↓"}` : ""}${mg.realYield10y != null ? ` · juro real ${mg.realYield10y.toFixed(1)}%` : ""}${mg.nfci != null ? ` · NFCI ${mg.nfci < 0 ? "frouxo" : "apertado"}` : ""} — ${tide.label}`;
+  return { key: "global", label: "Maré global (Fed/EUA)", score: tide.score, note, weight };
+}
+
+function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3Fund | null, mg: B3MacroGlobal | null): Read | null {
   const closes = candles.map((c) => c.close);
   if (closes.length < 25) return null;
   const price = last(closes);
@@ -142,6 +150,8 @@ function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | nu
     macroScore = clamp((sp != null ? (sp >= 0 ? 34 : -34) : 0) + (dollar != null ? (dollar <= 0 ? 33 : -33) : 0) + (vix != null ? (vix < 20 ? 33 : -33) : 0));
     axes.push({ key: "macro", label: "Macro / risco", score: macroScore, note: `${sp != null && sp >= 0 ? "EUA em alta" : "EUA em baixa"} · ${dollar != null && dollar <= 0 ? "dólar cede" : "dólar sobe"} · VIX ${vix != null ? vix.toFixed(0) : "—"}`, weight: 0.22 });
   }
+  const gAxis = globalTideAxis(mg, 0.12);
+  if (gAxis) axes.push(gAxis);
 
   let fundScore = 0;
   let hasFund = false;
@@ -173,7 +183,7 @@ function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | nu
 }
 
 /** Leitura específica de FII: tendência + estrutura + momento + renda (DY) + valuation (P/VP) + juros (Selic). */
-function computeReadFii(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3FiiFund | null): Read | null {
+function computeReadFii(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3FiiFund | null, mg: B3MacroGlobal | null): Read | null {
   const closes = candles.map((c) => c.close);
   if (closes.length < 25) return null;
   const price = last(closes);
@@ -208,6 +218,8 @@ function computeReadFii(asset: string, candles: B3Candle[], macro: B3MacroData |
     const s = selAA < 10 ? 25 : selAA < 12 ? 8 : selAA < 14 ? -8 : -22;
     axes.push({ key: "juros", label: "Juros (Selic)", score: s, note: `Selic ${selAA.toFixed(1)}% a.a. — ${selAA < 11 ? "favorece FII" : "pressiona FII"}`, weight: 0.13 });
   }
+  const gAxis = globalTideAxis(mg, 0.08);
+  if (gAxis) axes.push(gAxis);
 
   const bias = weightedBias(axes);
   const label = leanWord(bias);
@@ -303,9 +315,9 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3FundamentalsAll(), fetchB3FiisAll()]).then(([candles, macro, funds, fiis]) => {
+    Promise.all([fetchB3Chart(asset, "1d"), fetchB3Macro(), fetchB3FundamentalsAll(), fetchB3FiisAll(), fetchMacroGlobal()]).then(([candles, macro, funds, fiis, mg]) => {
       if (!alive) return;
-      setRead(isFii(asset) ? computeReadFii(asset, candles, macro, fiis[asset] ?? null) : computeRead(asset, candles, macro, funds[asset] ?? null));
+      setRead(isFii(asset) ? computeReadFii(asset, candles, macro, fiis[asset] ?? null, mg) : computeRead(asset, candles, macro, funds[asset] ?? null, mg));
       setLoading(false);
     });
     return () => {
