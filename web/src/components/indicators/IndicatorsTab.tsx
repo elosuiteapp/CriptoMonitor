@@ -231,8 +231,8 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
                 {tt(
-                  "Ímãs estruturais — paredes de opções, Max Pain, Zero Gamma, POC e bolsões de liquidação — ordenados por preço em torno do atual.",
-                  "Structural magnets — options walls, Max Pain, Zero Gamma, POC, and liquidation pockets — sorted by price around the current one.",
+                  "Ímãs estruturais — paredes de opções, Max Pain, Zero Gamma, POC, bolsões de liquidação e níveis de price action (order block, FVG, topos/fundos iguais) — ordenados por preço em torno do atual.",
+                  "Structural magnets — options walls, Max Pain, Zero Gamma, POC, liquidation pockets, and price-action levels (order block, FVG, equal highs/lows) — sorted by price around the current one.",
                 )}
               </p>
             </div>

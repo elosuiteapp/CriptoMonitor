@@ -654,6 +654,39 @@ export function computeMarketRead(
     }
   }
 
+  // Divergência de CVD institucional × varejo (QUEM está dirigindo o fluxo executado).
+  // Coinbase = institucional, Binance = varejo. Sinais opostos = acumulação/distribuição.
+  const instCvd = payload?.price?.coinbase?.cvd ?? null;
+  const retailCvd = payload?.price?.binance?.cvd ?? null;
+  if (instCvd != null && retailCvd != null && sign(instCvd) !== 0 && sign(retailCvd) !== 0 && sign(instCvd) !== sign(retailCvd))
+    divergences.push(
+      instCvd > 0
+        ? tl("CVD institucional comprador enquanto o varejo vende — acumulação institucional (tell de alta).", "Institutional CVD buying while retail sells — institutional accumulation (bullish tell).")
+        : tl("CVD institucional vendedor enquanto o varejo compra — distribuição para o varejo (tell de baixa).", "Institutional CVD selling while retail buys — distribution into retail (bearish tell)."),
+    );
+
+  // Divergência de fluxo PERP × SPOT: movimento alavancado que o spot não confirma.
+  const perpCvd = payload?.derivatives?.cvd ?? null;
+  const spotCvd = instCvd ?? retailCvd;
+  if (perpCvd != null && spotCvd != null && sign(perpCvd) !== 0 && sign(spotCvd) !== 0 && sign(perpCvd) !== sign(spotCvd))
+    divergences.push(
+      perpCvd > 0
+        ? tl("Fluxo de perp comprador, mas o spot vende — alta movida a alavancagem (frágil sem o spot confirmar).", "Perp flow buying but spot selling — leverage-driven rally (fragile without spot confirmation).")
+        : tl("Fluxo de perp vendedor, mas o spot compra — pressão alavancada que o spot não confirma.", "Perp flow selling but spot buying — leveraged pressure the spot isn't confirming."),
+    );
+
+  // Divergência de FUNDING CEX × on-chain (Hyperliquid) — ONDE a alavancagem está
+  // esticada. CEX (Coinalyze) vem em PERCENT; on-chain em fração → ×100 p/ comparar.
+  const onchainFundingRaw = payload?.onchain_perps?.funding_rate ?? null;
+  const onchainFundingPct = onchainFundingRaw != null ? onchainFundingRaw * 100 : null;
+  if (funding != null && onchainFundingPct != null && Math.abs(funding) > 0.005 && Math.abs(onchainFundingPct) > 0.005 && sign(funding) !== sign(onchainFundingPct))
+    divergences.push(
+      tl(
+        `Funding divergente — CEX ${funding >= 0 ? "+" : ""}${funding.toFixed(3)}% vs on-chain ${onchainFundingPct >= 0 ? "+" : ""}${onchainFundingPct.toFixed(3)}% (Hyperliquid): alavancagem oposta entre os ambientes, sem consenso.`,
+        `Funding diverges — CEX ${funding >= 0 ? "+" : ""}${funding.toFixed(3)}% vs on-chain ${onchainFundingPct >= 0 ? "+" : ""}${onchainFundingPct.toFixed(3)}% (Hyperliquid): opposite leverage across venues, no consensus.`,
+      ),
+    );
+
   // Divergência ESTRUTURA (price action) × TENDÊNCIA (EMA): médias e estrutura
   // discordam = mercado em transição (a estrutura costuma virar primeiro).
   if (haveStruct && haveTrend && structDir !== 0 && trendDir !== 0 && structDir !== trendDir)
@@ -769,6 +802,30 @@ export function computeMarketRead(
     for (const mg of liquidationMagnets(liqGrid, price, 1, 0.35))
       pushT(mg.price, mg.side === "short" ? tl("Liquidação de shorts ↑", "Short liquidations ↑") : tl("Liquidação de longs ↓", "Long liquidations ↓"));
   }
+  // Níveis de PRICE ACTION (SMC) como ímãs: order block, FVG e topos/fundos iguais
+  // (pools de liquidez). Só o mais próximo acima e abaixo de cada tipo p/ não inundar.
+  if (smc && price != null) {
+    const px = price;
+    const nearAB = <T>(arr: T[], getP: (x: T) => number): T[] => {
+      let above: T | null = null;
+      let below: T | null = null;
+      for (const x of arr) {
+        const p = getP(x);
+        if (!Number.isFinite(p)) continue;
+        if (p >= px) {
+          if (!above || p < getP(above)) above = x;
+        } else if (!below || p > getP(below)) below = x;
+      }
+      return [above, below].filter((x): x is T => x !== null);
+    };
+    for (const ob of nearAB(smc.orderBlocks, (o) => o.mid))
+      pushT(ob.mid, ob.bias === "bullish" ? tl("Order block (demanda)", "Order block (demand)") : tl("Order block (oferta)", "Order block (supply)"));
+    for (const fv of nearAB(smc.fvgs, (f) => f.mid))
+      pushT(fv.mid, fv.bias === "bullish" ? tl("FVG (alta)", "FVG (bullish)") : tl("FVG (baixa)", "FVG (bearish)"));
+    for (const eq of nearAB(smc.equals, (e) => e.price))
+      pushT(eq.price, eq.kind === "EQH" ? tl("Topos iguais (liquidez)", "Equal highs (liquidity)") : tl("Fundos iguais (liquidez)", "Equal lows (liquidity)"));
+  }
+
   for (const t of targets) t.strength = clamp01(1 - Math.abs(t.distPct) / 15);
   targets.sort((a, b) => b.strength - a.strength);
 
