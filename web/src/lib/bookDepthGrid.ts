@@ -165,3 +165,44 @@ export function latestBookImbalance(rows: OrderbookDepthRow[] | null, bandPct = 
   if (bid + ask <= 0) return null;
   return { bid, ask, mid, tilt: (bid - ask) / (bid + ask) };
 }
+
+/** Pressão do book numa JANELA de tempo: agrega bid vs ask (±bandPct do mid de cada
+ *  snapshot) em todos os snapshots dos últimos `sinceMs`. Permite comparar 48h × 24h
+ *  × 12h × 6h e ver de que lado a liquidez vem ganhando força. */
+export function windowedBookImbalance(rows: OrderbookDepthRow[] | null, bandPct: number, sinceMs: number): BookImbalance | null {
+  if (!rows || rows.length === 0) return null;
+  const cutoff = Date.now() - sinceMs;
+  const byTs = new Map<string, OrderbookDepthRow[]>();
+  for (const r of rows) {
+    if (new Date(r.ts).getTime() < cutoff) continue;
+    const arr = byTs.get(r.ts) ?? [];
+    arr.push(r);
+    byTs.set(r.ts, arr);
+  }
+  if (byTs.size === 0) return null;
+  let bid = 0;
+  let ask = 0;
+  let midSum = 0;
+  let midN = 0;
+  for (const snap of byTs.values()) {
+    const mids = snap.map((r) => r.mid).filter((m): m is number => m != null && Number.isFinite(m));
+    if (mids.length === 0) continue;
+    const mid = mids.reduce((a, b) => a + b, 0) / mids.length;
+    const lo = mid * (1 - bandPct);
+    const hi = mid * (1 + bandPct);
+    midSum += mid;
+    midN += 1;
+    for (const r of snap) {
+      for (const k in r.bids ?? {}) {
+        const p = Number(k);
+        if (p >= lo && p <= hi) bid += Number(r.bids[k]) || 0;
+      }
+      for (const k in r.asks ?? {}) {
+        const p = Number(k);
+        if (p >= lo && p <= hi) ask += Number(r.asks[k]) || 0;
+      }
+    }
+  }
+  if (bid + ask <= 0) return null;
+  return { bid, ask, mid: midN ? midSum / midN : 0, tilt: (bid - ask) / (bid + ask) };
+}
