@@ -34,6 +34,7 @@ export interface AxisSignal {
   strength: number; // 0..1
   detail: string;
   available: boolean;
+  weight?: number; // peso no viés — presente só nas forças que VOTAM (ausente = contexto)
 }
 
 export interface TfLean {
@@ -79,6 +80,11 @@ export interface MarketRead {
   divergences: string[];
   targets: LiquidityTarget[];
   falsifier: string | null;
+  // Gatilhos acionáveis dos dois lados (nível mais próximo acima/abaixo do preço).
+  scenarios: {
+    up: { name: string; price: number; pct: number } | null;
+    down: { name: string; price: number; pct: number } | null;
+  };
   levels: { ema50: number | null; ema200: number | null };
   price: number | null;
   hasData: boolean;
@@ -513,14 +519,22 @@ export function computeMarketRead(
   // Pesos reponderados ao incluir a Estrutura (SMC). Tendência (EMA) e Estrutura
   // (price action) são da mesma família direcional → divididas (0,22 + 0,18) p/ não
   // dobrar a contagem; fluxo institucional segue alto (0,25). Normalizado por wsum.
+  const VW = { trend: 0.22, structure: 0.18, momentum: 0.18, flow: 0.25, position: 0.12, options: 0.1 };
   const directional = [
-    { dir: trendDir, str: trendStr, w: 0.22, avail: haveTrend },
-    { dir: structDir, str: structStr, w: 0.18, avail: haveStruct },
-    { dir: momDir, str: momStr, w: 0.18, avail: haveMom },
-    { dir: flowDir, str: flowStr, w: 0.25, avail: haveFlow },
-    { dir: posDir, str: posStr, w: 0.12, avail: havePos },
-    { dir: optDir, str: optStr, w: 0.1, avail: haveOpt },
+    { dir: trendDir, str: trendStr, w: VW.trend, avail: haveTrend },
+    { dir: structDir, str: structStr, w: VW.structure, avail: haveStruct },
+    { dir: momDir, str: momStr, w: VW.momentum, avail: haveMom },
+    { dir: flowDir, str: flowStr, w: VW.flow, avail: haveFlow },
+    { dir: posDir, str: posStr, w: VW.position, avail: havePos },
+    { dir: optDir, str: optStr, w: VW.options, avail: haveOpt },
   ];
+  // Anexa o peso às forças que VOTAM (a UI usa p/ o cabo de guerra + contribuição
+  // ponderada + separar votantes×contexto). Contexto fica sem weight.
+  const WMAP: Record<string, number> = {
+    trend: VW.trend, structure: VW.structure, momentum: VW.momentum,
+    flow: VW.flow, position: VW.position, options: VW.options,
+  };
+  for (const ax of axes) if (WMAP[ax.key] != null) ax.weight = WMAP[ax.key];
   let num = 0;
   let wsum = 0;
   for (const d of directional)
@@ -831,12 +845,16 @@ export function computeMarketRead(
 
   // ── "O que muda a leitura" (falsificador): o nível-gatilho do lado oposto ──
   let falsifier: string | null = null;
+  const scenarios: MarketRead["scenarios"] = { up: null, down: null };
   if (price != null && wsum) {
     const levelList: { p: number; name: string }[] = targets.map((t) => ({ p: t.price, name: t.label }));
     if (Number.isFinite(e50)) levelList.push({ p: e50, name: "EMA50" });
     if (Number.isFinite(e200)) levelList.push({ p: e200, name: "EMA200" });
     const above = levelList.filter((l) => l.p > price).sort((a, b) => a.p - b.p)[0];
     const below = levelList.filter((l) => l.p < price).sort((a, b) => b.p - a.p)[0];
+    // Cenários acionáveis dos dois lados (gatilho mais próximo acima/abaixo).
+    if (above) scenarios.up = { name: above.name, price: above.p, pct: ((above.p - price) / price) * 100 };
+    if (below) scenarios.down = { name: below.name, price: below.p, pct: ((below.p - price) / price) * 100 };
     if (bias < 0 && above)
       falsifier = tl(
         `A leitura de baixa enfraquece se romper acima de ${above.name} (${fmtUsd0(above.p)} · +${(((above.p - price) / price) * 100).toFixed(1)}%).`,
@@ -866,6 +884,7 @@ export function computeMarketRead(
     divergences,
     targets: targets.slice(0, 6),
     falsifier,
+    scenarios,
     levels: { ema50: Number.isFinite(e50) ? e50 : null, ema200: Number.isFinite(e200) ? e200 : null },
     price,
     hasData: wsum > 0,
