@@ -14,6 +14,17 @@ export function readConviction(read: Read): number {
   return voting.length ? Math.round((agree / voting.length) * 100) : 0;
 }
 
+/** Resumo da leitura no formato do badge do header (viés + convicção + regime). */
+export function forexBadgeRead(read: Read | null): { bias: number; conviction: number; regime: { key: string; label: string; tone: Tone }; hasData: boolean } | null {
+  if (!read) return null;
+  const bias = read.bias;
+  const tone: Tone = bias >= 12 ? "bull" : bias <= -12 ? "bear" : "neutral";
+  const voting = read.axes.filter((a) => a.weight != null);
+  const agree = voting.filter((a) => Math.sign(a.score) === Math.sign(bias) && a.score !== 0).length;
+  const word = bias >= 40 ? "Tendência de alta" : bias >= 12 ? "Leve alta" : bias <= -40 ? "Tendência de baixa" : bias <= -12 ? "Leve baixa" : "Indeciso";
+  return { bias, conviction: readConviction(read), regime: { key: "forex", label: `${word} — ${agree} de ${voting.length} forças`, tone }, hasData: true };
+}
+
 /** Resumo textual da leitura (forças, divergências, níveis) p/ alimentar a IA. */
 export function buildContext(read: Read, conviction: number): string {
   const l: string[] = [`Viés geral: ${read.bias > 0 ? "+" : ""}${read.bias} (${leanWord(read.bias)}), convicção ${conviction}%.`, "", "Forças (nota −100..+100, peso no viés):"];

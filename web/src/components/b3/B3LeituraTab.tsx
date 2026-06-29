@@ -21,13 +21,24 @@ interface Scenario {
   price: number;
   pct: number;
 }
-interface Read {
+export interface Read {
   bias: number;
   label: string;
   axes: Axis[];
   sentence: string;
   divergences: string[];
   scenarios: { up: Scenario | null; down: Scenario | null };
+}
+
+/** Resumo da leitura no formato do badge do header (viés + convicção + regime). */
+export function b3BadgeRead(read: Read | null): { bias: number; conviction: number; regime: { key: string; label: string; tone: "bull" | "bear" | "neutral" }; hasData: boolean } | null {
+  if (!read) return null;
+  const bias = read.bias;
+  const tone: "bull" | "bear" | "neutral" = bias >= 12 ? "bull" : bias <= -12 ? "bear" : "neutral";
+  const voting = read.axes.filter((a) => a.weight != null);
+  const agree = voting.filter((a) => Math.sign(a.score) === Math.sign(bias) && a.score !== 0).length;
+  const word = bias >= 40 ? "Tendência de alta" : bias >= 12 ? "Leve alta" : bias <= -40 ? "Tendência de baixa" : bias <= -12 ? "Leve baixa" : "Indeciso";
+  return { bias, conviction: voting.length ? Math.round((agree / voting.length) * 100) : 0, regime: { key: "b3", label: `${word} — ${agree} de ${voting.length} forças`, tone }, hasData: true };
 }
 
 function leanWord(s: number): string {
@@ -123,7 +134,7 @@ function globalTideAxis(mg: B3MacroGlobal | null, weight: number): Axis | null {
   return { key: "global", label: "Maré global (Fed/EUA)", score: tide.score, note, weight };
 }
 
-function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3Fund | null, mg: B3MacroGlobal | null): Read | null {
+export function computeRead(asset: string, candles: B3Candle[], macro: B3MacroData | null, fund: B3Fund | null, mg: B3MacroGlobal | null): Read | null {
   const closes = candles.map((c) => c.close);
   if (closes.length < 25) return null;
   const price = last(closes);
