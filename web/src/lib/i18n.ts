@@ -169,6 +169,11 @@ export interface Dict {
     alertsLink: string;
     alertsProExpert: string;
     onchainSoon: string;
+    cbPremTitle: string;
+    cbPremTip: string;
+    cbPremBuy: string;
+    cbPremSell: string;
+    cbPremFlat: string;
     subLoading: string; // "carregando…" do subgráfico
     rangePos: string;
     zonePremium: string;
@@ -616,7 +621,12 @@ const PT: Dict = {
     alertFooter: "🔔 cria um alerta de preço no nível (toque acima → dispara na subida; abaixo → na descida). Gerencie em",
     alertsLink: "Alertas",
     alertsProExpert: "Alertas disponíveis nos planos Pro/Expert.",
-    onchainSoon: "Em breve: camada on-chain (exchange netflow, whale alerts, MVRV, unlocks) quando houver fonte de dados dedicada.",
+    onchainSoon: "A camada on-chain acima usa dados grátis (desbloqueios de tokens, liquidez de stablecoins, atividade de rede). Métricas de valuation on-chain (MVRV, SOPR, netflow de exchanges) exigem fonte paga e ficam fora por enquanto.",
+    cbPremTitle: "Fluxo institucional (prêmio Coinbase)",
+    cbPremTip: "Diferença de preço da Coinbase (institucional dos EUA) vs Binance (varejo global). Prêmio positivo = institucional comprando com mais apetite; negativo = vendendo. Sinal real de fluxo institucional — grátis. Só nas moedas listadas na Coinbase.",
+    cbPremBuy: "institucional comprando",
+    cbPremSell: "institucional vendendo",
+    cbPremFlat: "equilibrado",
     subLoading: "carregando…",
     rangePos: "Posição no range",
     zonePremium: "Premium",
@@ -1081,7 +1091,12 @@ const EN: Dict = {
     alertFooter: "🔔 creates a price alert at the level (tap above → fires on the way up; below → on the way down). Manage them in",
     alertsLink: "Alerts",
     alertsProExpert: "Alerts available on the Pro/Expert plans.",
-    onchainSoon: "Coming soon: on-chain layer (exchange netflow, whale alerts, MVRV, unlocks) once there's a dedicated data source.",
+    onchainSoon: "The on-chain layer above uses free data (token unlocks, stablecoin liquidity, network activity). On-chain valuation metrics (MVRV, SOPR, exchange netflow) require a paid source and are out of scope for now.",
+    cbPremTitle: "Institutional flow (Coinbase premium)",
+    cbPremTip: "Price gap of Coinbase (US institutions) vs Binance (global retail). Positive premium = institutions buying with more appetite; negative = selling. A real, free institutional-flow signal. Only on Coinbase-listed coins.",
+    cbPremBuy: "institutions buying",
+    cbPremSell: "institutions selling",
+    cbPremFlat: "balanced",
     subLoading: "loading…",
     rangePos: "Range position",
     zonePremium: "Premium",

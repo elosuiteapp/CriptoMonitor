@@ -7,6 +7,7 @@ import { useOpenInterest, type OiPoint } from "../hooks/useOpenInterest";
 import { usePerpContext } from "../hooks/usePerpContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { usePlan } from "../hooks/usePlan";
+import { useSnapshot } from "../hooks/useSnapshot";
 import { useStablecoins } from "../hooks/useStablecoins";
 import { useUnlocks } from "../hooks/useUnlocks";
 import { fmtCompact, fmtPct, fmtPrice, fmtUsd } from "../lib/format";
@@ -128,6 +129,8 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const stables = useStablecoins();
   // On-chain: atividade da blockchain (L1s nativos).
   const net = useNetworkActivity(smcAsset);
+  // Fluxo institucional REAL (grátis): prêmio Coinbase do snapshot (só Pro+ / moedas coletadas).
+  const { payload: snap } = useSnapshot(smcAsset, plan);
   // Estrutura SMC do timeframe MAIOR (confluência top-down).
   const [htfSmc, setHtfSmc] = useState<SmcResult | null>(null);
   // Radar de eventos SMC (in-app): avisa BOS/CHoCH/varredura novos com a aba aberta.
@@ -504,6 +507,33 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
               {net.hashrateEhs != null && (
                 <span>{t.smart.hashrate} <span className="num text-foreground">{net.hashrateEhs.toFixed(0)} EH/s</span></span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fluxo institucional REAL: prêmio Coinbase (institucional EUA) vs Binance (varejo) */}
+      {snap?.coinbase_premium != null && (
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+          <span aria-hidden className="mt-px">🏦</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-semibold text-foreground">
+              {t.smart.cbPremTitle}
+              <InfoTip text={t.smart.cbPremTip} />
+            </div>
+            <div className="text-muted-foreground">
+              <span
+                className={`num ${
+                  snap.coinbase_premium > 0.0003
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : snap.coinbase_premium < -0.0003
+                      ? "text-rose-600 dark:text-rose-400"
+                      : "text-foreground"
+                }`}
+              >
+                {snap.coinbase_premium >= 0 ? "+" : ""}{(snap.coinbase_premium * 100).toFixed(3)}%
+              </span>{" "}
+              · {snap.coinbase_premium > 0.0003 ? t.smart.cbPremBuy : snap.coinbase_premium < -0.0003 ? t.smart.cbPremSell : t.smart.cbPremFlat}
             </div>
           </div>
         </div>
