@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ColorType,
   CrosshairMode,
@@ -87,8 +87,9 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
   const vpLinesRef = useRef<IPriceLine[]>([]);
   const htfLinesRef = useRef<IPriceLine[]>([]);
   const lastViewKey = useRef<string | undefined>(undefined);
+  const [expanded, setExpanded] = useState(false); // gráfico em altura ampliada
   const { isDark } = useTheme();
-  const { t } = useT();
+  const { t, isEn } = useT();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -464,7 +465,16 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
   }, [smc, candles, layers, t]);
 
   return (
-    <div ref={wrapRef} className="relative h-[380px] w-full">
+    <div ref={wrapRef} className={`relative w-full ${expanded ? "h-[78vh]" : "h-[380px]"}`}>
+      {/* Expandir / recolher o gráfico (mais espaço p/ as camadas SMC) */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        title={expanded ? (isEn ? "Collapse chart" : "Recolher gráfico") : (isEn ? "Expand chart" : "Expandir gráfico")}
+        aria-label={expanded ? (isEn ? "Collapse chart" : "Recolher gráfico") : (isEn ? "Expand chart" : "Expandir gráfico")}
+        className="absolute right-2 top-2 z-20 rounded-md border border-border bg-background/80 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {expanded ? "⤡" : "⤢"}
+      </button>
       <canvas ref={heatRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
       <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 2 }} />
