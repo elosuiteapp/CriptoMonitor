@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { FOREX_PAIRS, fetchForexChart, fetchForexOverview, forexSessions, pairCarry, pairDecimals, type ForexCandle, type ForexQuote } from "../../lib/forex";
+import { FOREX_PAIRS, cotForPair, fetchForexChart, fetchForexCot, fetchForexOverview, forexSessions, pairCarry, pairDecimals, type ForexCandle, type ForexCot, type ForexQuote } from "../../lib/forex";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
@@ -10,6 +10,7 @@ import ForexChart from "./ForexChart";
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
 const fmtPx = (v: number | null | undefined, dec: number) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
 const fmtPct = (v: number | null | undefined) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`);
+const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v).toLocaleString("pt-BR")}`;
 
 const GROUPS: { id: string; label: string }[] = [
   { id: "major", label: "Principais" },
@@ -29,6 +30,17 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   const [candles, setCandles] = useState<ForexCandle[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [overview, setOverview] = useState<ForexQuote[]>([]);
+  const [cot, setCot] = useState<ForexCot | null>(null);
+  const cotInfo = cotForPair(pair);
+
+  useEffect(() => {
+    let alive = true;
+    setCot(null);
+    if (cotInfo) fetchForexCot(cotInfo.currency).then((c) => alive && setCot(c));
+    return () => {
+      alive = false;
+    };
+  }, [pair, cotInfo?.currency]);
 
   useEffect(() => {
     let alive = true;
@@ -150,7 +162,34 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
         </div>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">Câmbio via Twelve Data (com reserva Yahoo). Educacional — não é recomendação.</p>
+      {/* Posicionamento institucional (COT/CFTC) — o "smart money" do câmbio */}
+      {cot && cotInfo && (() => {
+        const instBias = cot.assetMgrNet * cotInfo.direction; // >0 = favorável ao par
+        const fundBias = cot.levMoneyNet * cotInfo.direction;
+        return (
+          <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Posicionamento institucional (COT) · {cotInfo.currency}{cotInfo.proxy ? " (proxy)" : ""}</h3>
+              <span className="text-[11px] text-muted-foreground">CFTC · {cot.reportDate}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Institucional (asset managers)</div>
+                <div className={`num text-lg font-bold ${instBias >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fmtSigned(cot.assetMgrNet)}</div>
+                <div className="text-[11px] text-muted-foreground">semana {fmtSigned(cot.assetMgrNetChg)} · {cot.assetMgrNet >= 0 ? "comprado" : "vendido"} em {cotInfo.currency} {instBias >= 0 ? `(favorável a ${pair})` : `(contra ${pair})`}</div>
+              </div>
+              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Fundos alavancados (hedge funds)</div>
+                <div className={`num text-lg font-bold ${fundBias >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fmtSigned(cot.levMoneyNet)}</div>
+                <div className="text-[11px] text-muted-foreground">semana {fmtSigned(cot.levMoneyNetChg)} · {cot.levMoneyNet >= 0 ? "comprado" : "vendido"} em {cotInfo.currency}</div>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">Contratos líquidos nos futuros de {cotInfo.currency} (CME, vs USD){cotInfo.proxy ? " — proxy p/ o cruzamento" : ""}.{cotInfo.direction === -1 ? ` Comprado na moeda = vendido em ${pair} (par invertido).` : ""} Atualização semanal (CFTC).</p>
+          </div>
+        );
+      })()}
+
+      <p className="text-[11px] text-muted-foreground">Câmbio via Twelve Data (com reserva Yahoo). Posicionamento via CFTC (COT). Educacional — não é recomendação.</p>
     </div>
   );
 }

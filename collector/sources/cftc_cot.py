@@ -21,8 +21,13 @@ from .base import BaseSource, TableRows
 log = get_logger("cftc_cot")
 
 _URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"
-# Contratos CME cheios (com participação institucional real): code → ativo
-_CODE_ASSET = {"133741": "BTC", "146021": "ETH"}
+# Contratos com participação institucional real (Traders in Financial Futures):
+# cripto (CME) + moedas (CME) → posicionamento p/ o módulo Forex. code → ativo.
+_CODE_ASSET = {
+    "133741": "BTC", "146021": "ETH",
+    "099741": "EUR", "097741": "JPY", "096742": "GBP", "092741": "CHF",
+    "090741": "CAD", "232741": "AUD", "112741": "NZD", "095741": "MXN", "102741": "BRL",
+}
 
 
 def _i(v) -> int:
@@ -37,10 +42,11 @@ class CftcCotSource(BaseSource):
 
     async def fetch(self, http: httpx.AsyncClient, assets: list[str]) -> list[TableRows]:
         ts = to_iso(now_utc())
+        codes = ",".join(f"'{c}'" for c in _CODE_ASSET)
         params = {
-            "$where": "cftc_contract_market_code in('133741','146021')",
+            "$where": f"cftc_contract_market_code in({codes})",
             "$order": "report_date_as_yyyy_mm_dd DESC",
-            "$limit": "20",
+            "$limit": str(len(_CODE_ASSET) * 6),  # ~6 relatórios de buffer p/ pegar o mais recente de cada
         }
         r = await http.get(_URL, params=params, timeout=25.0)
         r.raise_for_status()

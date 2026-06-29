@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchForexChart, fetchForexOverview, pairCarry, type ForexCandle } from "../../lib/forex";
+import { cotForPair, fetchForexChart, fetchForexCot, fetchForexOverview, pairCarry, type ForexCandle, type ForexCot } from "../../lib/forex";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
@@ -70,7 +70,7 @@ function dollarAxis(pair: string, dxyChg: number | null): Axis | null {
   return { key: "dollar", label: "Dólar (DXY)", score, note: `Dólar ${dir} (DXY ${dxyChg >= 0 ? "+" : ""}${dxyChg.toFixed(2)}%) — ${score >= 0 ? "favorece" : "pressiona"} ${pair}`, weight: 0.22 };
 }
 
-function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null): Read | null {
+function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null, cot: ForexCot | null, cotInfo: { currency: string; direction: 1 | -1 } | null): Read | null {
   const closes = candles.map((c) => c.close);
   if (closes.length < 25) return null;
   const price = last(closes);
@@ -105,6 +105,13 @@ function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null
   if (carry) {
     const score = clamp(carry.diff * 8);
     axes.push({ key: "carry", label: "Carry (juros)", score, note: `${carry.diff >= 0 ? "+" : ""}${carry.diff.toFixed(2)}% a.a. (${carry.base} ${carry.baseRate.toFixed(1)}% − ${carry.quote} ${carry.quoteRate.toFixed(1)}%) — ${carry.diff >= 0 ? "vento a favor de comprar" : "vento contra (paga juros)"}`, weight: 0.14 });
+  }
+  // Posicionamento institucional (COT/CFTC) — asset managers alinhados ao par.
+  if (cot && cotInfo) {
+    const instBias = cot.assetMgrNet * cotInfo.direction;
+    const str = clamp((Math.abs(cot.assetMgrNet) / (cot.openInterest || 1)) * 250, 0, 100);
+    const score = clamp(Math.sign(instBias) * str);
+    axes.push({ key: "cot", label: "Institucional (COT)", score, note: `Asset managers ${cot.assetMgrNet >= 0 ? "comprados" : "vendidos"} em ${cotInfo.currency} (líq. ${cot.assetMgrNet >= 0 ? "+" : ""}${Math.round(cot.assetMgrNet).toLocaleString("pt-BR")}) — ${score >= 0 ? "favorável" : "contra"} ${pair}`, weight: 0.18 });
   }
 
   // Divergências
@@ -187,10 +194,11 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview()]).then(([candles, ov]) => {
+    const cotInfo = cotForPair(pair);
+    Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview(), cotInfo ? fetchForexCot(cotInfo.currency) : Promise.resolve(null)]).then(([candles, ov, cot]) => {
       if (!alive) return;
       const dxy = ov.find((q) => q.pair === "DXY")?.changePct ?? null;
-      setRead(computeRead(pair, candles, dxy));
+      setRead(computeRead(pair, candles, dxy, cot, cotInfo));
       setLoading(false);
     });
     return () => {

@@ -56,6 +56,59 @@ export function pairCarry(pair: string): Carry | null {
   return { base, quote, baseRate: br, quoteRate: qr, diff: br - qr };
 }
 
+// ── Posicionamento institucional (COT/CFTC) — futuros de FX na CME (lê a tabela
+//    compartilhada cot_positioning; o COT é "moeda vs USD"). ──────────────────
+export interface ForexCot {
+  currency: string;
+  reportDate: string;
+  assetMgrNet: number; // institucional ("real money") líquido
+  assetMgrNetChg: number; // variação semanal
+  levMoneyNet: number; // fundos alavancados (hedge funds) líquido
+  levMoneyNetChg: number;
+  openInterest: number;
+}
+/** Moeda e direção do COT relevantes p/ o par. Como o COT é "moeda vs USD":
+ *  XXX/USD → COT de XXX (direção +1); USD/XXX → COT de XXX (direção −1, invertido);
+ *  cross → COT da base (proxy, +1). DXY → sem COT único. */
+export function cotForPair(pair: string): { currency: string; direction: 1 | -1; proxy: boolean } | null {
+  if (pair === "DXY" || !pair.includes("/")) return null;
+  const [base, quote] = pair.split("/");
+  if (quote === "USD") return { currency: base, direction: 1, proxy: false };
+  if (base === "USD") return { currency: quote, direction: -1, proxy: false };
+  return { currency: base, direction: 1, proxy: true }; // cross: proxy pela moeda base
+}
+export function fetchForexCot(currency: string): Promise<ForexCot | null> {
+  return cached(
+    `cot:${currency}`,
+    600_000,
+    async () => {
+      try {
+        const { data, error } = await supabase
+          .from("cot_positioning")
+          .select("asset, report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, open_interest")
+          .eq("asset", currency)
+          .order("ts", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error || !data) return null;
+        const d = data as Record<string, unknown>;
+        return {
+          currency,
+          reportDate: String(d.report_date ?? "").slice(0, 10),
+          assetMgrNet: Number(d.asset_mgr_net ?? 0),
+          assetMgrNetChg: Number(d.asset_mgr_net_chg ?? 0),
+          levMoneyNet: Number(d.lev_money_net ?? 0),
+          levMoneyNetChg: Number(d.lev_money_net_chg ?? 0),
+          openInterest: Number(d.open_interest ?? 0),
+        };
+      } catch {
+        return null;
+      }
+    },
+    (v) => v == null,
+  );
+}
+
 export const isBrlPair = (s: string) => s.endsWith("/BRL");
 /** Casas decimais de cotação do par (JPY = 3, índice = 2, demais = 4/5). */
 export function pairDecimals(s: string): number {
