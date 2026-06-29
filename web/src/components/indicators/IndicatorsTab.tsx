@@ -108,8 +108,8 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
         <h2 className="text-lg font-bold text-foreground">{tt("Leitura do Mercado", "Market Read")} · {asset}</h2>
         <p className="text-xs text-muted-foreground">
           {tt(
-            "Tendência, fluxo institucional, opções, posicionamento e liquidez sintetizados em uma leitura só — multi-timeframe, com as forças à mostra e o que mudaria a leitura. Leitura do agora, não previsão.",
-            "Trend, institutional flow, options, positioning, and liquidity synthesized into a single read — multi-timeframe, with the forces on display and what would flip it. A read on the now, not a forecast.",
+            "Tendência, estrutura (price action), fluxo institucional, opções, posicionamento, liquidez e sentimento sintetizados em uma leitura só — multi-timeframe, com as forças à mostra e o que mudaria a leitura. Leitura do agora, não previsão.",
+            "Trend, structure (price action), institutional flow, options, positioning, liquidity, and sentiment synthesized into a single read — multi-timeframe, with the forces on display and what would flip it. A read on the now, not a forecast.",
           )}
         </p>
       </div>

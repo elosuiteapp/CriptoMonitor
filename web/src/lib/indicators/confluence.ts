@@ -10,6 +10,7 @@ import { getLocale } from "../../hooks/useLocale";
 import { buildLiquidationGrid, liquidationMagnets } from "../liquidationModel";
 import type { Candle } from "../marketData";
 import { computeVolumeProfile } from "../marketData";
+import { computeSmc } from "../smc";
 import type { SnapshotPayload } from "../types";
 import { adx, atr, ema, last, macd, percentileRank, rsi } from "./ta";
 
@@ -135,6 +136,14 @@ export function computeMarketRead(
   const axes: AxisSignal[] = [];
   const divergences: string[] = [];
 
+  // Estrutura de mercado (SMC) reaproveitada da aba Smart Money — price action das
+  // velas diárias (swing/interno + BOS/CHoCH + zonas de liquidez + premium/discount).
+  const smc = closes.length >= 60 ? computeSmc(candles) : null;
+  // Capturados nos eixos de contexto, lidos depois nas divergências (pós-viés).
+  let liqTilt: number | null = null;
+  let fng: number | null = null;
+  let zoneKey: "premium" | "discount" | "equilibrium" | null = null;
+
   // ── Eixo TENDÊNCIA (EMA50/200) ──────────────────────────────────────────
   const e50 = last(ema(closes, 50));
   const e200 = last(ema(closes, 200));
@@ -158,6 +167,33 @@ export function computeMarketRead(
     });
   } else {
     axes.push({ key: "trend", label: tl("Tendência", "Trend"), group: tl("tendência", "trend"), dir: 0, strength: 0, available: false, detail: tl("Histórico insuficiente", "Not enough history") });
+  }
+
+  // ── Eixo ESTRUTURA (SMC: swing + BOS/CHoCH) — price action, VOTA ────────
+  // Complementar à Tendência (EMA): a estrutura vira na MUDANÇA DE CARÁTER (CHoCH),
+  // captando reversão antes do cruzamento de médias. Peso médio (reponderado abaixo).
+  let structDir: Dir = 0;
+  let structStr = 0;
+  const haveStruct = !!(smc && smc.swingBias);
+  if (smc && smc.swingBias) {
+    structDir = smc.swingBias === "bullish" ? 1 : -1;
+    const internalAgrees = smc.internalBias != null && smc.internalBias === smc.swingBias;
+    structStr = clamp01(internalAgrees ? 0.85 : 0.55);
+    const dw = (b: "bullish" | "bearish") => (b === "bullish" ? tl("alta", "up") : tl("baixa", "down"));
+    axes.push({
+      key: "structure",
+      label: tl("Estrutura (price action)", "Structure (price action)"),
+      group: tl("tendência", "trend"),
+      dir: structDir,
+      strength: structStr,
+      available: true,
+      detail:
+        `${tl("Swing", "Swing")} ${dw(smc.swingBias)}` +
+        (smc.lastSwing ? ` · ${smc.lastSwing.type} ${dw(smc.lastSwing.bias)}` : "") +
+        (smc.internalBias ? ` · ${tl("interno", "internal")} ${dw(smc.internalBias)}` : ""),
+    });
+  } else {
+    axes.push({ key: "structure", label: tl("Estrutura (price action)", "Structure (price action)"), group: tl("tendência", "trend"), dir: 0, strength: 0, available: false, detail: tl("Histórico insuficiente", "Not enough history") });
   }
 
   // ── Eixo MOMENTO (MACD + RSI) ───────────────────────────────────────────
@@ -347,6 +383,33 @@ export function computeMarketRead(
     });
   }
 
+  // ── Contexto: LIQUIDAÇÕES RECENTES (fluxo forçado long×short; não vota) ──
+  const liqL = payload?.derivatives?.liq_long_usd ?? null;
+  const liqS = payload?.derivatives?.liq_short_usd ?? null;
+  if ((liqL != null && liqL > 0) || (liqS != null && liqS > 0)) {
+    const l = liqL ?? 0;
+    const s = liqS ?? 0;
+    const tot = l + s;
+    // tilt > 0 = mais shorts liquidados (compra forçada / squeeze de baixa);
+    // tilt < 0 = mais longs liquidados (venda forçada / capitulação alavancada).
+    liqTilt = tot > 0 ? (s - l) / tot : 0;
+    axes.push({
+      key: "liquidations",
+      label: tl("Liquidações recentes", "Recent liquidations"),
+      group: tl("posição", "position"),
+      dir: 0,
+      strength: clamp01(Math.abs(liqTilt)),
+      available: true,
+      detail:
+        `${tl("Longs", "Longs")} ${fmtUsd0(l)} · ${tl("Shorts", "Shorts")} ${fmtUsd0(s)} — ` +
+        (Math.abs(liqTilt) < 0.2
+          ? tl("equilibrado", "balanced")
+          : liqTilt > 0
+            ? tl("cascata de shorts (forçando compra)", "short cascade (forced buying)")
+            : tl("cascata de longs (forçando venda)", "long cascade (forced selling)")),
+    });
+  }
+
   // ── Contexto: MARÉ MACRO (risk-on/off via VIX/DXY/juros; não vota no viés) ──
   let macroGate: number | null = null;
   if (macro) {
@@ -404,12 +467,58 @@ export function computeMarketRead(
     }
   }
 
+  // ── Contexto: SENTIMENTO (Fear & Greed; contrarian, não vota) ──────────────
+  const fngRaw = payload?.sentiment?.fng_value ?? null;
+  if (fngRaw != null && Number.isFinite(fngRaw)) {
+    fng = fngRaw;
+    const cls =
+      fng <= 25 ? tl("medo extremo", "extreme fear") : fng < 45 ? tl("medo", "fear") : fng <= 55 ? tl("neutro", "neutral") : fng < 75 ? tl("ganância", "greed") : tl("ganância extrema", "extreme greed");
+    const contr = fng <= 25 ? tl(" · contrarian de alta", " · contrarian bullish") : fng >= 75 ? tl(" · contrarian de baixa", " · contrarian bearish") : "";
+    axes.push({
+      key: "sentiment",
+      label: tl("Sentimento (Fear & Greed)", "Sentiment (Fear & Greed)"),
+      group: tl("caráter", "character"),
+      dir: 0,
+      strength: clamp01(Math.abs(fng - 50) / 50),
+      available: true,
+      detail: `F&G ${fng.toFixed(0)} — ${cls}${contr}`,
+    });
+  }
+
+  // ── Contexto: LOCALIZAÇÃO premium/discount (SMC; não vota) ─────────────────
+  // Onde o preço está no range (caro × barato) — ortogonal à direção: diz se o
+  // movimento entra em zona de realização (premium) ou de reação (discount).
+  if (smc && price != null) {
+    const range = smc.trailingTop - smc.trailingBottom;
+    const posPct = range > 0 ? clamp01((price - smc.trailingBottom) / range) : 0.5;
+    zoneKey = price >= smc.premium.bottom ? "premium" : price <= smc.discount.top ? "discount" : "equilibrium";
+    const zlabel =
+      zoneKey === "premium"
+        ? tl("zona premium (caro) — favorece venda/realização", "premium zone (expensive) — favors selling/profit-taking")
+        : zoneKey === "discount"
+          ? tl("zona discount (barato) — favorece compra", "discount zone (cheap) — favors buying")
+          : tl("equilíbrio (meio do range)", "equilibrium (mid-range)");
+    axes.push({
+      key: "location",
+      label: tl("Localização (premium/discount)", "Location (premium/discount)"),
+      group: tl("posição", "position"),
+      dir: 0,
+      strength: clamp01(Math.abs(posPct - 0.5) * 2),
+      available: true,
+      detail: `${tl("Preço a", "Price at")} ${(posPct * 100).toFixed(0)}% ${tl("do range", "of range")} — ${zlabel}`,
+    });
+  }
+
   // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
+  // Pesos reponderados ao incluir a Estrutura (SMC). Tendência (EMA) e Estrutura
+  // (price action) são da mesma família direcional → divididas (0,22 + 0,18) p/ não
+  // dobrar a contagem; fluxo institucional segue alto (0,25). Normalizado por wsum.
   const directional = [
-    { dir: trendDir, str: trendStr, w: 0.28, avail: haveTrend },
-    { dir: momDir, str: momStr, w: 0.2, avail: haveMom },
-    { dir: flowDir, str: flowStr, w: 0.27, avail: haveFlow },
-    { dir: posDir, str: posStr, w: 0.15, avail: havePos },
+    { dir: trendDir, str: trendStr, w: 0.22, avail: haveTrend },
+    { dir: structDir, str: structStr, w: 0.18, avail: haveStruct },
+    { dir: momDir, str: momStr, w: 0.18, avail: haveMom },
+    { dir: flowDir, str: flowStr, w: 0.25, avail: haveFlow },
+    { dir: posDir, str: posStr, w: 0.12, avail: havePos },
     { dir: optDir, str: optStr, w: 0.1, avail: haveOpt },
   ];
   let num = 0;
@@ -543,6 +652,56 @@ export function computeMarketRead(
       else if (rel <= -8)
         divergences.push(tl(`${payload.asset} ficando para trás — ${rel.toFixed(0)}pp vs BTC em 7d: fraqueza relativa (capital preferindo o BTC).`, `${payload.asset} lagging — ${rel.toFixed(0)}pp vs BTC over 7d: relative weakness (capital favoring BTC).`));
     }
+  }
+
+  // Divergência ESTRUTURA (price action) × TENDÊNCIA (EMA): médias e estrutura
+  // discordam = mercado em transição (a estrutura costuma virar primeiro).
+  if (haveStruct && haveTrend && structDir !== 0 && trendDir !== 0 && structDir !== trendDir)
+    divergences.push(
+      tl(
+        "Tendência (EMA) e estrutura (price action) divergem — mercado em transição; a estrutura costuma virar antes da média.",
+        "Trend (EMA) and structure (price action) disagree — market in transition; structure usually turns before the average.",
+      ),
+    );
+
+  // Mudança de caráter recente (CHoCH no último swing) — possível início de reversão.
+  if (smc?.lastSwing && smc.lastSwing.type === "CHoCH" && candles.length >= 30 && (smc.lastSwing.time as number) >= (candles[candles.length - 30].time as number))
+    divergences.push(
+      smc.lastSwing.bias === "bullish"
+        ? tl("Mudança de caráter (CHoCH) de alta no último swing — possível início de reversão para cima.", "Bullish change of character (CHoCH) on the last swing — possible upside reversal starting.")
+        : tl("Mudança de caráter (CHoCH) de baixa no último swing — possível início de reversão para baixo.", "Bearish change of character (CHoCH) on the last swing — possible downside reversal starting."),
+    );
+
+  // Localização premium/discount contra o viés (entra em zona de exaustão/reação).
+  if (zoneKey && wsum && bias !== 0) {
+    if (bias > 0 && zoneKey === "premium")
+      divergences.push(tl("Alta entrando em zona premium (cara) — risco de exaustão / realização de lucro.", "Rally pushing into the premium zone (expensive) — exhaustion / profit-taking risk."));
+    else if (bias < 0 && zoneKey === "discount")
+      divergences.push(tl("Baixa em zona discount (barata) — risco de reação compradora / repique.", "Decline in the discount zone (cheap) — risk of a buy-side reaction / bounce."));
+  }
+
+  // Liquidações forçadas confirmando exaustão do movimento (combustível acabando).
+  if (liqTilt != null && wsum && bias !== 0) {
+    if (bias < 0 && liqTilt < -0.3)
+      divergences.push(tl("Queda com cascata de longs liquidados — capitulação alavancada; a baixa pode estar se exaurindo.", "Drop with a long-liquidation cascade — leveraged capitulation; the decline may be exhausting."));
+    else if (bias > 0 && liqTilt > 0.3)
+      divergences.push(tl("Alta com shorts sendo liquidados — short squeeze em curso: pode esticar, mas é movimento frágil.", "Rally with shorts being liquidated — short squeeze underway: it can stretch, but it's a fragile move."));
+  }
+
+  // Sentimento em extremo (sinal contrarian) — euforia/pânico viram zona de virada.
+  if (fng != null) {
+    if (fng <= 20) divergences.push(tl("Medo extremo no sentimento — zona histórica de exaustão de venda (sinal contrarian de alta).", "Extreme fear in sentiment — historically a sell-exhaustion zone (contrarian bullish)."));
+    else if (fng >= 80) divergences.push(tl("Ganância extrema no sentimento — euforia, risco elevado de topo (contrarian de baixa).", "Extreme greed in sentiment — euphoria, elevated top risk (contrarian bearish)."));
+  }
+
+  // Varredura de liquidez recente (stop hunt) — precursor clássico de reversão.
+  if (smc && smc.liquidity.length) {
+    const sweepBuy = smc.liquidity.find((p) => p.sweptRecently && p.side === "buy"); // stops de vendidos acima
+    const sweepSell = smc.liquidity.find((p) => p.sweptRecently && p.side === "sell"); // stops de comprados abaixo
+    if (sweepBuy)
+      divergences.push(tl("Varredura de liquidez recente ACIMA (stop hunt) — buscou stops de vendidos; atenção a reversão para baixo.", "Recent liquidity sweep ABOVE (stop hunt) — grabbed sellers' stops; watch for a reversal down."));
+    else if (sweepSell)
+      divergences.push(tl("Varredura de liquidez recente ABAIXO (stop hunt) — buscou stops de comprados; atenção a reversão para cima.", "Recent liquidity sweep BELOW (stop hunt) — grabbed buyers' stops; watch for a reversal up."));
   }
 
   // ── REGIME nomeado ──────────────────────────────────────────────────────
