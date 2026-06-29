@@ -4,8 +4,11 @@ import { supabase } from "../lib/supabase";
 import type { OrderbookDepthRow, Plan } from "../lib/types";
 
 const WINDOW_MS = 48 * 60 * 60 * 1000; // 48h = toda a retenção (heatmap cobre o histórico, não só 2h)
-const BUCKET_SECONDS = 120; // funde exchanges + downsample no servidor → 1 coluna / 2 min
-const REFRESH_MS = 120_000; // re-busca a cada 2 min (alinhado ao bucket; book macro muda devagar)
+// Bucket de 4 min → 48h = 720 colunas. CRÍTICO: o PostgREST corta a resposta em
+// ~1000 linhas (config "Max rows"); a 120s davam 1440 linhas e as ~440 MAIS RECENTES
+// eram cortadas (a RPC ordena asc) → o heatmap só mostrava tempo antigo. 720 < 1000.
+const BUCKET_SECONDS = 240;
+const REFRESH_MS = 120_000; // re-busca a cada 2 min (book macro muda devagar)
 
 /** Escada do book (heatmap de liquidez parada) — Pro+. Só busca quando a camada
  *  está LIGADA (evita payload à toa). Janela rolante de 48h via RPC que FUNDE as 3

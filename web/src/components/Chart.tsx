@@ -855,14 +855,11 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       )}
       {canUseLayers && layers.bookHeatmap && (
         <>
-          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-            {tt("Heatmap de book · liquidez parada REAL (últimas 48h)", "Book heatmap · real resting liquidity (last 48h)")}
-          </div>
           {/* Pressão do book (±2%) por janela: 48h/24h/12h/6h. Cada barra = bid×ask
               somados na janela. Compara prazos p/ ver de que lado vem ganhando força.
               SPOOFÁVEL — inclina as chances, não é previsão (daí o title). */}
           <div
-            className="absolute left-2 top-8 z-10 space-y-0.5 rounded bg-background/85 px-1.5 py-1 text-[9px] text-muted-foreground"
+            className="absolute left-2 top-2 z-10 space-y-0.5 rounded bg-background/85 px-1.5 py-1 text-[9px] text-muted-foreground"
             title={tt(
               "Pressão do book (bid vs ask ±2% do preço) por janela de tempo. Janela curta reage mais rápido. SPOOFÁVEL — inclina as chances, não é previsão.",
               "Order-book pressure (bid vs ask within ±2% of price) per time window. Shorter windows react faster. SPOOFABLE — tilts the odds, not a prediction.",
