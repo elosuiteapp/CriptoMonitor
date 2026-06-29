@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchForexCalendar, fetchForexChart, fetchForexOverview, forexSessions, pairCurrencies, pairDecimals, type ForexCandle, type ForexEvent, type ForexQuote } from "../../lib/forex";
 import MacroGlobalPanel from "../MacroGlobalPanel";
+import MacroUsPanel from "../MacroUsPanel";
 import ForexCarryRanking from "./ForexCarryRanking";
 import ForexCorrelationMatrix from "./ForexCorrelationMatrix";
 
@@ -182,6 +183,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Carry trade — ranking de juros (onde está o melhor carry) */}
       <ForexCarryRanking />
+
+      {/* Macro EUA (FMP): curva de juros do Tesouro + inflação/desemprego/Fed/PIB */}
+      <MacroUsPanel />
 
       {/* Maré de liquidez macro global (Fed/FRED) — motor do dólar e de todo o câmbio */}
       <MacroGlobalPanel />

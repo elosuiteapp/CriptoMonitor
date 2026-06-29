@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchB3Macro, fetchMacroGlobal, globalTideScore, type B3MacroData, type B3MacroGlobal } from "../../lib/b3";
 import { supabase } from "../../lib/supabase";
+import MacroUsPanel from "../MacroUsPanel";
 import { Cell, fmtNum, fmtPct, selicAA, toneCls } from "./B3Shared";
 
 // ── Calendário econômico (helpers duplicados p/ isolar o módulo B3) ───────────
@@ -174,6 +175,9 @@ export default function B3MacroTab() {
             </div>
           );
         })()}
+
+      {/* Macro EUA (FMP): curva de juros do Tesouro + inflação/desemprego/Fed/PIB */}
+      <MacroUsPanel />
 
       {/* Macro global */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
