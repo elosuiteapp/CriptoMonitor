@@ -150,7 +150,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           <PillRow label="Indicadores:">
             <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 — tendência e suportes/resistências dinâmicos." />
             <TogglePill label="Bollinger" active={showBollinger} onToggle={() => setShowBollinger((v) => !v)} color="bg-sky-500" desc="Bandas de Bollinger (20 ± 2σ) — volatilidade e reversão à média." />
-            <TogglePill label="Volume Profile" active={showVolumeProfile} onToggle={() => setShowVolumeProfile((v) => !v)} color="bg-fuchsia-500" desc="Perfil de volume da janela visível: POC + topo (VAH) e base (VAL) da área de valor." />
+            <TogglePill label="Perfil de preço (POC)" active={showVolumeProfile} onToggle={() => setShowVolumeProfile((v) => !v)} color="bg-fuchsia-500" desc="POC + área de valor (VAH/VAL) por TEMPO no preço — FX não tem volume real, então usamos tempo-no-preço (TPO)." />
           </PillRow>
           {chartLoading ? (
             <div className="h-[360px] animate-pulse rounded-xl bg-muted/40" />

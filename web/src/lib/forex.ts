@@ -155,6 +155,37 @@ export function pairDecimals(s: string): number {
   return 5;
 }
 
+// ── Perfil tempo-no-preço (TPO) — FX NÃO tem volume real (vem 0), então o
+//    "Volume Profile" por volume degenera. Aqui contamos a PRESENÇA de cada vela
+//    em cada faixa de preço (low→high) = tempo gasto em cada nível. POC = preço de
+//    maior aceitação; VAH/VAL = área de valor (70%). Mesma forma {poc,vah,val}. ──
+export function computeForexProfile(candles: ForexCandle[], bins = 48): { poc: number; vah: number; val: number } | null {
+  if (candles.length < 2) return null;
+  const hi = Math.max(...candles.map((c) => c.high));
+  const lo = Math.min(...candles.map((c) => c.low));
+  if (!(hi > lo)) return null;
+  const width = (hi - lo) / bins;
+  const count = new Array<number>(bins).fill(0);
+  for (const c of candles) {
+    let a = Math.floor((c.low - lo) / width);
+    let b = Math.floor((c.high - lo) / width);
+    a = Math.max(0, Math.min(bins - 1, a));
+    b = Math.max(0, Math.min(bins - 1, b));
+    for (let i = a; i <= b; i++) count[i] += 1;
+  }
+  let maxI = 0;
+  for (let i = 1; i < bins; i++) if (count[i] > count[maxI]) maxI = i;
+  const total = count.reduce((s, v) => s + v, 0);
+  let loI = maxI, hiI = maxI, acc = count[maxI];
+  while (acc < total * 0.7 && (loI > 0 || hiI < bins - 1)) {
+    const below = loI > 0 ? count[loI - 1] : -1;
+    const above = hiI < bins - 1 ? count[hiI + 1] : -1;
+    if (above >= below) acc += count[++hiI];
+    else acc += count[--loI];
+  }
+  return { poc: lo + (maxI + 0.5) * width, vah: lo + (hiI + 1) * width, val: lo + loI * width };
+}
+
 // ── Cache com TTL (forex-only) — evita refetch a cada troca de aba/par ──
 const _cache = new Map<string, { t: number; p: Promise<unknown> }>();
 function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, isEmpty: (v: T) => boolean): Promise<T> {

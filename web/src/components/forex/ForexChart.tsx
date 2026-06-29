@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 
 import { useTheme } from "../../hooks/useTheme";
-import type { ForexCandle } from "../../lib/forex";
+import { computeForexProfile, type ForexCandle } from "../../lib/forex";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
 import { bollinger, ema } from "../../lib/indicators/ta";
-import { computeVolumeProfile, type Candle, type ChartType } from "../../lib/marketData";
+import { type ChartType } from "../../lib/marketData";
 
 const UP = "#10b981";
 const DOWN = "#f43f5e";
@@ -107,14 +107,12 @@ export default function ForexChart({ candles, chartType, decimals, showEma, show
         overlayLine(bb.lower, "rgba(56,189,248,0.7)");
       }
       if (showVolumeProfile && sorted.length > 10) {
-        const win = sorted.slice(-VISIBLE_BARS);
-        if (win.some((c) => (c.volume || 0) > 0)) {
-          const vp = computeVolumeProfile(win as unknown as Candle[]);
-          if (vp) {
-            price.createPriceLine({ price: vp.poc, color: "rgba(234,179,8,0.85)", lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "POC" });
-            price.createPriceLine({ price: vp.vah, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAH" });
-            price.createPriceLine({ price: vp.val, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAL" });
-          }
+        // FX não tem volume → perfil tempo-no-preço (TPO). Funciona com OHLC puro.
+        const vp = computeForexProfile(sorted.slice(-VISIBLE_BARS));
+        if (vp) {
+          price.createPriceLine({ price: vp.poc, color: "rgba(234,179,8,0.85)", lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "POC" });
+          price.createPriceLine({ price: vp.vah, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAH" });
+          price.createPriceLine({ price: vp.val, color: "rgba(168,85,247,0.6)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "VAL" });
         }
       }
 

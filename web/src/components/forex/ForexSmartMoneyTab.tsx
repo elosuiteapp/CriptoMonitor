@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchForexChart, pairDecimals } from "../../lib/forex";
+import { usePersistentState } from "../../hooks/usePersistentState";
+import { computeForexProfile, fetchForexChart, pairDecimals } from "../../lib/forex";
 import { computeSmc, type SmcResult } from "../../lib/smc";
-import type { Candle } from "../../lib/marketData";
+import type { Candle, Timeframe } from "../../lib/marketData";
 import { PillRow, TogglePill } from "../TogglePill";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
+
+const TFS: { id: Timeframe; label: string }[] = [
+  { id: "1h", label: "1H" },
+  { id: "4h", label: "4H" },
+  { id: "1d", label: "1D" },
+  { id: "1w", label: "1S" },
+  { id: "1M", label: "1M" },
+];
+const TF_WORD: Record<string, string> = { "1h": "1 hora", "4h": "4 horas", "1d": "diárias", "1w": "semanais", "1M": "mensais" };
 
 const LAYER_DEFS: { key: keyof SmcLayers; label: string; color: string; desc: string }[] = [
   { key: "structure", label: "Estrutura (BOS/CHoCH)", color: "bg-primary", desc: "Quebras de estrutura — BOS (continuação) e CHoCH (mudança de caráter)." },
@@ -13,12 +23,14 @@ const LAYER_DEFS: { key: keyof SmcLayers; label: string; color: string; desc: st
   { key: "liquidity", label: "Liquidez", color: "bg-amber-500", desc: "Pools de liquidez (stops) — alvos de varredura/stop hunt." },
   { key: "equal", label: "Topos/Fundos iguais", color: "bg-fuchsia-500", desc: "EQH/EQL — níveis iguais que atraem liquidez." },
   { key: "zones", label: "Premium/Discount", color: "bg-violet-500", desc: "Zonas premium (caro), equilíbrio e discount (barato) do range." },
-  { key: "volumeProfile", label: "Volume Profile", color: "bg-rose-500", desc: "POC + topo/base da área de valor por volume negociado." },
+  { key: "volumeProfile", label: "Perfil de preço (POC)", color: "bg-rose-500", desc: "POC + área de valor por TEMPO no preço (FX não tem volume real; usamos tempo-no-preço / TPO)." },
 ];
 
 /** Smart Money do Forex — estrutura de mercado (SMC) reusando o motor e o gráfico
- *  compartilhados. Sem WebSocket (FX não tem feed Binance) e sem CVD/liquidação. */
+ *  compartilhados. Sem WebSocket (FX não tem feed Binance) e sem CVD/liquidação.
+ *  Volume Profile = perfil tempo-no-preço (FX vem sem volume). */
 export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
+  const [tf, setTf] = usePersistentState<Timeframe>("cm.fx-smc-tf", "1d");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
   const [layers, setLayers] = useState<SmcLayers>({ ...DEFAULT_LAYERS, liquidations: false, cvd: false, htf: false });
@@ -27,7 +39,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchForexChart(pair, "1d").then((c) => {
+    fetchForexChart(pair, tf).then((c) => {
       if (!alive) return;
       setCandles(c as unknown as Candle[]);
       setLoading(false);
@@ -35,9 +47,10 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
     return () => {
       alive = false;
     };
-  }, [pair]);
+  }, [pair, tf]);
 
   const smc: SmcResult | null = useMemo(() => (candles.length >= 60 ? computeSmc(candles) : null), [candles]);
+  const vp = useMemo(() => (layers.volumeProfile && candles.length > 10 ? computeForexProfile(candles.slice(-150)) : null), [candles, layers.volumeProfile]);
   const dec = pairDecimals(pair);
   const fx = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 
@@ -72,8 +85,17 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
         </div>
       </div>
 
-      {/* Gráfico SMC + camadas */}
+      {/* Gráfico SMC + timeframe + camadas */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-background/40 p-0.5">
+            {TFS.map((t) => (
+              <button key={t.id} onClick={() => setTf(t.id)} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${tf === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <PillRow label="Camadas:">
           {LAYER_DEFS.map((l) => (
             <TogglePill key={l.key} label={l.label} active={layers[l.key]} onToggle={() => toggle(l.key)} color={l.color} desc={l.desc} />
@@ -83,14 +105,14 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
           {loading ? (
             <div className="h-[380px] animate-pulse rounded-xl bg-muted/40" />
           ) : candles.length < 60 ? (
-            <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Sem dados suficientes para {pair}.</div>
+            <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Sem dados suficientes para {pair} em {tf}.</div>
           ) : (
-            <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={pair} tf="1d" />
+            <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${pair}-${tf}`} vp={vp} tf={tf} />
           )}
         </div>
         {smc && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Range recente {fx(smc.trailingBottom)} — {fx(smc.trailingTop)} · preço {fx(smc.price)}. Estrutura de mercado (Smart Money Concepts) das velas diárias. Educacional — não é recomendação.
+            Range recente {fx(smc.trailingBottom)} — {fx(smc.trailingTop)} · preço {fx(smc.price)}. Estrutura de mercado (Smart Money Concepts) das velas {TF_WORD[tf] ?? tf}. Educacional — não é recomendação.
           </p>
         )}
       </div>
