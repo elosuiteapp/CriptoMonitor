@@ -26,7 +26,7 @@ export default function ForexModule({ pair, onPair }: { pair: string; onPair: (s
     Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview(), cotInfo ? fetchForexCot(cotInfo.currency) : Promise.resolve(null)]).then(([candles, ov, cot]) => {
       if (!alive) return;
       const dxy = ov.find((q) => q.pair === "DXY")?.changePct ?? null;
-      setRead(computeRead(pair, candles, dxy, cot, cotInfo));
+      setRead(computeRead(pair, candles, dxy, cot, cotInfo, ov));
       setReadLoading(false);
     });
     return () => {

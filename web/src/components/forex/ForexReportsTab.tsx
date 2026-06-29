@@ -22,7 +22,7 @@ export default function ForexReportsTab({ pair }: { pair: string }) {
     Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview(), cotInfo ? fetchForexCot(cotInfo.currency) : Promise.resolve(null)]).then(([candles, ov, cot]) => {
       if (!alive) return;
       const dxy = ov.find((q) => q.pair === "DXY")?.changePct ?? null;
-      setRead(computeRead(pair, candles, dxy, cot, cotInfo));
+      setRead(computeRead(pair, candles, dxy, cot, cotInfo, ov));
     });
     return () => {
       alive = false;

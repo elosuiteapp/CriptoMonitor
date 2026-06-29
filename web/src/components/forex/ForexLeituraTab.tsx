@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { cotForPair, fetchForexChart, fetchForexCot, fetchForexOverview, pairCarry, type ForexCandle, type ForexCot } from "../../lib/forex";
+import { computeCurrencyStrength, cotForPair, fetchForexChart, fetchForexCot, fetchForexOverview, pairCarry, type ForexCandle, type ForexCot, type ForexQuote } from "../../lib/forex";
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
@@ -102,7 +102,7 @@ function dollarAxis(pair: string, dxyChg: number | null): Axis | null {
   return { key: "dollar", label: "Dólar (DXY)", score, note: `Dólar ${dir} (DXY ${dxyChg >= 0 ? "+" : ""}${dxyChg.toFixed(2)}%) — ${score >= 0 ? "favorece" : "pressiona"} ${pair}`, weight: 0.22 };
 }
 
-export function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null, cot: ForexCot | null, cotInfo: { currency: string; direction: 1 | -1 } | null): Read | null {
+export function computeRead(pair: string, candles: ForexCandle[], dxyChg: number | null, cot: ForexCot | null, cotInfo: { currency: string; direction: 1 | -1 } | null, quotes: ForexQuote[] = []): Read | null {
   const closes = candles.map((c) => c.close);
   if (closes.length < 25) return null;
   const price = last(closes);
@@ -137,6 +137,17 @@ export function computeRead(pair: string, candles: ForexCandle[], dxyChg: number
   if (carry) {
     const score = clamp(carry.diff * 8);
     axes.push({ key: "carry", label: "Carry (juros)", score, note: `${carry.diff >= 0 ? "+" : ""}${carry.diff.toFixed(2)}% a.a. (${carry.base} ${carry.baseRate.toFixed(1)}% − ${carry.quote} ${carry.quoteRate.toFixed(1)}%) — ${carry.diff >= 0 ? "vento a favor de comprar" : "vento contra (paga juros)"}`, weight: 0.14 });
+  }
+  // Força das moedas (currency strength 24h) — base forte × cotação fraca = viés de alta.
+  if (quotes.length && pair.includes("/")) {
+    const sm = new Map(computeCurrencyStrength(quotes).map((s) => [s.ccy, s.score]));
+    const [base, quote] = pair.split("/");
+    const bs = sm.get(base);
+    const qs = sm.get(quote);
+    if (bs != null && qs != null) {
+      const diff = bs - qs;
+      axes.push({ key: "strength", label: "Força das moedas", score: clamp(diff * 60), note: `${base} ${bs >= 0 ? "+" : ""}${bs.toFixed(2)}% vs ${quote} ${qs >= 0 ? "+" : ""}${qs.toFixed(2)}% (24h) — ${base} ${diff >= 0 ? "mais forte" : "mais fraca"} que ${quote}`, weight: 0.16 });
+    }
   }
   // Posicionamento institucional (COT/CFTC) — asset managers alinhados ao par.
   if (cot && cotInfo) {
@@ -230,7 +241,7 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
     Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview(), cotInfo ? fetchForexCot(cotInfo.currency) : Promise.resolve(null)]).then(([candles, ov, cot]) => {
       if (!alive) return;
       const dxy = ov.find((q) => q.pair === "DXY")?.changePct ?? null;
-      setRead(computeRead(pair, candles, dxy, cot, cotInfo));
+      setRead(computeRead(pair, candles, dxy, cot, cotInfo, ov));
       setLoading(false);
     });
     return () => {
