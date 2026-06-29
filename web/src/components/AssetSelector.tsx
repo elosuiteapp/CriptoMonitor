@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { useWatchlist } from "../hooks/useWatchlist";
 import { ASSET_NAME, isInstitutional } from "../lib/format";
 import { useT } from "../lib/i18n";
 import CoinIcon from "./CoinIcon";
@@ -23,6 +24,7 @@ interface Props {
 export default function AssetSelector({ current, allowed, onChange }: Props) {
   const { t: tr } = useT();
   const [open, setOpen] = useState(false);
+  const { isFavorite, toggle } = useWatchlist();
   useEscapeKey(() => setOpen(false), open);
 
   return (
@@ -73,17 +75,34 @@ export default function AssetSelector({ current, allowed, onChange }: Props) {
                 );
               }
               return (
-                <button
+                <div
                   key={asset}
-                  onClick={() => {
-                    onChange(asset);
-                    setOpen(false);
-                  }}
                   className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-muted ${active ? "bg-primary/10" : ""}`}
                 >
-                  {inner}
-                  {active && <span className="text-primary">✓</span>}
-                </button>
+                  <button
+                    onClick={() => {
+                      onChange(asset);
+                      setOpen(false);
+                    }}
+                    className="flex flex-1 items-center gap-2 text-left"
+                  >
+                    {inner}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5 pl-1">
+                    {active && <span className="text-primary">✓</span>}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggle(asset);
+                      }}
+                      title={isFavorite(asset) ? tr.asset.unfavorite : tr.asset.favorite}
+                      aria-label={isFavorite(asset) ? tr.asset.unfavorite : tr.asset.favorite}
+                      className={`text-base leading-none transition-colors ${isFavorite(asset) ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400"}`}
+                    >
+                      {isFavorite(asset) ? "★" : "☆"}
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>

@@ -351,6 +351,22 @@ Deno.serve(async (req) => {
   const experts = ((subs ?? []) as Array<{ user_id: string; plan?: { slug?: string } }>)
     .filter((s) => s.plan?.slug === "expert").map((s) => s.user_id);
 
+  // Watchlist por usuário — personaliza o alerta: só notifica as moedas FAVORITAS de
+  // cada Expert (antes era broadcast de ~100 moedas p/ todos). Quem não favoritou
+  // nada cai no default (majors BTC/ETH/SOL), p/ não ficar sem nenhum alerta.
+  const { data: wlRows } = await admin.from("watchlist").select("user_id, asset");
+  const favByUser = new Map<string, Set<string>>();
+  for (const r of (wlRows ?? []) as Array<{ user_id: string; asset: string }>) {
+    let s = favByUser.get(r.user_id);
+    if (!s) { s = new Set<string>(); favByUser.set(r.user_id, s); }
+    s.add(r.asset);
+  }
+  const DEFAULT_FAVS = new Set(["BTC", "ETH", "SOL"]);
+  const wantsAsset = (uid: string, a: string): boolean => {
+    const favs = favByUser.get(uid);
+    return favs && favs.size > 0 ? favs.has(a) : DEFAULT_FAVS.has(a);
+  };
+
   // Cooldown por moeda: as que já receberam alerta de "mudança de leitura" dentro da
   // janela ficam de fora (reusa as notificações já gravadas — sem schema novo).
   const { data: recentNotifs } = await admin
@@ -400,8 +416,10 @@ Deno.serve(async (req) => {
     if (curDir !== 0 && curDir !== prevDir && !onCooldown.has(asset)) {
       changed++;
       onCooldown.add(asset); // trava p/ o resto deste ciclo também
-      for (const uid of experts)
+      for (const uid of experts) {
+        if (!wantsAsset(uid, asset)) continue; // só as favoritas do usuário
         notifs.push({ user_id: uid, title: `${asset} · mudança de leitura`, body: `O viés do ${asset} virou: ${read.regime_label}`, asset, metric: "regime", value: read.regime_key });
+      }
     }
   }
   if (notifs.length) await admin.from("notifications").insert(notifs);

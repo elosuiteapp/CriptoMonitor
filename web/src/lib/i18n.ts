@@ -14,7 +14,7 @@ export interface Dict {
   tabs: { cockpit: string; smart: string; indicators: string; macro: string; reports: string };
   modules: { menuTitle: string; soon: string; moreSoon: string; forexLocked: string; tooltip: string };
   account: { plan: string; editProfile: string; signOut: string; incomplete: string; incompleteShort: string };
-  asset: { gammaTip: string; lockedTip: string };
+  asset: { gammaTip: string; lockedTip: string; favorite: string; unfavorite: string };
   login: {
     backHome: string;
     welcomeTitle: string;
@@ -462,6 +462,8 @@ const PT: Dict = {
   asset: {
     gammaTip: "Camada institucional completa (gamma, opções, DVOL, CVD Coinbase)",
     lockedTip: "Disponível em planos superiores",
+    favorite: "Favoritar (recebe alerta de mudança de leitura)",
+    unfavorite: "Remover dos favoritos",
   },
   login: {
     backHome: "← Página inicial",
@@ -932,6 +934,8 @@ const EN: Dict = {
   asset: {
     gammaTip: "Full institutional layer (gamma, options, DVOL, Coinbase CVD)",
     lockedTip: "Available on higher plans",
+    favorite: "Add to favorites (get market-read change alerts)",
+    unfavorite: "Remove from favorites",
   },
   login: {
     backHome: "← Home",
