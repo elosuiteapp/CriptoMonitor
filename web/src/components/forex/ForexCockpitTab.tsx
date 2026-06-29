@@ -162,29 +162,38 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
         </div>
       </div>
 
-      {/* Posicionamento institucional (COT/CFTC) — o "smart money" do câmbio */}
+      {/* Posicionamento COT/CFTC — institucional × hedge funds × varejo (smart vs dumb money) */}
       {cot && cotInfo && (() => {
         const instBias = cot.assetMgrNet * cotInfo.direction; // >0 = favorável ao par
-        const fundBias = cot.levMoneyNet * cotInfo.direction;
+        const retailBias = cot.nonreptNet * cotInfo.direction;
+        const diverge = Math.sign(instBias) !== 0 && Math.sign(retailBias) !== 0 && Math.sign(instBias) !== Math.sign(retailBias);
+        const insight = diverge
+          ? instBias > 0
+            ? `Institucional comprado e varejo vendido em ${pair} — smart money acumulando o que o varejo larga (viés de alta).`
+            : `Institucional vendido e varejo comprado em ${pair} — smart money distribuindo para o varejo (viés de baixa).`
+          : `Institucional e varejo do mesmo lado (${instBias >= 0 ? "favoráveis" : "contra"} ${pair}) — sem divergência clara.`;
+        const tiers = [
+          { label: "Institucional (asset managers)", net: cot.assetMgrNet, chg: cot.assetMgrNetChg, bias: instBias, fade: false },
+          { label: "Hedge funds (alavancados)", net: cot.levMoneyNet, chg: cot.levMoneyNetChg, bias: cot.levMoneyNet * cotInfo.direction, fade: false },
+          { label: "Varejo (pequenos especuladores)", net: cot.nonreptNet, chg: cot.nonreptNetChg, bias: retailBias, fade: true },
+        ];
         return (
           <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">Posicionamento institucional (COT) · {cotInfo.currency}{cotInfo.proxy ? " (proxy)" : ""}</h3>
-              <span className="text-[11px] text-muted-foreground">CFTC · {cot.reportDate}</span>
+              <h3 className="text-sm font-semibold text-foreground">Posicionamento (COT) · {cotInfo.currency}{cotInfo.proxy ? " (proxy)" : ""}</h3>
+              <span className="text-[11px] text-muted-foreground">OI {fmtSigned(cot.openInterest).replace("+", "")} · CFTC {cot.reportDate}</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Institucional (asset managers)</div>
-                <div className={`num text-lg font-bold ${instBias >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fmtSigned(cot.assetMgrNet)}</div>
-                <div className="text-[11px] text-muted-foreground">semana {fmtSigned(cot.assetMgrNetChg)} · {cot.assetMgrNet >= 0 ? "comprado" : "vendido"} em {cotInfo.currency} {instBias >= 0 ? `(favorável a ${pair})` : `(contra ${pair})`}</div>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Fundos alavancados (hedge funds)</div>
-                <div className={`num text-lg font-bold ${fundBias >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fmtSigned(cot.levMoneyNet)}</div>
-                <div className="text-[11px] text-muted-foreground">semana {fmtSigned(cot.levMoneyNetChg)} · {cot.levMoneyNet >= 0 ? "comprado" : "vendido"} em {cotInfo.currency}</div>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {tiers.map((t) => (
+                <div key={t.label} className="rounded-xl border border-border/70 bg-background/40 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.label}</div>
+                  <div className={`num text-lg font-bold ${t.fade ? "text-amber-500" : t.bias >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fmtSigned(t.net)}</div>
+                  <div className="text-[11px] text-muted-foreground">semana {fmtSigned(t.chg)} · {t.net >= 0 ? "comprado" : "vendido"} em {cotInfo.currency}{t.fade ? " (contrário)" : t.bias >= 0 ? ` (favorável a ${pair})` : ` (contra ${pair})`}</div>
+                </div>
+              ))}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">Contratos líquidos nos futuros de {cotInfo.currency} (CME, vs USD){cotInfo.proxy ? " — proxy p/ o cruzamento" : ""}.{cotInfo.direction === -1 ? ` Comprado na moeda = vendido em ${pair} (par invertido).` : ""} Atualização semanal (CFTC).</p>
+            <div className={`mt-2 rounded-lg px-3 py-2 text-[11px] ${diverge ? "bg-primary/10 text-foreground" : "bg-muted/40 text-muted-foreground"}`}>💡 {insight}</div>
+            <p className="mt-2 text-[11px] text-muted-foreground">Contratos líquidos nos futuros de {cotInfo.currency} (CME, vs USD){cotInfo.proxy ? " — proxy p/ o cruzamento" : ""}.{cotInfo.direction === -1 ? ` Comprado na moeda = vendido em ${pair} (par invertido).` : ""} Varejo = pequenos especuladores (clássico "dumb money" contrário). Semanal (CFTC).</p>
           </div>
         );
       })()}

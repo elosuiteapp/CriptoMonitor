@@ -61,11 +61,15 @@ class CftcCotSource(BaseSource):
                 continue
             am_l, am_s = _i(d.get("asset_mgr_positions_long")), _i(d.get("asset_mgr_positions_short"))
             lf_l, lf_s = _i(d.get("lev_money_positions_long")), _i(d.get("lev_money_positions_short"))
+            nr_l, nr_s = _i(d.get("nonrept_positions_long_all")), _i(d.get("nonrept_positions_short_all"))
             latest[asset] = {
                 "asset": asset,
                 "report_date": report_date,
                 "asset_mgr_long": am_l, "asset_mgr_short": am_s, "asset_mgr_net": am_l - am_s,
                 "lev_money_long": lf_l, "lev_money_short": lf_s, "lev_money_net": lf_l - lf_s,
+                # Nonreportable = pequenos especuladores (varejo) — proxy livre de varejo no FX.
+                "nonrept_long": nr_l, "nonrept_short": nr_s, "nonrept_net": nr_l - nr_s,
+                "nonrept_net_chg": _i(d.get("change_in_nonrept_long_all")) - _i(d.get("change_in_nonrept_short_all")),
                 "asset_mgr_net_chg": _i(d.get("change_in_asset_mgr_long")) - _i(d.get("change_in_asset_mgr_short")),
                 "lev_money_net_chg": _i(d.get("change_in_lev_money_long")) - _i(d.get("change_in_lev_money_short")),
                 "open_interest": _i(d.get("open_interest_all")),

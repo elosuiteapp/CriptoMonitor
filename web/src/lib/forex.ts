@@ -65,6 +65,8 @@ export interface ForexCot {
   assetMgrNetChg: number; // variação semanal
   levMoneyNet: number; // fundos alavancados (hedge funds) líquido
   levMoneyNetChg: number;
+  nonreptNet: number; // pequenos especuladores (varejo) líquido
+  nonreptNetChg: number;
   openInterest: number;
 }
 /** Moeda e direção do COT relevantes p/ o par. Como o COT é "moeda vs USD":
@@ -85,7 +87,7 @@ export function fetchForexCot(currency: string): Promise<ForexCot | null> {
       try {
         const { data, error } = await supabase
           .from("cot_positioning")
-          .select("asset, report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, open_interest")
+          .select("asset, report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, nonrept_net, nonrept_net_chg, open_interest")
           .eq("asset", currency)
           .order("ts", { ascending: false })
           .limit(1)
@@ -99,6 +101,8 @@ export function fetchForexCot(currency: string): Promise<ForexCot | null> {
           assetMgrNetChg: Number(d.asset_mgr_net_chg ?? 0),
           levMoneyNet: Number(d.lev_money_net ?? 0),
           levMoneyNetChg: Number(d.lev_money_net_chg ?? 0),
+          nonreptNet: Number(d.nonrept_net ?? 0),
+          nonreptNetChg: Number(d.nonrept_net_chg ?? 0),
           openInterest: Number(d.open_interest ?? 0),
         };
       } catch {
