@@ -1,7 +1,39 @@
 import { useEffect, useState } from "react";
 
 import { fetchB3Macro, fetchMacroGlobal, globalTideScore, type B3MacroData, type B3MacroGlobal } from "../../lib/b3";
+import { supabase } from "../../lib/supabase";
 import { Cell, fmtNum, fmtPct, selicAA, toneCls } from "./B3Shared";
+
+// ── Calendário econômico (helpers duplicados p/ isolar o módulo B3) ───────────
+interface EconEvent { title: string; country: string; date: string; impact: string; forecast: string | null; previous: string | null }
+const FLAG: Record<string, string> = { USD: "🇺🇸", BRL: "🇧🇷", EUR: "🇪🇺", JPY: "🇯🇵", GBP: "🇬🇧", CNY: "🇨🇳" };
+const evDate = (s: string) => {
+  const t = new Date(s);
+  return Number.isFinite(t.getTime()) ? t.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : s;
+};
+function countdown(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const n = new Date();
+  const today = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const days = Math.round((a - today) / 86400000);
+  if (days < 0) return "";
+  if (days === 0) return "hoje";
+  if (days === 1) return "amanhã";
+  return `em ${days} dias`;
+}
+function Stars({ impact }: { impact: string }) {
+  const n = impact === "High" ? 3 : impact === "Medium" ? 2 : 1;
+  const color = impact === "High" ? "text-rose-500" : "text-amber-500";
+  return (
+    <span className="shrink-0 tracking-tighter" title={`Impacto ${impact === "High" ? "alto" : impact === "Medium" ? "médio" : "baixo"}`}>
+      {[1, 2, 3].map((i) => (
+        <span key={i} className={i <= n ? color : "text-muted-foreground/30"}>★</span>
+      ))}
+    </span>
+  );
+}
 
 /** Barra de correlação (-1 a +1) com linha central. */
 function CorrBar({ name: label, c30, c90 }: { name: string; c30: number | null; c90: number | null }) {
@@ -44,6 +76,7 @@ function readMacro(d: B3MacroData): string {
 export default function B3MacroTab() {
   const [d, setD] = useState<B3MacroData | null>(null);
   const [mg, setMg] = useState<B3MacroGlobal | null>(null);
+  const [events, setEvents] = useState<EconEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,6 +86,10 @@ export default function B3MacroTab() {
       setD(r);
       setMg(g);
       setLoading(false);
+    });
+    // Calendário: EUA (motor do risco global) + Brasil — eventos que mexem na B3.
+    supabase.functions.invoke("econ-calendar", { body: { countries: ["USD", "BRL"] } }).then(({ data }) => {
+      if (alive) setEvents(((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[]);
     });
     return () => {
       alive = false;
@@ -146,6 +183,40 @@ export default function B3MacroTab() {
             <Cell key={g.symbol} label={g.symbol} value={fmtNum(g.price, g.symbol === "VIX" ? 2 : 0)} sub={<span className={toneCls(g.changePct)}>{fmtPct(g.changePct)}</span>} />
           ))}
         </div>
+      </div>
+
+      {/* Calendário econômico (EUA + Brasil) */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-foreground">Calendário econômico · EUA + Brasil</h3>
+          <span className="text-[11px] text-muted-foreground">eventos que mexem na B3</span>
+        </div>
+        {events.length === 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias (ou carregando…).</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {events.map((e, i) => {
+              const cd = countdown(e.date);
+              return (
+                <div key={`${e.title}-${e.date}-${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-xs">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-sm leading-none" title={e.country} aria-hidden>{FLAG[e.country] ?? "🏳"}</span>
+                    <Stars impact={e.impact} />
+                    <span className="truncate text-foreground">{e.title}</span>
+                    {cd && (
+                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>{cd}</span>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 text-muted-foreground">
+                    {(e.forecast || e.previous) && <span className="num hidden md:inline">ant. {e.previous ?? "—"} · est. {e.forecast ?? "—"}</span>}
+                    <span className="num whitespace-nowrap">{evDate(e.date)}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto dos EUA (motor do risco global) e do Brasil. ★★★ alto · ★★ médio. Fonte: ForexFactory.</p>
       </div>
 
       {/* Correlações do IBOV */}

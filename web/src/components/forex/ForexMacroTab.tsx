@@ -7,6 +7,29 @@ const evDate = (s: string) => {
   const t = new Date(s);
   return Number.isFinite(t.getTime()) ? t.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : s;
 };
+function countdown(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const n = new Date();
+  const today = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const days = Math.round((a - today) / 86400000);
+  if (days < 0) return "";
+  if (days === 0) return "hoje";
+  if (days === 1) return "amanhã";
+  return `em ${days} dias`;
+}
+function Stars({ impact }: { impact: string }) {
+  const n = impact === "High" ? 3 : impact === "Medium" ? 2 : 1;
+  const color = impact === "High" ? "text-rose-500" : "text-amber-500";
+  return (
+    <span className="shrink-0 tracking-tighter" title={`Impacto ${impact === "High" ? "alto" : impact === "Medium" ? "médio" : "baixo"}`}>
+      {[1, 2, 3].map((i) => (
+        <span key={i} className={i <= n ? color : "text-muted-foreground/30"}>★</span>
+      ))}
+    </span>
+  );
+}
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
 const fmtPx = (v: number | null | undefined, dec: number) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }));
@@ -171,24 +194,38 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Calendário econômico · {pairCurrencies(pair).join(" · ")}</h3>
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-foreground">Calendário econômico · {pairCurrencies(pair).join(" · ")}</h3>
+          <span className="text-[11px] text-muted-foreground">eventos que movem o par</span>
+        </div>
         {events.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias (ou carregando…).</p>
+          <p className="mt-3 text-xs text-muted-foreground">Sem eventos de alto/médio impacto nos próximos dias (ou carregando…).</p>
         ) : (
-          <div className="divide-y divide-border/60">
-            {events.map((e, i) => (
-              <div key={`${e.title}-${e.date}-${i}`} className="flex items-center gap-3 py-2">
-                <span className="text-sm" title={e.country}>{FLAG[e.country] ?? e.country}</span>
-                <span className={`shrink-0 text-xs ${e.impact === "High" ? "text-rose-500" : "text-amber-500"}`} title={`Impacto ${e.impact === "High" ? "alto" : "médio"}`}>{e.impact === "High" ? "★★★" : "★★"}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-foreground">{e.title}</div>
-                  <div className="text-[11px] text-muted-foreground">{evDate(e.date)}{e.forecast ? ` · prev. ${e.forecast}` : ""}{e.previous ? ` · ant. ${e.previous}` : ""}</div>
+          <div className="mt-3 space-y-2">
+            {events.map((e, i) => {
+              const cd = countdown(e.date);
+              return (
+                <div key={`${e.title}-${e.date}-${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-xs">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-sm leading-none" title={e.country} aria-hidden>{FLAG[e.country] ?? "🏳"}</span>
+                    <Stars impact={e.impact} />
+                    <span className="truncate text-foreground">{e.title}</span>
+                    {cd && (
+                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>{cd}</span>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 text-muted-foreground">
+                    {(e.forecast || e.previous) && (
+                      <span className="num hidden md:inline">ant. {e.previous ?? "—"} · est. {e.forecast ?? "—"}</span>
+                    )}
+                    <span className="num whitespace-nowrap">{evDate(e.date)}</span>
+                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-        <p className="mt-2 text-[11px] text-muted-foreground">Alto/médio impacto das moedas do par (e do dólar). Em dias de FOMC/CPI/NFP o macro costuma dominar o gráfico. Fonte: ForexFactory.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto das moedas do par (e do dólar). Em dias de FOMC/CPI/NFP o macro costuma dominar o gráfico. ★★★ alto · ★★ médio. Fonte: ForexFactory.</p>
       </div>
 
       {/* Sessões */}
