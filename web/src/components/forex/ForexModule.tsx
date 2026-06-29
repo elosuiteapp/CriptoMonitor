@@ -20,8 +20,7 @@ const GROUPS: { id: string; label: string }[] = [
 
 /** Módulo FOREX — cockpit de câmbio (pares, sessões, gráfico). Isolado dos demais
  *  módulos: usa só lib/forex + primitivos compartilhados (ChartTypeSelector/TogglePill). */
-export default function ForexModule() {
-  const [pair, setPair] = usePersistentState<string>("cm.fx-pair", "EUR/USD");
+export default function ForexModule({ pair, onPair }: { pair: string; onPair: (s: string) => void }) {
   const [tf, setTf] = usePersistentState<Timeframe>("cm.fx-tf", "1d");
   const [chartType, setChartType] = usePersistentState<ChartType>("cm.fx-charttype", "candles");
   const [showEma, setShowEma] = useState(true);
@@ -65,8 +64,9 @@ export default function ForexModule() {
 
   return (
     <div className="space-y-4">
-      {/* Faixa de cotações (troca de par ao clicar) */}
+      {/* Painel de moedas — acompanha todos os pares; clique troca o par ativo */}
       <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Painel de moedas</div>
         {GROUPS.map((g) => {
           const items = FOREX_PAIRS.filter((p) => p.group === g.id);
           if (!items.length) return null;
@@ -80,7 +80,7 @@ export default function ForexModule() {
                   return (
                     <button
                       key={p.symbol}
-                      onClick={() => setPair(p.symbol)}
+                      onClick={() => onPair(p.symbol)}
                       title={p.name}
                       className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition-colors ${active ? "border-primary/50 bg-primary/10 text-foreground" : "border-border hover:bg-muted"}`}
                     >

@@ -11,6 +11,7 @@ import Disclaimer from "../components/Disclaimer";
 import MarketPlaceholder from "../components/MarketPlaceholder";
 import B3Module from "../components/b3/B3Module";
 import ForexModule from "../components/forex/ForexModule";
+import ForexAssetSelector from "../components/forex/ForexAssetSelector";
 import B3AssetSelector from "../components/b3/B3AssetSelector";
 import { B3_ASSETS, B3_FIIS } from "../lib/b3";
 import FundingStrip from "../components/FundingStrip";
@@ -86,6 +87,7 @@ export default function Dashboard() {
   const allowed = plan?.assets ?? ["BTC"];
   const [asset, setAsset] = useState("BTC");
   const [b3Asset, setB3Asset] = useState("PETR4");
+  const [fxPair, setFxPair] = useState("EUR/USD");
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [tab, setTab] = useState<TabId>("cockpit");
@@ -197,6 +199,7 @@ export default function Dashboard() {
               <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_FIIS} label="FIIs" />
             </div>
           )}
+          {market === "forex" && <ForexAssetSelector current={fxPair} onChange={setFxPair} />}
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -232,7 +235,7 @@ export default function Dashboard() {
         {market === "b3" ? (
           <B3Module asset={b3Asset} onAsset={setB3Asset} />
         ) : market === "forex" ? (
-          <ForexModule />
+          <ForexModule pair={fxPair} onPair={setFxPair} />
         ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
