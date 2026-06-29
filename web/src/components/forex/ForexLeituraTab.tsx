@@ -4,7 +4,22 @@ import { cotForPair, fetchForexChart, fetchForexCot, fetchForexOverview, pairCar
 import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
+import { supabase } from "../../lib/supabase";
 import BiasGauge, { type Tone } from "../BiasGauge";
+import Markdown from "../Markdown";
+
+/** Resumo textual da leitura (forças, divergências, níveis) p/ alimentar a IA. */
+function buildContext(read: Read, conviction: number): string {
+  const l: string[] = [`Viés geral: ${read.bias > 0 ? "+" : ""}${read.bias} (${leanWord(read.bias)}), convicção ${conviction}%.`, "", "Forças (nota −100..+100, peso no viés):"];
+  for (const a of read.axes) l.push(`- ${a.label}: ${a.score > 0 ? "+" : ""}${Math.round(a.score)}${a.weight != null ? ` [peso ${Math.round(a.weight * 100)}%]` : ""} — ${a.note}`);
+  if (read.divergences.length) { l.push("", "Divergências/riscos:"); read.divergences.forEach((d) => l.push(`- ${d}`)); }
+  if (read.scenarios.up || read.scenarios.down) {
+    l.push("", "Níveis-gatilho:");
+    if (read.scenarios.up) l.push(`- Alta: romper ${read.scenarios.up.name} em ${read.scenarios.up.price} (+${read.scenarios.up.pct.toFixed(2)}%).`);
+    if (read.scenarios.down) l.push(`- Baixa: perder ${read.scenarios.down.name} em ${read.scenarios.down.price} (${read.scenarios.down.pct.toFixed(2)}%).`);
+  }
+  return l.join("\n");
+}
 
 const clamp = (v: number, lo = -100, hi = 100) => Math.max(lo, Math.min(hi, v));
 const biasTone = (b: number): Tone => (b >= 12 ? "bull" : b <= -12 ? "bear" : "neutral");
@@ -190,10 +205,40 @@ function AxisRow({ a }: { a: Axis }) {
 export default function ForexLeituraTab({ pair }: { pair: string }) {
   const [read, setRead] = useState<Read | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ai, setAi] = useState<{ content: string; model: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  async function generateAi(conv: number) {
+    if (!read) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("forex-report", { body: { pair, context: buildContext(read, conv) } });
+      if (error) {
+        let msg = error.message;
+        const ctx = (error as { context?: Response }).context;
+        if (ctx && typeof ctx.json === "function") {
+          const b = await ctx.json().catch(() => null);
+          if (b?.error) msg = b.error;
+        }
+        throw new Error(msg);
+      }
+      const d = data as { content?: string; model_used?: string };
+      if (!d?.content) throw new Error("Resposta vazia da IA.");
+      setAi({ content: d.content, model: d.model_used ?? "" });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Falha ao gerar análise.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setAi(null);
+    setAiError(null);
     const cotInfo = cotForPair(pair);
     Promise.all([fetchForexChart(pair, "1d"), fetchForexOverview(), cotInfo ? fetchForexCot(cotInfo.currency) : Promise.resolve(null)]).then(([candles, ov, cot]) => {
       if (!alive) return;
@@ -238,6 +283,26 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
             <span className="text-[11px] text-muted-foreground">{agree} de {voting.length} forças</span>
           </div>
         </div>
+      </div>
+
+      {/* Análise por IA (Gemini) — junta todas as forças numa leitura em texto */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">✨ Análise por IA</h3>
+            <p className="text-xs text-muted-foreground">A IA junta todas as forças abaixo numa leitura em texto do que {pair} está tentando fazer.</p>
+          </div>
+          <button onClick={() => generateAi(conviction)} disabled={aiLoading} className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            {aiLoading ? "Gerando…" : ai ? "Gerar de novo" : "✨ Gerar análise"}
+          </button>
+        </div>
+        {aiError && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400">{aiError}</div>}
+        {ai && (
+          <div className="mt-3 border-t border-border pt-3">
+            <Markdown text={ai.content} />
+            <p className="mt-2 text-[11px] text-muted-foreground">Gerado por IA ({ai.model}) a partir das forças reais acima. Educacional — não é recomendação.</p>
+          </div>
+        )}
       </div>
 
       {(read.scenarios.up || read.scenarios.down) && (
