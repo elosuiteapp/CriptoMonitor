@@ -5,7 +5,7 @@ import type { CvdPoint } from "../lib/marketData";
 /** Painel de Volume Delta / CVD (padrão dos gráficos de trade): histograma de
  *  delta agressor por candle (verde comprador / vermelho vendedor) + linha do
  *  CVD acumulado por cima. Escalas independentes (barras × linha) no mesmo pane. */
-export default function VolumeDeltaSubchart({ data, title }: { data: CvdPoint[]; title: string }) {
+export default function VolumeDeltaSubchart({ data, title, fmt = fmtUsd }: { data: CvdPoint[]; title: string; fmt?: (v: number) => string }) {
   const { t } = useT();
   if (data.length < 2) {
     return (
@@ -38,10 +38,10 @@ export default function VolumeDeltaSubchart({ data, title }: { data: CvdPoint[];
         <span>{title}</span>
         <span className="flex items-center gap-2">
           <span className={`num ${last.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-            Δ {fmtUsd(last.delta)}
+            Δ {fmt(last.delta)}
           </span>
           <span className={`num ${rising ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-            CVD {fmtUsd(last.cvd)}
+            CVD {fmt(last.cvd)}
           </span>
         </span>
       </div>

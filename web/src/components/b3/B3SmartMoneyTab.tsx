@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 
 import { fetchB3Chart, fetchB3Macro, isFii, type B3MacroData } from "../../lib/b3";
 import { computeStockRead, type StockRead } from "../../lib/b3StockRead";
-import { computeVolumeProfile, type Candle, type Timeframe, type VolumeProfile } from "../../lib/marketData";
+import { computeVolumeProfile, type Candle, type CvdPoint, type Timeframe, type VolumeProfile } from "../../lib/marketData";
 import { computeSmc, type SmcResult } from "../../lib/smc";
 import { buildConfluenceSources, type ConfluenceSource } from "../../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../../lib/smcNarrative";
 import InfoTip from "../InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 import { PillRow, TogglePill } from "../TogglePill";
+import VolumeDeltaSubchart from "../VolumeDeltaSubchart";
 import B3StockReadPanel from "./B3StockReadPanel";
-import { Cell, ComingSoon, toneCls } from "./B3Shared";
+import { Cell, ComingSoon, fmtVol, toneCls } from "./B3Shared";
 
 const TFS: { id: Timeframe; label: string }[] = [
   { id: "15m", label: "15M" },
@@ -35,6 +36,7 @@ const LAYERS: { key: keyof SmcLayers; label: string; color: string; help: string
   { key: "structure", label: "BOS/CHoCH", color: "bg-fuchsia-500", help: "BOS = rompimento de estrutura (continuação); CHoCH = mudança de caráter (possível reversão)." },
   { key: "volumeProfile", label: "Volume Profile", color: "bg-sky-400", help: "POC (preço com mais volume) e Value Area (70% do volume) — ímãs e suporte/resistência. Só nas ações (índice/dólar não têm volume)." },
   { key: "htf", label: "HTF (TF maior)", color: "bg-fuchsia-400", help: "Níveis do timeframe MAIOR projetados no gráfico atual. Operar a favor do TF maior é o princípio nº1 do Smart Money." },
+  { key: "cvd", label: "CVD aprox.", color: "bg-orange-500", help: "Volume Delta aproximado: estima compra/venda pela direção da vela × volume (vela de alta = volume comprador; de baixa = vendedor) e acumula. É uma APROXIMAÇÃO — a B3 não publica fluxo agressor de graça (≠ CVD real do cripto). Só nas ações (índice/dólar não têm volume)." },
 ];
 
 const pnum = (v: number) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString("pt-BR") : v.toFixed(2));
@@ -157,6 +159,17 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
 
   const vp = useMemo<VolumeProfile | null>(() => (candles.some((c) => c.volume > 0) ? computeVolumeProfile(candles) : null), [candles]);
 
+  // CVD aproximado (vela × volume) — proxy livre p/ a B3 (não há fluxo agressor grátis).
+  const cvdProxy = useMemo<CvdPoint[]>(() => {
+    if (!candles.some((c) => c.volume > 0)) return [];
+    let cum = 0;
+    return candles.map((c) => {
+      const d = c.close > c.open ? c.volume : c.close < c.open ? -c.volume : 0;
+      cum += d;
+      return { time: c.time, delta: d, cvd: cum };
+    });
+  }, [candles]);
+
   const htfLevels = useMemo(() => {
     if (!htfSmc) return [] as { price: number; label: string }[];
     const s = htfSmc;
@@ -257,6 +270,12 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Carregando estrutura…</div>
         ) : (
           <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${asset}-${tf}`} vp={vp} tf={tf} htfLevels={htfLevels} />
+        )}
+        {/* CVD aproximado (subgráfico) — aparece quando a camada está ligada e há volume */}
+        {layers.cvd && cvdProxy.length >= 2 && (
+          <div className="mt-2">
+            <VolumeDeltaSubchart data={cvdProxy} title="CVD aproximado · vela × volume (estimativa)" fmt={(v) => (v < 0 ? "−" : "") + fmtVol(Math.abs(v))} />
+          </div>
         )}
         {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do cockpit/cripto */}
         <div className="mt-2">
