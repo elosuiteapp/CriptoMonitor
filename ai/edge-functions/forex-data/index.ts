@@ -86,6 +86,37 @@ const TF: Record<string, { interval: string; range: string | null }> = {
   "1M": { interval: "1mo", range: null },
 };
 
+// Twelve Data — câmbio LIMPO (preferido). Chave em secret TWELVEDATA_KEY. Tem 4h
+// nativo (sem agregar). Sem volume em FX (Physical Currency). Vazio/erro/limite → [].
+const TD_KEY = Deno.env.get("TWELVEDATA_KEY");
+const TD_INT: Record<string, string> = { "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day", "1w": "1week", "1M": "1month" };
+async function twelveData(pair: string, tf: string): Promise<Candle[]> {
+  if (!TD_KEY || pair === "DXY") return []; // DXY não está na Twelve Data → Yahoo
+  const interval = TD_INT[tf];
+  if (!interval) return [];
+  try {
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(pair)}&interval=${interval}&outputsize=500&apikey=${TD_KEY}`;
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    const vals = j?.values;
+    if (!Array.isArray(vals)) return []; // {code, message} em erro/limite
+    const out: Candle[] = [];
+    for (const v of vals) {
+      const dt = String(v.datetime ?? "");
+      const iso = dt.includes(" ") ? `${dt.replace(" ", "T")}Z` : `${dt}T00:00:00Z`;
+      const time = Math.floor(Date.parse(iso) / 1000);
+      const o = Number(v.open), h = Number(v.high), l = Number(v.low), c = Number(v.close);
+      if (!Number.isFinite(time) || !Number.isFinite(c)) continue;
+      out.push({ time, open: o, high: h, low: l, close: c, volume: Number(v.volume) || 0 });
+    }
+    out.sort((a, b) => a.time - b.time); // TD vem decrescente → crescente
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function quote(symbol: string): Promise<{ price: number | null; changePct: number | null } | null> {
   try {
     const c = await yahooCandles(symbol, "1d", "5d");
@@ -108,6 +139,9 @@ Deno.serve(async (req) => {
     const tf = String(body?.tf ?? "1d");
     const symbol = PAIRS[pair];
     if (!symbol) return json(400, { error: "par inválido" });
+    // 1) Twelve Data (câmbio limpo); 2) fallback Yahoo
+    const td = await twelveData(pair, tf);
+    if (td.length > 1) return json(200, { candles: td });
     try {
       if (tf === "4h") {
         const c1h = await yahooCandles(symbol, "1h", "2y");
