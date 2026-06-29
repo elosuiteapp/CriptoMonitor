@@ -173,37 +173,77 @@ export interface B3MacroData {
 }
 
 /** Macro global + correlações do IBOV + macro BR (aba Macro & Correlações da B3). */
-export async function fetchB3Macro(): Promise<B3MacroData | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "macro" } });
-    if (error || !data) return null;
-    return data as B3MacroData;
-  } catch {
-    return null;
-  }
+// ── Cache em memória com TTL (B3-only) — evita re-buscar o MESMO dado de mercado a
+//    cada troca de aba (o "pisca"). Guarda a PROMISE (dedupa chamadas simultâneas);
+//    resultado vazio/erro NÃO fica cacheado (permite retry). Não toca o cripto. ──
+const _b3Cache = new Map<string, { t: number; p: Promise<unknown> }>();
+function b3Cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, isEmpty: (v: T) => boolean): Promise<T> {
+  const now = Date.now();
+  const hit = _b3Cache.get(key);
+  if (hit && now - hit.t < ttlMs) return hit.p as Promise<T>;
+  const p = fn();
+  _b3Cache.set(key, { t: now, p });
+  const drop = () => {
+    if (_b3Cache.get(key)?.p === p) _b3Cache.delete(key);
+  };
+  p.then((v) => {
+    if (isEmpty(v)) drop();
+  }, drop);
+  return p;
+}
+
+export function fetchB3Macro(): Promise<B3MacroData | null> {
+  return b3Cached(
+    "macro",
+    180_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "macro" } });
+        if (error || !data) return null;
+        return data as B3MacroData;
+      } catch {
+        return null;
+      }
+    },
+    (v) => v == null,
+  );
 }
 
 /** Watchlist (IBOV + dólar + ações) + macro BR. */
-export async function fetchB3Overview(): Promise<B3Overview | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "overview" } });
-    if (error || !data) return null;
-    return data as B3Overview;
-  } catch {
-    return null;
-  }
+export function fetchB3Overview(): Promise<B3Overview | null> {
+  return b3Cached(
+    "overview",
+    180_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "overview" } });
+        if (error || !data) return null;
+        return data as B3Overview;
+      } catch {
+        return null;
+      }
+    },
+    (v) => v == null,
+  );
 }
 
 /** Candles de qualquer ativo da B3 (IBOV/dólar/ações) no timeframe pedido
  *  (15m/1h/4h/1d/1w/1M). 4h é agregado de 1h no servidor. */
-export async function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[]> {
-  try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "chart", ticker, tf } });
-    if (error || !data) return [];
-    return ((data as { candles?: B3Candle[] }).candles ?? []).filter((c) => Number.isFinite(c.close));
-  } catch {
-    return [];
-  }
+export function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[]> {
+  return b3Cached(
+    `chart:${ticker}:${tf}`,
+    120_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "chart", ticker, tf } });
+        if (error || !data) return [];
+        return ((data as { candles?: B3Candle[] }).candles ?? []).filter((c) => Number.isFinite(c.close));
+      } catch {
+        return [];
+      }
+    },
+    (v) => v.length === 0,
+  );
 }
 
 // ── Fundamentos via Fundamentus (1 request traz a bolsa toda, grátis, server-side) ──
@@ -230,14 +270,21 @@ export interface B3Fund {
 export type B3Funds = Record<string, B3Fund>;
 
 /** Fundamentos de TODAS as ações do universo (P/L, P/VP, DY, ROE…) numa só chamada. */
-export async function fetchB3FundamentalsAll(): Promise<B3Funds> {
-  try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals" } });
-    if (error || !data) return {};
-    return ((data as { funds?: B3Funds }).funds ?? {}) as B3Funds;
-  } catch {
-    return {};
-  }
+export function fetchB3FundamentalsAll(): Promise<B3Funds> {
+  return b3Cached(
+    "fund-all",
+    300_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals" } });
+        if (error || !data) return {};
+        return ((data as { funds?: B3Funds }).funds ?? {}) as B3Funds;
+      } catch {
+        return {};
+      }
+    },
+    (v) => Object.keys(v).length === 0,
+  );
 }
 
 // ── Fundamentos de FIIs (Fundamentus fii_resultado.php — indicadores próprios de FII) ──
@@ -258,14 +305,21 @@ export interface B3FiiFund {
 export type B3FiiFunds = Record<string, B3FiiFund>;
 
 /** Fundamentos de TODOS os FIIs do universo (P/VP, DY, Cap Rate, Vacância…) numa só chamada. */
-export async function fetchB3FiisAll(): Promise<B3FiiFunds> {
-  try {
-    const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals", kind: "fii" } });
-    if (error || !data) return {};
-    return ((data as { fiis?: B3FiiFunds }).fiis ?? {}) as B3FiiFunds;
-  } catch {
-    return {};
-  }
+export function fetchB3FiisAll(): Promise<B3FiiFunds> {
+  return b3Cached(
+    "fii-all",
+    300_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "fundamentals", kind: "fii" } });
+        if (error || !data) return {};
+        return ((data as { fiis?: B3FiiFunds }).fiis ?? {}) as B3FiiFunds;
+      } catch {
+        return {};
+      }
+    },
+    (v) => Object.keys(v).length === 0,
+  );
 }
 
 // ── Detalhe POR FII (Fundamentus detalhes.php — 1 request por fundo, on-demand) ──
