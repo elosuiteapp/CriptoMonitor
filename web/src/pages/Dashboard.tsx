@@ -10,6 +10,7 @@ import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
 import MarketPlaceholder from "../components/MarketPlaceholder";
 import B3Module from "../components/b3/B3Module";
+import ForexModule from "../components/forex/ForexModule";
 import B3AssetSelector from "../components/b3/B3AssetSelector";
 import { B3_ASSETS, B3_FIIS } from "../lib/b3";
 import FundingStrip from "../components/FundingStrip";
@@ -230,6 +231,8 @@ export default function Dashboard() {
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         {market === "b3" ? (
           <B3Module asset={b3Asset} onAsset={setB3Asset} />
+        ) : market === "forex" ? (
+          <ForexModule />
         ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
