@@ -21,9 +21,16 @@ export default function B3AssetSelector({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
-  useEscapeKey(() => setOpen(false), open);
+  const [q, setQ] = useState("");
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
+  useEscapeKey(close, open);
   const cur = items.find((a) => a.symbol === current);
   const owns = !!cur; // o ativo atual pertence a esta lista?
+  const term = q.trim().toLowerCase();
+  const filtered = term ? items.filter((a) => a.symbol.toLowerCase().includes(term) || a.name.toLowerCase().includes(term)) : items;
 
   return (
     <div className="relative">
@@ -47,32 +54,43 @@ export default function B3AssetSelector({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-30 mt-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-2xl">
+          <div className="fixed inset-0 z-20" onClick={close} />
+          <div className="absolute left-0 z-30 mt-1 flex max-h-80 w-64 flex-col rounded-xl border border-border bg-surface p-1 shadow-2xl">
             <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
-            {items.map((a) => {
-              const active = a.symbol === current;
-              return (
-                <button
-                  key={a.symbol}
-                  onClick={() => {
-                    onChange(a.symbol);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-muted ${active ? "bg-primary/10" : ""}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <B3AssetIcon symbol={a.symbol} kind={a.kind} />
-                    <span className="font-medium text-foreground">{a.symbol}</span>
-                    <span className="text-xs text-muted-foreground">{a.name}</span>
-                    {a.kind !== "stock" && KIND_BADGE[a.kind] && (
-                      <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">{KIND_BADGE[a.kind]}</span>
-                    )}
-                  </span>
-                  {active && <span className="text-primary">✓</span>}
-                </button>
-              );
-            })}
+            {/* Busca/filtro dentro da lista */}
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar ticker ou nome…"
+              className="mx-1 mb-1 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {filtered.length === 0 && <div className="px-2 py-3 text-center text-xs text-muted-foreground">Nenhum resultado.</div>}
+              {filtered.map((a) => {
+                const active = a.symbol === current;
+                return (
+                  <button
+                    key={a.symbol}
+                    onClick={() => {
+                      onChange(a.symbol);
+                      close();
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-muted ${active ? "bg-primary/10" : ""}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <B3AssetIcon symbol={a.symbol} kind={a.kind} />
+                      <span className="font-medium text-foreground">{a.symbol}</span>
+                      <span className="text-xs text-muted-foreground">{a.name}</span>
+                      {a.kind !== "stock" && KIND_BADGE[a.kind] && (
+                        <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">{KIND_BADGE[a.kind]}</span>
+                      )}
+                    </span>
+                    {active && <span className="text-primary">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </>
       )}
