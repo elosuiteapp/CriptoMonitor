@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchForexCalendar, fetchForexChart, fetchForexOverview, forexSessions, pairCurrencies, pairDecimals, type ForexCandle, type ForexEvent, type ForexQuote } from "../../lib/forex";
 import MacroGlobalPanel from "../MacroGlobalPanel";
+import ForexCarryRanking from "./ForexCarryRanking";
 import ForexCorrelationMatrix from "./ForexCorrelationMatrix";
 
 const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", AUD: "🇦🇺", CAD: "🇨🇦", CHF: "🇨🇭", NZD: "🇳🇿", BRL: "🇧🇷", MXN: "🇲🇽" };
@@ -178,6 +179,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
           })}
         </div>
       </div>
+
+      {/* Carry trade — ranking de juros (onde está o melhor carry) */}
+      <ForexCarryRanking />
 
       {/* Maré de liquidez macro global (Fed/FRED) — motor do dólar e de todo o câmbio */}
       <MacroGlobalPanel />
