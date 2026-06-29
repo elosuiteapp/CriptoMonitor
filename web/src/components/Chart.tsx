@@ -66,6 +66,7 @@ const UP = "#22c55e";
 const DOWN = "#ef4444";
 
 export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, depth, oiSeries, onPrice }: ChartProps) {
+  const [expanded, setExpanded] = useState(false); // gráfico em altura ampliada (ver as camadas)
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -793,7 +794,16 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   }, [walls, layers.orderbookWalls, canUseLayers, chartType, isDark]);
 
   return (
-    <div ref={wrapRef} className="relative h-[360px] w-full">
+    <div ref={wrapRef} className={`relative w-full ${expanded ? "h-[78vh]" : "h-[360px]"}`}>
+      {/* Expandir / recolher o gráfico (mais espaço p/ as camadas) */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        title={expanded ? tt("Recolher gráfico", "Collapse chart") : tt("Expandir gráfico", "Expand chart")}
+        aria-label={expanded ? tt("Recolher gráfico", "Collapse chart") : tt("Expandir gráfico", "Expand chart")}
+        className="absolute right-2 top-2 z-20 rounded-md border border-border bg-background/80 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {expanded ? "⤡" : "⤢"}
+      </button>
       <canvas ref={heatCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <canvas ref={bookCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
       <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1 }} />
