@@ -4,6 +4,7 @@ import ErrorBoundary from "../ErrorBoundary";
 import ForexCockpitTab from "./ForexCockpitTab";
 import ForexLeituraTab from "./ForexLeituraTab";
 import ForexMacroTab from "./ForexMacroTab";
+import ForexReportsTab from "./ForexReportsTab";
 import ForexSmartMoneyTab from "./ForexSmartMoneyTab";
 import ForexTabBar, { type ForexTabId } from "./ForexTabBar";
 
@@ -19,7 +20,7 @@ export default function ForexModule({ pair, onPair }: { pair: string; onPair: (s
           💱 Forex · Câmbio
           <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
         </h2>
-        <p className="text-xs text-muted-foreground">Plataforma de câmbio — pares de moedas: cockpit, smart money, leitura do mercado e macro & correlações.</p>
+        <p className="text-xs text-muted-foreground">Plataforma de câmbio — pares de moedas: cockpit, smart money, leitura do mercado, macro & correlações e relatório por IA.</p>
       </div>
 
       <ForexTabBar tab={tab} onTab={setTab} />
@@ -29,6 +30,7 @@ export default function ForexModule({ pair, onPair }: { pair: string; onPair: (s
         {tab === "smart" && <ForexSmartMoneyTab pair={pair} />}
         {tab === "leitura" && <ForexLeituraTab pair={pair} />}
         {tab === "macro" && <ForexMacroTab pair={pair} />}
+        {tab === "relatorio" && <ForexReportsTab pair={pair} />}
       </ErrorBoundary>
     </section>
   );

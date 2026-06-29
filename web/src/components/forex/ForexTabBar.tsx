@@ -1,10 +1,11 @@
-export type ForexTabId = "cockpit" | "smart" | "leitura" | "macro";
+export type ForexTabId = "cockpit" | "smart" | "leitura" | "macro" | "relatorio";
 
 const TABS: { id: ForexTabId; label: string }[] = [
   { id: "cockpit", label: "Cockpit Principal" },
   { id: "smart", label: "Smart Money" },
   { id: "leitura", label: "Leitura do Mercado" },
   { id: "macro", label: "Macro & Correlações" },
+  { id: "relatorio", label: "Relatório" },
 ];
 
 /** Abas da plataforma Forex — mesmo modelo do cripto/B3, contexto de câmbio. */

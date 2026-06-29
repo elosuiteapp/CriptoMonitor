@@ -16,6 +16,7 @@ const GROUPS: { id: string; label: string }[] = [
   { id: "major", label: "Principais" },
   { id: "brl", label: "Real (BRL)" },
   { id: "cross", label: "Cruzamentos" },
+  { id: "exotic", label: "Exóticos" },
   { id: "index", label: "Índice" },
 ];
 
@@ -198,7 +199,6 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
         );
       })()}
 
-      <p className="text-[11px] text-muted-foreground">Câmbio via Twelve Data (com reserva Yahoo). Posicionamento via CFTC (COT). Educacional — não é recomendação.</p>
     </div>
   );
 }

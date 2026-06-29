@@ -14,7 +14,7 @@ export interface ForexCandle {
 export interface ForexPair {
   symbol: string; // rótulo (EUR/USD)
   name: string;
-  group: "major" | "brl" | "cross" | "index";
+  group: "major" | "brl" | "cross" | "exotic" | "index";
 }
 
 export const FOREX_PAIRS: ForexPair[] = [
@@ -31,6 +31,19 @@ export const FOREX_PAIRS: ForexPair[] = [
   { symbol: "EUR/GBP", name: "Euro / Libra", group: "cross" },
   { symbol: "EUR/JPY", name: "Euro / Iene", group: "cross" },
   { symbol: "GBP/JPY", name: "Libra / Iene", group: "cross" },
+  { symbol: "EUR/CHF", name: "Euro / Franco", group: "cross" },
+  { symbol: "EUR/AUD", name: "Euro / Dólar Aus.", group: "cross" },
+  { symbol: "EUR/CAD", name: "Euro / Dólar Can.", group: "cross" },
+  { symbol: "GBP/CHF", name: "Libra / Franco", group: "cross" },
+  { symbol: "GBP/AUD", name: "Libra / Dólar Aus.", group: "cross" },
+  { symbol: "AUD/JPY", name: "Dólar Aus. / Iene", group: "cross" },
+  { symbol: "AUD/NZD", name: "Dólar Aus. / Dólar NZ", group: "cross" },
+  { symbol: "CAD/JPY", name: "Dólar Can. / Iene", group: "cross" },
+  { symbol: "CHF/JPY", name: "Franco / Iene", group: "cross" },
+  { symbol: "NZD/JPY", name: "Dólar NZ / Iene", group: "cross" },
+  { symbol: "USD/MXN", name: "Dólar / Peso Mex.", group: "exotic" },
+  { symbol: "USD/ZAR", name: "Dólar / Rand", group: "exotic" },
+  { symbol: "USD/SGD", name: "Dólar / Dólar Sing.", group: "exotic" },
   { symbol: "DXY", name: "Índice do Dólar", group: "index" },
 ];
 
@@ -147,10 +160,11 @@ export function fetchForexCalendar(currencies: string[]): Promise<ForexEvent[]> 
 }
 
 export const isBrlPair = (s: string) => s.endsWith("/BRL");
-/** Casas decimais de cotação do par (JPY = 3, índice = 2, demais = 4/5). */
+/** Casas decimais de cotação do par (JPY = 3, índice/alto valor = 2-4, demais = 4/5). */
 export function pairDecimals(s: string): number {
   if (s === "DXY") return 2;
   if (s.includes("JPY")) return 3;
+  if (s.includes("MXN") || s.includes("ZAR")) return 4; // cotações altas (~17-18)
   if (isBrlPair(s)) return 4;
   return 5;
 }
