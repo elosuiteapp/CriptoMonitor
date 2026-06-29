@@ -11,7 +11,10 @@
 // aqui é só o que precisa de memória/alerta.
 //
 // MANTER EM SINCRONIA com web/src/lib/indicators/confluence.ts (pesos e regras do viés)
-// e com web/src/lib/marketData.ts (lista SMC_ASSETS).
+// e com web/src/lib/marketData.ts (lista SMC_ASSETS). Onda 1 sincronizada (29/jun):
+// 6 forças que votam (Estrutura SMC enxuta inclusa); pesos trend .22/struct .18/
+// mom .18/flow .25/pos .12/opt .10. Sentimento/liquidações/divergências são só do
+// front (display) e NÃO entram no viés — por isso não estão aqui.
 // Auth: header x-dispatch-secret == DISPATCH_SECRET. Deploy: --no-verify-jwt.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -158,6 +161,67 @@ function adx(c: C[], period = 14): number {
   return a;
 }
 
+// ── SMC enxuto (só o viés de ESTRUTURA: swing + interno via BOS/CHoCH) ────────
+// Versão mínima de web/src/lib/smc.ts: detecta os pivôs de swing/interno e o trend
+// estrutural por quebra de estrutura. NÃO computa OB/FVG/liquidez/zonas (o servidor
+// só precisa da DIREÇÃO da estrutura p/ a força que vota). Espelha computeSmc().
+interface SC { high: number; low: number; close: number; }
+function makeLeg(candles: SC[], size: number) {
+  let leg = 0;
+  return (i: number): number => {
+    if (i < size) return 0;
+    let highest = -Infinity;
+    let lowest = Infinity;
+    for (let k = i - size + 1; k <= i; k++) {
+      if (candles[k].high > highest) highest = candles[k].high;
+      if (candles[k].low < lowest) lowest = candles[k].low;
+    }
+    const prev = leg;
+    if (candles[i - size].high > highest) leg = 0; // topo de swing → perna de baixa
+    else if (candles[i - size].low < lowest) leg = 1; // fundo de swing → perna de alta
+    if (leg === prev) return 0;
+    return leg === 1 ? 1 : -1;
+  };
+}
+function smcBias(candles: SC[], swingLen = 50, internalLen = 5): { swingBias: number; internalBias: number } {
+  const n = candles.length;
+  if (n < internalLen + 3) return { swingBias: 0, internalBias: 0 };
+  let sHi = NaN;
+  let sLo = NaN;
+  let sHiX = false;
+  let sLoX = false;
+  let iHi = NaN;
+  let iLo = NaN;
+  let iHiX = false;
+  let iLoX = false;
+  let swingTrend = 0;
+  let internalTrend = 0;
+  const legS = makeLeg(candles, swingLen);
+  const legI = makeLeg(candles, internalLen);
+  for (let i = 0; i < n; i++) {
+    const fs = legS(i);
+    if (fs !== 0 && i - swingLen >= 0) {
+      const pi = i - swingLen;
+      if (fs === -1) (sHi = candles[pi].high), (sHiX = false);
+      else (sLo = candles[pi].low), (sLoX = false);
+    }
+    const fi = legI(i);
+    if (fi !== 0 && i - internalLen >= 0) {
+      const pi = i - internalLen;
+      if (fi === -1) (iHi = candles[pi].high), (iHiX = false);
+      else (iLo = candles[pi].low), (iLoX = false);
+    }
+    if (i === 0) continue;
+    const c = candles[i].close;
+    const cp = candles[i - 1].close;
+    if (!Number.isNaN(iHi) && c > iHi && cp <= iHi && !iHiX && iHi !== sHi) (iHiX = true), (internalTrend = 1);
+    if (!Number.isNaN(iLo) && c < iLo && cp >= iLo && !iLoX && iLo !== sLo) (iLoX = true), (internalTrend = -1);
+    if (!Number.isNaN(sHi) && c > sHi && cp <= sHi && !sHiX) (sHiX = true), (swingTrend = 1);
+    if (!Number.isNaN(sLo) && c < sLo && cp >= sLo && !sLoX) (sLoX = true), (swingTrend = -1);
+  }
+  return { swingBias: swingTrend, internalBias: internalTrend };
+}
+
 // Núcleo do motor — espelha confluence.ts (viés/convicção/regime).
 // deno-lint-ignore no-explicit-any
 function computeRead(candles: any[], payload: any) {
@@ -199,16 +263,26 @@ function computeRead(candles: any[], payload: any) {
   const haveOpt = pcr != null;
   const optDir = haveOpt ? (pcr > 1.05 ? -1 : pcr < 0.95 ? 1 : 0) : 0;
   const optStr = haveOpt ? clamp01(Math.abs(pcr - 1) / 0.5) : 0;
+  // ESTRUTURA (SMC) — força que VOTA (Onda 1): swing/interno por BOS/CHoCH.
+  const smc = closes.length >= 60 ? smcBias(candles) : { swingBias: 0, internalBias: 0 };
+  const haveStruct = smc.swingBias !== 0;
+  const structDir = smc.swingBias;
+  const internalAgrees = smc.internalBias !== 0 && smc.internalBias === smc.swingBias;
+  const structStr = haveStruct ? clamp01(internalAgrees ? 0.85 : 0.55) : 0;
+
   const adxv = adx(candles, 14);
   const atrPct = atrPercentile(candles, 14, 90);
   let charState = "—";
   if (Number.isFinite(adxv)) charState = adxv >= 25 ? "tendência" : Number.isFinite(atrPct) && atrPct < 30 ? "comprimido" : "range";
 
+  // Pesos reponderados (Onda 1): trend (EMA) + structure (price action) dividem a
+  // família direcional (0,22 + 0,18); fluxo institucional alto (0,25). Normaliza por ws.
   const dirs = [
-    { d: trendDir, s: trendStr, w: 0.28, a: haveTrend },
-    { d: momDir, s: momStr, w: 0.2, a: haveMom },
-    { d: flowDir, s: flowStr, w: 0.27, a: haveFlow },
-    { d: posDir, s: posStr, w: 0.15, a: havePos },
+    { d: trendDir, s: trendStr, w: 0.22, a: haveTrend },
+    { d: structDir, s: structStr, w: 0.18, a: haveStruct },
+    { d: momDir, s: momStr, w: 0.18, a: haveMom },
+    { d: flowDir, s: flowStr, w: 0.25, a: haveFlow },
+    { d: posDir, s: posStr, w: 0.12, a: havePos },
     { d: optDir, s: optStr, w: 0.1, a: haveOpt },
   ];
   let num = 0;
@@ -243,7 +317,7 @@ function computeRead(candles: any[], payload: any) {
 }
 
 async function fetchCandles(asset: string): Promise<C[]> {
-  const kr = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${asset}USDT&interval=1d&limit=250`);
+  const kr = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${asset}USDT&interval=1d&limit=365`);
   if (!kr.ok) throw new Error(`klines ${kr.status}`);
   const raw = (await kr.json()) as unknown[][];
   return raw.map((k) => ({ high: Number(k[2]), low: Number(k[3]), close: Number(k[4]) }));
