@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchForexCalendar, fetchForexChart, fetchForexOverview, forexSessions, pairCurrencies, pairDecimals, type ForexCandle, type ForexEvent, type ForexQuote } from "../../lib/forex";
 import MacroGlobalPanel from "../MacroGlobalPanel";
+import ForexCorrelationMatrix from "./ForexCorrelationMatrix";
 
 const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", AUD: "🇦🇺", CAD: "🇨🇦", CHF: "🇨🇭", NZD: "🇳🇿", BRL: "🇧🇷", MXN: "🇲🇽" };
 const evDate = (s: string) => {
@@ -195,6 +196,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
         )}
         <p className="mt-2 text-[11px] text-muted-foreground">Correlação de retornos diários. +1 = andam juntos · −1 = ao contrário. Ex.: a maioria dos pares anda contra o DXY.</p>
       </div>
+
+      {/* Matriz de correlação entre os principais pares (heatmap) */}
+      <ForexCorrelationMatrix />
 
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
