@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 
@@ -31,6 +31,7 @@ interface Props {
 export default function B3Chart({ candles, chartType, showEma, showVolume, showBollinger = false, showLongTrend = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [expanded, setExpanded] = useState(false); // gráfico em altura ampliada
   const { isDark } = useTheme();
 
   // cria o chart uma vez
@@ -157,5 +158,18 @@ export default function B3Chart({ candles, chartType, showEma, showVolume, showB
     };
   }, [candles, chartType, showEma, showVolume, showBollinger, showLongTrend]);
 
-  return <div ref={wrapRef} className="h-[360px] w-full" />;
+  return (
+    <div className={`relative w-full ${expanded ? "h-[78vh]" : "h-[360px]"}`}>
+      {/* Expandir / recolher o gráfico (mais espaço p/ ver os indicadores) */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        title={expanded ? "Recolher gráfico" : "Expandir gráfico"}
+        aria-label={expanded ? "Recolher gráfico" : "Expandir gráfico"}
+        className="absolute right-2 top-2 z-20 rounded-md border border-border bg-background/80 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {expanded ? "⤡" : "⤢"}
+      </button>
+      <div ref={wrapRef} className="h-full w-full" />
+    </div>
+  );
 }
