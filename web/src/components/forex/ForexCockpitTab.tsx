@@ -6,6 +6,7 @@ import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
 import { PillRow, TogglePill } from "../TogglePill";
 import ForexChart from "./ForexChart";
+import ForexIndicatorPanels from "./ForexIndicatorPanels";
 import ForexNewsBlock from "./ForexNewsBlock";
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
@@ -28,6 +29,8 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   const [showEma, setShowEma] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
+  const [showRsi, setShowRsi] = useState(false);
+  const [showMacd, setShowMacd] = useState(false);
 
   const [candles, setCandles] = useState<ForexCandle[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
@@ -153,6 +156,8 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
             <TogglePill label="Médias (EMA 9/21/50)" active={showEma} onToggle={() => setShowEma((v) => !v)} color="bg-amber-500" desc="Médias móveis exponenciais de 9, 21 e 50 — tendência e suportes/resistências dinâmicos." />
             <TogglePill label="Bollinger" active={showBollinger} onToggle={() => setShowBollinger((v) => !v)} color="bg-sky-500" desc="Bandas de Bollinger (20 ± 2σ) — volatilidade e reversão à média." />
             <TogglePill label="Perfil de preço (POC)" active={showVolumeProfile} onToggle={() => setShowVolumeProfile((v) => !v)} color="bg-fuchsia-500" desc="POC + área de valor (VAH/VAL) por TEMPO no preço — FX não tem volume real, então usamos tempo-no-preço (TPO)." />
+            <TogglePill label="RSI (14)" active={showRsi} onToggle={() => setShowRsi((v) => !v)} color="bg-violet-500" desc="Índice de Força Relativa (14): acima de 70 = sobrecompra, abaixo de 30 = sobrevenda. Momento e exaustão." />
+            <TogglePill label="MACD" active={showMacd} onToggle={() => setShowMacd((v) => !v)} color="bg-blue-500" desc="MACD (12/26/9): cruzamentos e histograma — força e virada de tendência." />
           </PillRow>
           {chartLoading ? (
             <div className="h-[360px] animate-pulse rounded-xl bg-muted/40" />
@@ -161,6 +166,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           ) : (
             <ForexChart candles={candles} chartType={chartType} decimals={dec} showEma={showEma} showBollinger={showBollinger} showVolumeProfile={showVolumeProfile} />
           )}
+          <ForexIndicatorPanels candles={candles} showRsi={showRsi} showMacd={showMacd} />
         </div>
       </div>
 
