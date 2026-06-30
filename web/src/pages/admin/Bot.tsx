@@ -82,7 +82,10 @@ async function invoke(action: string, extra: Record<string, unknown> = {}) {
     throw new Error(detail);
   }
   if (data?.error) throw new Error(data.error);
-  if (data?.code && data.code !== "0") throw new Error(`OKX ${data.code}: ${data.msg ?? "erro"}`);
+  if (data?.code && data.code !== "0") {
+    const sMsg = (data?.data?.[0]?.sMsg ?? "").trim();
+    throw new Error(sMsg || `OKX ${data.code}: ${data.msg ?? "erro"}`);
+  }
   return data;
 }
 
@@ -531,7 +534,7 @@ export default function AdminBot() {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select className={input} value={mSide} onChange={(e) => setMSide(e.target.value as "buy" | "sell")}><option value="buy">Comprar</option><option value="sell">Vender</option></select>
               <select className={input} value={mOrdType} onChange={(e) => setMOrdType(e.target.value as "market" | "limit")}><option value="market">A mercado</option><option value="limit">Limite</option></select>
-              <input className={input} placeholder="Tamanho (sz)" value={mSz} onChange={(e) => setMSz(e.target.value)} />
+              <input className={input} placeholder={mSide === "buy" ? `Tamanho em ${cfg.quote_ccy} (ex.: 50)` : `Tamanho em ${cfg.base_ccy} (ex.: 0.001)`} value={mSz} onChange={(e) => setMSz(e.target.value)} />
               <input className={input} placeholder="Preço (limite)" value={mPx} onChange={(e) => setMPx(e.target.value)} disabled={mOrdType !== "limit"} />
             </div>
             <button onClick={placeManual} disabled={busy !== null || !connected} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busy === "manual" ? "Enviando…" : `Enviar ${mSide === "buy" ? "compra" : "venda"} de ${cfg.inst_id} (demo)`}</button>
