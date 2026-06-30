@@ -23,11 +23,17 @@ export interface BotMarker {
 
 /** Gráfico de velas (Lightweight Charts) com marcadores de compra/venda do robô.
  *  Isolado/reutilizável no /admin/robo. */
-export default function BotChart({ candles, markers, decimals = 2, height = 420 }: { candles: BotCandle[]; markers: BotMarker[]; decimals?: number; height?: number }) {
+export default function BotChart({ candles, markers, decimals = 2, height = 420, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; decimals?: number; height?: number; fitKey?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const didFitRef = useRef(false);
   const { isDark } = useTheme();
+
+  // Re-enquadra só quando troca o ativo/timeframe (não a cada atualização ao vivo).
+  useEffect(() => {
+    didFitRef.current = false;
+  }, [fitKey]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -74,8 +80,12 @@ export default function BotChart({ candles, markers, decimals = 2, height = 420 
         text: m.text ?? (m.side === "buy" ? "C" : "V"),
       }));
     s.setMarkers(mk);
-    // Mostra as ~110 velas mais recentes (candles largos, como no cockpit) — não espreme as 200.
-    if (candles.length) chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 110), to: candles.length + 4 });
+    // Mostra as ~110 velas mais recentes (candles largos) — SÓ no 1º carregamento/troca de TF;
+    // em atualizações ao vivo preserva o zoom/scroll do usuário.
+    if (candles.length && !didFitRef.current) {
+      chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 110), to: candles.length + 4 });
+      didFitRef.current = true;
+    }
   }, [candles, markers, decimals]);
 
   return <div ref={wrapRef} style={{ height }} className="w-full" />;

@@ -140,6 +140,19 @@ export default function AdminBot() {
     loadBase();
   }, [loadBase]);
 
+  // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
+  // diário — sem sobrescrever o que está sendo digitado na config.
+  const loadLive = useCallback(async () => {
+    const [{ data: c }, { data: ord }, { data: lg }] = await Promise.all([
+      supabase.rpc("bot_get_config"),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+    ]);
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold } : (c as Config)));
+    setOrders((ord as OrderRow[] | null) ?? []);
+    setLogs((lg as LogRow[] | null) ?? []);
+  }, []);
+
   const loadChart = useCallback(async (config: Config) => {
     try {
       const r = await invoke("candles", { instId: config.inst_id, bar: config.bar, limit: 200 }, config.venue === "binance" ? "binance-bot" : "okx-bot");
@@ -173,6 +186,26 @@ export default function AdminBot() {
     const id = setInterval(poll, 15000);
     return () => { active = false; clearInterval(id); };
   }, [connected, cfg?.position, cfg?.inst_id, cfg?.venue]);
+
+  // Painel ao vivo: patrimônio + gráfico + leitura/posição/ordens/diário a cada 20s (silencioso).
+  useEffect(() => {
+    if (!connected || !cfg) return;
+    const venueFn = cfg.venue === "binance" ? "binance-bot" : "okx-bot";
+    let active = true;
+    const tick = async () => {
+      try {
+        const bal = await invoke("balance", {}, venueFn);
+        if (active) setTotalEq(bal?.data?.[0]?.totalEq ?? null);
+      } catch { /* silencioso */ }
+      if (!active) return;
+      await loadChart(cfg);
+      await loadLive();
+    };
+    tick();
+    const id = setInterval(tick, 20000);
+    return () => { active = false; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, cfg?.inst_id, cfg?.bar, cfg?.venue, loadChart, loadLive]);
 
   async function refresh() {
     if (!connected || !cfg) return;
@@ -511,7 +544,7 @@ export default function AdminBot() {
           </div>
         </div>
         {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} decimals={dec} />
+          <BotChart candles={candles} markers={markers} decimals={dec} fitKey={`${cfg?.inst_id ?? ""}-${cfg?.bar ?? ""}`} />
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
