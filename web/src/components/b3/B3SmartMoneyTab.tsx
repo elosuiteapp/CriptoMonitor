@@ -222,6 +222,24 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
       {/* Fluxo por investidor (market-wide) — o "smart money" da bolsa: quem comprou/vendeu */}
       {flow.length > 0 && <B3InvestorFlow rows={flow} />}
 
+      {/* Termômetro do estrangeiro (ADRs) — só p/ AÇÕES/índice (FIIs não têm ADR) */}
+      {!isFii(asset) && (
+        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <h3 className="text-sm font-semibold text-foreground">Termômetro do estrangeiro · ADRs</h3>
+          <p className="mb-2 text-xs text-muted-foreground">Prêmio/desconto dos ADRs na NYSE vs ação local — leitura intradiária do apetite externo.</p>
+          {adrs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Carregando ADRs…</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Cell label="ADRs (média)" value={<span className={toneCls(adrAvg)}>{`${adrAvg! >= 0 ? "+" : ""}${adrAvg!.toFixed(2)}%`}</span>} sub={adrAvg! >= 0 ? "entrada" : "saída"} />
+              {adrs.map((a) => (
+                <Cell key={a.ticker} label={`${a.name} (${a.ticker})`} value={<span className={toneCls(a.premiumPct)}>{`${a.premiumPct >= 0 ? "+" : ""}${a.premiumPct.toFixed(2)}%`}</span>} sub={a.premiumPct >= 0 ? "prêmio" : "desconto"} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Leitura da ação (foco p/ bolsa) — só ações; índice/dólar seguem no SMC */}
       {isStock && stockRead && <B3StockReadPanel asset={asset} read={stockRead} />}
 
@@ -348,25 +366,6 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
           </div>
         </div>
       )}
-
-      {/* Fluxo por investidor (estrangeiro/institucional/PF) — o diferencial */}
-      <B3InvestorFlow />
-
-      {/* Termômetro do estrangeiro (ADRs) */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="text-sm font-semibold text-foreground">Termômetro do estrangeiro · ADRs</h3>
-        <p className="mb-2 text-xs text-muted-foreground">Prêmio/desconto dos ADRs na NYSE vs ação local — leitura intradiária do apetite externo.</p>
-        {adrs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Carregando ADRs…</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Cell label="ADRs (média)" value={<span className={toneCls(adrAvg)}>{`${adrAvg! >= 0 ? "+" : ""}${adrAvg!.toFixed(2)}%`}</span>} sub={adrAvg! >= 0 ? "entrada" : "saída"} />
-            {adrs.map((a) => (
-              <Cell key={a.ticker} label={`${a.name} (${a.ticker})`} value={<span className={toneCls(a.premiumPct)}>{`${a.premiumPct >= 0 ? "+" : ""}${a.premiumPct.toFixed(2)}%`}</span>} sub={a.premiumPct >= 0 ? "prêmio" : "desconto"} />
-            ))}
-          </div>
-        )}
-      </div>
 
       <ComingSoon icon="🎯" title="Gamma & Opções (GEX)">
         <p>Call/Put Wall, Zero Gamma, Max Pain e exposição a gama por strike nas opções líquidas (PETR4, VALE3, IBOV).</p>

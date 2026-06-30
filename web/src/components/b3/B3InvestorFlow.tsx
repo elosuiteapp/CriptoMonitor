@@ -74,6 +74,7 @@ export default function B3InvestorFlow({ rows: propRows }: { rows?: FlowRow[] })
       </div>
       <p className="mb-2 text-[11px] text-muted-foreground">Quem comprou/vendeu a bolsa no dia (líquido, R$). O estrangeiro costuma liderar o IBOV.</p>
 
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Saldo líquido do dia · {new Date(latest.date + "T00:00:00").toLocaleDateString("pt-BR")}</div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {TYPES.map((t) => (
           <div key={t.key} className="rounded-xl border border-border/70 bg-background/40 p-2.5">
