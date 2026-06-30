@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 
 interface Config {
   enabled: boolean;
+  venue: string;
   inst_id: string;
   base_ccy: string;
   quote_ccy: string;
@@ -73,8 +74,8 @@ const LOG_TONE: Record<string, string> = {
   error: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
 };
 
-async function invoke(action: string, extra: Record<string, unknown> = {}) {
-  const { data, error } = await supabase.functions.invoke("okx-bot", { body: { action, ...extra } });
+async function invoke(action: string, extra: Record<string, unknown> = {}, fn = "okx-bot") {
+  const { data, error } = await supabase.functions.invoke(fn, { body: { action, ...extra } });
   if (error) {
     let detail = error.message;
     const ctx = (error as { context?: Response }).context;
@@ -127,8 +128,9 @@ export default function AdminBot() {
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
     ]);
-    setConnected(!!(st as { okx?: boolean })?.okx);
-    setCfg((c as Config) ?? null);
+    const conf = (c as Config) ?? null;
+    setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
+    setCfg(conf);
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
   }, []);
@@ -139,7 +141,7 @@ export default function AdminBot() {
 
   const loadChart = useCallback(async (config: Config) => {
     try {
-      const r = await invoke("candles", { instId: config.inst_id, bar: config.bar, limit: 200 });
+      const r = await invoke("candles", { instId: config.inst_id, bar: config.bar, limit: 200 }, config.venue === "binance" ? "binance-bot" : "okx-bot");
       const rows = ((r?.data ?? []) as string[][]).slice().reverse();
       const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4] }));
       setCandles(cs);
@@ -158,7 +160,7 @@ export default function AdminBot() {
     setBusy("refresh");
     setMsg(null);
     try {
-      const bal = await invoke("balance");
+      const bal = await invoke("balance", {}, cfg.venue === "binance" ? "binance-bot" : "okx-bot");
       setTotalEq(bal?.data?.[0]?.totalEq ?? null);
       await loadChart(cfg);
       await loadBase();
@@ -179,11 +181,16 @@ export default function AdminBot() {
         const { error } = await supabase.rpc("set_bot_secret", { p_key: k, p_value: v.trim() });
         if (error) throw new Error(error.message);
       };
-      await save("okx_api_key", apiKey);
-      await save("okx_api_secret", apiSecret);
-      await save("okx_api_passphrase", passphrase);
+      if (cfg?.venue === "binance") {
+        await save("binance_test_key", apiKey);
+        await save("binance_test_secret", apiSecret);
+      } else {
+        await save("okx_api_key", apiKey);
+        await save("okx_api_secret", apiSecret);
+        await save("okx_api_passphrase", passphrase);
+      }
       setApiKey(""); setApiSecret(""); setPassphrase("");
-      setMsg({ kind: "ok", text: "Chaves da OKX demo salvas." });
+      setMsg({ kind: "ok", text: cfg?.venue === "binance" ? "Chaves da Binance testnet salvas." : "Chaves da OKX demo salvas." });
       await loadBase();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao salvar." });
@@ -241,9 +248,9 @@ export default function AdminBot() {
     setBusy("manual");
     setMsg(null);
     try {
-      const swap = cfg.inst_id.toUpperCase().endsWith("-SWAP");
-      const sizing = swap ? { quoteSz: mSz.trim() } : { tdMode: "cash", sz: mSz.trim() };
-      await invoke("order", { instId: cfg.inst_id, side: mSide, ordType: mOrdType, ...sizing, px: mOrdType === "limit" ? mPx.trim() : undefined });
+      const fut = cfg.venue === "binance" || cfg.inst_id.toUpperCase().endsWith("-SWAP");
+      const sizing = fut ? { quoteSz: mSz.trim() } : { tdMode: "cash", sz: mSz.trim() };
+      await invoke("order", { instId: cfg.inst_id, side: mSide, ordType: mOrdType, ...sizing, px: mOrdType === "limit" ? mPx.trim() : undefined }, cfg.venue === "binance" ? "binance-bot" : "okx-bot");
       setMsg({ kind: "ok", text: "Ordem manual enviada (demo)." });
       setMSz(""); setMPx("");
       await refresh();
@@ -260,7 +267,7 @@ export default function AdminBot() {
     setBusy("close");
     setMsg(null);
     try {
-      const r = await invoke("close");
+      const r = await invoke("close", {}, cfg.venue === "binance" ? "binance-bot" : "okx-bot");
       if (r?.closed === false) setMsg({ kind: "ok", text: "Não havia posição aberta." });
       else setMsg({ kind: "ok", text: `Posição fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg.quote_ccy}` : ""}.` });
       await refresh();
@@ -292,7 +299,7 @@ export default function AdminBot() {
     setBusy("row" + o.id);
     setMsg(null);
     try {
-      await invoke("cancel", { instId: o.inst_id, ordId });
+      await invoke("cancel", { instId: o.inst_id, ordId }, cfg?.venue === "binance" ? "binance-bot" : "okx-bot");
       setMsg({ kind: "ok", text: "Ordem cancelada na OKX." });
       await loadBase();
     } catch (e) {
@@ -318,7 +325,8 @@ export default function AdminBot() {
 
   const lastPx = candles.length ? candles[candles.length - 1].close : 0;
   const dec = lastPx >= 1000 ? 1 : lastPx >= 1 ? 2 : 6;
-  const isFut = !!cfg?.inst_id && cfg.inst_id.toUpperCase().endsWith("-SWAP");
+  const isBinance = cfg?.venue === "binance";
+  const isFut = isBinance || (!!cfg?.inst_id && cfg.inst_id.toUpperCase().endsWith("-SWAP"));
   const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
 
   return (
@@ -326,8 +334,8 @@ export default function AdminBot() {
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold text-foreground">Robô · Lab</h1>
-        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">OKX Demo · dinheiro fake</span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{connected ? "OKX conectada" : "OKX não conectada"}</span>
+        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">{isBinance ? "Binance Testnet · futuros fake" : "OKX Demo · dinheiro fake"}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{connected ? (isBinance ? "Binance conectada" : "OKX conectada") : "não conectada"}</span>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cfg?.enabled ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>{cfg?.enabled ? "ROBÔ LIGADO" : "robô desligado"}</span>
       </div>
       <p className="-mt-3 text-sm text-muted-foreground">Robô de trade <strong>pessoal</strong> em simulador, isolado do produto e visível só para você. Compra e vende sozinho pela estratégia abaixo; toda ordem usa o ambiente Demo da OKX (<code>x-simulated-trading</code>) — sem risco.</p>
@@ -579,18 +587,20 @@ export default function AdminBot() {
       {/* Conexão (chaves) — recolhível */}
       <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
         <button onClick={() => setShowKeys((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
-          <span>Conexão OKX (Demo) {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
+          <span>{isBinance ? "Conexão Binance (Testnet)" : "Conexão OKX (Demo)"} {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
           <span className="text-muted-foreground">{showKeys ? "▲" : "▼"}</span>
         </button>
         {showKeys && (
           <div className="mt-3">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <input className={input} placeholder="API Key (demo)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-              <input className={input} placeholder="API Secret (demo)" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
-              <input className={input} placeholder="Passphrase (demo)" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+            <div className={`grid gap-2 ${isBinance ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+              <input className={input} placeholder="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+              <input className={input} placeholder="API Secret" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
+              {!isBinance && <input className={input} placeholder="Passphrase" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />}
             </div>
             <button onClick={saveKeys} disabled={busy !== null} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy === "keys" ? "Salvando…" : "Salvar chaves"}</button>
-            <p className="mt-2 text-[11px] text-muted-foreground">Chaves do <strong>Demo Trading</strong> da OKX (não as reais). Permissão de <strong>Trade</strong>; nunca saque; sem restrição de IP.</p>
+            {isBinance
+              ? <p className="mt-2 text-[11px] text-muted-foreground">Chaves do <strong>Binance Futures Testnet</strong> (testnet.binancefuture.com) — dinheiro fake, sem KYC. Cole a API Key e a Secret.</p>
+              : <p className="mt-2 text-[11px] text-muted-foreground">Chaves do <strong>Demo Trading</strong> da OKX (não as reais). Permissão de <strong>Trade</strong>; nunca saque; sem restrição de IP.</p>}
           </div>
         )}
       </div>

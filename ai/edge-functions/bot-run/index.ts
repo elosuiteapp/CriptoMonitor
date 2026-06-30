@@ -1,6 +1,8 @@
-// Edge Function: bot-run (v8) — robô OKX demo FUTUROS (perp): estrutura POR TIMEFRAME + fluxo.
-// Opera BTC-USDT-SWAP nos DOIS lados: LONG no viés de alta, SHORT no viés de baixa (long/short/flat,
-// alavancagem, tamanho em USDT → contratos). Cérebro idêntico ao v7; só a execução virou futuros.
+// Edge Function: bot-run (v9) — robô FUTUROS multi-corretora: estrutura POR TIMEFRAME + fluxo.
+// venue='binance' → Binance USDⓈ-M Futures TESTNET (long+short, BTCUSDT); a OKX bloqueia
+// derivativos p/ conta BR (geo), então o executor de futuros é a Binance testnet. venue='okx'
+// = legado (spot/swap). Opera nos DOIS lados: LONG no viés de alta, SHORT no de baixa (long/
+// short/flat, alavancagem, tamanho em USDT → quantidade). Cérebro (SMC por TF + fluxo) idêntico.
 // Cada timeframe (15m/30m/1H) lê a PRÓPRIA estrutura (SMC: swing/BOS/CHoCH, OB, premium/
 // discount + momentum daquele TF) e VOTA. O robô conta o consenso (quantos TFs de compra ×
 // venda). O fluxo (book, paredes/ímã, absorção, CVD-tendência, liquidações, gamma/HIRO,
@@ -39,6 +41,23 @@ async function okx(method: "GET" | "POST", path: string, bodyObj: Record<string,
 }
 const clamp = (v: number) => Math.max(-100, Math.min(100, v));
 const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+
+// ════════ Binance USDⓈ-M Futures TESTNET (long+short; OKX bloqueia derivativos p/ BR) ════════
+const BNB_BASE = "https://testnet.binancefuture.com";
+const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h" };
+interface BnbCreds { key: string; secret: string }
+async function hmacHex(secret: string, msg: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// deno-lint-ignore no-explicit-any
+async function bnb(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string | number | boolean>, c: BnbCreds, signed: boolean): Promise<{ status: number; body: any }> {
+  let qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
+  if (signed) { qs += (qs ? "&" : "") + "recvWindow=5000&timestamp=" + Date.now(); qs += "&signature=" + await hmacHex(c.secret, qs); }
+  const r = await fetch(BNB_BASE + path + (qs ? "?" + qs : ""), { method, headers: { "X-MBX-APIKEY": c.key } });
+  return { status: r.status, body: await r.json().catch(() => ({})) };
+}
 
 // ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts ════════
 type Bias = "bullish" | "bearish";
@@ -284,8 +303,11 @@ Deno.serve(async (req) => {
   if (!cfg) return json(500, { error: "sem config" });
   if (!cfg.enabled && !forced) return json(200, { skipped: "robo desligado" });
 
+  const venue = String(cfg.venue ?? "okx");
   const creds: Creds = { key: secrets.okx_api_key ?? "", secret: secrets.okx_api_secret ?? "", passphrase: secrets.okx_api_passphrase ?? "" };
-  if (!creds.key || !creds.secret || !creds.passphrase) { await log("error", "Sem credenciais da OKX demo."); return json(400, { error: "sem credenciais" }); }
+  const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
+  if (venue === "binance") { if (!bnbCreds.key || !bnbCreds.secret) { await log("error", "Sem chaves da Binance testnet."); return json(400, { error: "sem credenciais binance" }); } }
+  else if (!creds.key || !creds.secret || !creds.passphrase) { await log("error", "Sem credenciais da OKX demo."); return json(400, { error: "sem credenciais" }); }
 
   try {
     const base = cfg.base_ccy;
@@ -299,13 +321,23 @@ Deno.serve(async (req) => {
     let cvdSum: number | null = null;
     for (const s of (snaps ?? [])) { const pr = (s.payload as any)?.price ?? {}; for (const ex of ["binance", "okx", "coinbase"]) { const v = N(pr?.[ex]?.cvd); if (v != null) cvdSum = (cvdSum ?? 0) + v; } }
 
-    const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
-    const lastPx = Number((tk.data as { last?: string }[])?.[0]?.last) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
-
+    // Preço + velas por TF (Binance futures testnet ou OKX), normalizados p/ [time,o,h,l,c].
+    let lastPx = 0;
+    let candleRows: string[][][] = [];
+    if (venue === "binance") {
+      const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: cfg.inst_id }, bnbCreds, false);
+      lastPx = Number(tkb.body?.price) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
+      const sets = await Promise.all(TFS.map((tf) => bnb("GET", "/fapi/v1/klines", { symbol: cfg.inst_id, interval: BNB_INTERVAL[tf] ?? "1h", limit: 300 }, bnbCreds, false)));
+      candleRows = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4])]));
+    } else {
+      const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
+      lastPx = Number((tk.data as { last?: string }[])?.[0]?.last) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
+      const sets = await Promise.all(TFS.map((tf) => okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(cfg.inst_id)}&bar=${tf}&limit=300`, null, creds)));
+      candleRows = sets.map((s) => ((s.data as string[][]) ?? []).slice().reverse().map((r) => [r[0], r[1], r[2], r[3], r[4]]));
+    }
     // Estrutura por TF: cada timeframe lê a sua + momentum dele.
-    const candleSets = await Promise.all(TFS.map((tf) => okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(cfg.inst_id)}&bar=${tf}&limit=300`, null, creds)));
     const tfReads: TfRead[] = TFS.map((tf, i) => {
-      const cs: Candle[] = ((candleSets[i].data as string[][]) ?? []).slice().reverse().map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
+      const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
       const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
       const cl = cs.map((c) => c.close);
       const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
@@ -318,7 +350,8 @@ Deno.serve(async (req) => {
     const { bias, conviction, signals, absScore } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum);
 
     // ── DIREÇÃO DESEJADA (futuros: long/short/flat; banda neutra mantém posição) ──
-    const isSwap = String(cfg.inst_id).toUpperCase().endsWith("-SWAP");
+    const isSwapOkx = String(cfg.inst_id).toUpperCase().endsWith("-SWAP");
+    const fut = venue === "binance" || isSwapOkx; // opera short?
     let pos: "long" | "short" | "flat" = cfg.position === "long" ? "long" : cfg.position === "short" ? "short" : "flat";
     const total = tfReads.length;
     let want: "long" | "short" | null = bias >= cfg.buy_threshold ? "long" : bias <= -cfg.sell_threshold ? "short" : null;
@@ -328,18 +361,18 @@ Deno.serve(async (req) => {
       else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
       else if (bear > bull && absScore < 55) { gate = `${bear}/${total} TFs de baixa sem parede defendendo`; want = null; }
     } else if (want === "short") {
-      if (!isSwap) { gate = "spot não faz short — use futuros"; want = null; }
+      if (!fut) { gate = "spot não faz short — use futuros"; want = null; }
       else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
       else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
       else if (bull > bear && absScore > -55) { gate = `${bull}/${total} TFs de alta sem parede barrando`; want = null; }
     }
     // Alvo: futuros mantém na zona neutra; spot precisa SAIR do long quando vira baixa (não shorta).
     let target: "long" | "short" | "flat" = want ?? pos;
-    if (!isSwap) { if (target === "short") target = "flat"; if (pos === "long" && bias <= -cfg.sell_threshold) target = "flat"; }
+    if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && bias <= -cfg.sell_threshold) target = "flat"; }
 
     const decision = !cfg.enabled ? "preview" : target === pos ? "hold" : target;
     const structure = { consensus: { bull, bear, total }, perTf: tfReads.map((t) => ({ tf: t.tf, bias: t.bias, swing: t.smc?.swingBias ?? null })), zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
-    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: isSwap, gate: gate || null, ts: new Date().toISOString() };
+    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
     await admin.from("bot_config").update({ last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() }).eq("id", 1);
 
     const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
@@ -355,7 +388,57 @@ Deno.serve(async (req) => {
       return json(200, { decision: !cfg.enabled ? "preview" : "hold", bias, conviction, signals, structure });
     }
 
-    // ── EXECUÇÃO (transição pos → target) ──
+    // ════════ EXECUÇÃO — BINANCE FUTURES TESTNET (long/short, tamanho em USDT) ════════
+    if (venue === "binance") {
+      const info = await bnb("GET", "/fapi/v1/exchangeInfo", {}, bnbCreds, false);
+      const symInfo = ((info.body?.symbols as any[]) ?? []).find((s) => s.symbol === cfg.inst_id) ?? {};
+      const lot = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "LOT_SIZE") ?? {};
+      const notf = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "MIN_NOTIONAL") ?? {};
+      const stepSz = Number(lot.stepSize) || 0.001, minQty = Number(lot.minQty) || 0.001, minNot = Number(notf.notional) || 100;
+      const ss = String(stepSz); const qDec = ss.includes(".") ? ss.replace(/0+$/, "").split(".")[1].length : 0;
+      const roundStep = (q: number) => Math.floor(q / stepSz) * stepSz;
+      const place = async (side: "BUY" | "SELL", qty: string, reduceOnly: boolean) => {
+        const params: Record<string, string | number | boolean> = { symbol: cfg.inst_id, side, type: "MARKET", quantity: qty, newOrderRespType: "RESULT" };
+        if (reduceOnly) params.reduceOnly = true;
+        const r = await bnb("POST", "/fapi/v1/order", params, bnbCreds, true);
+        const okk = !!r.body?.orderId && r.body?.status !== "REJECTED" && !r.body?.code;
+        return { r: r.body, okk, ap: Number(r.body?.avgPrice) || null, fz: Number(r.body?.executedQty) || null, sMsg: r.body?.msg ?? null };
+      };
+      let pnl: number | null = null;
+      // 1) Fecha posição atual (se houver).
+      if (pos !== "flat") {
+        const closeSide = pos === "long" ? "SELL" : "BUY";
+        const res = await place(closeSide, String(cfg.pos_base_sz), true);
+        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: res.r, note: "falha ao fechar" }); await log("error", `Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg }); }
+        const exitPx = res.ap ?? lastPx;
+        if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (pos === "long" ? 1 : -1);
+        await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
+        await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+        pos = "flat";
+      }
+      // 2) Abre o alvo (se não for ficar fora).
+      if (target !== "flat") {
+        await bnb("POST", "/fapi/v1/leverage", { symbol: cfg.inst_id, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
+        const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage);
+        let qty = roundStep(notionalWanted / lastPx);
+        if (qty < minQty) qty = minQty;
+        if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
+        const qtyStr = qty.toFixed(qDec);
+        const openSide = target === "long" ? "BUY" : "SELL";
+        const res = await place(openSide, qtyStr, false);
+        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
+        const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
+        await admin.from("bot_config").update({ position: target, pos_base_sz: filled, entry_px: entryPx }).eq("id", 1);
+        await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+        await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${cfg.base_ccy} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
+        return json(200, { decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, signals, structure });
+      }
+      await log("trade", `Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
+      return json(200, { decision: "flat", ok: true, bias, conviction, pnl, signals, structure });
+    }
+
+    // ── EXECUÇÃO OKX (legado spot/swap) ──
+    const isSwap = isSwapOkx;
     // Spec do contrato p/ converter USDT → nº de contratos.
     let ctVal = 1, lotSz = 0.000001, minSz = 0, szDec = 6;
     if (isSwap) {
