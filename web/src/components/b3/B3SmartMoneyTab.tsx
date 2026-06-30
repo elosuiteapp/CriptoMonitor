@@ -10,6 +10,7 @@ import InfoTip from "../InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 import { PillRow, TogglePill } from "../TogglePill";
 import VolumeDeltaSubchart from "../VolumeDeltaSubchart";
+import B3FiiRead from "./B3FiiRead";
 import B3InvestorFlow from "./B3InvestorFlow";
 import B3StockReadPanel from "./B3StockReadPanel";
 import { Cell, ComingSoon, fmtVol, toneCls } from "./B3Shared";
@@ -242,6 +243,9 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Leitura da ação (foco p/ bolsa) — só ações; índice/dólar seguem no SMC */}
       {isStock && stockRead && <B3StockReadPanel asset={asset} read={stockRead} />}
+
+      {/* Leitura do FII (foco em valor: deságio/DY) — só quando o ativo é um FII */}
+      {isFii(asset) && <B3FiiRead ticker={asset} cdi={macro?.macro?.cdi ?? null} />}
 
       {/* Daqui pra baixo: Smart Money / estrutura ICT — camada avançada p/ ações */}
       {isStock && (
