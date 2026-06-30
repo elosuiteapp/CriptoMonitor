@@ -81,6 +81,8 @@ export interface ForexCot {
   nonreptNet: number; // pequenos especuladores (varejo) líquido
   nonreptNetChg: number;
   openInterest: number;
+  pctl: number | null; // COT index: onde o net institucional está na faixa de ~6 meses (0=mín, 100=máx)
+  weeks: number; // semanas de histórico usadas no COT index
 }
 /** Moeda e direção do COT relevantes p/ o par. Como o COT é "moeda vs USD":
  *  XXX/USD → COT de XXX (direção +1); USD/XXX → COT de XXX (direção −1, invertido);
@@ -98,25 +100,33 @@ export function fetchForexCot(currency: string): Promise<ForexCot | null> {
     600_000,
     async () => {
       try {
+        // Histórico (~6 meses) p/ o COT index — ordena por report_date (a data oficial).
         const { data, error } = await supabase
           .from("cot_positioning")
-          .select("asset, report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, nonrept_net, nonrept_net_chg, open_interest")
+          .select("report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, nonrept_net, nonrept_net_chg, open_interest")
           .eq("asset", currency)
-          .order("ts", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (error || !data) return null;
-        const d = data as Record<string, unknown>;
+          .order("report_date", { ascending: false })
+          .limit(30);
+        if (error || !data || data.length === 0) return null;
+        const rows = data as Record<string, unknown>[];
+        const d = rows[0];
+        const nets = rows.map((r) => Number(r.asset_mgr_net ?? 0));
+        const cur = Number(d.asset_mgr_net ?? 0);
+        const mn = Math.min(...nets);
+        const mx = Math.max(...nets);
+        const pctl = rows.length >= 8 && mx > mn ? Math.round((100 * (cur - mn)) / (mx - mn)) : null;
         return {
           currency,
           reportDate: String(d.report_date ?? "").slice(0, 10),
-          assetMgrNet: Number(d.asset_mgr_net ?? 0),
+          assetMgrNet: cur,
           assetMgrNetChg: Number(d.asset_mgr_net_chg ?? 0),
           levMoneyNet: Number(d.lev_money_net ?? 0),
           levMoneyNetChg: Number(d.lev_money_net_chg ?? 0),
           nonreptNet: Number(d.nonrept_net ?? 0),
           nonreptNetChg: Number(d.nonrept_net_chg ?? 0),
           openInterest: Number(d.open_interest ?? 0),
+          pctl,
+          weeks: rows.length,
         };
       } catch {
         return null;

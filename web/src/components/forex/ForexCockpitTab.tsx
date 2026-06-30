@@ -207,6 +207,27 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
               </h3>
               <span className="text-[11px] text-muted-foreground">OI {fmtSigned(cot.openInterest).replace("+", "")} · CFTC {cot.reportDate}</span>
             </div>
+            {cot.pctl != null && (() => {
+              const p = cot.pctl;
+              const hot = p >= 85 || p <= 15;
+              const zone = p >= 85 ? "comprado no extremo (perto da máxima de ~6 meses)" : p <= 15 ? "vendido no extremo (perto da mínima de ~6 meses)" : "dentro da faixa normal de ~6 meses";
+              const pairNote = hot ? ((p >= 85 ? 1 : -1) * cotInfo.direction > 0 ? `Esticado a favor de ${pair} — risco de realização/correção.` : `Esticado contra ${pair} — possível exaustão a favor de ${pair}.`) : "";
+              return (
+                <div className={`mb-3 rounded-xl border p-3 ${hot ? "border-amber-500/40 bg-amber-500/10" : "border-border/70 bg-background/40"}`}>
+                  <div className="mb-1 flex items-center justify-between text-[11px]">
+                    <span className="flex items-center gap-1 font-semibold uppercase tracking-wide text-muted-foreground">
+                      COT index · {cot.weeks} sem
+                      <InfoTip text="Onde o posicionamento líquido do institucional está dentro da faixa dos últimos ~6 meses. Perto de 100% = comprado no extremo; perto de 0% = vendido no extremo. Extremos costumam anteceder reversões (o lado lotado tem menos gente para continuar empurrando)." />
+                    </span>
+                    <span className={`num font-bold ${hot ? "text-amber-500" : "text-foreground"}`}>{p}%</span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-gradient-to-r from-rose-500/40 via-muted/40 to-emerald-500/40">
+                    <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-border bg-background shadow" style={{ left: `${p}%` }} />
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">Institucional {zone}.{pairNote ? ` ${pairNote}` : ""}</div>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {tiers.map((t) => (
                 <div key={t.label} className="rounded-xl border border-border/70 bg-background/40 p-3">
@@ -217,7 +238,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
               ))}
             </div>
             <div className={`mt-2 rounded-lg px-3 py-2 text-[11px] ${diverge ? "bg-primary/10 text-foreground" : "bg-muted/40 text-muted-foreground"}`}>💡 {insight}</div>
-            <p className="mt-2 text-[11px] text-muted-foreground">Contratos líquidos nos futuros de {cotInfo.currency} (CME, vs USD){cotInfo.proxy ? " — proxy p/ o cruzamento" : ""}.{cotInfo.direction === -1 ? ` Comprado na moeda = vendido em ${pair} (par invertido).` : ""} Varejo = pequenos especuladores (clássico "dumb money" contrário). Semanal (CFTC).</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Futuros de {cotInfo.currency} na CME (vs USD){cotInfo.proxy ? " — proxy p/ o cruzamento" : cotInfo.direction === -1 ? ` — comprado na moeda = vendido em ${pair}` : ""}. Varejo = contrário; institucional = smart money. Semanal (CFTC).</p>
           </div>
         );
       })()}
