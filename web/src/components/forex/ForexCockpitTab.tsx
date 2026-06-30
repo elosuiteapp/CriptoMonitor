@@ -8,6 +8,7 @@ import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
 import ForexChart from "./ForexChart";
 import ForexNewsBlock from "./ForexNewsBlock";
+import ForexRange52w from "./ForexRange52w";
 import ForexStrengthMeter from "./ForexStrengthMeter";
 
 const toneCls = (v: number | null | undefined) => (v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-500" : "text-rose-500");
@@ -119,6 +120,9 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
 
       {/* Força das moedas (Currency Strength) — qual moeda está forte/fraca agora */}
       <ForexStrengthMeter quotes={overview} />
+
+      {/* Faixa de 52 semanas do par — esticado vs descontado */}
+      <ForexRange52w pair={pair} />
 
       {/* Par selecionado + sessões */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
