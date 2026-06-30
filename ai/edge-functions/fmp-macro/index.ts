@@ -29,6 +29,11 @@ Deno.serve(async (req) => {
       return [];
     }
   };
+  const getQuote = async (sym: string): Promise<{ price: number | null; changePct: number | null }> => {
+    const a = await getJson(`quote?symbol=${sym}`);
+    const o = (a[0] ?? {}) as Record<string, unknown>;
+    return { price: num(o.price), changePct: num(o.changePercentage) };
+  };
 
   try {
     // Janela p/ a curva de juros (pega a linha mais recente).
@@ -37,12 +42,14 @@ Deno.serve(async (req) => {
     const to = today.toISOString().slice(0, 10);
     const cpiFrom = new Date(today.getFullYear(), today.getMonth() - 14, 1).toISOString().slice(0, 10); // p/ YoY (13+ meses)
 
-    const [tr, cpi, unemp, ff, gdp] = await Promise.all([
+    const [tr, cpi, unemp, ff, gdp, gold, oil] = await Promise.all([
       getJson(`treasury-rates?from=${from}&to=${to}`),
       getJson(`economic-indicators?name=CPI&from=${cpiFrom}&to=${to}`),
       getJson(`economic-indicators?name=unemploymentRate`),
       getJson(`economic-indicators?name=federalFunds`),
       getJson(`economic-indicators?name=GDP`),
+      getQuote("GCUSD"), // ouro
+      getQuote("BZUSD"), // petróleo Brent (WTI é premium no FMP)
     ]);
 
     const latest = (arr: unknown[]) => (arr[0] ?? null) as Record<string, unknown> | null;
@@ -72,7 +79,7 @@ Deno.serve(async (req) => {
       gdp: num((latest(gdp) ?? {}).value),
     };
 
-    return out({ yieldCurve, spread2s10s, indicators });
+    return out({ yieldCurve, spread2s10s, indicators, commodities: { gold, oil } });
   } catch (e) {
     return out({ error: String(e) }, 500);
   }

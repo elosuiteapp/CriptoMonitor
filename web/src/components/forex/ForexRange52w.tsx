@@ -7,7 +7,7 @@ import InfoTip from "../InfoTip";
  *  Leitura rápida do ativo escolhido: perto da máxima = esticado/forte; perto da
  *  mínima = descontado/pressionado. Calculado das velas diárias (sem rede extra). */
 export default function ForexRange52w({ pair }: { pair: string }) {
-  const [range, setRange] = useState<{ lo: number; hi: number; price: number } | null>(null);
+  const [range, setRange] = useState<{ lo: number; hi: number; price: number; atrPct: number | null } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -18,7 +18,19 @@ export default function ForexRange52w({ pair }: { pair: string }) {
       const hi = Math.max(...win.map((x) => x.high));
       const lo = Math.min(...win.map((x) => x.low));
       const price = win[win.length - 1].close;
-      if (Number.isFinite(hi) && Number.isFinite(lo) && hi > lo) setRange({ lo, hi, price });
+      // ATR(14): amplitude verdadeira média dos últimos 14 dias (volatilidade típica).
+      const last = c.slice(-15);
+      let atrPct: number | null = null;
+      if (last.length >= 15) {
+        let sum = 0;
+        for (let i = 1; i < last.length; i++) {
+          const tr = Math.max(last[i].high - last[i].low, Math.abs(last[i].high - last[i - 1].close), Math.abs(last[i].low - last[i - 1].close));
+          sum += tr;
+        }
+        const atr = sum / (last.length - 1);
+        if (price > 0) atrPct = (atr / price) * 100;
+      }
+      if (Number.isFinite(hi) && Number.isFinite(lo) && hi > lo) setRange({ lo, hi, price, atrPct });
     });
     return () => {
       alive = false;
@@ -48,6 +60,14 @@ export default function ForexRange52w({ pair }: { pair: string }) {
         <span className="num">{fx(range.lo)} mín</span>
         <span className="num">{fx(range.hi)} máx</span>
       </div>
+      {range.atrPct != null && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+          <span className="font-semibold uppercase tracking-wider">Volatilidade (ATR 14d)</span>
+          <InfoTip text="Quanto o par costuma andar por dia, em média (Average True Range). Serve de referência pro tamanho de stop e alvo: stops menores que isso são facilmente estourados pelo ruído normal." />
+          <span className={`num font-semibold ${range.atrPct >= 0.8 ? "text-amber-500" : "text-foreground"}`}>~{range.atrPct.toFixed(2)}% ao dia</span>
+          <span>· ~{fx((range.atrPct / 100) * range.price)} de oscilação típica</span>
+        </div>
+      )}
     </div>
   );
 }

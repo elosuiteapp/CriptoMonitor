@@ -7,6 +7,7 @@ interface FmpMacro {
   yieldCurve: { date: string; m1: number | null; m3: number | null; m6: number | null; y1: number | null; y2: number | null; y3: number | null; y5: number | null; y7: number | null; y10: number | null } | null;
   spread2s10s: number | null;
   indicators: { cpiYoY: number | null; cpiDate: string; unemployment: number | null; fedFunds: number | null; gdp: number | null };
+  commodities?: { gold: { price: number | null; changePct: number | null }; oil: { price: number | null; changePct: number | null } };
 }
 
 // Cache simples (módulo) — dado diário, evita refetch a cada troca de aba.
@@ -108,6 +109,22 @@ export default function MacroUsPanel() {
         <Cell label="Fed Funds" value={pct(ind.fedFunds)} sub="juro básico EUA" />
         <Cell label="PIB EUA" value={ind.gdp != null ? `US$ ${(ind.gdp / 1000).toFixed(2)} tri` : "—"} sub="anualizado" />
       </div>
+      {/* Commodities — risco/inflação e moedas-commodity */}
+      {data.commodities && (data.commodities.gold.price != null || data.commodities.oil.price != null) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/70 bg-background/40 p-2.5 text-xs">
+          <span className="flex items-center gap-1 font-semibold text-muted-foreground">
+            Commodities
+            <InfoTip text="Ouro = proteção/medo (sobe no risk-off; ligado a AUD). Petróleo = inflação e moedas-commodity (CAD, NOK). Movem também as ações de mineração/petróleo da B3." />
+          </span>
+          {data.commodities.gold.price != null && (
+            <span>🥇 Ouro <span className="num font-semibold text-foreground">US$ {data.commodities.gold.price.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span> <span className={`num ${(data.commodities.gold.changePct ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{pct(data.commodities.gold.changePct)}</span></span>
+          )}
+          {data.commodities.oil.price != null && (
+            <span>🛢️ Petróleo (Brent) <span className="num font-semibold text-foreground">US$ {data.commodities.oil.price.toFixed(2)}</span> <span className={`num ${(data.commodities.oil.changePct ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{pct(data.commodities.oil.changePct)}</span></span>
+          )}
+        </div>
+      )}
+
       <p className="mt-2 text-[11px] text-muted-foreground">Juros e inflação dos EUA movem o dólar, a bolsa e o cripto. Curva invertida (2A &gt; 10A) costuma anteceder recessão. Fonte: FMP.</p>
     </div>
   );
