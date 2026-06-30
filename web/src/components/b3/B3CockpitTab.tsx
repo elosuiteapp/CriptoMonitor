@@ -130,13 +130,13 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     return ffo && div && ffo > 0 ? (div / ffo) * 100 : null;
   }, [fiiDetail]);
 
-  if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
-  if (!ov) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
+  if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
+  if (!ov) return <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">Dados da B3 indisponíveis no momento.</div>;
 
   return (
     <div className="space-y-4">
       {/* Macro BR + índice/dólar */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Macro BR & mercado
           <InfoTip text="O pano de fundo da economia brasileira que move a bolsa: IBOV (índice), dólar, Selic (juro básico — quando sobe, atrapalha a bolsa), CDI (renda fixa, o que a bolsa precisa bater), IPCA (inflação), IBC-Br (prévia do PIB) e desemprego." />
@@ -157,7 +157,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Commodities que movem o IBOV — petróleo/metais lá fora antecipam PETR4/VALE3 */}
       {ov.commodities && ov.commodities.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Commodities que movem o IBOV
             <InfoTip text="Petróleo, cobre e ouro lá fora antecipam a abertura das pesadas da bolsa: petróleo move PETR4/PRIO3; cobre é proxy dos metais (puxa VALE3, siderúrgicas); ouro move mineradoras de ouro. Sobem lá fora, costumam puxar essas ações aqui." />
@@ -181,7 +181,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       <B3SectorRotation quotes={ov.quotes} onAsset={onAsset} />
 
       {/* Ativo selecionado */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <span className="text-sm font-semibold text-foreground">{asset}</span>
@@ -218,7 +218,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Faixa de 52 semanas — posição do preço atual no range do ano (ações, índice e FIIs) */}
       {selQuote?.price != null && selQuote.fl52 != null && selQuote.fh52 != null && selQuote.fh52 > selQuote.fl52 && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Faixa de 52 semanas · {asset}
             <InfoTip text="Onde o preço de hoje está entre a mínima e a máxima dos últimos 12 meses. Perto da máxima (metade de cima) = momento forte, mas pode estar esticado; perto da mínima = descontado/pressionado." />
@@ -230,7 +230,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Fundamentos de FII */}
       {assetIsFii && fiiFund && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
             Fundamentos · {asset}
             {fiiFund.segmento && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{fiiFund.segmento}</span>}
@@ -253,7 +253,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Renda & contexto do FII — DY vs CDI, rendimento projetado e vs IFIX */}
       {assetIsFii && fiiCtx && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 text-sm font-semibold text-foreground">Renda &amp; contexto · {asset}</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Cell
@@ -285,7 +285,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Detalhe do fundo (por FII) — VP/Cota, deságio/ágio, patrimônio, nº de cotas, payout */}
       {assetIsFii && fiiDetail && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 text-sm font-semibold text-foreground">Detalhe do fundo · {asset}</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Cell label="VP/Cota" value={fmtBRL(fiiDetail.vpCota)} sub="patrimônio por cota" />
@@ -317,7 +317,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Fundamentos completos da ação */}
       {!assetIsFii && fund && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Fundamentos · {asset}
             <InfoTip text="A 'saúde' da empresa em números. P/L e P/VP = quão cara está (menor = mais barata); Dividend Yield = quanto paga de proventos; ROE/ROIC = rentabilidade; margens = quanto sobra de cada venda; Dív.Líq/PL = endividamento. Verde = bom (DY≥6% / ROE≥15% / crescimento positivo)." />

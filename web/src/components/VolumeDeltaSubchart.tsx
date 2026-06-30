@@ -9,7 +9,7 @@ export default function VolumeDeltaSubchart({ data, title, fmt = fmtUsd }: { dat
   const { t } = useT();
   if (data.length < 2) {
     return (
-      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         {title} — {t.smart.subLoading}
       </div>
     );
@@ -33,7 +33,7 @@ export default function VolumeDeltaSubchart({ data, title, fmt = fmtUsd }: { dat
   const linePts = data.map((p, i) => `${(i * bw + bw / 2).toFixed(2)},${yCvd(p.cvd).toFixed(2)}`).join(" ");
 
   return (
-    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{title}</span>
         <span className="flex items-center gap-2">

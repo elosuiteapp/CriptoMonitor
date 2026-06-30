@@ -86,7 +86,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
             href={n.url}
             target="_blank"
             rel="noreferrer"
-            className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card dark:bg-card/60 px-4 py-3 transition hover:border-border"
+            className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-4 py-3 transition hover:border-border"
           >
             <span className="text-sm text-foreground">{n.title}</span>
             <span className="shrink-0 text-right text-[10px] leading-tight text-muted-foreground">

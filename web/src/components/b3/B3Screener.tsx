@@ -139,7 +139,7 @@ export default function B3Screener({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card dark:bg-card/60">
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
         {isFiiView ? (
           <table className="w-full text-sm">
             <thead>

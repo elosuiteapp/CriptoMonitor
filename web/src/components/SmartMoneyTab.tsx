@@ -405,7 +405,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       {/* Contexto de derivativos (Binance Futures): funding + OI — qualquer moeda com perp */}
       {perp && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 dark:bg-card/60">
+          <span className="flex items-center gap-1.5 rounded-full border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-2.5 py-1 dark:bg-card/60">
             <span className="text-muted-foreground">Funding</span>
             <span className={`num font-medium ${perp.fundingRate >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
               {fmtPct(perp.fundingRate * 100, 4)}
@@ -414,7 +414,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             <InfoTip text={t.smart.fundingTip} />
           </span>
           {perp.oiUsd != null && (
-            <span className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 dark:bg-card/60">
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-2.5 py-1 dark:bg-card/60">
               <span className="text-muted-foreground">OI</span>
               <span className="num font-medium text-foreground">{fmtUsd(perp.oiUsd)}</span>
               <InfoTip text={t.smart.oiTip} />
@@ -460,7 +460,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* On-chain: liquidez em stablecoins (dry powder) — market-wide */}
       {stables && (
-        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-3 py-2 text-xs dark:bg-card/60">
           <span aria-hidden className="mt-px">🪙</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -484,7 +484,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* On-chain: atividade da blockchain (L1s nativos) */}
       {net && (
-        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-3 py-2 text-xs dark:bg-card/60">
           <span aria-hidden className="mt-px">📊</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -514,7 +514,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Fluxo institucional REAL: prêmio Coinbase (institucional EUA) vs Binance (varejo) */}
       {snap?.coinbase_premium != null && (
-        <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs dark:bg-card/60">
+        <div className="flex items-start gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-3 py-2 text-xs dark:bg-card/60">
           <span aria-hidden className="mt-px">🏦</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -541,7 +541,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {t.smart.trendTopDown}
             <InfoTip text={t.smart.trendTip} />
@@ -577,7 +577,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       {narrative.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
           {narrative.map((l, i) => (
-            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card dark:bg-card/60 p-3">
+            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[l.tone]}`} />
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
@@ -592,7 +592,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       )}
 
       {/* Gráfico SMC */}
-      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
         {/* Timeframe ACIMA do gráfico (as camadas vão ABAIXO, seguindo o cockpit) */}
         <div className="mb-2 flex justify-end">
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
@@ -653,7 +653,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       </div>
 
       {/* Tabela de níveis-chave com confluência */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
         <div className="flex items-baseline justify-between px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">{t.smart.keyLevelsTitle}</h3>
           <span className="text-xs text-muted-foreground">{t.smart.keyLevelsSub}</span>
@@ -760,7 +760,7 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
   const zoneLabel = zoneKey === "premium" ? t.smart.zonePremium : zoneKey === "discount" ? t.smart.zoneDiscount : t.smart.zoneEquilibrium;
   const zoneColor = zoneKey === "premium" ? "text-rose-600 dark:text-rose-400" : zoneKey === "discount" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground";
   return (
-    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-3">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
       <div className="flex items-center justify-between text-xs">
         <span className="flex items-center gap-1.5 text-muted-foreground">{t.smart.rangePos} <InfoTip text={glossary.rangePosition} /></span>
         <span className={`num ${zoneColor}`}>

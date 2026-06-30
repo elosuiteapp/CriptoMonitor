@@ -44,7 +44,7 @@ export default function Newsletter() {
               <Link
                 key={e.slug}
                 to={`/newsletter/${e.slug}`}
-                className="block rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/40 dark:bg-card/60"
+                className="block rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 transition-colors hover:border-primary/40 dark:bg-card/60"
               >
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span aria-hidden>{e.cover_emoji ?? "📰"}</span>

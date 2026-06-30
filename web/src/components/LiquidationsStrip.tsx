@@ -10,7 +10,7 @@ export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
   const { t } = useT();
   if (data.length < 2) {
     return (
-      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         {t.strips.liqRealizedShort} — {t.strips.awaiting}
       </div>
     );
@@ -25,7 +25,7 @@ export default function LiquidationsStrip({ data }: { data: LiqPoint[] }) {
   const totShort = data.reduce((a, p) => a + p.short, 0);
 
   return (
-    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{t.strips.liqRealizedFull}</span>
         <span>

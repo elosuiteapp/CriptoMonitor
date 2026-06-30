@@ -250,8 +250,8 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
     };
   }, [pair]);
 
-  if (loading) return <div className="h-48 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
-  if (!read) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Sem dados suficientes para a leitura de {pair}.</div>;
+  if (loading) return <div className="h-48 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
+  if (!read) return <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">Sem dados suficientes para a leitura de {pair}.</div>;
 
   const tone = biasTone(read.bias);
   const sign = Math.sign(read.bias);
@@ -262,7 +262,7 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -321,7 +321,7 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           As forças por trás da leitura
           <InfoTip text="Cada força (tendência, estrutura, momento, dólar, carry, COT, força das moedas) vota com um peso. O 'cabo de guerra' mostra alta × baixa pela soma peso × força; abaixo, cada força em detalhe." />

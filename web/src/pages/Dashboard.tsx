@@ -282,7 +282,7 @@ export default function Dashboard() {
           </div>
         )}
         {/* Gráfico com camadas */}
-        <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+        <section className="space-y-3 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
           <ChartTypeSelector
             chartType={chartType}
             onChartType={setChartType}

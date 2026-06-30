@@ -152,7 +152,7 @@ export default function B3Analysis() {
 
         {error && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400">{error}</div>}
 
-        <div className="mt-4 rounded-2xl border border-border bg-card p-6 dark:bg-card/60">
+        <div className="mt-4 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 dark:bg-card/60">
           {loading ? (
             <p className="text-muted-foreground">{t.common.loading}</p>
           ) : row ? (

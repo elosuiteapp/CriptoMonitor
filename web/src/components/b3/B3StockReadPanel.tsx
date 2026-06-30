@@ -29,7 +29,7 @@ export default function B3StockReadPanel({ asset, read }: { asset: string; read:
   const volTone = !vol ? "" : vol.ratio >= 1.15 ? "text-sky-500" : vol.ratio <= 0.85 ? "text-muted-foreground" : "text-foreground";
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-card dark:bg-card/60 dark:shadow-glow">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 shadow-card dark:bg-card/60 dark:shadow-glow">
       <h3 className="mb-3 text-sm font-semibold text-foreground">Leitura da ação · {asset}</h3>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {/* Força relativa vs IBOV */}

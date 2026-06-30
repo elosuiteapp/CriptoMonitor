@@ -34,7 +34,7 @@ export default function ForexCarryRanking({ onPick }: { onPick?: (pair: string) 
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         Carry trade · ranking de juros
         <InfoTip text="Carry é o juro que você ganha (ou paga) por carregar o par. Verde = comprar o par RENDE juros (moeda comprada paga mais que a vendida); vermelho = paga juros. Estratégia clássica: comprar moeda de juro alto contra moeda de juro baixo." />

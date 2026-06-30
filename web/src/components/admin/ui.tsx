@@ -15,7 +15,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-border bg-card shadow-card dark:bg-card/60 dark:shadow-glow ${
+      className={`rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover shadow-card dark:bg-card/60 dark:shadow-glow ${
         hover ? "transition-shadow duration-200 hover:shadow-card-hover" : ""
       } ${className}`}
     >

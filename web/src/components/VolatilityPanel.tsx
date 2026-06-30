@@ -48,7 +48,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   const latest = rows[0];
   if (!latest) {
     return (
-      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4 text-sm text-muted-foreground">
         {tt("Painel de volatilidade — acumulando dados (a cada 5 min).", "Volatility panel — building data (every 5 min).")}
       </div>
     );
@@ -71,7 +71,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
   const maxIv = Math.max(1, ...TENORS.map((t) => term[t] ?? 0));
 
   return (
-    <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+    <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {tt("Painel de volatilidade (opções)", "Volatility panel (options)")}
       </div>
@@ -107,7 +107,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
           foot={latest.rv_30d != null ? `RV 30d: ${latest.rv_30d.toFixed(1)}%` : undefined}
         />
         {/* Term structure — mini-chart de barras por tenor */}
-        <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-3">
+        <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[tsRead.level]}`} />
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Term structure</span>
@@ -138,7 +138,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
 
 function VolCard({ title, level, value, label, foot, info }: { title: string; level: Level; value: string; label: string; foot?: string; info?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-3">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${LEVEL_DOT[level]}`} />
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</span>

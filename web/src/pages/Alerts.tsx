@@ -98,14 +98,14 @@ export default function Alerts() {
         </p>
 
         {!canCreate ? (
-          <div className="mt-6 rounded-2xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
+          <div className="mt-6 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6 text-sm text-muted-foreground">
             {t.pages.alerts.gatedPre}<strong>Pro</strong>{t.pages.alerts.gatedAnd}<strong>Expert</strong>{t.pages.alerts.gatedPost}
             <Link to="/pricing" className="text-primary hover:underline">
               {t.pages.alerts.seePlans}
             </Link>
           </div>
         ) : (
-          <form onSubmit={createAlert} className="mt-6 grid gap-3 rounded-2xl border border-border bg-card dark:bg-card/60 p-5 sm:grid-cols-2">
+          <form onSubmit={createAlert} className="mt-6 grid gap-3 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-5 sm:grid-cols-2">
             <label className="text-xs text-muted-foreground">
               {t.pages.alerts.asset}
               <select value={asset} onChange={(e) => setAsset(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground num">
@@ -160,7 +160,7 @@ export default function Alerts() {
         <div className="mt-3 space-y-2">
           {rows.length === 0 && <p className="text-sm text-muted-foreground">{t.pages.alerts.none}</p>}
           {rows.map((r) => (
-            <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card dark:bg-card/60 px-4 py-3 text-sm">
+            <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-4 py-3 text-sm">
               <span className="text-foreground">
                 <strong>{r.asset}</strong> · {r.metric}{" "}
                 {r.condition.equals ? `→ ${r.condition.equals}` : `${r.condition.op} ${r.condition.value}`}

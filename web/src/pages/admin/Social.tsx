@@ -172,7 +172,7 @@ export default function AdminSocial() {
       )}
 
       {/* Auto-post + ações */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold text-foreground">Auto-post diário</span>
           <button
@@ -209,7 +209,7 @@ export default function AdminSocial() {
       )}
 
       {/* Telegram */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">Telegram</h2>
           <Badge ok={!!status?.telegram} />
@@ -227,7 +227,7 @@ export default function AdminSocial() {
       </div>
 
       {/* X */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">X (Twitter)</h2>
           <Badge ok={!!status?.x} />
@@ -248,7 +248,7 @@ export default function AdminSocial() {
 
       {/* Execuções da automação (cron + manual) */}
       {runs && runs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-foreground">Execuções da automação</h2>
             <span className="text-xs text-muted-foreground">auto-post diário ~10h BRT</span>
@@ -280,7 +280,7 @@ export default function AdminSocial() {
         ) : (
           <div className="space-y-2">
             {posts.map((p) => (
-              <div key={p.id} className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+              <div key={p.id} className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span>{new Date(p.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                   <span className={p.posted_telegram ? "text-emerald-500" : "text-muted-foreground"}>TG {p.posted_telegram ? "✓" : "—"}</span>

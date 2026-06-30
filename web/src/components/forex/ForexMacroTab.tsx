@@ -137,7 +137,7 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
   return (
     <div className="space-y-4">
       {/* Sessões de mercado — pano de fundo de liquidez/volatilidade do dia (topo) */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Sessões de mercado</span>
           {sessions.map((s) => (
@@ -151,7 +151,7 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       </div>
 
       {/* Barômetro Risk-on / Risk-off */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Apetite a risco (Risk-on / Risk-off)
@@ -180,7 +180,7 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       <MacroUsPanel />
 
       {/* Dólar (DXY) + pares principais */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Dólar (DXY) e principais
@@ -207,7 +207,7 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       </div>
 
       {/* Correlações do par selecionado */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Correlação de {pair} (90 dias)
           <InfoTip text="O quanto este par anda junto (ou ao contrário) de outras referências. +1 = sobem/caem juntos; −1 = vão em direções opostas; perto de 0 = sem relação. Ex.: a maioria dos pares anda contra o dólar (DXY)." />
@@ -237,7 +237,7 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       <ForexRatesCard pair={pair} />
 
       {/* Calendário econômico (moedas do par + dólar) */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Calendário econômico · {pairCurrencies(pair).join(" · ")}

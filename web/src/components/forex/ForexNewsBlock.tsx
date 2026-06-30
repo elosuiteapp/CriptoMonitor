@@ -39,7 +39,7 @@ export default function ForexNewsBlock() {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         📰 Notícias · câmbio & macro
         <InfoTip text="Manchetes do mercado de câmbio e macro dos últimos 7 dias (ActionForex, BabyPips, Investing). Clique para abrir a matéria na fonte." />

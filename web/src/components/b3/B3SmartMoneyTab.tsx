@@ -55,7 +55,7 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
   const zone = smc.price >= smc.premium.bottom ? "Premium" : smc.price <= smc.discount.top ? "Discount" : "Equilíbrio";
   const zoneColor = zone === "Premium" ? "text-rose-600 dark:text-rose-400" : zone === "Discount" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground";
   return (
-    <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">Posição no range</span>
         <span className={`num ${zoneColor}`}>{(pos * 100).toFixed(0)}% · {zone}</span>
@@ -224,7 +224,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Termômetro do estrangeiro (ADRs) — só p/ AÇÕES/índice (FIIs não têm ADR) */}
       {!isFii(asset) && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="text-sm font-semibold text-foreground">Termômetro do estrangeiro · ADRs</h3>
           <p className="mb-2 text-xs text-muted-foreground">Prêmio/desconto dos ADRs na NYSE vs ação local — leitura intradiária do apetite externo.</p>
           {adrs.length === 0 ? (
@@ -254,7 +254,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Tendência multi-timeframe + posição no range */}
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Tendência (top-down):
             <InfoTip text="Viés da estrutura em vários timeframes (1D/4h/1h). Operar a favor do timeframe maior aumenta a chance — princípio nº1 do Smart Money." />
@@ -276,7 +276,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
       {narrative.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
           {narrative.map((l, i) => (
-            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[l.tone]}`} />
               <div>
                 <div className="text-xs font-semibold text-foreground">{l.title}</div>
@@ -288,7 +288,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
       )}
 
       {/* Gráfico SMC — timeframe à DIREITA (camadas ABAIXO), mesmo padrão do Smart Money cripto */}
-      <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
         <div className="mb-2 flex justify-end">
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
             {TFS.map((t) => (
@@ -324,7 +324,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Níveis-chave por confluência */}
       {keyLevels.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
           <div className="flex items-baseline justify-between px-4 py-3">
             <h3 className="text-sm font-semibold text-foreground">Níveis-chave por confluência</h3>
             <span className="text-xs text-muted-foreground">SMC × Volume Profile × HTF — por distância</span>

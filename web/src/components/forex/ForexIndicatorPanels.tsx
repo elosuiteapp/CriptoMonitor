@@ -18,7 +18,7 @@ function RsiPanel({ closes }: { closes: number[] }) {
   const label = !Number.isFinite(cur) ? "—" : cur >= 70 ? "sobrecompra" : cur <= 30 ? "sobrevenda" : "neutro";
   const y = (v: number) => H - (v / 100) * H;
   return (
-    <div className="rounded-lg border border-border bg-card p-2 dark:bg-card/60">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-2 dark:bg-card/60">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>RSI (14)</span>
         <span className={`num ${tone}`}>{Number.isFinite(cur) ? `${cur.toFixed(0)} · ${label}` : "—"}</span>
@@ -48,7 +48,7 @@ function MacdPanel({ closes }: { closes: number[] }) {
   const curHist = last(m.hist);
   const tone = !Number.isFinite(curHist) ? "text-muted-foreground" : curHist >= 0 ? "text-emerald-500" : "text-rose-500";
   return (
-    <div className="rounded-lg border border-border bg-card p-2 dark:bg-card/60">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-2 dark:bg-card/60">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>MACD (12/26/9)</span>
         <span className={`num ${tone}`}>histograma {Number.isFinite(curHist) ? (curHist >= 0 ? "positivo" : "negativo") : "—"}</span>

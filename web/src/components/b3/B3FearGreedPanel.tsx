@@ -14,7 +14,7 @@ const bar = (s: number) => (s >= 55 ? "bg-emerald-500" : s <= 45 ? "bg-rose-500"
  */
 export default function B3FearGreedPanel({ fng }: { fng: B3Fng }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         Termômetro do mercado · Medo &amp; Ganância Brasil
         <InfoTip text="Mede o 'humor' da bolsa brasileira de 0 (medo extremo) a 100 (ganância extrema), juntando 6 sinais: amplitude (quantas ações sobem), momento do IBOV, faixa de 52 semanas, volatilidade, câmbio e risco global (VIX). Medo extremo costuma ser oportunidade; ganância extrema pede cautela. É leitura de sentimento, não recomendação." />

@@ -69,12 +69,12 @@ export default function ForexReportsTab({ pair }: { pair: string }) {
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400">{error}</div>}
 
       {ai ? (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <Markdown text={ai.content} />
           <p className="mt-3 border-t border-border pt-2 text-[11px] text-muted-foreground">Gerado por IA ({ai.model}). Educacional — não é recomendação.</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">
           {read ? "Clique em “Gerar relatório” para a IA escrever a leitura do par." : "Carregando dados do par…"}
         </div>
       )}

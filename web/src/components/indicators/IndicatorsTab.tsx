@@ -211,15 +211,15 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
       </div>
 
       {loading ? (
-        <div className="h-40 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
+        <div className="h-40 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />
       ) : !read || !read.hasData ? (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">
           {tt("Sem dados suficientes para a leitura deste ativo no momento.", "Not enough data for this asset's read right now.")}
         </div>
       ) : (
         <>
           {/* Hero — gauge + viés + convicção + regime + multi-timeframe */}
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+          <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="relative">
@@ -311,7 +311,7 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
           )}
 
           {/* Forças por trás da leitura — cabo de guerra + votantes × contexto */}
-          <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <h3 className="mb-2 text-sm font-semibold text-foreground">{tt("As forças por trás da leitura", "The forces behind the read")}</h3>
             <TugOfWar axes={read.axes} />
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
@@ -338,7 +338,7 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
 
           {/* Mapa de alvos de liquidez (escada de preço) */}
           {sortedTargets.length > 0 && (
-            <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+            <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
               <h3 className="mb-2 text-sm font-semibold text-foreground">{tt("Mapa de liquidez · pra onde o preço é puxado", "Liquidity map · where price is being pulled")}</h3>
               <div>
                 {sortedTargets.map((t, i) => (

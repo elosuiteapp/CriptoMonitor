@@ -398,20 +398,20 @@ export default function AdminBot() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio (demo)</div>
           <div className="num text-lg font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
           <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
           <div className="text-[11px] text-muted-foreground">{cfg ? `${isFut ? `Futuros ${cfg.leverage}x` : "Spot"} · limiar ±${cfg.buy_threshold}` : ""}</div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
           <div className="num text-lg font-bold text-foreground">{lastPx ? num(lastPx, dec) : "—"}</div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Ordens (auto/total)</div>
           <div className="num text-lg font-bold text-foreground">{orders.filter((o) => o.source === "auto").length}/{orders.length}</div>
         </div>
@@ -419,7 +419,7 @@ export default function AdminBot() {
 
       {/* Robô automático */}
       {cfg && (
-        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-foreground">Robô automático</h2>
@@ -463,7 +463,7 @@ export default function AdminBot() {
         const bias = r.bias;
         const bc = bias >= 15 ? "text-emerald-500" : bias <= -15 ? "text-rose-500" : "text-muted-foreground";
         return (
-          <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · Smart Money + fluxo</h2>
               <span className="text-[11px] text-muted-foreground">{cfg.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
@@ -531,7 +531,7 @@ export default function AdminBot() {
       })()}
 
       {/* Gráfico com marcações */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">Gráfico · {cfg?.inst_id ?? ""} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -551,7 +551,7 @@ export default function AdminBot() {
       </div>
 
       {/* Conta demo */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h2 className="mb-2 text-sm font-semibold text-foreground">Conta demo</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
@@ -598,7 +598,7 @@ export default function AdminBot() {
       </div>
 
       {/* Histórico de ordens */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card dark:bg-card/60">
+      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
         <div className="px-4 py-3"><h2 className="text-sm font-semibold text-foreground">Histórico de ordens</h2></div>
         {orders.length === 0 ? (
           <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma ordem ainda.</p>
@@ -633,7 +633,7 @@ export default function AdminBot() {
 
       {/* Diário do robô */}
       {logs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
           <div className="space-y-1.5">
             {logs.map((l) => (
@@ -648,7 +648,7 @@ export default function AdminBot() {
       )}
 
       {/* Conexão (chaves) — recolhível */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <button onClick={() => setShowKeys((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
           <span>{isBinance ? "Conexão Binance (Testnet)" : "Conexão OKX (Demo)"} {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
           <span className="text-muted-foreground">{showKeys ? "▲" : "▼"}</span>
@@ -669,7 +669,7 @@ export default function AdminBot() {
       </div>
 
       {/* Ordem manual — recolhível */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <button onClick={() => setShowManual((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
           <span>Ordem manual (avançado)</span>
           <span className="text-muted-foreground">{showManual ? "▲" : "▼"}</span>

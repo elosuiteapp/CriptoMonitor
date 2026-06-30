@@ -52,7 +52,7 @@ export default function B3InvestorFlow({ rows: propRows }: { rows?: FlowRow[] })
   }, [propRows]);
 
   const rows = propRows ?? tableRows;
-  if (rows == null) return <div className="h-32 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
+  if (rows == null) return <div className="h-32 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
   if (rows.length === 0) return null;
 
   const latest = rows[0];
@@ -64,7 +64,7 @@ export default function B3InvestorFlow({ rows: propRows }: { rows?: FlowRow[] })
   const maxAbs = Math.max(1, ...bars.map((r) => Math.abs(Number(r.foreign_mi) || 0)));
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Fluxo por investidor · B3

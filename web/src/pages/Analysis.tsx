@@ -113,7 +113,7 @@ export default function Analysis() {
           </div>
         )}
 
-        <div className="mt-4 rounded-2xl border border-border bg-card dark:bg-card/60 p-6">
+        <div className="mt-4 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6">
           {loading ? (
             <p className="text-muted-foreground">{t.common.loading}</p>
           ) : row ? (

@@ -9,7 +9,7 @@ export default function CvdSubchart({ data, title }: { data: SeriesPoint[]; titl
   const label = title ?? t.strips.cvdRetail;
   if (!data.length) {
     return (
-      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         {label} — {t.strips.awaiting}
       </div>
     );
@@ -21,7 +21,7 @@ export default function CvdSubchart({ data, title }: { data: SeriesPoint[]; titl
   const last = data[data.length - 1].value;
 
   return (
-    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{label}</span>
         <span className={`num ${last >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{fmtUsd(last)}</span>

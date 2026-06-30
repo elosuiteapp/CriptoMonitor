@@ -42,7 +42,7 @@ export default function CotCard({ cot }: { cot: CotRow }) {
   const right = tt("net comprado", "net long");
 
   return (
-    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
       <div className="flex items-baseline justify-between">
         <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           {tt("Posicionamento CME · CFTC", "CME positioning · CFTC")} <InfoTip text={GLOSSARY.cot} />

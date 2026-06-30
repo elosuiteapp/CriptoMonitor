@@ -98,8 +98,8 @@ export default function B3MacroTab() {
     };
   }, []);
 
-  if (loading) return <div className="h-40 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
-  if (!d) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Macro indisponível no momento.</div>;
+  if (loading) return <div className="h-40 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
+  if (!d) return <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">Macro indisponível no momento.</div>;
 
   return (
     <div className="space-y-4">
@@ -109,7 +109,7 @@ export default function B3MacroTab() {
       </div>
 
       {/* Macro BR */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Macro Brasil</h3>
         <div className="grid grid-cols-3 gap-2">
           <Cell label="Selic (a.a.)" value={selicAA(d.macro.selic) != null ? `${selicAA(d.macro.selic)!.toFixed(2)}%` : "—"} sub="taxa básica" />
@@ -120,7 +120,7 @@ export default function B3MacroTab() {
 
       {/* Expectativas (Focus) */}
       {d.focus && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-2 text-sm font-semibold text-foreground">Expectativas do mercado · Focus {d.focus.year}</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Cell label="IPCA (ano)" value={d.focus.ipca != null ? `${d.focus.ipca.toFixed(2)}%` : "—"} sub="inflação esperada" />
@@ -134,7 +134,7 @@ export default function B3MacroTab() {
 
       {/* ADRs — prêmio/desconto */}
       {d.adrs && d.adrs.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <h3 className="mb-1 text-sm font-semibold text-foreground">ADRs · prêmio/desconto vs ação local</h3>
           <p className="mb-2 text-[11px] text-muted-foreground">Termômetro do estrangeiro: ADR em prêmio = demanda lá fora · desconto = saída.</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -155,7 +155,7 @@ export default function B3MacroTab() {
         (() => {
           const tide = globalTideScore(mg);
           return (
-            <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+            <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   Maré global · Fed / EUA
@@ -184,7 +184,7 @@ export default function B3MacroTab() {
       <MacroUsPanel />
 
       {/* Macro global */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Mercado global</h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {d.globals.map((g) => (
@@ -194,7 +194,7 @@ export default function B3MacroTab() {
       </div>
 
       {/* Correlações do IBOV — logo após o mercado global (como o IBOV se relaciona com ele) */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Correlação do IBOV (30 dias)
           <InfoTip text="O quanto o IBOV anda junto (ou ao contrário) de cada referência global. +1 = sobem/caem juntos; −1 = vão em direções opostas; perto de 0 = sem relação. Ex.: o IBOV costuma andar a favor de S&P/Nasdaq e contra o dólar e o VIX (medo)." />
@@ -208,7 +208,7 @@ export default function B3MacroTab() {
       </div>
 
       {/* Calendário econômico (EUA + Brasil) — eventos, por último */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             Calendário econômico · EUA + Brasil

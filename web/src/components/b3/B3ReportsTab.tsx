@@ -89,7 +89,7 @@ export default function B3ReportsTab({ asset }: { asset: string }) {
       {rows == null ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">
           {fii ? "Nenhum relatório de FIIs ainda. Clique em “Gerar relatório de FIIs”." : "Nenhum relatório ainda. Clique em “Gerar relatório agora”."}
         </div>
       ) : (
@@ -98,7 +98,7 @@ export default function B3ReportsTab({ asset }: { asset: string }) {
             const isOpen = open === r.id;
             const dt = new Date(r.ts);
             return (
-              <div key={r.id} className="rounded-xl border border-border bg-card dark:bg-card/60">
+              <div key={r.id} className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
                 <button onClick={() => setOpen(isOpen ? null : r.id)} className="flex w-full items-center justify-between gap-3 p-4 text-left">
                   <span className="flex items-center gap-2 text-sm text-foreground">
                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{fii ? "FIIs" : "Pregão"}</span>

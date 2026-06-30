@@ -137,7 +137,7 @@ export default function AdminNewsletter() {
       )}
 
       {runs && runs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-foreground">Execuções da automação</h2>
             <span className="text-xs text-muted-foreground">geração automática: sexta ~9h BRT</span>
@@ -162,7 +162,7 @@ export default function AdminNewsletter() {
       {rows == null ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">
           Nenhuma edição ainda. Clique em “Gerar agora” para criar a primeira.
         </div>
       ) : (
@@ -170,7 +170,7 @@ export default function AdminNewsletter() {
           {rows.map((ed) => (
             <div
               key={ed.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 dark:bg-card/60"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">

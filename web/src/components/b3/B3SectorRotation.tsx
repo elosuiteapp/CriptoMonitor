@@ -36,7 +36,7 @@ export default function B3SectorRotation({ quotes, onAsset }: { quotes: B3Quote[
   const maxAbs = Math.max(...rows.map((r) => Math.abs(r.m30)), 1);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Rotação setorial

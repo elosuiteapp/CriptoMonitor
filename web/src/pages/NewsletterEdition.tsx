@@ -49,7 +49,7 @@ export default function NewsletterEdition() {
         {state === "loading" ? (
           <p className="text-sm text-muted-foreground">{t.common.loading}</p>
         ) : state === "notfound" ? (
-          <div className="rounded-2xl border border-border bg-card p-8 text-center dark:bg-card/60">
+          <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-8 text-center dark:bg-card/60">
             <p className="text-sm text-muted-foreground">{t.pages.newsletterEdition.notFound}</p>
             <Link to="/newsletter" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
               {t.pages.newsletterEdition.seeAll}

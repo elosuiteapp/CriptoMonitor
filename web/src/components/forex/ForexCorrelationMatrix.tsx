@@ -54,7 +54,7 @@ export default function ForexCorrelationMatrix() {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         Matriz de correlação · 90 dias
         <InfoTip text="Mostra quais pares andam juntos e quais andam ao contrário. Verde = sobem e caem juntos (operar os dois no mesmo sentido DOBRA o risco). Vermelho = andam em direções opostas (serve de proteção/hedge)." />

@@ -181,7 +181,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
 
       {/* Vento de fundo: força das moedas (base×cotação) + carry */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             Força das moedas (24h)
             <InfoTip text="Quão forte/fraca está cada moeda do par hoje, pela média da variação contra as demais. Base forte + cotação fraca = vento a favor da alta do par; o contrário favorece a baixa." />
@@ -207,7 +207,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
           )}
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             Carry (diferencial de juros)
             <InfoTip text="Diferença de juros entre as duas moedas do par. Positivo = carregar o par comprado RENDE juros (vento a favor de comprar); negativo = paga juros (favorece vender). Motor central do FX no médio prazo." />
@@ -228,7 +228,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
 
       {/* Top-down (1D/4H/1H) + posição no range */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Tendência top-down
             <InfoTip text="A estrutura (viés Smart Money) em vários tempos gráficos ao mesmo tempo. Quando 1D, 4H e 1H concordam, o sinal é mais forte; quando divergem, o mercado pode estar em transição." />
@@ -243,7 +243,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
             ))
           )}
         </div>
-        <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="flex items-center justify-between text-xs">
             <span className="flex items-center gap-1.5 text-muted-foreground">
               Posição no range
@@ -266,7 +266,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
       {narrative.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
           {narrative.map((l, i) => (
-            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+            <div key={i} className="flex gap-2 rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
               <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[l.tone]}`} />
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
@@ -281,7 +281,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
       )}
 
       {/* Gráfico SMC + timeframe + camadas */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex justify-end">
           <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-background p-0.5">
             {TFS.map((t) => (
@@ -314,7 +314,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
 
       {/* Níveis-chave por confluência (SMC × Perfil de preço) */}
       {keyLevels.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
           <div className="flex items-baseline justify-between px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
               Níveis-chave por confluência

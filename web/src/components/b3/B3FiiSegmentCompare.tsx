@@ -54,7 +54,7 @@ export default function B3FiiSegmentCompare({ asset, fiis }: { asset: string; fi
   const word = (v: "good" | "bad" | "neutral") => (v === "good" ? "melhor" : v === "bad" ? "pior" : "≈ segmento");
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-1 text-sm font-semibold text-foreground">{asset} vs segmento · {seg}</h3>
       <p className="mb-3 text-[11px] text-muted-foreground">Mediana de {peers.length} FIIs do segmento. Verde = {asset} melhor que a mediana; vermelho = pior.</p>
       <div className="overflow-x-auto">

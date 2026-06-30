@@ -280,7 +280,7 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {/* Opt-in de e-mail: toggle no Expert, vitrine de upgrade no Pro. */}
           {isExpert ? (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 dark:bg-card/60">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-4 py-3 dark:bg-card/60">
               <span className="text-sm text-foreground">
                 {tt("Receber alertas por e-mail", "Receive email alerts")}
                 <span className="mt-0.5 block text-xs text-muted-foreground">{tt("Enviado para", "Sent to")} {user.email}</span>
@@ -306,14 +306,14 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
             </a>
           ) : null}
           {!canCreate ? (
-            <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground dark:bg-card/60">
+            <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 text-sm text-muted-foreground dark:bg-card/60">
               {tt("Alertas estão disponíveis nos planos", "Alerts are available on the")} <strong>Pro</strong> {tt("e", "and")} <strong>Expert</strong>{tt(".", " plans.")}{" "}
               <a href="/pricing" className="text-primary hover:underline">
                 {tt("Ver planos →", "See plans →")}
               </a>
             </div>
           ) : (
-            <form onSubmit={submit} className="space-y-3 rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+            <form onSubmit={submit} className="space-y-3 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs text-muted-foreground">
                   {tt("Ativo", "Asset")}

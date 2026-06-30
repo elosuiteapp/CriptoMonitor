@@ -319,7 +319,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
 
   if (!macro.length) {
     return (
-      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6 text-sm text-muted-foreground">
         {tt("Dados macro indisponíveis — aguardando coleta (a cada 30 min).", "Macro data unavailable — waiting for collection (every 30 min).")}
       </div>
     );
@@ -379,7 +379,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
         )}
 
         {visibleMacro.map((m) => (
-          <div key={m.symbol} className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
+          <div key={m.symbol} className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
             <div className="flex items-baseline justify-between">
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                 {m.name} <InfoTip text={macroHelp(m.symbol)} />
@@ -400,7 +400,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
       {!pro && <MacroUpgradeCard />}
 
       {/* Como ler este painel */}
-      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4 text-xs text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4 text-xs text-muted-foreground">
         <div className="font-semibold text-foreground">{tt("Como ler este painel", "How to read this panel")}</div>
         <ul className="mt-2 space-y-1.5">
           <li>
@@ -418,7 +418,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
       </div>
 
       {/* Calendário econômico */}
-      <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-semibold text-foreground">{tt("Calendário econômico (global)", "Economic calendar (global)")}</h3>
           <span className="text-[11px] text-muted-foreground">{tt("eventos que mexem com o macro", "events that move the macro")}</span>

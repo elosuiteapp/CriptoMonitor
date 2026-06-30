@@ -45,7 +45,7 @@ export default function ForexRange52w({ pair }: { pair: string }) {
   const zone = pos >= 0.66 ? { label: "metade superior · esticado/forte", cls: "text-emerald-600 dark:text-emerald-400" } : pos <= 0.33 ? { label: "metade inferior · descontado/pressionado", cls: "text-rose-600 dark:text-rose-400" } : { label: "meio da faixa", cls: "text-muted-foreground" };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Faixa de 52 semanas · {pair}

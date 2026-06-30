@@ -38,7 +38,7 @@ export default function B3NewsBlock() {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 text-sm font-semibold text-foreground">📰 Notícias · mercado brasileiro</h3>
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>

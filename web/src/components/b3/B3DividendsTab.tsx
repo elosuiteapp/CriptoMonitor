@@ -161,7 +161,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
   return (
     <div className="space-y-4">
       {/* Resumo do ativo */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
         <div className="mb-3 flex items-center gap-2">
           <B3AssetIcon symbol={asset} />
           <h3 className="text-sm font-semibold text-foreground">Dividendos · {asset}</h3>
@@ -226,12 +226,12 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
       {/* Sazonalidade + por ano */}
       {paysDiv && d && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <h3 className="mb-1 text-sm font-semibold text-foreground">Meses que costuma pagar</h3>
             <p className="mb-3 text-[11px] text-muted-foreground">Quanto mais escuro, mais anos pagaram naquele mês.</p>
             <MonthHeatmap freq={d.monthFreq} max={maxFreq} />
           </div>
-          <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <h3 className="mb-3 text-sm font-semibold text-foreground">Proventos por ano (R$/ação)</h3>
             {d.byYear.length ? <YearBars byYear={d.byYear} /> : <p className="text-sm text-muted-foreground">Sem dados anuais.</p>}
           </div>
@@ -240,7 +240,7 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
 
       {/* Histórico */}
       {paysDiv && history.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card dark:bg-card/60">
+        <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
           <h3 className="px-4 py-3 text-sm font-semibold text-foreground">Histórico de proventos</h3>
           <div className="max-h-72 overflow-y-auto">
             <table className="w-full text-sm">
@@ -272,9 +272,9 @@ export default function B3DividendsTab({ asset, onAsset }: { asset: string; onAs
       <div>
         <h3 className="mb-2 text-sm font-semibold text-foreground">Ranking de pagadoras · {fiiView ? "FIIs" : "Ações"} · Dividend Yield</h3>
         {ranking.length === 0 ? (
-          <div className="h-24 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />
+          <div className="h-24 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card dark:bg-card/60">
+          <div className="overflow-x-auto rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">

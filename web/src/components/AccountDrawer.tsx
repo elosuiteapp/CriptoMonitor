@@ -187,7 +187,7 @@ export default function AccountDrawer({ user, welcome, intentPlan, onClose }: Pr
             {!isPaid ? (
               <>
                 {/* Toggle ciclo */}
-                <div className="mt-4 inline-flex items-center rounded-full border border-border bg-card p-0.5 text-xs dark:bg-card/60">
+                <div className="mt-4 inline-flex items-center rounded-full border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-0.5 text-xs dark:bg-card/60">
                   {(["monthly", "annual"] as const).map((cy) => (
                     <button
                       key={cy}

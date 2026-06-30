@@ -336,8 +336,8 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
     };
   }, [asset]);
 
-  if (loading) return <div className="h-48 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
-  if (!read) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">Sem dados suficientes para a leitura de {asset}.</div>;
+  if (loading) return <div className="h-48 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
+  if (!read) return <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">Sem dados suficientes para a leitura de {asset}.</div>;
 
   const tone = biasTone(read.bias);
   const biasSign = Math.sign(read.bias);
@@ -348,7 +348,7 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
   return (
     <div className="space-y-4">
       {/* Hero — medidor + viés + convicção */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -400,7 +400,7 @@ export default function B3LeituraTab({ asset }: { asset: string }) {
       )}
 
       {/* Forças */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="mb-2 text-sm font-semibold text-foreground">As forças por trás da leitura</h3>
         <TugOfWar axes={read.axes} />
         <div>

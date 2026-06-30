@@ -38,7 +38,7 @@ export default function ForexCotCard({ pair }: { pair: string }) {
   ];
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Posicionamento (COT) · {cotInfo.currency}{cotInfo.proxy ? " (proxy)" : ""}

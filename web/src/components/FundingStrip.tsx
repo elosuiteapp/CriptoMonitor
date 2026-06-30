@@ -10,7 +10,7 @@ export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
   const { t } = useT();
   if (!data.length) {
     return (
-      <div className="rounded-lg border border-border bg-card dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-3 py-2 text-xs text-muted-foreground">
         {t.strips.fundingLabel} — {t.strips.awaiting}
       </div>
     );
@@ -26,7 +26,7 @@ export default function FundingStrip({ data }: { data: SeriesPoint[] }) {
   const annual = last * 3 * 365;
 
   return (
-    <div className="rounded-lg border border-border bg-card dark:bg-card/60 p-2">
+    <div className="rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-2">
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
           {t.strips.fundingCexTitle}

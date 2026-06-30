@@ -34,7 +34,7 @@ export default function ForexStrengthMeter({ quotes }: { quotes: ForexQuote[] })
   }, []);
   if (strength.length === 0) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h3 className="text-sm font-semibold text-foreground">Força das moedas (24h)</h3>
         <p className="mt-2 text-sm text-muted-foreground">Carregando cotações…</p>
       </div>
@@ -45,7 +45,7 @@ export default function ForexStrengthMeter({ quotes }: { quotes: ForexQuote[] })
   const weakest = strength[strength.length - 1];
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Força das moedas · 24h

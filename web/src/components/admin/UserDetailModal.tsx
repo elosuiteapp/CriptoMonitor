@@ -119,7 +119,7 @@ export default function UserDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4" onClick={onClose}>
       <div
-        className="my-8 w-full max-w-2xl rounded-2xl border border-border bg-card dark:bg-card/60 shadow-2xl"
+        className="my-8 w-full max-w-2xl rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho */}

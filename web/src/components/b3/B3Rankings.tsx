@@ -47,7 +47,7 @@ export default function B3Rankings({ funds, onAsset }: { funds: B3Funds; onAsset
   const cur = RANKS.find((r) => r.key === rank)!;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         Rankings · ações
         <InfoTip text="Listas prontas das melhores ações por critério: Maior DY (paga mais dividendos), Mais baratas (menor P/L), Maior ROE (mais rentáveis), Graham e Bazin (métodos clássicos de valor e dividendos) e Crescimento. Clique numa ação para abri-la. Só nomes líquidos. Não é recomendação." />

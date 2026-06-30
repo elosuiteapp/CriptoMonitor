@@ -43,7 +43,7 @@ export default function OnchainPanel() {
   const hasNet = net && (net.hashrate != null || net.feeFast != null || net.diffChange != null);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           {o.title}

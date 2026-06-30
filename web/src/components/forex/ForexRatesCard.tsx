@@ -33,7 +33,7 @@ export default function ForexRatesCard({ pair }: { pair: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         Juros de 10 anos · diferencial
         <InfoTip text="Juro do título de 10 anos do governo de cada moeda. O DIFERENCIAL (moeda comprada − vendida) reflete a expectativa de juros — quem paga mais tende a atrair capital. É o carry 'de mercado' (vivo), além da taxa básica. Fonte: FRED." />

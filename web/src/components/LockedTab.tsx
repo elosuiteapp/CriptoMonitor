@@ -6,7 +6,7 @@ import { useT } from "../lib/i18n";
 export default function LockedTab({ title, plan }: { title: string; plan: string }) {
   const { t } = useT();
   return (
-    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-10 text-center">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-10 text-center">
       <div className="text-3xl">🔒</div>
       <h2 className="mt-3 text-lg font-semibold text-foreground">{title}</h2>
       <p className="mt-2 text-sm text-muted-foreground">{t.locked.availableOn.replace("{plan}", plan)}</p>

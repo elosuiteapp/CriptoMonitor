@@ -67,7 +67,7 @@ export default function FearGreedHistoryPanel() {
   }, []);
 
   if (state === "error") return null; // some silenciosamente se a fonte falhar
-  if (state === "loading") return <div className="h-44 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
+  if (state === "loading") return <div className="h-44 animate-pulse rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60" />;
 
   const n = fng.length;
   const W = 300;
@@ -118,7 +118,7 @@ export default function FearGreedHistoryPanel() {
   const hPriceTop = hPrice != null ? (py(hPrice) / H) * 100 : null;
 
   return (
-    <div className="rounded-2xl border border-border bg-card dark:bg-card/60 p-4">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           {tl("Medo & Ganância · histórico", "Fear & Greed · history")}
@@ -164,7 +164,7 @@ export default function FearGreedHistoryPanel() {
             <span className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background" style={{ left: `${hLeft}%`, top: `${hFngTop}%`, backgroundColor: hTone.hex }} />
             {hPriceTop != null && <span className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-400 ring-2 ring-background" style={{ left: `${hLeft}%`, top: `${hPriceTop}%` }} />}
             <div
-              className="pointer-events-none absolute top-0 z-10 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 shadow-card dark:bg-card"
+              className="pointer-events-none absolute top-0 z-10 whitespace-nowrap rounded-md border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover px-2 py-1 shadow-card dark:bg-card"
               style={{ left: `${hLeft}%`, transform: `translateX(${hLeft < 18 ? "0%" : hLeft > 82 ? "-100%" : "-50%"})` }}
             >
               <div className="text-[10px] text-muted-foreground">{new Date(hPt.ts * 1000).toLocaleDateString(isEn ? "en-US" : "pt-BR", { day: "2-digit", month: "short" })}</div>

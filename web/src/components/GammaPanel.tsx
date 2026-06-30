@@ -54,7 +54,7 @@ function profileBars(gamma: GammaData | null): Bar[] {
 
 function GammaCard({ title, label, level, value, info }: { title: string; label: string; level: "green" | "yellow" | "red" | "neutral"; value: string; info?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+    <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${LEVEL_DOT[level]}`} />
         <span className="text-xs uppercase tracking-wide text-muted-foreground">{title}</span>
@@ -74,7 +74,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
   if (!gamma) {
     return (
-      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6 text-sm text-muted-foreground">
         {tt("Módulo Gamma indisponível — aguardando coleta de opções.", "Gamma module unavailable — waiting for options data.")}
       </div>
     );
@@ -182,7 +182,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
       </div>
 
       {/* Perfil de gamma por strike — Barras ou Linha (estilo SpotGamma) */}
-      <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-3">
             <span>{viewTitle(view, isEn)}</span>
@@ -369,7 +369,7 @@ export default function GammaPanel({ gamma, asset }: Props) {
 
       {/* Fluxo de opções (proxy HIRO) — BTC/ETH (Deribit) + SOL (Bybit); BNB não tem */}
       {["BTC", "ETH", "SOL"].includes(asset) && (
-        <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-4">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <span>{tt("Fluxo de opções (proxy HIRO) — delta-fluxo do hedge dos dealers, acumulado · 5 min", "Options flow (HIRO proxy) — dealers' hedge delta-flow, accumulated · 5 min")}</span>
             <InfoTip text={GLOSSARY.optionsFlow} />

@@ -126,7 +126,7 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
       {rows == null ? (
         <p className="text-sm text-muted-foreground">{tt("Carregando…", "Loading…")}</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card dark:bg-card/60 p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6 text-sm text-muted-foreground">
           {advanced
             ? isExpert
               ? tt("Nenhum relatório ainda. Clique em “Gerar relatório agora”.", "No reports yet. Click “Generate report now”.")
@@ -139,7 +139,7 @@ export default function ReportsTab({ asset, plan, isExpert }: { asset: string; p
             const isOpen = open === r.id;
             const dt = new Date(r.created_at);
             return (
-              <div key={r.id} className="rounded-xl border border-border bg-card dark:bg-card/60">
+              <div key={r.id} className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
                 <button
                   onClick={() => setOpen(isOpen ? null : r.id)}
                   className="flex w-full items-center justify-between gap-3 p-4 text-left"

@@ -53,7 +53,7 @@ export default function B3SectorCompare({ asset, funds }: { asset: string; funds
   const word = (v: "good" | "bad" | "neutral") => (v === "good" ? "melhor" : v === "bad" ? "pior" : "≈ setor");
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
       <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
         {asset} vs setor · {sector}
         <InfoTip text="Compara os fundamentos da ação com a mediana das empresas do mesmo setor. Verde = a ação está melhor que a média do setor naquele indicador; vermelho = pior. Ajuda a ver se ela está cara ou barata em relação às concorrentes." />
