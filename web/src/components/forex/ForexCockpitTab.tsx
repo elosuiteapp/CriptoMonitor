@@ -83,7 +83,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   return (
     <div className="space-y-4">
       {/* Painel de moedas — acompanha todos os pares; clique troca o par ativo */}
-      <div className="rounded-2xl border border-border bg-card p-3 dark:bg-card/60">
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Painel de moedas
           <InfoTip text="Cotação e variação no dia de todos os pares, agrupados (principais, real, cruzamentos, exóticos e o índice do dólar DXY). Clique em qualquer par para abri-lo no gráfico." />

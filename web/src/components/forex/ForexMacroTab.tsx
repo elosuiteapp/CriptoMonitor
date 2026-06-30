@@ -161,6 +161,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
         <p className="mt-2 text-[11px] text-muted-foreground">Quando o risco está ligado, capital flui p/ moedas de maior beta (AUD, NZD) e sai dos portos-seguros (USD, JPY, CHF). Útil p/ saber o "humor" geral antes de operar qualquer par.</p>
       </div>
 
+      {/* Macro EUA (FMP): curva de juros do Tesouro + inflação/desemprego/Fed/PIB — motor do dólar */}
+      <MacroUsPanel />
+
       {/* Dólar (DXY) + pares principais */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -191,12 +194,6 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       {/* Carry trade — ranking de juros (onde está o melhor carry) */}
       <ForexCarryRanking />
 
-      {/* Macro EUA (FMP): curva de juros do Tesouro + inflação/desemprego/Fed/PIB */}
-      <MacroUsPanel />
-
-      {/* Maré de liquidez macro global (Fed/FRED) — motor do dólar e de todo o câmbio */}
-      <MacroGlobalPanel />
-
       {/* Correlações do par selecionado */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -217,6 +214,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Matriz de correlação entre os principais pares (heatmap) */}
       <ForexCorrelationMatrix />
+
+      {/* Maré de liquidez macro global (Fed/FRED) — maré de fundo de todo o risco */}
+      <MacroGlobalPanel />
 
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">

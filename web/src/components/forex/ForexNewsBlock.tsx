@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { relativeTime } from "../../lib/format";
 import { supabase } from "../../lib/supabase";
+import InfoTip from "../InfoTip";
 
 interface NewsRow {
   title: string;
@@ -39,7 +40,10 @@ export default function ForexNewsBlock() {
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">📰 Notícias · câmbio & macro</h3>
+      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        📰 Notícias · câmbio & macro
+        <InfoTip text="Manchetes do mercado de câmbio e macro dos últimos 7 dias (ActionForex, BabyPips, Investing). Clique para abrir a matéria na fonte." />
+      </h3>
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : items.length === 0 ? (

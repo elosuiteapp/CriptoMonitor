@@ -92,11 +92,17 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
           <div className={`text-sm font-bold capitalize ${smc?.swingBias === "bullish" ? "text-emerald-500" : smc?.swingBias === "bearish" ? "text-rose-500" : "text-muted-foreground"}`}>{dw(smc?.swingBias ?? null)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Estrutura interna</div>
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Estrutura interna
+            <InfoTip text="A tendência dos movimentos MENORES dentro da estrutura principal. Quando concorda com o swing, o sinal é mais forte; quando diverge, o mercado pode estar virando." />
+          </div>
           <div className="text-sm font-bold capitalize text-foreground">{dw(smc?.internalBias ?? null)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último evento</div>
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Último evento
+            <InfoTip text="O último marco de estrutura: BOS (rompimento que confirma a tendência) ou CHoCH (mudança de caráter, possível reversão). Mostra o que o mercado acabou de fazer." />
+          </div>
           <div className="text-sm font-bold text-foreground">{smc?.lastSwing ? `${smc.lastSwing.type} ${dw(smc.lastSwing.bias)}` : "—"}</div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">

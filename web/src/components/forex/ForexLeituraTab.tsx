@@ -5,6 +5,7 @@ import { ema, last, macd, rsi } from "../../lib/indicators/ta";
 import { computeSmc } from "../../lib/smc";
 import type { Candle } from "../../lib/marketData";
 import BiasGauge, { type Tone } from "../BiasGauge";
+import InfoTip from "../InfoTip";
 
 /** Convicção = % das forças que votam no mesmo sentido do viés. */
 export function readConviction(read: Read): number {
@@ -285,7 +286,10 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
 
       {(read.scenarios.up || read.scenarios.down) && (
         <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
-          <h3 className="mb-1 text-sm font-semibold text-primary">🎯 O que muda a leitura</h3>
+          <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-primary">
+            🎯 Níveis-gatilho
+            <InfoTip text="Os preços que, se rompidos, mudam a leitura: romper o nível de cima reforça a alta; perder o de baixo reforça a baixa. São os pontos para confirmar (ou descartar) o viés." />
+          </h3>
           <div className="divide-y divide-border/60">
             {read.scenarios.up && (
               <div className="flex items-center gap-2 py-1.5 text-sm">
@@ -309,13 +313,19 @@ export default function ForexLeituraTab({ pair }: { pair: string }) {
 
       {read.divergences.length > 0 && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <h3 className="mb-2 text-sm font-semibold text-amber-700 dark:text-amber-400">⚠ Divergências e riscos</h3>
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400">
+            ⚠ Divergências e riscos
+            <InfoTip text="Conflitos entre os indicadores que podem enfraquecer ou invalidar a leitura — ex.: preço sobe mas o momento cai. Sinal de cautela." />
+          </h3>
           <ul className="space-y-1.5">{read.divergences.map((d, i) => <li key={i} className="text-xs text-amber-800 dark:text-amber-200">{d}</li>)}</ul>
         </div>
       )}
 
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">As forças por trás da leitura</h3>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          As forças por trás da leitura
+          <InfoTip text="Cada força (tendência, estrutura, momento, dólar, carry, COT, força das moedas) vota com um peso. O 'cabo de guerra' mostra alta × baixa pela soma peso × força; abaixo, cada força em detalhe." />
+        </h3>
         <TugOfWar axes={read.axes} />
         <div>{read.axes.map((a) => <AxisRow key={a.key} a={a} />)}</div>
         <p className="mt-2 text-[11px] text-muted-foreground">Confluência das velas diárias (tendência, estrutura/price action, momento) + força do dólar (DXY). Educacional — não é recomendação.</p>
