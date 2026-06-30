@@ -39,6 +39,7 @@ interface Reading {
   signals: ReadingSig[];
   spot?: number;
   desired?: string;
+  structure?: { swingBias: string | null; internalBias: string | null; lastEvent: string | null; zone: string } | null;
 }
 interface OrderRow {
   id: string;
@@ -60,7 +61,7 @@ interface LogRow {
 }
 
 const BARS = ["15m", "1H", "4H", "1D"];
-const SIG_GROUPS = ["Microestrutura", "Fluxo", "Opções", "Institucional", "Sentimento"];
+const SIG_GROUPS = ["Estrutura (SMC)", "Direção", "Microestrutura", "Fluxo", "Opções", "Institucional"];
 const decisionLabel = (d?: string | null) => (d === "buy" ? "Comprar" : d === "sell" ? "Vender" : d === "preview" ? "Prévia" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
@@ -328,7 +329,7 @@ export default function AdminBot() {
             <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>confluência de fluxo</strong> (book, paredes, gamma, funding, CVD, liquidações, ETF, prêmio Coinbase, sentimento). Compra quando o viés ≥ +{cfg.buy_threshold}; vende quando ≤ −{cfg.sell_threshold}. Sem indicadores técnicos.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. A estrutura (swing/BOS/CHoCH, order blocks, liquidez, premium/discount) é a espinha dorsal; book, paredes, CVD-tendência e ETF confirmam. Só compra com a estrutura a favor, fora do premium e sem estar caindo. Compra se viés ≥ +{cfg.buy_threshold}; vende se ≤ −{cfg.sell_threshold} ou a estrutura virar de baixa.</span>
           </div>
         </div>
       )}
@@ -341,9 +342,17 @@ export default function AdminBot() {
         return (
           <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · fluxo & microestrutura</h2>
+              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · Smart Money + fluxo</h2>
               <span className="text-[11px] text-muted-foreground">{cfg.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
             </div>
+            {r.structure && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
+                <span className="font-semibold uppercase tracking-wide text-muted-foreground">Estrutura</span>
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${r.structure.swingBias === "bullish" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : r.structure.swingBias === "bearish" ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>tendência {r.structure.swingBias === "bullish" ? "de alta" : r.structure.swingBias === "bearish" ? "de baixa" : "indefinida"}</span>
+                {r.structure.lastEvent && <span className="text-muted-foreground">último evento: <span className="text-foreground">{r.structure.lastEvent}</span></span>}
+                <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Viés líquido</div>
