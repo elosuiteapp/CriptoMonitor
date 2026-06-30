@@ -86,9 +86,9 @@ async function invoke(action: string, extra: Record<string, unknown> = {}, fn = 
     throw new Error(detail);
   }
   if (data?.error) throw new Error(data.error);
-  if (data?.code && data.code !== "0") {
+  if (data?.code != null && data.code !== "0" && data.code !== 0) {
     const sMsg = (data?.data?.[0]?.sMsg ?? "").trim();
-    throw new Error(sMsg || `OKX ${data.code}: ${data.msg ?? "erro"}`);
+    throw new Error(sMsg || data?.msg || `Erro ${data.code}`);
   }
   return data;
 }

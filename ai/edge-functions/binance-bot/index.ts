@@ -97,10 +97,12 @@ Deno.serve(async (req) => {
         const info = await bnb("GET", "/fapi/v1/exchangeInfo", {}, creds, false);
         const sym = ((info?.symbols as { symbol: string; filters: { filterType: string; stepSize?: string; minQty?: string; notional?: string }[] }[]) ?? []).find((s) => s.symbol === symbol);
         const lot = sym?.filters?.find((f) => f.filterType === "LOT_SIZE") ?? {};
-        const stepSz = Number(lot.stepSize) || 0.001, minQty = Number(lot.minQty) || 0.001;
+        const notf = sym?.filters?.find((f) => f.filterType === "MIN_NOTIONAL") ?? {};
+        const stepSz = Number(lot.stepSize) || 0.001, minQty = Number(lot.minQty) || 0.001, minNot = Number(notf.notional) || 50;
         const dec = String(stepSz).includes(".") ? String(stepSz).replace(/0+$/, "").split(".")[1].length : 0;
         let q = last > 0 ? Math.floor((usdt / last) / stepSz) * stepSz : 0;
         if (q < minQty) q = minQty;
+        if (last > 0 && q * last < minNot) q = Math.ceil((minNot / last) / stepSz) * stepSz; // respeita nocional mínimo
         qty = q.toFixed(dec);
       }
       if (!symbol || !side || !qty) return json(400, { error: "Informe símbolo, lado e tamanho." });
