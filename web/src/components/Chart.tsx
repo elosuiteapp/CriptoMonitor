@@ -84,14 +84,18 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const { isDark } = useTheme();
   const { isEn } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
-  // Pressão do book (±2%) por JANELA — 48h/24h/12h/6h — p/ ver de que lado a
-  // liquidez vem ganhando força (a janela curta reage mais rápido que a longa).
+  // Pressão do book (±2%) por JANELA — 48h→30m — p/ ver de que lado a liquidez vem
+  // ganhando força (a janela curta reage mais rápido que a longa). As janelas curtas
+  // (3h/1h/30m) monitoram a liquidez do momento; depth tem resolução de 4min (sobra).
   const bookPressures = useMemo(() => {
     const wins: { label: string; ms: number }[] = [
       { label: "48h", ms: 48 * 3600_000 },
       { label: "24h", ms: 24 * 3600_000 },
       { label: "12h", ms: 12 * 3600_000 },
       { label: "6h", ms: 6 * 3600_000 },
+      { label: "3h", ms: 3 * 3600_000 },
+      { label: "1h", ms: 1 * 3600_000 },
+      { label: "30m", ms: 30 * 60_000 },
     ];
     return wins.map((w) => ({ label: w.label, imb: windowedBookImbalance(depth ?? null, 0.02, w.ms) }));
   }, [depth]);
