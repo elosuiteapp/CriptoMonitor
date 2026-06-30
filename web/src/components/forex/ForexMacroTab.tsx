@@ -135,6 +135,20 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Sessões de mercado — pano de fundo de liquidez/volatilidade do dia (topo) */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Sessões de mercado</span>
+          {sessions.map((s) => (
+            <span key={s.name} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${s.open ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-border text-muted-foreground"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${s.open ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+              {s.name}
+            </span>
+          ))}
+          <span className="text-[11px] text-muted-foreground">{weekend ? "· fim de semana (fechado)" : "· UTC · sobreposições = mais volatilidade"}</span>
+        </div>
+      </div>
+
       {/* Barômetro Risk-on / Risk-off */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -191,9 +205,6 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
         </div>
       </div>
 
-      {/* Carry trade — ranking de juros (onde está o melhor carry) */}
-      <ForexCarryRanking />
-
       {/* Correlações do par selecionado */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -214,6 +225,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Matriz de correlação entre os principais pares (heatmap) */}
       <ForexCorrelationMatrix />
+
+      {/* Carry trade — ranking de juros (onde está o melhor carry) */}
+      <ForexCarryRanking />
 
       {/* Maré de liquidez macro global (Fed/FRED) — maré de fundo de todo o risco */}
       <MacroGlobalPanel />
@@ -255,20 +269,6 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
           </div>
         )}
         <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto das moedas do par (e do dólar). Em dias de FOMC/CPI/NFP o macro costuma dominar o gráfico. ★★★ alto · ★★ médio. Fonte: ForexFactory.</p>
-      </div>
-
-      {/* Sessões */}
-      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Sessões de mercado</span>
-          {sessions.map((s) => (
-            <span key={s.name} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${s.open ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-border text-muted-foreground"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${s.open ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-              {s.name}
-            </span>
-          ))}
-          <span className="text-[11px] text-muted-foreground">{weekend ? "· fim de semana (fechado)" : "· UTC · sobreposições = mais volatilidade"}</span>
-        </div>
       </div>
     </div>
   );
