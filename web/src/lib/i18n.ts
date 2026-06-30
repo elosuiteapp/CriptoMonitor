@@ -315,6 +315,12 @@ export interface Dict {
     zElevated: string;
     zEuphoria: string;
     realizedTitle: string;
+    reserveRisk: string;
+    networkTitle: string;
+    hashrate: string;
+    nextDiff: string;
+    mempool: string;
+    feeFast: string;
     inProfit: string;
     atLoss: string;
     footer: string;
@@ -789,6 +795,12 @@ const PT: Dict = {
     zElevated: "elevado",
     zEuphoria: "euforia",
     realizedTitle: "BTC vs preço realizado",
+    reserveRisk: "Reserve Risk",
+    networkTitle: "Saúde da rede BTC",
+    hashrate: "Hashrate",
+    nextDiff: "Próx. ajuste",
+    mempool: "Mempool",
+    feeFast: "Taxa rápida",
     inProfit: "holders no lucro",
     atLoss: "holders no prejuízo",
     footer: "Fonte: bitcoin-data.com (on-chain grátis) · market-wide (BTC) · atualiza ~diário. Educacional — não é recomendação.",
@@ -1280,6 +1292,12 @@ const EN: Dict = {
     zElevated: "elevated",
     zEuphoria: "euphoria",
     realizedTitle: "BTC vs realized price",
+    reserveRisk: "Reserve Risk",
+    networkTitle: "BTC network health",
+    hashrate: "Hashrate",
+    nextDiff: "Next adjust.",
+    mempool: "Mempool",
+    feeFast: "Fast fee",
     inProfit: "holders in profit",
     atLoss: "holders at a loss",
     footer: "Source: bitcoin-data.com (free on-chain) · market-wide (BTC) · updates ~daily. Educational — not advice.",

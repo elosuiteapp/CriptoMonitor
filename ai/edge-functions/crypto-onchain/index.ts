@@ -28,8 +28,8 @@ async function bd(slug: string): Promise<number | null> {
 }
 
 async function buildPayload() {
-  const [mvrvZ, sopr, nupl, puell, realized] = await Promise.all([
-    bd("mvrv-zscore"), bd("sopr"), bd("nupl"), bd("puell-multiple"), bd("realized-price"),
+  const [mvrvZ, sopr, nupl, puell, realized, reserveRisk] = await Promise.all([
+    bd("mvrv-zscore"), bd("sopr"), bd("nupl"), bd("puell-multiple"), bd("realized-price"), bd("reserve-risk"),
   ]);
   if (mvrvZ == null && sopr == null && nupl == null) return null; // fonte indisponível/limite
 
@@ -44,8 +44,10 @@ async function buildPayload() {
     }
   } catch { /* */ }
 
-  let hashrate: number | null = null, feeFast: number | null = null, spot: number | null = null;
+  let hashrate: number | null = null, feeFast: number | null = null, spot: number | null = null, diffChange: number | null = null, mempoolTx: number | null = null;
   try { const m = await fetch("https://mempool.space/api/v1/mining/hashrate/3d").then((r) => r.json()); hashrate = N(m?.currentHashrate); } catch { /* */ }
+  try { const d = await fetch("https://mempool.space/api/v1/difficulty-adjustment").then((r) => r.json()); diffChange = N(d?.difficultyChange); } catch { /* */ }
+  try { const mp = await fetch("https://mempool.space/api/mempool").then((r) => r.json()); mempoolTx = N(mp?.count); } catch { /* */ }
   try { const f = await fetch("https://mempool.space/api/v1/fees/recommended").then((r) => r.json()); feeFast = N(f?.fastestFee); } catch { /* */ }
   try { const p = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT").then((r) => r.json()); spot = N(p?.price); } catch { /* */ }
 
@@ -64,9 +66,9 @@ async function buildPayload() {
   const stableTide = stable30dPct == null ? null : stable30dPct > 1 ? "liquidez entrando" : stable30dPct < -1 ? "liquidez saindo" : "estável";
 
   return {
-    onchain: { mvrvZ, sopr, nupl, puell, realized, spot, profit, zones: { mvrvZ: zMvrv, sopr: zSopr, nupl: zNupl, puell: zPuell }, cycleScore, cycleLabel },
+    onchain: { mvrvZ, sopr, nupl, puell, realized, reserveRisk, spot, profit, zones: { mvrvZ: zMvrv, sopr: zSopr, nupl: zNupl, puell: zPuell }, cycleScore, cycleLabel },
     liquidity: { stableTotal, stable30dPct, tide: stableTide },
-    network: { hashrate, feeFast },
+    network: { hashrate, feeFast, diffChange, mempoolTx },
     ts: new Date().toISOString(),
   };
 }
@@ -88,7 +90,9 @@ Deno.serve(async (req) => {
 
     const payload = await buildPayload();
     if (!payload) {
-      // Fonte limitada/indisponível → devolve o último dado bom, se houver.
+      // Fonte limitada (10 req/h) → reprograma re-tentativa em ~30min (não trava 6h) e serve
+      // o último dado bom, se houver.
+      if (row) await admin.from("crypto_onchain").update({ ts: new Date(Date.now() - FRESH_MS + 30 * 60 * 1000).toISOString() }).eq("id", 1);
       if (row?.data) return json(200, { ...(row.data as Record<string, unknown>), cached: true, stale: true });
       return json(502, { error: "fonte indisponível" });
     }

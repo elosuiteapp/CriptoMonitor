@@ -9,6 +9,7 @@ export interface CryptoOnchain {
     nupl: number | null;
     puell: number | null;
     realized: number | null;
+    reserveRisk: number | null;
     spot: number | null;
     profit: boolean | null;
     zones: { mvrvZ: string | null; sopr: string | null; nupl: string | null; puell: string | null };
@@ -16,7 +17,7 @@ export interface CryptoOnchain {
     cycleLabel: string | null;
   };
   liquidity: { stableTotal: number | null; stable30dPct: number | null; tide: string | null };
-  network: { hashrate: number | null; feeFast: number | null };
+  network: { hashrate: number | null; feeFast: number | null; diffChange: number | null; mempoolTx: number | null };
   ts: string;
 }
 

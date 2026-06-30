@@ -49,9 +49,20 @@ export const FOREX_PAIRS: ForexPair[] = [
 
 // Taxas básicas de juros (aprox., % a.a.) por moeda — o CARRY/diferencial de juros é
 // o motor central do câmbio. ATUALIZAR quando os bancos centrais mexerem (mudam raro).
+// Taxas básicas (fallback). Atualizado jun/2026. As maiores (USD/EUR/BRL) ficam LIVE via
+// fetchForexRates → applyLiveRates (FRED/BCB); as demais mudam raro e ficam aqui.
 export const POLICY_RATES: Record<string, number> = {
-  USD: 4.25, EUR: 2.0, GBP: 4.0, JPY: 0.5, AUD: 3.6, CAD: 2.75, CHF: 0.5, NZD: 3.0, BRL: 13.0,
+  USD: 3.75, EUR: 2.25, GBP: 4.0, JPY: 0.5, AUD: 3.85, CAD: 2.75, CHF: 0.25, NZD: 3.0, BRL: 15.0,
 };
+
+/** Sobrescreve as taxas básicas com os valores LIVE (policy de US/EUR/BRL) vindos do FRED/BCB
+ *  via a edge forex-rates. Mantém o carry sempre correto sem edição manual. */
+export function applyLiveRates(policy: Record<string, number> | null | undefined) {
+  if (!policy) return;
+  for (const [ccy, rate] of Object.entries(policy)) {
+    if (Number.isFinite(rate)) POLICY_RATES[ccy] = rate;
+  }
+}
 export interface Carry {
   base: string;
   quote: string;

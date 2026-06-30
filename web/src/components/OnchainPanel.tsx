@@ -23,7 +23,8 @@ export default function OnchainPanel() {
   const o = t.onchain;
   const { data } = useCryptoOnchain();
   if (!data?.onchain) return null;
-  const { mvrvZ, sopr, nupl, puell, realized, spot, cycleScore } = data.onchain;
+  const { mvrvZ, sopr, nupl, puell, realized, reserveRisk, spot, cycleScore } = data.onchain;
+  const net = data.network;
 
   const cycle =
     cycleScore == null ? null
@@ -37,7 +38,9 @@ export default function OnchainPanel() {
   const zSopr = sopr == null ? null : sopr < 0.98 ? { s: o.zCapitulation, tone: "up" as Tone } : sopr <= 1.02 ? { s: o.zNeutral, tone: "neutral" as Tone } : { s: o.zElevated, tone: "down" as Tone };
   const zNupl = nupl == null ? null : nupl < 0 ? { s: o.zCapitulation, tone: "up" as Tone } : nupl < 0.25 ? { s: o.zDiscount, tone: "up" as Tone } : nupl < 0.5 ? { s: o.zNeutral, tone: "neutral" as Tone } : nupl < 0.75 ? { s: o.zElevated, tone: "down" as Tone } : { s: o.zEuphoria, tone: "down" as Tone };
   const zPuell = puell == null ? null : puell < 0.5 ? { s: o.zCapitulation, tone: "up" as Tone } : puell < 2 ? { s: o.zNeutral, tone: "neutral" as Tone } : puell < 4 ? { s: o.zElevated, tone: "down" as Tone } : { s: o.zEuphoria, tone: "down" as Tone };
+  const zReserve = reserveRisk == null ? null : reserveRisk < 0.0015 ? { s: o.zCapitulation, tone: "up" as Tone } : reserveRisk < 0.006 ? { s: o.zDiscount, tone: "up" as Tone } : reserveRisk < 0.02 ? { s: o.zNeutral, tone: "neutral" as Tone } : { s: o.zElevated, tone: "down" as Tone };
   const profit = spot != null && realized != null ? spot >= realized : null;
+  const hasNet = net && (net.hashrate != null || net.feeFast != null || net.diffChange != null);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
@@ -63,11 +66,12 @@ export default function OnchainPanel() {
       )}
 
       {/* Métricas on-chain */}
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {zMvrv && <Cell label="MVRV Z-Score" value={mvrvZ!.toFixed(2)} sub={zMvrv.s} tone={zMvrv.tone} />}
         {zSopr && <Cell label="SOPR" value={sopr!.toFixed(3)} sub={zSopr.s} tone={zSopr.tone} />}
         {zNupl && <Cell label="NUPL" value={nupl!.toFixed(3)} sub={zNupl.s} tone={zNupl.tone} />}
         {zPuell && <Cell label="Puell" value={puell!.toFixed(2)} sub={zPuell.s} tone={zPuell.tone} />}
+        {zReserve && <Cell label={o.reserveRisk} value={reserveRisk!.toFixed(4)} sub={zReserve.s} tone={zReserve.tone} />}
       </div>
 
       {/* Preço realizado vs spot */}
@@ -78,6 +82,19 @@ export default function OnchainPanel() {
             <span className="num font-semibold text-foreground">US$ {Math.round(realized).toLocaleString("pt-BR")}</span>
             {profit != null && <span className={`ml-2 font-semibold ${profit ? "text-emerald-500" : "text-rose-500"}`}>{profit ? o.inProfit : o.atLoss}</span>}
           </span>
+        </div>
+      )}
+
+      {/* Saúde da rede BTC (mempool.space) */}
+      {hasNet && (
+        <div className="mt-3 rounded-xl border border-border/70 bg-background/40 p-2.5">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{o.networkTitle}</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+            {net.hashrate != null && <span className="text-muted-foreground">{o.hashrate}: <span className="num text-foreground">{(net.hashrate / 1e18).toFixed(0)} EH/s</span></span>}
+            {net.diffChange != null && <span className="text-muted-foreground">{o.nextDiff}: <span className={`num ${net.diffChange >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{net.diffChange >= 0 ? "+" : ""}{net.diffChange.toFixed(1)}%</span></span>}
+            {net.mempoolTx != null && <span className="text-muted-foreground">{o.mempool}: <span className="num text-foreground">{Math.round(net.mempoolTx / 1000)}k tx</span></span>}
+            {net.feeFast != null && <span className="text-muted-foreground">{o.feeFast}: <span className="num text-foreground">{net.feeFast} sat/vB</span></span>}
+          </div>
         </div>
       )}
 

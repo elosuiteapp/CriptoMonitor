@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchForexRates, type ForexRates } from "../../lib/forex";
+import { applyLiveRates, fetchForexRates, type ForexRates } from "../../lib/forex";
 import InfoTip from "../InfoTip";
 
 /** Juros de 10 anos do governo por moeda + diferencial do par atual — a expectativa REAL de
@@ -11,7 +11,9 @@ export default function ForexRatesCard({ pair }: { pair: string }) {
   useEffect(() => {
     let alive = true;
     fetchForexRates().then((r) => {
-      if (alive) setRates(r);
+      if (!alive) return;
+      setRates(r);
+      applyLiveRates(r?.policy); // mantém o carry (POLICY_RATES) com as taxas live de US/EUR/BRL
     });
     return () => {
       alive = false;
