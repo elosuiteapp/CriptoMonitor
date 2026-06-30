@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchB3Chart, fetchB3Macro, isFii, type B3MacroData } from "../../lib/b3";
+import { fetchB3Chart, fetchB3Flow, fetchB3Macro, isFii, type B3FlowRow, type B3MacroData } from "../../lib/b3";
 import { computeStockRead, type StockRead } from "../../lib/b3StockRead";
 import { computeVolumeProfile, type Candle, type CvdPoint, type Timeframe, type VolumeProfile } from "../../lib/marketData";
 import { computeSmc, type SmcResult } from "../../lib/smc";
@@ -84,6 +84,7 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
   const [layers, setLayers] = useState<SmcLayers>(B3_DEFAULT_LAYERS);
   const [macro, setMacro] = useState<B3MacroData | null>(null);
   const [stockRead, setStockRead] = useState<StockRead | null>(null);
+  const [flow, setFlow] = useState<B3FlowRow[]>([]);
   const [loading, setLoading] = useState(true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((p) => ({ ...p, [key]: !p[key] }));
   // Ações (não índice/dólar) ganham a "Leitura da ação" no topo; SMC vira avançado.
@@ -103,6 +104,15 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
       alive = false;
     };
   }, [asset, tf]);
+
+  // Fluxo por investidor (market-wide) — uma vez ao montar a aba.
+  useEffect(() => {
+    let alive = true;
+    fetchB3Flow().then((f) => { if (alive) setFlow(f); });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Estrutura do timeframe MAIOR (confluência top-down).
   useEffect(() => {
@@ -208,6 +218,9 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         <h3 className="text-sm font-semibold text-foreground">Smart Money · {asset}</h3>
         <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${BIAS_TONE[bias]}`}>Viés: {biasWord(bias)}</span>
       </div>
+
+      {/* Fluxo por investidor (market-wide) — o "smart money" da bolsa: quem comprou/vendeu */}
+      {flow.length > 0 && <B3InvestorFlow rows={flow} />}
 
       {/* Leitura da ação (foco p/ bolsa) — só ações; índice/dólar seguem no SMC */}
       {isStock && stockRead && <B3StockReadPanel asset={asset} read={stockRead} />}

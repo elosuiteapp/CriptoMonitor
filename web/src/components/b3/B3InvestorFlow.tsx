@@ -32,10 +32,11 @@ const TYPES: { key: keyof FlowRow; label: string }[] = [
 /** Fluxo de investimento na B3 por tipo de investidor (estrangeiro/institucional/PF…).
  *  O diferencial do TradeMap — quem está comprando/vendendo a bolsa. Market-wide,
  *  diário (R$ milhões). Lê b3_investor_flow. Isolado. */
-export default function B3InvestorFlow() {
-  const [rows, setRows] = useState<FlowRow[] | null>(null);
+export default function B3InvestorFlow({ rows: propRows }: { rows?: FlowRow[] }) {
+  const [tableRows, setTableRows] = useState<FlowRow[] | null>(null);
 
   useEffect(() => {
+    if (propRows) return; // dados vêm por prop (scrape ao vivo) — não lê a tabela
     let alive = true;
     supabase
       .from("b3_investor_flow")
@@ -43,13 +44,14 @@ export default function B3InvestorFlow() {
       .order("date", { ascending: false })
       .limit(30)
       .then(({ data }) => {
-        if (alive) setRows((data as FlowRow[]) ?? []);
+        if (alive) setTableRows((data as FlowRow[]) ?? []);
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [propRows]);
 
+  const rows = propRows ?? tableRows;
   if (rows == null) return <div className="h-32 animate-pulse rounded-2xl border border-border bg-card dark:bg-card/60" />;
   if (rows.length === 0) return null;
 

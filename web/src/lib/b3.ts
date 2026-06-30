@@ -227,6 +227,34 @@ export function fetchB3Overview(): Promise<B3Overview | null> {
   );
 }
 
+export interface B3FlowRow {
+  date: string;
+  foreign_mi: number | null;
+  institutional_mi: number | null;
+  retail_mi: number | null;
+  financial_mi: number | null;
+  other_mi: number | null;
+}
+
+/** Fluxo de investimento na B3 por tipo de investidor (estrangeiro/institucional/PF/…),
+ *  diário em R$ milhões — via raspagem do dadosdemercado (edge b3-flow). Market-wide. */
+export function fetchB3Flow(): Promise<B3FlowRow[]> {
+  return b3Cached(
+    "flow",
+    600_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("b3-flow", { body: {} });
+        if (error || !data) return [];
+        return (data as { flow?: B3FlowRow[] }).flow ?? [];
+      } catch {
+        return [];
+      }
+    },
+    (v) => v.length === 0,
+  );
+}
+
 /** Candles de qualquer ativo da B3 (IBOV/dólar/ações) no timeframe pedido
  *  (15m/1h/4h/1d/1w/1M). 4h é agregado de 1h no servidor. */
 export function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[]> {
