@@ -24,10 +24,14 @@ const GROUPS: { id: string; label: string }[] = [
   { id: "index", label: "Índice" },
 ];
 
+/** Grupos sempre visíveis no painel colapsado — principais + índice do dólar. */
+const COLLAPSED_GROUPS = ["major", "index"];
+
 /** Cockpit do módulo Forex — painel de moedas, par selecionado, sessões e gráfico. */
 export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair: (s: string) => void }) {
   const [tf, setTf] = usePersistentState<Timeframe>("cm.fx-tf", "1d");
   const [chartType, setChartType] = usePersistentState<ChartType>("cm.fx-charttype", "candles");
+  const [panelOpen, setPanelOpen] = usePersistentState<boolean>("cm.fx-panel-open", false);
   const [showEma, setShowEma] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
@@ -81,15 +85,31 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   const carry = pairCarry(pair);
   const qOf = (sym: string) => overview.find((q) => q.pair === sym);
 
+  // Painel colapsável: mostra só principais + DXY (e o grupo do par ativo, p/ ele
+  // nunca sumir); "ver todos" expande Real/Cruzamentos/Exóticos.
+  const activeGroup = meta?.group;
+  const visibleGroups = panelOpen ? GROUPS : GROUPS.filter((g) => COLLAPSED_GROUPS.includes(g.id) || g.id === activeGroup);
+  const hiddenCount = panelOpen ? 0 : FOREX_PAIRS.filter((p) => !COLLAPSED_GROUPS.includes(p.group) && p.group !== activeGroup).length;
+
   return (
     <div className="space-y-4">
       {/* Painel de moedas — acompanha todos os pares; clique troca o par ativo */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Painel de moedas
-          <InfoTip text="Cotação e variação no dia de todos os pares, agrupados (principais, real, cruzamentos, exóticos e o índice do dólar DXY). Clique em qualquer par para abri-lo no gráfico." />
+        <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Painel de moedas
+            <InfoTip text="Cotação e variação no dia de todos os pares, agrupados (principais, real, cruzamentos, exóticos e o índice do dólar DXY). Clique em qualquer par para abri-lo no gráfico." />
+          </div>
+          {hiddenCount > 0 || panelOpen ? (
+            <button
+              onClick={() => setPanelOpen((v) => !v)}
+              className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted"
+            >
+              {panelOpen ? "ver menos" : `ver todos (${hiddenCount})`}
+            </button>
+          ) : null}
         </div>
-        {GROUPS.map((g) => {
+        {visibleGroups.map((g) => {
           const items = FOREX_PAIRS.filter((p) => p.group === g.id);
           if (!items.length) return null;
           return (
