@@ -90,6 +90,13 @@ Deno.serve(async (req) => {
       const r = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`, null, creds);
       return json(200, r);
     }
+    if (action === "candles") {
+      const instId = String(body?.instId ?? "BTC-USDT");
+      const bar = String(body?.bar ?? "1H");
+      const limit = String(body?.limit ?? "200");
+      const r = await okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(instId)}&bar=${bar}&limit=${limit}`, null, creds);
+      return json(200, r);
+    }
     if (action === "order") {
       const instId = String(body?.instId ?? "");
       const side = String(body?.side ?? "");
@@ -102,7 +109,16 @@ Deno.serve(async (req) => {
       if (ordType === "limit" && px) orderBody.px = px;
       const r = await okx("POST", "/api/v5/trade/order", orderBody, creds);
       const ok = String((r.code as string) ?? "") === "0";
-      await admin.from("bot_orders").insert({ action: "order", inst_id: instId, side, ord_type: ordType, sz, px: px ?? null, ok, result: r });
+      const ordId = (r.data as { ordId?: string }[])?.[0]?.ordId;
+      // Preço médio de execução (pra marcar no gráfico/histórico).
+      let avgPx: number | null = null, fillSz: number | null = null;
+      if (ok && ordId) {
+        const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(instId)}&ordId=${ordId}`, null, creds);
+        const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0];
+        avgPx = d?.avgPx ? Number(d.avgPx) : null;
+        fillSz = d?.accFillSz ? Number(d.accFillSz) : null;
+      }
+      await admin.from("bot_orders").insert({ source: "manual", action: "order", inst_id: instId, side, ord_type: ordType, sz, px: px ?? null, avg_px: avgPx, fill_sz: fillSz, ok, result: r });
       return json(200, r);
     }
     return json(400, { error: "ação inválida" });

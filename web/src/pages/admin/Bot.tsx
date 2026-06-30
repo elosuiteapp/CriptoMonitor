@@ -1,35 +1,53 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { UTCTimestamp } from "lightweight-charts";
+
+import BotChart, { type BotCandle, type BotMarker } from "../../components/admin/BotChart";
 import { supabase } from "../../lib/supabase";
 
-interface Status {
-  okx: boolean;
+interface Config {
+  enabled: boolean;
+  inst_id: string;
+  base_ccy: string;
+  quote_ccy: string;
+  bar: string;
+  ema_fast: number;
+  ema_slow: number;
+  order_quote_sz: number;
 }
-interface BalDetail {
-  ccy: string;
-  eq: string;
-  availBal: string;
+interface OrderRow {
+  id: string;
+  source: string;
+  inst_id: string | null;
+  side: string | null;
+  ord_type: string | null;
+  sz: string | null;
+  avg_px: number | null;
+  ok: boolean;
+  result: { msg?: string; data?: { sMsg?: string }[] } | null;
+  created_at: string;
+}
+interface LogRow {
+  id: number;
+  level: string;
+  message: string;
+  created_at: string;
 }
 interface Position {
   instId: string;
   posSide: string;
   pos: string;
-  avgPx: string;
   upl: string;
-  uplRatio: string;
-}
-interface OrderRow {
-  id: string;
-  inst_id: string | null;
-  side: string | null;
-  ord_type: string | null;
-  sz: string | null;
-  ok: boolean;
-  result: { code?: string; msg?: string; data?: { sMsg?: string; ordId?: string }[] } | null;
-  created_at: string;
 }
 
-/** Extrai { error } de uma resposta de erro da edge function (mesmo padrão do /admin/social). */
+const BARS = ["15m", "1H", "4H", "1D"];
+const LOG_TONE: Record<string, string> = {
+  trade: "bg-primary/15 text-primary",
+  info: "bg-muted text-muted-foreground",
+  warn: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  error: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+};
+
 async function invoke(action: string, extra: Record<string, unknown> = {}) {
   const { data, error } = await supabase.functions.invoke("okx-bot", { body: { action, ...extra } });
   if (error) {
@@ -46,82 +64,79 @@ async function invoke(action: string, extra: Record<string, unknown> = {}) {
   return data;
 }
 
-/** Admin · Robô (Lab) — robô de trade PESSOAL no modo DEMO da OKX. Isolado do SaaS,
- *  visível só para o admin. v1 = conexão + painel (saldo, posições, ordem de teste).
- *  As chaves ficam no servidor (app_secrets); a execução usa sempre x-simulated-trading. */
+const num = (v: unknown, d = 2) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d }));
+
+/** Admin · Robô (Lab) — robô de trade PESSOAL no modo DEMO da OKX, isolado e admin-only.
+ *  v2: estratégia automática (cruzamento de EMAs) compra/vende sozinha via cron, com
+ *  gráfico (marcações de C/V), histórico de ordens e diário das decisões. */
 export default function AdminBot() {
-  const [status, setStatus] = useState<Status | null>(null);
+  const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  // chaves (não exibem o valor salvo; só status "conectado")
+  const [cfg, setCfg] = useState<Config | null>(null);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [logs, setLogs] = useState<LogRow[]>([]);
+  const [totalEq, setTotalEq] = useState<string | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [candles, setCandles] = useState<BotCandle[]>([]);
+
+  // conexão (chaves)
+  const [showKeys, setShowKeys] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  // ordem manual
+  const [showManual, setShowManual] = useState(false);
+  const [mSide, setMSide] = useState<"buy" | "sell">("buy");
+  const [mOrdType, setMOrdType] = useState<"market" | "limit">("market");
+  const [mSz, setMSz] = useState("");
+  const [mPx, setMPx] = useState("");
 
-  // dados ao vivo
-  const [totalEq, setTotalEq] = useState<string | null>(null);
-  const [details, setDetails] = useState<BalDetail[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-
-  // ordem de teste
-  const [instId, setInstId] = useState("BTC-USDT");
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [ordType, setOrdType] = useState<"market" | "limit">("market");
-  const [sz, setSz] = useState("");
-  const [px, setPx] = useState("");
-  const [last, setLast] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async () => {
-    const { data } = await supabase.rpc("bot_config_status");
-    setStatus((data as Status) ?? null);
-    const { data: ord } = await supabase
-      .from("bot_orders")
-      .select("id, inst_id, side, ord_type, sz, ok, result, created_at")
-      .order("created_at", { ascending: false })
-      .limit(10);
+  const loadBase = useCallback(async () => {
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }] = await Promise.all([
+      supabase.rpc("bot_config_status"),
+      supabase.rpc("bot_get_config"),
+      supabase.from("bot_orders").select("id, source, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+    ]);
+    setConnected(!!(st as { okx?: boolean })?.okx);
+    setCfg((c as Config) ?? null);
     setOrders((ord as OrderRow[] | null) ?? []);
+    setLogs((lg as LogRow[] | null) ?? []);
   }, []);
 
   useEffect(() => {
-    loadStatus();
-  }, [loadStatus]);
+    loadBase();
+  }, [loadBase]);
 
-  async function saveSecret(key: string, value: string, label: string) {
-    if (!value.trim()) return;
-    const { error } = await supabase.rpc("set_bot_secret", { p_key: key, p_value: value.trim() });
-    if (error) throw new Error(`${label}: ${error.message}`);
-  }
-  async function saveKeys() {
-    setBusy("keys");
-    setMsg(null);
+  const loadChart = useCallback(async (config: Config) => {
     try {
-      await saveSecret("okx_api_key", apiKey, "API Key");
-      await saveSecret("okx_api_secret", apiSecret, "API Secret");
-      await saveSecret("okx_api_passphrase", passphrase, "Passphrase");
-      setApiKey("");
-      setApiSecret("");
-      setPassphrase("");
-      setMsg({ kind: "ok", text: "Chaves da OKX demo salvas." });
-      await loadStatus();
-    } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao salvar." });
-    } finally {
-      setBusy(null);
+      const r = await invoke("candles", { instId: config.inst_id, bar: config.bar, limit: 200 });
+      const rows = ((r?.data ?? []) as string[][]).slice().reverse();
+      const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4] }));
+      setCandles(cs);
+    } catch {
+      setCandles([]);
     }
-  }
+  }, []);
+
+  // Carrega gráfico quando a config chega/muda.
+  useEffect(() => {
+    if (cfg && connected) loadChart(cfg);
+  }, [cfg?.inst_id, cfg?.bar, connected, loadChart]);
 
   async function refresh() {
+    if (!connected || !cfg) return;
     setBusy("refresh");
     setMsg(null);
     try {
       const bal = await invoke("balance");
-      const acc = bal?.data?.[0];
-      setTotalEq(acc?.totalEq ?? null);
-      setDetails(((acc?.details ?? []) as BalDetail[]).filter((d) => Number(d.eq) > 0).slice(0, 12));
+      setTotalEq(bal?.data?.[0]?.totalEq ?? null);
       const pos = await invoke("positions");
       setPositions(((pos?.data ?? []) as Position[]).filter((p) => Number(p.pos) !== 0));
+      await loadChart(cfg);
+      await loadBase();
       setMsg({ kind: "ok", text: "Atualizado." });
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha." });
@@ -130,12 +145,37 @@ export default function AdminBot() {
     }
   }
 
-  async function getTicker() {
-    setBusy("ticker");
+  async function saveKeys() {
+    setBusy("keys");
     setMsg(null);
     try {
-      const t = await invoke("ticker", { instId });
-      setLast(t?.data?.[0]?.last ?? null);
+      const save = async (k: string, v: string) => {
+        if (!v.trim()) return;
+        const { error } = await supabase.rpc("set_bot_secret", { p_key: k, p_value: v.trim() });
+        if (error) throw new Error(error.message);
+      };
+      await save("okx_api_key", apiKey);
+      await save("okx_api_secret", apiSecret);
+      await save("okx_api_passphrase", passphrase);
+      setApiKey(""); setApiSecret(""); setPassphrase("");
+      setMsg({ kind: "ok", text: "Chaves da OKX demo salvas." });
+      await loadBase();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao salvar." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveConfig(patch: Partial<Config>) {
+    if (!cfg) return;
+    setBusy("cfg");
+    setMsg(null);
+    try {
+      const { error } = await supabase.rpc("bot_set_config", { p: patch });
+      if (error) throw new Error(error.message);
+      setCfg({ ...cfg, ...patch });
+      setMsg({ kind: "ok", text: "Config salva." });
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha." });
     } finally {
@@ -143,106 +183,175 @@ export default function AdminBot() {
     }
   }
 
-  async function placeOrder() {
-    if (!sz.trim()) {
-      setMsg({ kind: "err", text: "Informe o tamanho (sz)." });
-      return;
-    }
-    setBusy("order");
+  async function toggleBot() {
+    if (!cfg) return;
+    await saveConfig({ enabled: !cfg.enabled });
+  }
+
+  async function runNow() {
+    setBusy("run");
     setMsg(null);
     try {
-      const r = await invoke("order", { instId, side, ordType, tdMode: "cash", sz: sz.trim(), px: ordType === "limit" ? px.trim() : undefined });
-      const o = r?.data?.[0];
-      setMsg({ kind: "ok", text: `Ordem enviada (demo): ${o?.ordId ? `id ${o.ordId}` : "ok"}.` });
-      setSz("");
-      setPx("");
-      await loadStatus();
-      await refresh();
+      const { data, error } = await supabase.functions.invoke("bot-run", { body: { force: true } });
+      if (error) throw new Error(error.message);
+      const d = data?.decision;
+      const label = d === "buy" ? "comprou" : d === "sell" ? "vendeu" : d === "preview" ? `faria: ${data?.action?.side === "buy" ? "comprar" : "vender"}` : d === "hold" ? "segurou (sem ação)" : (data?.skipped ?? "executado");
+      setMsg({ kind: "ok", text: `Robô rodou: ${label}.` });
+      await loadBase();
+      if (cfg) await loadChart(cfg);
     } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao enviar ordem." });
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao rodar." });
     } finally {
       setBusy(null);
     }
   }
 
-  const Badge = ({ ok }: { ok: boolean }) => (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ok ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
-      {ok ? "conectado" : "não conectado"}
-    </span>
-  );
+  async function placeManual() {
+    if (!cfg || !mSz.trim()) { setMsg({ kind: "err", text: "Informe o tamanho." }); return; }
+    setBusy("manual");
+    setMsg(null);
+    try {
+      await invoke("order", { instId: cfg.inst_id, side: mSide, ordType: mOrdType, tdMode: "cash", sz: mSz.trim(), px: mOrdType === "limit" ? mPx.trim() : undefined });
+      setMsg({ kind: "ok", text: "Ordem manual enviada (demo)." });
+      setMSz(""); setMPx("");
+      await refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Marcadores de C/V no gráfico (alinhados à vela que contém a ordem).
+  const markers = useMemo<BotMarker[]>(() => {
+    if (!candles.length) return [];
+    const times = candles.map((c) => c.time);
+    return orders
+      .filter((o) => o.ok && o.side && o.inst_id === cfg?.inst_id)
+      .map((o) => {
+        const t = Math.floor(new Date(o.created_at).getTime() / 1000);
+        let bar = times[0];
+        for (const tt of times) { if (tt <= t) bar = tt; else break; }
+        return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", text: o.side === "buy" ? "C" : "V" };
+      });
+  }, [orders, candles, cfg?.inst_id]);
+
+  const lastPx = candles.length ? candles[candles.length - 1].close : 0;
+  const dec = lastPx >= 1000 ? 1 : lastPx >= 1 ? 2 : 6;
   const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
 
   return (
     <section className="space-y-5">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-bold text-foreground">Robô · Lab</h1>
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">OKX Demo · dinheiro fake</span>
-          <span className="text-xs text-muted-foreground">OKX <Badge ok={!!status?.okx} /></span>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Robô de trade <strong>pessoal</strong> em modo simulador, isolado do produto e visível só para você. Toda chamada usa o ambiente <strong>Demo Trading</strong> da OKX (<code>x-simulated-trading</code>) — sem risco. As chaves ficam no servidor e nunca aparecem aqui depois de salvas.
-        </p>
+      {/* Cabeçalho */}
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-xl font-bold text-foreground">Robô · Lab</h1>
+        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">OKX Demo · dinheiro fake</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{connected ? "OKX conectada" : "OKX não conectada"}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cfg?.enabled ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>{cfg?.enabled ? "ROBÔ LIGADO" : "robô desligado"}</span>
       </div>
+      <p className="-mt-3 text-sm text-muted-foreground">Robô de trade <strong>pessoal</strong> em simulador, isolado do produto e visível só para você. Compra e vende sozinho pela estratégia abaixo; toda ordem usa o ambiente Demo da OKX (<code>x-simulated-trading</code>) — sem risco.</p>
 
       {msg && (
-        <div className={`rounded-lg border p-3 text-sm ${msg.kind === "ok" ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400" : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400"}`}>
-          {msg.text}
+        <div className={`rounded-lg border p-3 text-sm ${msg.kind === "ok" ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400" : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400"}`}>{msg.text}</div>
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio (demo)</div>
+          <div className="num text-lg font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
+          <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
+          <div className="text-[11px] text-muted-foreground">{cfg ? `${cfg.bar} · EMA ${cfg.ema_fast}/${cfg.ema_slow}` : ""}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
+          <div className="num text-lg font-bold text-foreground">{lastPx ? num(lastPx, dec) : "—"}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Ordens (auto/total)</div>
+          <div className="num text-lg font-bold text-foreground">{orders.filter((o) => o.source === "auto").length}/{orders.length}</div>
+        </div>
+      </div>
+
+      {/* Robô automático */}
+      {cfg && (
+        <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-foreground">Robô automático</h2>
+              <button onClick={toggleBot} disabled={busy !== null || !connected} className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${cfg.enabled ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>
+                {cfg.enabled ? "LIGADO" : "DESLIGADO"}
+              </button>
+              <span className="text-[11px] text-muted-foreground">roda a cada ~5 min</span>
+            </div>
+            <button onClick={runNow} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
+              {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <label className="text-xs text-muted-foreground">Par (instId)
+              <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
+            </label>
+            <label className="text-xs text-muted-foreground">Timeframe
+              <select className={`${input} mt-1`} value={cfg.bar} onChange={(e) => setCfg({ ...cfg, bar: e.target.value })}>{BARS.map((b) => <option key={b} value={b}>{b}</option>)}</select>
+            </label>
+            <label className="text-xs text-muted-foreground">EMA rápida
+              <input type="number" className={`${input} mt-1`} value={cfg.ema_fast} onChange={(e) => setCfg({ ...cfg, ema_fast: Number(e.target.value) })} />
+            </label>
+            <label className="text-xs text-muted-foreground">EMA lenta
+              <input type="number" className={`${input} mt-1`} value={cfg.ema_slow} onChange={(e) => setCfg({ ...cfg, ema_slow: Number(e.target.value) })} />
+            </label>
+            <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
+              <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
+            </label>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, bar: cfg.bar, ema_fast: cfg.ema_fast, ema_slow: cfg.ema_slow, order_quote_sz: cfg.order_quote_sz })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              {busy === "cfg" ? "Salvando…" : "Salvar config"}
+            </button>
+            <span className="text-[11px] text-muted-foreground">Estratégia: cruzamento de médias (EMA rápida × lenta). Compra quando a rápida cruza acima e está fora; vende quando cruza abaixo e está comprado. (Trocável pelo motor de confluência depois.)</span>
+          </div>
         </div>
       )}
 
-      {/* Conexão OKX demo */}
+      {/* Gráfico com marcações */}
       <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Conectar OKX (Demo Trading)</h2>
-          <Badge ok={!!status?.okx} />
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">Gráfico · {cfg?.inst_id ?? ""} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
+            <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
+            <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
+          </div>
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <input className={input} placeholder="API Key (demo)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-          <input className={input} placeholder="API Secret (demo)" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
-          <input className={input} placeholder="Passphrase (demo)" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
-        </div>
-        <button onClick={saveKeys} disabled={busy !== null} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {busy === "keys" ? "Salvando…" : "Salvar chaves"}
-        </button>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Na OKX, ative o <strong>Demo Trading</strong> e gere chaves de API <strong>nesse ambiente</strong> (não use as chaves reais). Precisa de API Key, Secret e Passphrase. Permissão de <strong>Trade</strong> basta; <strong>nunca</strong> habilite saque.
-        </p>
+        {connected && candles.length > 0 ? (
+          <BotChart candles={candles} markers={markers} decimals={dec} />
+        ) : (
+          <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
+        )}
       </div>
 
-      {/* Conta (saldo + posições) */}
+      {/* Conta demo */}
       <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Conta demo</h2>
-          <button onClick={refresh} disabled={busy !== null || !status?.okx} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
-            {busy === "refresh" ? "Atualizando…" : "Atualizar saldo e posições"}
-          </button>
-        </div>
+        <h2 className="mb-2 text-sm font-semibold text-foreground">Conta demo</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio total (demo)</div>
-            <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${Number(totalEq).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}` : "—"}</div>
-            {details.length > 0 && (
-              <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-                {details.map((d) => (
-                  <div key={d.ccy} className="flex justify-between">
-                    <span>{d.ccy}</span>
-                    <span className="num">{Number(d.eq).toLocaleString("pt-BR", { maximumFractionDigits: 6 })} <span className="text-muted-foreground/60">(livre {Number(d.availBal).toLocaleString("pt-BR", { maximumFractionDigits: 4 })})</span></span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Posições abertas</div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Posições (derivativos)</div>
             {positions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhuma posição aberta.</p>
+              <p className="text-xs text-muted-foreground">Spot: a posição aparece como saldo da moeda base (sem posição de derivativo).</p>
             ) : (
               <div className="space-y-1 text-[11px]">
                 {positions.map((p) => (
                   <div key={p.instId + p.posSide} className="flex justify-between">
                     <span className="text-foreground">{p.instId} · {p.posSide}</span>
-                    <span className={`num ${Number(p.upl) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{p.pos} · PnL {Number(p.upl).toFixed(2)}</span>
+                    <span className={`num ${Number(p.upl) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{p.pos} · PnL {num(p.upl)}</span>
                   </div>
                 ))}
               </div>
@@ -251,52 +360,88 @@ export default function AdminBot() {
         </div>
       </div>
 
-      {/* Ordem de teste manual */}
-      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
-        <h2 className="text-sm font-semibold text-foreground">Ordem de teste (manual)</h2>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          <input className={input} placeholder="Par (instId)" value={instId} onChange={(e) => setInstId(e.target.value.toUpperCase())} />
-          <select className={input} value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")}>
-            <option value="buy">Comprar</option>
-            <option value="sell">Vender</option>
-          </select>
-          <select className={input} value={ordType} onChange={(e) => setOrdType(e.target.value as "market" | "limit")}>
-            <option value="market">A mercado</option>
-            <option value="limit">Limite</option>
-          </select>
-          <input className={input} placeholder="Tamanho (sz)" value={sz} onChange={(e) => setSz(e.target.value)} />
-          <input className={input} placeholder="Preço (limite)" value={px} onChange={(e) => setPx(e.target.value)} disabled={ordType !== "limit"} />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button onClick={placeOrder} disabled={busy !== null || !status?.okx} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {busy === "order" ? "Enviando…" : "Enviar ordem (demo)"}
-          </button>
-          <button onClick={getTicker} disabled={busy !== null} className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
-            {busy === "ticker" ? "…" : "Ver preço"}
-          </button>
-          {last != null && <span className="text-sm text-muted-foreground">Último: <span className="num text-foreground">{last}</span></span>}
-        </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Spot demo (<code>tdMode: cash</code>). Em <strong>compra a mercado</strong>, o tamanho é em moeda de cotação (ex.: USDT); em <strong>venda</strong>, na moeda base (ex.: BTC). Tudo é dinheiro fake — serve só para validar a conexão e a execução.
-        </p>
+      {/* Histórico de ordens */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card dark:bg-card/60">
+        <div className="px-4 py-3"><h2 className="text-sm font-semibold text-foreground">Histórico de ordens</h2></div>
+        {orders.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma ordem ainda.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 font-medium">Status</th></tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-b border-border last:border-0">
+                    <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{o.source === "auto" ? "robô" : "manual"}</span></td>
+                    <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
+                    <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
+                    <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, dec) : "—"}</td>
+                    <td className="px-4 py-2">{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Log de ordens */}
-      {orders.length > 0 && (
+      {/* Diário do robô */}
+      {logs.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Últimas ordens (demo)</h2>
+          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
           <div className="space-y-1.5">
-            {orders.map((o) => (
-              <div key={o.id} className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${o.ok ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{o.ok ? "ok" : "erro"}</span>
-                <span className="text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="text-foreground">{o.side === "buy" ? "compra" : "venda"} {o.sz} {o.inst_id} ({o.ord_type})</span>
-                {!o.ok && o.result?.data?.[0]?.sMsg && <span className="text-rose-500">{o.result.data[0].sMsg}</span>}
+            {logs.map((l) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
+                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="text-foreground">{l.message}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Conexão (chaves) — recolhível */}
+      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <button onClick={() => setShowKeys((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
+          <span>Conexão OKX (Demo) {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
+          <span className="text-muted-foreground">{showKeys ? "▲" : "▼"}</span>
+        </button>
+        {showKeys && (
+          <div className="mt-3">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <input className={input} placeholder="API Key (demo)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+              <input className={input} placeholder="API Secret (demo)" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
+              <input className={input} placeholder="Passphrase (demo)" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+            </div>
+            <button onClick={saveKeys} disabled={busy !== null} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy === "keys" ? "Salvando…" : "Salvar chaves"}</button>
+            <p className="mt-2 text-[11px] text-muted-foreground">Chaves do <strong>Demo Trading</strong> da OKX (não as reais). Permissão de <strong>Trade</strong>; nunca saque; sem restrição de IP.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Ordem manual — recolhível */}
+      <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+        <button onClick={() => setShowManual((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
+          <span>Ordem manual (avançado)</span>
+          <span className="text-muted-foreground">{showManual ? "▲" : "▼"}</span>
+        </button>
+        {showManual && cfg && (
+          <div className="mt-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <select className={input} value={mSide} onChange={(e) => setMSide(e.target.value as "buy" | "sell")}><option value="buy">Comprar</option><option value="sell">Vender</option></select>
+              <select className={input} value={mOrdType} onChange={(e) => setMOrdType(e.target.value as "market" | "limit")}><option value="market">A mercado</option><option value="limit">Limite</option></select>
+              <input className={input} placeholder="Tamanho (sz)" value={mSz} onChange={(e) => setMSz(e.target.value)} />
+              <input className={input} placeholder="Preço (limite)" value={mPx} onChange={(e) => setMPx(e.target.value)} disabled={mOrdType !== "limit"} />
+            </div>
+            <button onClick={placeManual} disabled={busy !== null || !connected} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busy === "manual" ? "Enviando…" : `Enviar ${mSide === "buy" ? "compra" : "venda"} de ${cfg.inst_id} (demo)`}</button>
+            <p className="mt-2 text-[11px] text-muted-foreground">Spot demo. Compra a mercado: tamanho em {cfg.quote_ccy}; venda: na moeda base. Tudo fake.</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
