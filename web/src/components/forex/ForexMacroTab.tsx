@@ -226,11 +226,11 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       {/* Matriz de correlação entre os principais pares (heatmap) */}
       <ForexCorrelationMatrix />
 
-      {/* Carry trade — ranking de juros (onde está o melhor carry) */}
-      <ForexCarryRanking />
-
       {/* Maré de liquidez macro global (Fed/FRED) — maré de fundo de todo o risco */}
       <MacroGlobalPanel />
+
+      {/* Carry trade — ranking de juros (onde está o melhor carry) */}
+      <ForexCarryRanking />
 
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
