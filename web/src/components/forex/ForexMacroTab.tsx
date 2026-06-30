@@ -5,6 +5,7 @@ import InfoTip from "../InfoTip";
 import MacroGlobalPanel from "../MacroGlobalPanel";
 import MacroUsPanel from "../MacroUsPanel";
 import ForexCarryRanking from "./ForexCarryRanking";
+import ForexRatesCard from "./ForexRatesCard";
 import ForexCorrelationMatrix from "./ForexCorrelationMatrix";
 
 const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", AUD: "🇦🇺", CAD: "🇨🇦", CHF: "🇨🇭", NZD: "🇳🇿", BRL: "🇧🇷", MXN: "🇲🇽" };
@@ -231,6 +232,9 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Carry trade — ranking de juros (onde está o melhor carry) */}
       <ForexCarryRanking />
+
+      {/* Juros de 10 anos por moeda + diferencial do par (expectativa real de juros) */}
+      <ForexRatesCard pair={pair} />
 
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">

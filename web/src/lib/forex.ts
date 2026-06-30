@@ -294,6 +294,30 @@ export function fetchForexOverview(): Promise<ForexQuote[]> {
   );
 }
 
+export interface ForexRates {
+  policy: Record<string, number>;
+  yields: Record<string, number | null>;
+}
+
+/** Juros reais por moeda (policy live US/EUR/BRL + juros de 10 anos dos majors), via FRED+BCB
+ *  na edge `forex-rates`. Diferencial de 10 anos = expectativa de juros (motor do carry). */
+export function fetchForexRates(): Promise<ForexRates | null> {
+  return cached(
+    "rates",
+    3_600_000,
+    async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("forex-rates", { body: {} });
+        if (error || !data) return null;
+        return data as ForexRates;
+      } catch {
+        return null;
+      }
+    },
+    (v) => v == null,
+  );
+}
+
 // ── Sessões de mercado (Tóquio / Londres / Nova York) em horário UTC ──────────
 export interface FxSession {
   name: string;
