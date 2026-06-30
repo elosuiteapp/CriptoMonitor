@@ -233,14 +233,16 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
               // Lado real pelo sinal do líquido — o COT index mede a POSIÇÃO NA FAIXA,
               // não o lado: 0% = no piso da faixa (não significa "vendido").
               const side = cot.assetMgrNet >= 0 ? "comprado" : "vendido";
-              const zone = p >= 85 ? `${side} no topo da faixa de ~6 meses (perto da máxima)` : p <= 15 ? `${side} no piso da faixa de ~6 meses (perto da mínima)` : `${side}, dentro da faixa normal de ~6 meses`;
+              // Janela em anos (rótulo amigável) — o histórico vai a ~3 anos.
+              const span = cot.weeks / 52 >= 1.4 ? `~${Math.round(cot.weeks / 52)} anos` : `${cot.weeks} sem`;
+              const zone = p >= 85 ? `${side} no topo da faixa de ${span} (perto da máxima)` : p <= 15 ? `${side} no piso da faixa de ${span} (perto da mínima)` : `${side}, dentro da faixa normal de ${span}`;
               const pairNote = hot ? ((p >= 85 ? 1 : -1) * cotInfo.direction > 0 ? `Esticado a favor de ${pair} — risco de realização/correção.` : `Esticado contra ${pair} — possível exaustão a favor de ${pair}.`) : "";
               return (
                 <div className={`mb-3 rounded-xl border p-3 ${hot ? "border-amber-500/40 bg-amber-500/10" : "border-border/70 bg-background/40"}`}>
                   <div className="mb-1 flex items-center justify-between text-[11px]">
                     <span className="flex items-center gap-1 font-semibold uppercase tracking-wide text-muted-foreground">
-                      COT index · {cot.weeks} sem
-                      <InfoTip text="Onde o posicionamento líquido do institucional está dentro da faixa dos últimos ~6 meses. Perto de 100% = comprado no extremo; perto de 0% = vendido no extremo. Extremos costumam anteceder reversões (o lado lotado tem menos gente para continuar empurrando)." />
+                      COT index · {span}
+                      <InfoTip text="Onde o posicionamento líquido do institucional está dentro da sua faixa histórica (até ~3 anos). Perto de 100% = no topo da faixa (extremo comprado); perto de 0% = no piso da faixa (extremo vendido para quem fica líquido vendido, ou long mais enxuto para quem fica comprado). Extremos costumam anteceder reversões — o lado lotado tem menos gente para continuar empurrando." />
                     </span>
                     <span className={`num font-bold ${hot ? "text-amber-500" : "text-foreground"}`}>{p}%</span>
                   </div>

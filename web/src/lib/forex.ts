@@ -100,13 +100,15 @@ export function fetchForexCot(currency: string): Promise<ForexCot | null> {
     600_000,
     async () => {
       try {
-        // Histórico (~6 meses) p/ o COT index — ordena por report_date (a data oficial).
+        // Histórico (~3 anos) p/ o COT index — ordena por report_date (a data oficial).
+        // Janela longa (padrão clássico do COT index) p/ não ficar refém de uma
+        // tendência curta: com 6 meses, um par em queda contínua trava em 0%.
         const { data, error } = await supabase
           .from("cot_positioning")
           .select("report_date, asset_mgr_net, asset_mgr_net_chg, lev_money_net, lev_money_net_chg, nonrept_net, nonrept_net_chg, open_interest")
           .eq("asset", currency)
           .order("report_date", { ascending: false })
-          .limit(30);
+          .limit(160);
         if (error || !data || data.length === 0) return null;
         const rows = data as Record<string, unknown>[];
         const d = rows[0];
