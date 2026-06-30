@@ -6,7 +6,6 @@ import ChartTypeSelector from "../ChartTypeSelector";
 import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
-import B3IndicatorPanels from "./B3IndicatorPanels";
 import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
 import B3NewsBlock from "./B3NewsBlock";
@@ -212,10 +211,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
           ) : candles.length < 2 ? (
             <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">Sem candles para {asset}.</div>
           ) : (
-            <>
-              <B3Chart candles={candles} chartType={chartType} showEma={showEma} showVolume={showVolume} showBollinger={showBollinger} showLongTrend={showLongTrend} showVolumeProfile={showVolumeProfile} />
-              <B3IndicatorPanels candles={candles} showRsi={showRsi} showMacd={showMacd} />
-            </>
+            <B3Chart candles={candles} chartType={chartType} showEma={showEma} showVolume={showVolume} showBollinger={showBollinger} showLongTrend={showLongTrend} showVolumeProfile={showVolumeProfile} showRsi={showRsi} showMacd={showMacd} />
           )}
         </div>
       </div>
