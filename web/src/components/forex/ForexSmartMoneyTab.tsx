@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { computeForexProfile, fetchForexChart, pairDecimals } from "../../lib/forex";
 import { computeSmc, type SmcResult } from "../../lib/smc";
+import { buildConfluenceSources } from "../../lib/smcConfluence";
+import { buildKeyLevels, type KeyLevel } from "../../lib/smcNarrative";
 import type { Candle, Timeframe } from "../../lib/marketData";
 import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
@@ -52,9 +54,22 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
   }, [pair, tf]);
 
   const smc: SmcResult | null = useMemo(() => (candles.length >= 60 ? computeSmc(candles) : null), [candles]);
-  const vp = useMemo(() => (layers.volumeProfile && candles.length > 10 ? computeForexProfile(candles.slice(-150)) : null), [candles, layers.volumeProfile]);
+  const profile = useMemo(() => (candles.length > 10 ? computeForexProfile(candles.slice(-150)) : null), [candles]);
   const dec = pairDecimals(pair);
   const fx = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+
+  // Níveis-chave por confluência (SMC + Volume Profile) — mesmo motor do cripto/B3.
+  const keyLevels = useMemo<KeyLevel[]>(() => {
+    if (!smc) return [];
+    const sources = buildConfluenceSources(null, [], (v) => fx(v));
+    if (profile) {
+      sources.push({ kind: "vp", label: "POC", price: profile.poc });
+      sources.push({ kind: "vp", label: "VA High", price: profile.vah });
+      sources.push({ kind: "vp", label: "VA Low", price: profile.val });
+    }
+    return buildKeyLevels(smc, sources);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [smc, profile]);
 
   const zone = smc
     ? smc.price >= smc.premium.bottom
@@ -110,7 +125,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
         ) : candles.length < 60 ? (
           <div className="grid h-[380px] place-items-center text-sm text-muted-foreground">Sem dados suficientes para {pair} em {tf}.</div>
         ) : (
-          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${pair}-${tf}`} vp={vp} tf={tf} />
+          <SmartMoneyChart candles={candles} smc={smc} layers={layers} viewKey={`${pair}-${tf}`} vp={layers.volumeProfile ? profile : null} tf={tf} />
         )}
         {/* Camadas ABAIXO do gráfico — mesmo padrão de posição do cockpit/cripto */}
         <div className="mt-2">
@@ -126,6 +141,54 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
           </p>
         )}
       </div>
+
+      {/* Níveis-chave por confluência (SMC × Perfil de preço) */}
+      {keyLevels.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-border bg-card dark:bg-card/60">
+          <div className="flex items-baseline justify-between px-4 py-3">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              Níveis-chave por confluência
+              <InfoTip text="Os preços mais importantes perto do atual, do mais próximo ao mais distante. Vêm da estrutura (order blocks, liquidez, premium/discount) e do perfil de preço (POC). 'Confluência' = quando vários fatores apontam o mesmo nível — quanto mais, mais forte. Verde = suporte (compra), vermelho = resistência (venda)." />
+            </h3>
+            <span className="text-xs text-muted-foreground">SMC × Perfil de preço — por distância</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Nível</th>
+                  <th className="px-4 py-2 text-right font-medium">Preço</th>
+                  <th className="px-4 py-2 text-right font-medium">Distância</th>
+                  <th className="px-4 py-2 font-medium">Confluência</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keyLevels.slice(0, 12).map((lvl, i) => (
+                  <tr key={i} className={`border-b border-border last:border-0 ${lvl.confluence.length >= 1 ? "bg-primary/5" : ""} ${lvl.swept ? "opacity-50" : ""}`}>
+                    <td className="border-l-2 px-4 py-2.5" style={{ borderLeftColor: lvl.bias === "bullish" ? "#22c55e" : lvl.bias === "bearish" ? "#ef4444" : "#475569" }}>
+                      <span className="text-foreground">{lvl.label}</span>
+                      {lvl.note && <div className="text-[11px] text-muted-foreground">{lvl.note}</div>}
+                    </td>
+                    <td className="num whitespace-nowrap px-4 py-2.5 text-right text-foreground">{fx(lvl.price)}</td>
+                    <td className="num whitespace-nowrap px-4 py-2.5 text-right text-muted-foreground">{lvl.distancePct >= 0 ? "+" : ""}{lvl.distancePct.toFixed(1)}%</td>
+                    <td className="px-4 py-2.5">
+                      {lvl.confluence.length === 0 ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {lvl.confluence.map((c, j) => (
+                            <span key={j} className="rounded-full border border-sky-500/40 px-2 py-0.5 text-[10px] text-sky-400">{c.source.label}</span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
