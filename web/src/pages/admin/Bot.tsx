@@ -14,6 +14,9 @@ interface Config {
   ema_fast: number;
   ema_slow: number;
   order_quote_sz: number;
+  position: string;
+  pos_base_sz: number;
+  entry_px: number | null;
 }
 interface OrderRow {
   id: string;
@@ -32,12 +35,6 @@ interface LogRow {
   level: string;
   message: string;
   created_at: string;
-}
-interface Position {
-  instId: string;
-  posSide: string;
-  pos: string;
-  upl: string;
 }
 
 const BARS = ["15m", "1H", "4H", "1D"];
@@ -78,7 +75,6 @@ export default function AdminBot() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [totalEq, setTotalEq] = useState<string | null>(null);
-  const [positions, setPositions] = useState<Position[]>([]);
   const [candles, setCandles] = useState<BotCandle[]>([]);
 
   // conexão (chaves)
@@ -133,8 +129,6 @@ export default function AdminBot() {
     try {
       const bal = await invoke("balance");
       setTotalEq(bal?.data?.[0]?.totalEq ?? null);
-      const pos = await invoke("positions");
-      setPositions(((pos?.data ?? []) as Position[]).filter((p) => Number(p.pos) !== 0));
       await loadChart(cfg);
       await loadBase();
       setMsg({ kind: "ok", text: "Atualizado." });
@@ -186,6 +180,10 @@ export default function AdminBot() {
   async function toggleBot() {
     if (!cfg) return;
     await saveConfig({ enabled: !cfg.enabled });
+  }
+
+  async function resetPosition() {
+    await saveConfig({ position: "flat", pos_base_sz: 0, entry_px: null });
   }
 
   async function runNow() {
@@ -343,19 +341,23 @@ export default function AdminBot() {
             <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Posições (derivativos)</div>
-            {positions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Spot: a posição aparece como saldo da moeda base (sem posição de derivativo).</p>
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Posição do robô</div>
+              {cfg?.position === "long" && <button onClick={resetPosition} disabled={busy !== null} className="text-[10px] text-muted-foreground underline hover:text-foreground">resetar</button>}
+            </div>
+            {cfg?.position === "long" ? (
+              <>
+                <div className="text-lg font-bold text-emerald-500">Comprado</div>
+                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, 8)} {cfg.base_ccy} · entrada @ <span className="num">{cfg.entry_px != null ? num(cfg.entry_px, dec) : "—"}</span></div>
+                {cfg.entry_px != null && lastPx > 0 && (() => {
+                  const upnl = (lastPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz);
+                  return <div className={`num text-[11px] font-medium ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>PnL aberto: {upnl >= 0 ? "+" : ""}{num(upnl)} {cfg.quote_ccy}</div>;
+                })()}
+              </>
             ) : (
-              <div className="space-y-1 text-[11px]">
-                {positions.map((p) => (
-                  <div key={p.instId + p.posSide} className="flex justify-between">
-                    <span className="text-foreground">{p.instId} · {p.posSide}</span>
-                    <span className={`num ${Number(p.upl) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{p.pos} · PnL {num(p.upl)}</span>
-                  </div>
-                ))}
-              </div>
+              <div className="text-lg font-bold text-muted-foreground">Fora do mercado</div>
             )}
+            <p className="mt-1 text-[10px] text-muted-foreground">Opera com capital em {cfg?.quote_ccy ?? "USDT"}; saldos pré-existentes (ex.: o 1 BTC de brinde) ficam intocados.</p>
           </div>
         </div>
       </div>
