@@ -2,6 +2,7 @@
 // Grátis: usa os fundamentos do Fundamentus que já carregamos + os setores curados
 // (B3_SECTORS). Mediana (não média) pra não distorcer com outliers. Só p/ ações.
 import { B3_ASSETS, B3_SECTORS, b3Sector, type B3Funds } from "../../lib/b3";
+import InfoTip from "../InfoTip";
 import { fmtMult, fmtPctRaw } from "./B3Shared";
 
 type Better = "high" | "low"; // direção que é "boa": DY/ROE alto bom; P/L/P/VP baixo bom.
@@ -53,7 +54,10 @@ export default function B3SectorCompare({ asset, funds }: { asset: string; funds
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-      <h3 className="mb-1 text-sm font-semibold text-foreground">{asset} vs setor · {sector}</h3>
+      <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        {asset} vs setor · {sector}
+        <InfoTip text="Compara os fundamentos da ação com a mediana das empresas do mesmo setor. Verde = a ação está melhor que a média do setor naquele indicador; vermelho = pior. Ajuda a ver se ela está cara ou barata em relação às concorrentes." />
+      </h3>
       <p className="mb-3 text-[11px] text-muted-foreground">Mediana de {peers.length} ações do setor. Verde = {asset} melhor que a mediana; vermelho = pior.</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

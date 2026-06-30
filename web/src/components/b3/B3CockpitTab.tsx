@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchB3Chart, fetchB3FiiDetail, fetchB3FiisAll, fetchB3FundamentalsAll, fetchB3Overview, fetchB3Proventos, isFii, type B3Candle, type B3FiiDetail, type B3FiiFunds, type B3Funds, type B3Overview, type B3ProventosData } from "../../lib/b3";
 import type { ChartType, Timeframe } from "../../lib/marketData";
 import ChartTypeSelector from "../ChartTypeSelector";
+import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
 import B3Chart from "./B3Chart";
 import B3IndicatorPanels from "./B3IndicatorPanels";
@@ -137,7 +138,10 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
     <div className="space-y-4">
       {/* Macro BR + índice/dólar */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Macro BR & mercado</h3>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Macro BR & mercado
+          <InfoTip text="O pano de fundo da economia brasileira que move a bolsa: IBOV (índice), dólar, Selic (juro básico — quando sobe, atrapalha a bolsa), CDI (renda fixa, o que a bolsa precisa bater), IPCA (inflação), IBC-Br (prévia do PIB) e desemprego." />
+        </h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           <Cell label="IBOV" value={fmtNum(ibov?.price ?? null, 0)} sub={fmtPct(ibov?.changePct ?? null)} tone={ibov?.changePct} />
           <Cell label="Dólar (USD/BRL)" value={fmtNum(dollar?.price ?? null)} sub={fmtPct(dollar?.changePct ?? null)} tone={dollar?.changePct} />
@@ -155,7 +159,10 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       {/* Commodities que movem o IBOV — petróleo/metais lá fora antecipam PETR4/VALE3 */}
       {ov.commodities && ov.commodities.length > 0 && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-          <h3 className="mb-2 text-sm font-semibold text-foreground">Commodities que movem o IBOV</h3>
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Commodities que movem o IBOV
+            <InfoTip text="Petróleo, cobre e ouro lá fora antecipam a abertura das pesadas da bolsa: petróleo move PETR4/PRIO3; cobre é proxy dos metais (puxa VALE3, siderúrgicas); ouro move mineradoras de ouro. Sobem lá fora, costumam puxar essas ações aqui." />
+          </h3>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {ov.commodities.map((c) => (
               <Cell
@@ -216,7 +223,10 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       {/* Faixa de 52 semanas — posição do preço atual no range do ano (ações, índice e FIIs) */}
       {selQuote?.price != null && selQuote.fl52 != null && selQuote.fh52 != null && selQuote.fh52 > selQuote.fl52 && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Faixa de 52 semanas · {asset}</h3>
+          <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Faixa de 52 semanas · {asset}
+            <InfoTip text="Onde o preço de hoje está entre a mínima e a máxima dos últimos 12 meses. Perto da máxima (metade de cima) = momento forte, mas pode estar esticado; perto da mínima = descontado/pressionado." />
+          </h3>
           <RangeBar low={selQuote.fl52} high={selQuote.fh52} current={selQuote.price} fmt={(n) => fmtAssetPrice(asset, n)} />
           <p className="mt-2 text-[11px] text-muted-foreground">Onde o preço de hoje está entre a mínima e a máxima dos últimos 12 meses. Perto da máxima = momento forte/esticado; perto da mínima = descontado/pressionado. Fonte: Yahoo Finance.</p>
         </div>
@@ -312,7 +322,10 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       {/* Fundamentos completos da ação */}
       {!assetIsFii && fund && (
         <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-          <h3 className="mb-2 text-sm font-semibold text-foreground">Fundamentos · {asset}</h3>
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Fundamentos · {asset}
+            <InfoTip text="A 'saúde' da empresa em números. P/L e P/VP = quão cara está (menor = mais barata); Dividend Yield = quanto paga de proventos; ROE/ROIC = rentabilidade; margens = quanto sobra de cada venda; Dív.Líq/PL = endividamento. Verde = bom (DY≥6% / ROE≥15% / crescimento positivo)." />
+          </h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             <Cell label="P/L" value={fund.pl != null ? fund.pl.toFixed(1) : "—"} sub="preço / lucro" />
             <Cell label="P/VP" value={fmtMult(fund.pvp)} sub="preço / patrimônio" />

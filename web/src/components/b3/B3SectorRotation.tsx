@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import { b3Sector, type B3Quote } from "../../lib/b3";
+import InfoTip from "../InfoTip";
 import { toneCls } from "./B3Shared";
 
 const median = (xs: number[]): number => {
@@ -37,7 +38,10 @@ export default function B3SectorRotation({ quotes, onAsset }: { quotes: B3Quote[
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Rotação setorial</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Rotação setorial
+          <InfoTip text="Para onde o dinheiro girou nos últimos 30 dias: mostra o desempenho mediano de cada setor da bolsa. Verde = setor em alta no mês (capital entrando); vermelho = saindo. Ajuda a ver quais setores estão na moda. Clique no líder do setor para abri-lo." />
+        </h3>
         <span className="text-xs text-muted-foreground">mediana 30 dias · clique no líder</span>
       </div>
       <div className="space-y-1.5">
