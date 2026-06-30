@@ -247,7 +247,10 @@ export function fetchForexChart(pair: string, tf = "1d"): Promise<ForexCandle[]>
       try {
         const { data, error } = await supabase.functions.invoke("forex-data", { body: { mode: "chart", pair, tf } });
         if (error || !data) return [];
-        return ((data as { candles?: ForexCandle[] }).candles ?? []).filter((c) => Number.isFinite(c.close));
+        // Sanitiza velas corrompidas (OHLC <= 0 ou inválido) que viram "spike" no gráfico.
+        return ((data as { candles?: ForexCandle[] }).candles ?? []).filter(
+          (c) => [c.open, c.high, c.low, c.close].every((v) => Number.isFinite(v) && v > 0) && c.high >= c.low,
+        );
       } catch {
         return [];
       }

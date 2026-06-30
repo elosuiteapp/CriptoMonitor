@@ -193,7 +193,21 @@ export default function B3MacroTab() {
         </div>
       </div>
 
-      {/* Calendário econômico (EUA + Brasil) */}
+      {/* Correlações do IBOV — logo após o mercado global (como o IBOV se relaciona com ele) */}
+      <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Correlação do IBOV (30 dias)
+          <InfoTip text="O quanto o IBOV anda junto (ou ao contrário) de cada referência global. +1 = sobem/caem juntos; −1 = vão em direções opostas; perto de 0 = sem relação. Ex.: o IBOV costuma andar a favor de S&P/Nasdaq e contra o dólar e o VIX (medo)." />
+        </h3>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {d.correlations.map((c) => (
+            <CorrBar key={c.ref} name={c.ref} c30={c.c30} c90={c.c90} />
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">Correlação de retornos diários. +1 = anda junto · −1 = anda ao contrário. Fonte: Yahoo Finance + BCB.</p>
+      </div>
+
+      {/* Calendário econômico (EUA + Brasil) — eventos, por último */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
@@ -228,17 +242,6 @@ export default function B3MacroTab() {
           </div>
         )}
         <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto dos EUA (motor do risco global) e do Brasil. ★★★ alto · ★★ médio. Fonte: ForexFactory.</p>
-      </div>
-
-      {/* Correlações do IBOV */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Correlação do IBOV (30 dias)</h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {d.correlations.map((c) => (
-            <CorrBar key={c.ref} name={c.ref} c30={c.c30} c90={c.c90} />
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Correlação de retornos diários. +1 = anda junto · −1 = anda ao contrário. Fonte: Yahoo Finance + BCB.</p>
       </div>
     </div>
   );

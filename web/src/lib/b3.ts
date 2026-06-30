@@ -237,7 +237,11 @@ export function fetchB3Chart(ticker: string, tf = "1d"): Promise<B3Candle[]> {
       try {
         const { data, error } = await supabase.functions.invoke("b3-data", { body: { mode: "chart", ticker, tf } });
         if (error || !data) return [];
-        return ((data as { candles?: B3Candle[] }).candles ?? []).filter((c) => Number.isFinite(c.close));
+        // Sanitiza: descarta velas corrompidas (OHLC <= 0 ou inválido) que vêm às vezes
+        // do provedor e viram um "spike" gigante no gráfico (ex.: low=0).
+        return ((data as { candles?: B3Candle[] }).candles ?? []).filter(
+          (c) => [c.open, c.high, c.low, c.close].every((v) => Number.isFinite(v) && v > 0) && c.high >= c.low,
+        );
       } catch {
         return [];
       }
