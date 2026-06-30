@@ -42,9 +42,9 @@ async function okx(method: "GET" | "POST", path: string, bodyObj: Record<string,
 const clamp = (v: number) => Math.max(-100, Math.min(100, v));
 const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
-// ════════ Binance USDⓈ-M Futures DEMO (long+short; OKX bloqueia derivativos p/ BR) ════════
-// Demo Trading da Binance (demo.binance.com) — base de futuros = demo-fapi.binance.com.
-const BNB_BASE = "https://demo-fapi.binance.com";
+// ════════ Binance USDⓈ-M Futures TESTNET (long+short; OKX/demo BR bloqueiam derivativos) ════════
+// Testnet clássico (testnet.binancefuture.com) — sandbox de dev, auto-funda ~15k USDT, sem geo.
+const BNB_BASE = "https://testnet.binancefuture.com";
 const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h" };
 interface BnbCreds { key: string; secret: string }
 async function hmacHex(secret: string, msg: string): Promise<string> {
