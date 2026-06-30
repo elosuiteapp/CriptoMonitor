@@ -14,9 +14,31 @@ interface Config {
   ema_fast: number;
   ema_slow: number;
   order_quote_sz: number;
+  buy_threshold: number;
+  sell_threshold: number;
   position: string;
   pos_base_sz: number;
   entry_px: number | null;
+  last_bias: number | null;
+  last_conviction: number | null;
+  last_decision: string | null;
+  last_run: string | null;
+  last_reading: Reading | null;
+}
+interface ReadingSig {
+  key: string;
+  group: string;
+  label: string;
+  score: number;
+  weight: number;
+  note: string;
+}
+interface Reading {
+  bias: number;
+  conviction: number;
+  signals: ReadingSig[];
+  spot?: number;
+  desired?: string;
 }
 interface OrderRow {
   id: string;
@@ -38,6 +60,8 @@ interface LogRow {
 }
 
 const BARS = ["15m", "1H", "4H", "1D"];
+const SIG_GROUPS = ["Microestrutura", "Fluxo", "Opções", "Institucional", "Sentimento"];
+const decisionLabel = (d?: string | null) => (d === "buy" ? "Comprar" : d === "sell" ? "Vender" : d === "preview" ? "Prévia" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
   info: "bg-muted text-muted-foreground",
@@ -262,7 +286,7 @@ export default function AdminBot() {
         <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
           <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
-          <div className="text-[11px] text-muted-foreground">{cfg ? `${cfg.bar} · EMA ${cfg.ema_fast}/${cfg.ema_slow}` : ""}</div>
+          <div className="text-[11px] text-muted-foreground">{cfg ? `Fluxo · limiar ±${cfg.buy_threshold}` : ""}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
@@ -289,37 +313,95 @@ export default function AdminBot() {
               {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
             </button>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <label className="text-xs text-muted-foreground">Par (instId)
               <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
-            </label>
-            <label className="text-xs text-muted-foreground">Timeframe
-              <select className={`${input} mt-1`} value={cfg.bar} onChange={(e) => setCfg({ ...cfg, bar: e.target.value })}>{BARS.map((b) => <option key={b} value={b}>{b}</option>)}</select>
-            </label>
-            <label className="text-xs text-muted-foreground">EMA rápida
-              <input type="number" className={`${input} mt-1`} value={cfg.ema_fast} onChange={(e) => setCfg({ ...cfg, ema_fast: Number(e.target.value) })} />
-            </label>
-            <label className="text-xs text-muted-foreground">EMA lenta
-              <input type="number" className={`${input} mt-1`} value={cfg.ema_slow} onChange={(e) => setCfg({ ...cfg, ema_slow: Number(e.target.value) })} />
             </label>
             <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
               <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
             </label>
+            <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
+              <input type="number" className={`${input} mt-1`} value={cfg.buy_threshold} onChange={(e) => setCfg({ ...cfg, buy_threshold: Number(e.target.value), sell_threshold: Number(e.target.value) })} />
+            </label>
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, bar: cfg.bar, ema_fast: cfg.ema_fast, ema_slow: cfg.ema_slow, order_quote_sz: cfg.order_quote_sz })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: cruzamento de médias (EMA rápida × lenta). Compra quando a rápida cruza acima e está fora; vende quando cruza abaixo e está comprado. (Trocável pelo motor de confluência depois.)</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>confluência de fluxo</strong> (book, paredes, gamma, funding, CVD, liquidações, ETF, prêmio Coinbase, sentimento). Compra quando o viés ≥ +{cfg.buy_threshold}; vende quando ≤ −{cfg.sell_threshold}. Sem indicadores técnicos.</span>
           </div>
         </div>
       )}
+
+      {/* Leitura do robô (fluxo) */}
+      {cfg?.last_reading && (() => {
+        const r = cfg.last_reading;
+        const bias = r.bias;
+        const bc = bias >= 15 ? "text-emerald-500" : bias <= -15 ? "text-rose-500" : "text-muted-foreground";
+        return (
+          <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · fluxo & microestrutura</h2>
+              <span className="text-[11px] text-muted-foreground">{cfg.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Viés líquido</div>
+                <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
+                <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
+                  <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                  <div className={`absolute top-0 h-full rounded-full ${bias >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={bias >= 0 ? { left: "50%", width: `${Math.abs(bias) / 2}%` } : { right: "50%", width: `${Math.abs(bias) / 2}%` }} />
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Convicção</div>
+                <div className="num text-2xl font-bold text-foreground">{r.conviction}%</div>
+                <div className="text-[10px] text-muted-foreground">forças no mesmo lado</div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Decisão</div>
+                <div className={`text-2xl font-bold ${cfg.last_decision === "buy" ? "text-emerald-500" : cfg.last_decision === "sell" ? "text-rose-500" : "text-foreground"}`}>{decisionLabel(cfg.last_decision)}</div>
+                <div className="text-[10px] text-muted-foreground">limiar ±{cfg.buy_threshold}</div>
+              </div>
+            </div>
+            <div className="mt-3 space-y-3">
+              {SIG_GROUPS.map((grp) => {
+                const items = r.signals.filter((s) => s.group === grp);
+                if (!items.length) return null;
+                return (
+                  <div key={grp}>
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{grp}</div>
+                    <div className="space-y-1">
+                      {items.map((s) => (
+                        <div key={s.key} className="flex items-center gap-2 text-xs">
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.score > 8 ? "bg-emerald-500" : s.score < -8 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
+                          <span className="w-40 shrink-0 truncate text-foreground" title={s.label}>{s.label}</span>
+                          <span className="hidden min-w-0 flex-1 truncate text-muted-foreground sm:block" title={s.note}>{s.note}</span>
+                          <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
+                            <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                            <div className={`absolute top-0 h-full rounded-full ${s.score >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={s.score >= 0 ? { left: "50%", width: `${Math.abs(s.score) / 2}%` } : { right: "50%", width: `${Math.abs(s.score) / 2}%` }} />
+                          </div>
+                          <span className={`num w-8 shrink-0 text-right ${s.score >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{s.score >= 0 ? "+" : ""}{s.score}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">Cada sinal pontua −100 (baixa) a +100 (alta) com peso; o viés é a média ponderada. Dados coletados pela plataforma, atualizados a cada ~5 min. Educacional — não é recomendação.</p>
+          </div>
+        );
+      })()}
 
       {/* Gráfico com marcações */}
       <div className="rounded-xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">Gráfico · {cfg?.inst_id ?? ""} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
+              {BARS.map((b) => <button key={b} onClick={() => cfg && setCfg({ ...cfg, bar: b })} className={`rounded-md px-2 py-0.5 transition-colors ${cfg?.bar === b ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>{b}</button>)}
+            </div>
             <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
             <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
