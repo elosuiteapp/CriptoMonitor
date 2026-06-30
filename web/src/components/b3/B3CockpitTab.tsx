@@ -9,6 +9,7 @@ import B3IndicatorPanels from "./B3IndicatorPanels";
 import B3FearGreedPanel from "./B3FearGreedPanel";
 import B3FiiSegmentCompare from "./B3FiiSegmentCompare";
 import B3NewsBlock from "./B3NewsBlock";
+import B3Rankings from "./B3Rankings";
 import B3Screener from "./B3Screener";
 import B3SectorCompare from "./B3SectorCompare";
 import B3SectorRotation from "./B3SectorRotation";
@@ -336,6 +337,9 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
 
       {/* Comparação com os pares do setor (mediana) — só p/ ações */}
       {!assetIsFii && fund && <B3SectorCompare asset={asset} funds={funds} />}
+
+      {/* Rankings prontos (DY, baratas, Graham, Bazin…) — assinatura das plataformas BR */}
+      {!assetIsFii && Object.keys(funds).length > 0 && <B3Rankings funds={funds} onAsset={onAsset} />}
 
       {/* Screener — Ações × FIIs, fundamentos, filtro e ordenação */}
       <B3Screener quotes={ov.quotes} funds={funds} fiis={fiis} asset={asset} onAsset={onAsset} />
