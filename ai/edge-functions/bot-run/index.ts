@@ -404,7 +404,17 @@ Deno.serve(async (req) => {
         if (reduceOnly) params.reduceOnly = true;
         const r = await bnb("POST", "/fapi/v1/order", params, bnbCreds, true);
         const okk = !!r.body?.orderId && r.body?.status !== "REJECTED" && !r.body?.code;
-        return { r: r.body, okk, ap: Number(r.body?.avgPrice) || null, fz: Number(r.body?.executedQty) || null, sMsg: r.body?.msg ?? null };
+        let ap = Number(r.body?.avgPrice) || null;
+        const fz = Number(r.body?.executedQty) || null;
+        // Binance demo costuma devolver avgPrice=0 no RESULT → busca o preço real dos fills.
+        if (okk && (!ap || ap === 0) && r.body?.orderId) {
+          const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol: cfg.inst_id, orderId: r.body.orderId, limit: 20 }, bnbCreds, true);
+          const arr = Array.isArray(tr.body) ? tr.body : [];
+          let q = 0, qv = 0;
+          for (const t of arr) { const p = Number(t.price), tq = Number(t.qty); if (p > 0 && tq > 0) { q += tq; qv += p * tq; } }
+          if (q > 0) ap = qv / q;
+        }
+        return { r: r.body, okk, ap, fz, sMsg: r.body?.msg ?? null };
       };
       let pnl: number | null = null;
       // 1) Fecha posição atual (se houver).

@@ -108,6 +108,7 @@ export default function AdminBot() {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [totalEq, setTotalEq] = useState<string | null>(null);
   const [candles, setCandles] = useState<BotCandle[]>([]);
+  const [posInfo, setPosInfo] = useState<{ uPnl: number | null; markPx: number | null; entryPx: number | null } | null>(null);
 
   // conexão (chaves)
   const [showKeys, setShowKeys] = useState(false);
@@ -154,6 +155,24 @@ export default function AdminBot() {
   useEffect(() => {
     if (cfg && connected) loadChart(cfg);
   }, [cfg?.inst_id, cfg?.bar, connected, loadChart]);
+
+  // PnL ao vivo: enquanto há posição aberta, lê a posição real da Binance (uPnL + preço de marca).
+  useEffect(() => {
+    if (!connected || !cfg || cfg.position === "flat" || cfg.venue !== "binance") { setPosInfo(null); return; }
+    const sym = cfg.inst_id;
+    let active = true;
+    const poll = async () => {
+      try {
+        const r = await invoke("positions", { instId: sym }, "binance-bot");
+        const arr = r?.data as { symbol?: string; unRealizedProfit?: string; markPrice?: string; entryPrice?: string }[] | undefined;
+        const p = Array.isArray(arr) ? arr.find((x) => x.symbol === sym) : null;
+        if (active && p) setPosInfo({ uPnl: Number(p.unRealizedProfit), markPx: Number(p.markPrice) || null, entryPx: Number(p.entryPrice) || null });
+      } catch { /* ignora */ }
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { active = false; clearInterval(id); };
+  }, [connected, cfg?.position, cfg?.inst_id, cfg?.venue]);
 
   async function refresh() {
     if (!connected || !cfg) return;
@@ -519,12 +538,23 @@ export default function AdminBot() {
             {cfg && cfg.position !== "flat" ? (
               <>
                 <div className={`text-lg font-bold ${cfg.position === "long" ? "text-emerald-500" : "text-rose-500"}`}>{cfg.position === "long" ? "Comprado (long)" : "Vendido (short)"}{isFut && cfg.leverage ? ` · ${cfg.leverage}x` : ""}</div>
-                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, isFut ? 2 : 8)} {isFut ? "contratos" : cfg.base_ccy} · entrada @ <span className="num">{cfg.entry_px != null ? num(cfg.entry_px, dec) : "—"}</span></div>
-                {cfg.entry_px != null && lastPx > 0 && !isFut && (() => {
-                  const upnl = (lastPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz);
-                  return <div className={`num text-[11px] font-medium ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>PnL aberto: {upnl >= 0 ? "+" : ""}{num(upnl)} {cfg.quote_ccy}</div>;
+                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, 6)} {cfg.base_ccy} · entrada @ <span className="num">{(posInfo?.entryPx ?? cfg.entry_px) != null ? num(posInfo?.entryPx ?? cfg.entry_px, dec) : "—"}</span></div>
+                {(() => {
+                  const entry = posInfo?.entryPx ?? (cfg.entry_px != null ? Number(cfg.entry_px) : null);
+                  const mark = posInfo?.markPx ?? lastPx;
+                  const qty = Number(cfg.pos_base_sz);
+                  const dir = cfg.position === "long" ? 1 : -1;
+                  const upnl = posInfo?.uPnl != null ? posInfo.uPnl : (entry != null && mark > 0 ? (mark - entry) * qty * dir : null);
+                  if (upnl == null) return null;
+                  const movePct = entry && entry > 0 && mark > 0 ? ((mark - entry) / entry) * 100 * dir : null;
+                  return (
+                    <div className="mt-1">
+                      <span className={`num text-base font-bold ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>PnL: {upnl >= 0 ? "+" : ""}{num(upnl)} {cfg.quote_ccy}</span>
+                      {movePct != null && <span className={`num ml-1 text-[11px] font-medium ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>({upnl >= 0 ? "+" : ""}{movePct.toFixed(2)}%)</span>}
+                      {mark > 0 && <span className="ml-2 text-[10px] text-muted-foreground">preço agora <span className="num">{num(mark, dec)}</span></span>}
+                    </div>
+                  );
                 })()}
-                {isFut && <div className="text-[11px] text-muted-foreground">PnL apurado no fechamento</div>}
               </>
             ) : (
               <div className="text-lg font-bold text-muted-foreground">Fora do mercado</div>

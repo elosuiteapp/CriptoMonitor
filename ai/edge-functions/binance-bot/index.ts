@@ -32,6 +32,15 @@ async function bnb(method: "GET" | "POST" | "DELETE", path: string, params: Reco
   return await r.json().catch(() => ({}));
 }
 
+// Preço médio REAL dos fills da ordem (a demo devolve avgPrice=0 no RESULT).
+async function fillPrice(symbol: string, orderId: string | number, c: Creds): Promise<number | null> {
+  const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol, orderId, limit: 20 }, c, true);
+  const arr = Array.isArray(tr) ? tr : [];
+  let q = 0, qv = 0;
+  for (const t of arr) { const p = Number(t.price), tq = Number(t.qty); if (p > 0 && tq > 0) { q += tq; qv += p * tq; } }
+  return q > 0 ? qv / q : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { error: "metodo nao permitido" });
@@ -111,8 +120,10 @@ Deno.serve(async (req) => {
       if (reduceOnly) params.reduceOnly = true;
       const r = await bnb("POST", "/fapi/v1/order", params, creds, true);
       const ok = !!r?.orderId && !r?.code;
-      await admin.from("bot_orders").insert({ source: "manual", action: "order", inst_id: symbol, side: side.toLowerCase(), ord_type: ordType.toLowerCase(), sz: qty, px: px ?? null, avg_px: Number(r?.avgPrice) || null, fill_sz: Number(r?.executedQty) || null, ok, result: r });
-      return json(200, r);
+      let avgPx = Number(r?.avgPrice) || null;
+      if (ok && (!avgPx || avgPx === 0) && r?.orderId) avgPx = await fillPrice(symbol, r.orderId, creds);
+      await admin.from("bot_orders").insert({ source: "manual", action: "order", inst_id: symbol, side: side.toLowerCase(), ord_type: ordType.toLowerCase(), sz: qty, px: px ?? null, avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok, result: r });
+      return json(200, { ...r, avgPrice: avgPx ?? r?.avgPrice });
     }
     if (action === "close") {
       const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
@@ -122,7 +133,8 @@ Deno.serve(async (req) => {
       const r = await bnb("POST", "/fapi/v1/order", { symbol, side: closeSide, type: "MARKET", quantity: String(cfg.pos_base_sz), reduceOnly: true, newOrderRespType: "RESULT" }, creds, true);
       const ok = !!r?.orderId && !r?.code;
       if (!ok) { await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: r }); return json(200, r); }
-      const avgPx = Number(r?.avgPrice) || null;
+      let avgPx = Number(r?.avgPrice) || null;
+      if ((!avgPx || avgPx === 0) && r?.orderId) avgPx = await fillPrice(symbol, r.orderId, creds);
       let pnl: number | null = null;
       if (cfg.entry_px && avgPx) pnl = (avgPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (cfg.position === "long" ? 1 : -1);
       await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
