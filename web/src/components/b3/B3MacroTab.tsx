@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchB3Macro, fetchMacroGlobal, globalTideScore, type B3MacroData, type B3MacroGlobal } from "../../lib/b3";
 import { supabase } from "../../lib/supabase";
+import InfoTip from "../InfoTip";
 import MacroUsPanel from "../MacroUsPanel";
 import { Cell, fmtNum, fmtPct, selicAA, toneCls } from "./B3Shared";
 
@@ -156,7 +157,10 @@ export default function B3MacroTab() {
           return (
             <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-foreground">Maré global · Fed / EUA</h3>
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  Maré global · Fed / EUA
+                  <InfoTip text="O 'clima' lá fora (Fed/EUA) que empurra ou segura a bolsa brasileira — a B3 é ativo de risco e segue a liquidez e os juros americanos. Liquidez do Fed subindo + juros baixos = vento a favor (risk-on); o contrário pressiona o IBOV." />
+                </h3>
                 {tide && (
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tide.score >= 25 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : tide.score <= -25 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>
                     {tide.label}
@@ -192,7 +196,10 @@ export default function B3MacroTab() {
       {/* Calendário econômico (EUA + Brasil) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Calendário econômico · EUA + Brasil</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Calendário econômico · EUA + Brasil
+            <InfoTip text="Próximos eventos que mexem na B3 (EUA e Brasil). Estrelas = impacto (★★★ alto, ★★ médio). 'prev.' = o que o mercado espera; 'ant.' = valor anterior. Em dias de Fed/Copom/CPI/inflação o macro costuma dominar o pregão." />
+          </h3>
           <span className="text-[11px] text-muted-foreground">eventos que mexem na B3</span>
         </div>
         {events.length === 0 ? (

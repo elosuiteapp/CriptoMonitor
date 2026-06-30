@@ -199,7 +199,10 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
 
       {/* Correlações do par selecionado */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Correlação de {pair} (90 dias)</h3>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Correlação de {pair} (90 dias)
+          <InfoTip text="O quanto este par anda junto (ou ao contrário) de outras referências. +1 = sobem/caem juntos; −1 = vão em direções opostas; perto de 0 = sem relação. Ex.: a maioria dos pares anda contra o dólar (DXY)." />
+        </h3>
         {loading ? (
           <div className="h-24 animate-pulse rounded-xl bg-muted/40" />
         ) : (
@@ -218,7 +221,10 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       {/* Calendário econômico (moedas do par + dólar) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Calendário econômico · {pairCurrencies(pair).join(" · ")}</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Calendário econômico · {pairCurrencies(pair).join(" · ")}
+            <InfoTip text="Próximos dados econômicos que mexem nas moedas do par (e no dólar). Estrelas = impacto (★★★ alto, ★★ médio). 'prev.' = o que o mercado espera; 'ant.' = valor anterior. Em dias de juros/inflação o macro costuma dominar o gráfico." />
+          </h3>
           <span className="text-[11px] text-muted-foreground">eventos que movem o par</span>
         </div>
         {events.length === 0 ? (

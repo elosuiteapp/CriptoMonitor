@@ -4,6 +4,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { computeForexProfile, fetchForexChart, pairDecimals } from "../../lib/forex";
 import { computeSmc, type SmcResult } from "../../lib/smc";
 import type { Candle, Timeframe } from "../../lib/marketData";
+import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 
@@ -69,7 +70,10 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
       {/* Resumo da estrutura */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Estrutura (swing)</div>
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Estrutura (swing)
+            <InfoTip text="A 'leitura do gráfico' por topos e fundos (conceito Smart Money). Alta = o par faz topos e fundos cada vez mais altos; baixa = o contrário. É o esqueleto da tendência principal." />
+          </div>
           <div className={`text-sm font-bold capitalize ${smc?.swingBias === "bullish" ? "text-emerald-500" : smc?.swingBias === "bearish" ? "text-rose-500" : "text-muted-foreground"}`}>{dw(smc?.swingBias ?? null)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">
@@ -81,7 +85,10 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
           <div className="text-sm font-bold text-foreground">{smc?.lastSwing ? `${smc.lastSwing.type} ${dw(smc.lastSwing.bias)}` : "—"}</div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2 dark:bg-card/60">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Posição no range</div>
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Posição no range
+            <InfoTip text="Onde o preço está dentro da faixa recente: Discount (barato, metade de baixo — zona de compra), Equilíbrio (meio) ou Premium (caro, metade de cima — zona de venda). Smart Money compra no discount e vende no premium." />
+          </div>
           <div className={`text-sm font-bold ${zone?.cls ?? "text-muted-foreground"}`}>{zone?.label ?? "—"}</div>
         </div>
       </div>
