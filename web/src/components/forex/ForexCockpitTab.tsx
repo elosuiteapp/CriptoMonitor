@@ -230,7 +230,10 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
             {cot.pctl != null && (() => {
               const p = cot.pctl;
               const hot = p >= 85 || p <= 15;
-              const zone = p >= 85 ? "comprado no extremo (perto da máxima de ~6 meses)" : p <= 15 ? "vendido no extremo (perto da mínima de ~6 meses)" : "dentro da faixa normal de ~6 meses";
+              // Lado real pelo sinal do líquido — o COT index mede a POSIÇÃO NA FAIXA,
+              // não o lado: 0% = no piso da faixa (não significa "vendido").
+              const side = cot.assetMgrNet >= 0 ? "comprado" : "vendido";
+              const zone = p >= 85 ? `${side} no topo da faixa de ~6 meses (perto da máxima)` : p <= 15 ? `${side} no piso da faixa de ~6 meses (perto da mínima)` : `${side}, dentro da faixa normal de ~6 meses`;
               const pairNote = hot ? ((p >= 85 ? 1 : -1) * cotInfo.direction > 0 ? `Esticado a favor de ${pair} — risco de realização/correção.` : `Esticado contra ${pair} — possível exaustão a favor de ${pair}.`) : "";
               return (
                 <div className={`mb-3 rounded-xl border p-3 ${hot ? "border-amber-500/40 bg-amber-500/10" : "border-border/70 bg-background/40"}`}>
