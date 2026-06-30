@@ -7,7 +7,6 @@ import ChartTypeSelector from "../ChartTypeSelector";
 import InfoTip from "../InfoTip";
 import { PillRow, TogglePill } from "../TogglePill";
 import ForexChart from "./ForexChart";
-import ForexIndicatorPanels from "./ForexIndicatorPanels";
 import ForexNewsBlock from "./ForexNewsBlock";
 import ForexStrengthMeter from "./ForexStrengthMeter";
 
@@ -175,9 +174,8 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           ) : candles.length < 2 ? (
             <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">Sem dados para {pair}.</div>
           ) : (
-            <ForexChart candles={candles} chartType={chartType} decimals={dec} showEma={showEma} showBollinger={showBollinger} showVolumeProfile={showVolumeProfile} />
+            <ForexChart candles={candles} chartType={chartType} decimals={dec} showEma={showEma} showBollinger={showBollinger} showVolumeProfile={showVolumeProfile} showRsi={showRsi} showMacd={showMacd} />
           )}
-          <ForexIndicatorPanels candles={candles} showRsi={showRsi} showMacd={showMacd} />
         </div>
       </div>
 
