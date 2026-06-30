@@ -1,8 +1,9 @@
-// Edge Function: bot-run (v6) — robô OKX demo: SMART MONEY (estrutura) + FLUXO, INTRADAY.
-// Análise multi-timeframe (15m primário + 30m/1H top-down) com o motor SMC nas velas OKX +
-// confluência de fluxo (book, paredes/ímã, ABSORÇÃO de parede, CVD-tendência, gamma, ETF,
-// prêmio Coinbase). Só opera quando estrutura/topo-down concordam OU há parede grande
-// defendendo (bounce) — e nunca compra no premium nem na faca caindo. Demo sempre.
+// Edge Function: bot-run (v7) — robô OKX demo: estrutura POR TIMEFRAME + fluxo (intraday).
+// Cada timeframe (15m/30m/1H) lê a PRÓPRIA estrutura (SMC: swing/BOS/CHoCH, OB, premium/
+// discount + momentum daquele TF) e VOTA. O robô conta o consenso (quantos TFs de compra ×
+// venda). O fluxo (book, paredes/ímã, absorção, CVD-tendência, liquidações, gamma/HIRO,
+// ETF, prêmio Coinbase) é "agora" e CONFIRMA. Só entra com consenso de TF + fluxo a favor;
+// nunca compra no premium nem na faca caindo (salvo parede grande defendendo). Demo sempre.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -12,7 +13,7 @@ const CORS = {
 };
 const OKX_BASE = "https://www.okx.com";
 const SWING = 20;
-const TFS = ["15m", "30m", "1H"]; // 15m primário + top-down
+const TFS = ["15m", "30m", "1H"];
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -37,7 +38,7 @@ async function okx(method: "GET" | "POST", path: string, bodyObj: Record<string,
 const clamp = (v: number) => Math.max(-100, Math.min(100, v));
 const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
-// ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts (price action puro) ════════
+// ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts ════════
 type Bias = "bullish" | "bearish";
 interface Candle { time: number; open: number; high: number; low: number; close: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
@@ -167,56 +168,40 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
   };
 }
 
-// ════════ Confluência: SMC (estrutura, 15m + top-down) + fluxo ════════
+// ════════ Bias estrutural de UM timeframe (estrutura + momentum daquele TF) ════════
+function structuralBias(smc: SmcResult | null, momTf: number): number {
+  if (!smc) return 0;
+  let n = 0, d = 0; const add = (score: number, w: number) => { n += score * w; d += w; };
+  add(smc.swingBias === "bullish" ? 78 : smc.swingBias === "bearish" ? -78 : 0, 0.40);
+  if (smc.lastSwing) add((smc.lastSwing.bias === "bullish" ? 1 : -1) * (smc.lastSwing.type === "CHoCH" ? 80 : 55), 0.20);
+  let z = 0; if (smc.price <= smc.discount.top) z = 72; else if (smc.price >= smc.premium.bottom) z = -72; add(z, 0.18);
+  const atr = smc.atr || smc.price * 0.01;
+  const dem = smc.orderBlocks.filter((o) => o.bias === "bullish" && o.mid < smc.price).sort((a, b) => b.mid - a.mid)[0];
+  const sup = smc.orderBlocks.filter((o) => o.bias === "bearish" && o.mid > smc.price).sort((a, b) => a.mid - b.mid)[0];
+  const dDist = dem ? (smc.price - dem.mid) / atr : 99, sDist = sup ? (sup.mid - smc.price) / atr : 99;
+  add(dDist < 1.5 && dDist <= sDist ? 55 : sDist < 1.5 && sDist < dDist ? -55 : 0, 0.10);
+  add(clamp((momTf / 0.006) * 60), 0.12);
+  return d ? Math.round(clamp(n / d)) : 0;
+}
+
+// ════════ Confluência: estrutura POR TF (15m/30m/1H) + fluxo ════════
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
-function computeReading(smc: SmcResult | null, topDown: { tf: string; bias: Bias | null }[], p: any, imb: any[], walls: any[], spot: number, closes: number[], cvdSum: number | null) {
+interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
+const TFW: Record<string, number> = { "15m": 0.18, "30m": 0.16, "1H": 0.15 };
+function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null) {
   const sig: Signal[] = [];
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
   const der = p?.derivatives ?? {}, g = p?.gamma ?? {}, etf = p?.etf_flows ?? {};
+  const mom = tfReads[0]?.mom ?? 0;
   let absScore = 0;
 
-  // ── ESTRUTURA (Smart Money) — espinha dorsal ──
-  if (smc) {
-    const sb = smc.swingBias === "bullish" ? 1 : smc.swingBias === "bearish" ? -1 : 0;
-    if (sb !== 0) add("smc_trend", "Estrutura (SMC)", "Tendência de estrutura (15m)", 0.16, sb * 78, `swing ${smc.swingBias === "bullish" ? "de alta" : "de baixa"}${smc.internalBias ? ` · interna ${smc.internalBias === "bullish" ? "alta" : "baixa"}` : ""}`);
-    if (smc.lastSwing) { const dir = smc.lastSwing.bias === "bullish" ? 1 : -1, ch = smc.lastSwing.type === "CHoCH"; add("smc_event", "Estrutura (SMC)", `Último evento (${smc.lastSwing.type})`, 0.10, dir * (ch ? 80 : 55), `${ch ? "mudança de caráter" : "rompimento"} ${dir > 0 ? "de alta" : "de baixa"}`); }
-    let zs = 0, zl = "equilíbrio (meio do range)";
-    if (smc.price <= smc.discount.top) { zs = 72; zl = "discount (barato) — zona de compra"; }
-    else if (smc.price >= smc.premium.bottom) { zs = -72; zl = "premium (caro) — zona de venda"; }
-    add("smc_zone", "Estrutura (SMC)", "Zona premium/discount", 0.12, zs, zl);
-    const atr = smc.atr || spot * 0.01;
-    const demand = smc.orderBlocks.filter((o) => o.bias === "bullish" && o.mid < smc.price).sort((a, b) => b.mid - a.mid)[0];
-    const supply = smc.orderBlocks.filter((o) => o.bias === "bearish" && o.mid > smc.price).sort((a, b) => a.mid - b.mid)[0];
-    const dDist = demand ? (smc.price - demand.mid) / atr : 99, sDist = supply ? (supply.mid - smc.price) / atr : 99;
-    let obScore = 0, obNote = "sem order block relevante perto";
-    if (dDist < 1.5 && dDist <= sDist) { obScore = 60; obNote = `em zona de demanda (OB) ~$${Math.round(demand!.mid / 1000)}k`; }
-    else if (sDist < 1.5 && sDist < dDist) { obScore = -60; obNote = `sob oferta (OB) ~$${Math.round(supply!.mid / 1000)}k`; }
-    else if (demand && dDist < sDist) { obScore = 22; obNote = `demanda abaixo ~$${Math.round(demand.mid / 1000)}k`; }
-    else if (supply) { obScore = -22; obNote = `oferta acima ~$${Math.round(supply.mid / 1000)}k`; }
-    add("smc_ob", "Estrutura (SMC)", "Order block (demanda × oferta)", 0.09, obScore, obNote);
-    let liqScore = 0, liqNote = "sem varredura recente";
-    const swBelow = smc.liquidity.find((l) => l.side === "sell" && l.sweptRecently), swAbove = smc.liquidity.find((l) => l.side === "buy" && l.sweptRecently);
-    if (swBelow && smc.price > swBelow.price) { liqScore = 55; liqNote = "varreu liquidez abaixo (stop hunt) e recuperou — alta"; }
-    else if (swAbove && smc.price < swAbove.price) { liqScore = -55; liqNote = "varreu liquidez acima e rejeitou — baixa"; }
-    else { const pool = smc.liquidity.filter((l) => !l.swept).sort((a, b) => Math.abs(a.price - smc.price) - Math.abs(b.price - smc.price))[0]; if (pool) { liqScore = pool.price > smc.price ? 18 : -18; liqNote = `liquidez não varrida ${pool.price > smc.price ? "acima" : "abaixo"} ~$${Math.round(pool.price / 1000)}k (ímã)`; } }
-    add("smc_liq", "Estrutura (SMC)", "Liquidez (varredura/ímã)", 0.07, liqScore, liqNote);
-  }
-  // Top-down: alinhamento 15m/30m/1H.
-  if (topDown.length) {
-    const net = topDown.reduce((s, t) => s + (t.bias === "bullish" ? 1 : t.bias === "bearish" ? -1 : 0), 0);
-    add("top_down", "Estrutura (SMC)", "Top-down (15m/30m/1H)", 0.14, net * 30, topDown.map((t) => `${t.tf} ${t.bias === "bullish" ? "alta" : t.bias === "bearish" ? "baixa" : "—"}`).join(" · "));
+  // ── ESTRUTURA POR TIMEFRAME — cada TF vota (compra/venda) ──
+  for (const t of tfReads) {
+    if (!t.smc) continue;
+    add(`tf_${t.tf}`, "Estrutura por TF", `Estrutura ${t.tf}`, TFW[t.tf] ?? 0.15, t.bias, `${t.smc.swingBias === "bullish" ? "alta" : t.smc.swingBias === "bearish" ? "baixa" : "neutra"}${t.smc.lastSwing ? ` · ${t.smc.lastSwing.type}` : ""}${t.smc.price <= t.smc.discount.top ? " · discount" : t.smc.price >= t.smc.premium.bottom ? " · premium" : ""}`);
   }
 
-  // ── DIREÇÃO real do preço (momentum 15m) ──
-  let mom = 0;
-  if (closes.length >= 6) {
-    const last = closes[closes.length - 1];
-    const r6 = (last - closes[closes.length - 6]) / closes[closes.length - 6];
-    mom = (last - closes[closes.length - 2]) / closes[closes.length - 2];
-    add("dir", "Direção", "Direção do preço (real, 15m)", 0.12, (r6 / 0.02) * 70 + (mom / 0.008) * 45, `${r6 >= 0 ? "+" : ""}${(r6 * 100).toFixed(2)}% recente · ${mom >= 0 ? "subindo" : "caindo"} agora`);
-  }
-
-  // ── MICROESTRUTURA: book + paredes/ímã + ABSORÇÃO ──
+  // ── MICROESTRUTURA: book + paredes/ímã + ABSORÇÃO (estado atual do mercado) ──
   const byEx: Record<string, any> = {};
   for (const r of imb) if (!byEx[r.exchange]) byEx[r.exchange] = r;
   const cb = byEx["coinbase"];
@@ -236,7 +221,6 @@ function computeReading(smc: SmcResult | null, topDown: { tf: string; bias: Bias
       if (distPct <= 1.0) { const pull = nn / Math.max(distPct, 0.1); if (side === "bid" && price < spot && pull > barSup) { barSup = pull; barSupPx = price; } if (side === "ask" && price > spot && pull > barRes) { barRes = pull; barResPx = price; } }
       else { if (side === "bid" && price < spot) farBelow += nn; if (side === "ask" && price > spot) farAbove += nn; }
     }
-    // Teste de parede (absorção): preço encostando numa parede GRANDE que defende → reação.
     let absNote = "sem parede grande sendo testada";
     if (bestN >= 4e6) {
       const prox = 1 - bestDist / 0.7, mag = Math.min(bestN / 15e6, 1);
@@ -249,13 +233,12 @@ function computeReading(smc: SmcResult | null, topDown: { tf: string; bias: Bias
     if (farBelow > 0 || farAbove > 0) { const r = (farAbove - farBelow) / (farAbove + farBelow || 1); add("magnet", "Microestrutura", "Ímã de liquidez (book)", 0.08, r * 100, `maior liquidez ${farBelow > farAbove ? "ABAIXO" : "ACIMA"} ($${(Math.max(farBelow, farAbove) / 1e6).toFixed(1)}M) — preço tende a buscá-la`); }
   }
 
-  // ── FLUXO / OPÇÕES / INSTITUCIONAL ──
+  // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
   if (cvdSum != null) add("cvd", "Fluxo", "CVD agregado (~30 min)", 0.09, (cvdSum / 2500000) * 70, `${cvdSum >= 0 ? "compra" : "venda"} líquida $${Math.abs(cvdSum / 1e6).toFixed(1)}M em ~30 min`);
-  const ll = N(der.liq_long_usd) ?? 0, lsh = N(der.liq_short_usd) ?? 0;
-  if (ll + lsh > 0) add("liqs", "Fluxo", "Liquidações", 0.06, ((lsh - ll) / (ll + lsh)) * 85, ll > lsh ? `longs liquidados $${(ll / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lsh / 1e6).toFixed(1)}M — compra forçada`);
+  const llq = N(der.liq_long_usd) ?? 0, lshq = N(der.liq_short_usd) ?? 0;
+  if (llq + lshq > 0) add("liqs", "Fluxo", "Liquidações", 0.06, ((lshq - llq) / (llq + lshq)) * 85, llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`);
   const pw = N(g.put_wall), cw = N(g.call_wall);
   if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.05, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); }
-  // Fluxo de gamma (proxy HIRO): em γ negativo os dealers amplificam a direção (vendem na queda).
   const gex = N(g.net_gex_spot);
   if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.07, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   const cbp = N(p?.coinbase_premium);
@@ -270,7 +253,7 @@ function computeReading(smc: SmcResult | null, topDown: { tf: string; bias: Bias
   const voting = sig.filter((x) => Math.abs(x.score) > 8);
   const agree = voting.filter((x) => Math.sign(x.score) === Math.sign(bias)).length;
   const conviction = voting.length ? Math.round((agree / voting.length) * 100) : 0;
-  return { bias, conviction, signals: sig, mom, absScore: Math.round(absScore) };
+  return { bias, conviction, signals: sig, absScore: Math.round(absScore) };
 }
 
 Deno.serve(async (req) => {
@@ -317,16 +300,20 @@ Deno.serve(async (req) => {
     const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
     const lastPx = Number((tk.data as { last?: string }[])?.[0]?.last) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
 
-    // Multi-timeframe (15m primário + 30m/1H top-down).
+    // Estrutura por TF: cada timeframe lê a sua + momentum dele.
     const candleSets = await Promise.all(TFS.map((tf) => okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(cfg.inst_id)}&bar=${tf}&limit=300`, null, creds)));
-    const byTf = TFS.map((tf, i) => { const cs: Candle[] = ((candleSets[i].data as string[][]) ?? []).slice().reverse().map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] })); return { tf, candles: cs, smc: cs.length >= 30 ? computeSmc(cs, SWING) : null }; });
-    const smc = byTf[0].smc;
-    const closes = byTf[0].candles.map((c) => c.close);
-    const topDown = byTf.map((x) => ({ tf: x.tf, bias: x.smc?.swingBias ?? null }));
-    const topDownNet = topDown.reduce((s, t) => s + (t.bias === "bullish" ? 1 : t.bias === "bearish" ? -1 : 0), 0);
+    const tfReads: TfRead[] = TFS.map((tf, i) => {
+      const cs: Candle[] = ((candleSets[i].data as string[][]) ?? []).slice().reverse().map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
+      const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
+      const cl = cs.map((c) => c.close);
+      const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
+      return { tf, smc, mom, bias: structuralBias(smc, mom) };
+    });
+    const primary = tfReads[0];
+    const bull = tfReads.filter((t) => t.bias >= 12).length, bear = tfReads.filter((t) => t.bias <= -12).length;
 
     const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
-    const { bias, conviction, signals, mom, absScore } = computeReading(smc, topDown, snap.payload, imbRows ?? [], walls, lastPx, closes, cvdSum);
+    const { bias, conviction, signals, absScore } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum);
 
     const pos: "long" | "flat" = cfg.position === "long" ? "long" : "flat";
     const desired: "long" | "flat" | "neutral" = bias >= cfg.buy_threshold ? "long" : bias <= -cfg.sell_threshold ? "flat" : "neutral";
@@ -335,24 +322,24 @@ Deno.serve(async (req) => {
     if (desired === "long" && pos === "flat") act = { side: "buy", sz: String(cfg.order_quote_sz) };
     else if (desired === "flat" && pos === "long" && Number(cfg.pos_base_sz) > 0) act = { side: "sell", sz: String(cfg.pos_base_sz) };
 
-    // GATE: nunca compra caindo nem no premium. Em estrutura de baixa, só compra se houver
-    // PAREDE GRANDE defendendo (bounce confirmado) — senão segura.
-    const structureDown = smc?.swingBias === "bearish" || topDownNet <= -2;
+    // GATE: nunca compra caindo nem no premium. Se a MAIORIA dos TFs está de baixa, só
+    // compra se houver parede grande defendendo (bounce confirmado).
     let gate = "";
     if (act?.side === "buy") {
-      if (mom < -0.003) { gate = ` (segurou: preço caindo ${(mom * 100).toFixed(2)}% agora)`; act = null; }
-      else if (smc && smc.price >= smc.premium.bottom) { gate = " (segurou: preço no premium/caro)"; act = null; }
-      else if (structureDown && absScore < 55) { gate = " (segurou: estrutura de baixa sem parede defendendo)"; act = null; }
+      if (primary.mom < -0.003) { gate = ` (segurou: preço caindo ${(primary.mom * 100).toFixed(2)}% agora)`; act = null; }
+      else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = " (segurou: preço no premium/caro)"; act = null; }
+      else if (bear > bull && absScore < 55) { gate = ` (segurou: ${bear}/${tfReads.length} TFs de baixa, sem parede defendendo)`; act = null; }
     }
 
     const decision = !cfg.enabled ? "preview" : act ? act.side : "hold";
-    const structure = smc ? { swingBias: smc.swingBias, internalBias: smc.internalBias, lastEvent: smc.lastSwing ? `${smc.lastSwing.type} ${smc.lastSwing.bias}` : null, zone: smc.price <= smc.discount.top ? "discount" : smc.price >= smc.premium.bottom ? "premium" : "equilíbrio", topDown } : null;
-    const reading = { bias, conviction, signals, spot: lastPx, mom, absScore, structure, desired, position: pos, gate: gate || null, ts: new Date().toISOString() };
+    const structure = { consensus: { bull, bear, total: tfReads.length }, perTf: tfReads.map((t) => ({ tf: t.tf, bias: t.bias, swing: t.smc?.swingBias ?? null })), zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, desired, position: pos, gate: gate || null, ts: new Date().toISOString() };
     await admin.from("bot_config").update({ last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() }).eq("id", 1);
 
     const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
-    if (!act) { await log("info", `Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%) → ${pos === "long" ? "segura comprado" : "fora"}${gate}. ${top}`, reading); return json(200, { decision: "hold", bias, conviction, signals, structure }); }
-    if (!cfg.enabled) { await log("info", `Preview: viés ${bias >= 0 ? "+" : ""}${bias} → ${act.side === "buy" ? "compraria" : "venderia"}. ${top}`, reading); return json(200, { decision: "preview", action: act, bias, conviction, signals, structure }); }
+    const cons = `consenso ${bull}↑/${bear}↓`;
+    if (!act) { await log("info", `Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons}) → ${pos === "long" ? "segura comprado" : "fora"}${gate}. ${top}`, reading); return json(200, { decision: "hold", bias, conviction, signals, structure }); }
+    if (!cfg.enabled) { await log("info", `Preview: viés ${bias >= 0 ? "+" : ""}${bias} (${cons}) → ${act.side === "buy" ? "compraria" : "venderia"}. ${top}`, reading); return json(200, { decision: "preview", action: act, bias, conviction, signals, structure }); }
 
     const ordRes = await okx("POST", "/api/v5/trade/order", { instId: cfg.inst_id, tdMode: "cash", side: act.side, ordType: "market", sz: act.sz }, creds);
     const ok = String(ordRes.code ?? "") === "0";
@@ -363,8 +350,8 @@ Deno.serve(async (req) => {
     if (ok && act.side === "buy") { const baseSz = fillSz ?? Number(cfg.order_quote_sz) / lastPx; await admin.from("bot_config").update({ position: "long", pos_base_sz: baseSz, entry_px: avgPx ?? lastPx }).eq("id", 1); }
     else if (ok && act.side === "sell") { if (cfg.entry_px) pnl = ((avgPx ?? lastPx) - Number(cfg.entry_px)) * Number(cfg.pos_base_sz); await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1); }
 
-    await admin.from("bot_orders").insert({ source: "auto", action: "order", inst_id: cfg.inst_id, side: act.side, ord_type: "market", sz: act.sz, avg_px: avgPx, fill_sz: fillSz, ok, result: ordRes, note: `viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%)${act.side === "sell" && pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-    await log(ok ? "trade" : "error", `${act.side === "buy" ? "COMPRA" : "VENDA"} ${ok ? "executada" : "falhou"} · viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%)${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, { ...reading, ordId, code: ordRes.code, msg: ordRes.msg });
+    await admin.from("bot_orders").insert({ source: "auto", action: "order", inst_id: cfg.inst_id, side: act.side, ord_type: "market", sz: act.sz, avg_px: avgPx, fill_sz: fillSz, ok, result: ordRes, note: `viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons})${act.side === "sell" && pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+    await log(ok ? "trade" : "error", `${act.side === "buy" ? "COMPRA" : "VENDA"} ${ok ? "executada" : "falhou"} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, { ...reading, ordId, code: ordRes.code, msg: ordRes.msg });
     return json(200, { decision: act.side, ok, bias, conviction, avgPx, pnl, signals, structure });
   } catch (e) {
     await log("error", "Erro no loop do robô.", { error: e instanceof Error ? e.message : String(e) });

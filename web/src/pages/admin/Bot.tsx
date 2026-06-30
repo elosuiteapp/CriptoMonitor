@@ -39,7 +39,7 @@ interface Reading {
   signals: ReadingSig[];
   spot?: number;
   desired?: string;
-  structure?: { swingBias: string | null; internalBias: string | null; lastEvent: string | null; zone: string; topDown?: { tf: string; bias: string | null }[] } | null;
+  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; swing: string | null }[]; zone?: string | null } | null;
 }
 interface OrderRow {
   id: string;
@@ -61,7 +61,7 @@ interface LogRow {
 }
 
 const BARS = ["15m", "1H", "4H", "1D"];
-const SIG_GROUPS = ["Estrutura (SMC)", "Direção", "Microestrutura", "Fluxo", "Opções", "Institucional"];
+const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
 const decisionLabel = (d?: string | null) => (d === "buy" ? "Comprar" : d === "sell" ? "Vender" : d === "preview" ? "Prévia" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
@@ -305,10 +305,10 @@ export default function AdminBot() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-foreground">Robô automático</h2>
-              <button onClick={toggleBot} disabled={busy !== null || !connected} className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${cfg.enabled ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                {cfg.enabled ? "LIGADO" : "DESLIGADO"}
+              <button onClick={toggleBot} disabled={busy !== null || !connected} className={`rounded-lg px-4 py-1.5 text-sm font-bold text-white shadow-sm transition-colors disabled:opacity-50 ${cfg.enabled ? "bg-rose-500 hover:bg-rose-600" : "bg-emerald-500 hover:bg-emerald-600"}`}>
+                {cfg.enabled ? "■ Desligar robô" : "▶ Ligar robô"}
               </button>
-              <span className="text-[11px] text-muted-foreground">roda a cada ~5 min</span>
+              <span className="text-[11px] text-muted-foreground">{cfg.enabled ? "operando · roda a cada ~5 min" : "desligado · roda a cada ~5 min quando ligar"}</span>
             </div>
             <button onClick={runNow} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
               {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
@@ -347,18 +347,14 @@ export default function AdminBot() {
             </div>
             {r.structure && (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
-                <span className="font-semibold uppercase tracking-wide text-muted-foreground">Estrutura</span>
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${r.structure.swingBias === "bullish" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : r.structure.swingBias === "bearish" ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>tendência {r.structure.swingBias === "bullish" ? "de alta" : r.structure.swingBias === "bearish" ? "de baixa" : "indefinida"}</span>
-                {r.structure.lastEvent && <span className="text-muted-foreground">evento: <span className="text-foreground">{r.structure.lastEvent}</span></span>}
-                <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>
-                {r.structure.topDown && r.structure.topDown.length > 0 && (
-                  <span className="flex items-center gap-1">
-                    <span className="text-muted-foreground">top-down:</span>
-                    {r.structure.topDown.map((t) => (
-                      <span key={t.tf} className={`rounded px-1.5 py-0.5 ${t.bias === "bullish" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : t.bias === "bearish" ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>{t.tf} {t.bias === "bullish" ? "↑" : t.bias === "bearish" ? "↓" : "—"}</span>
-                    ))}
-                  </span>
+                <span className="font-semibold uppercase tracking-wide text-muted-foreground">Por timeframe</span>
+                {r.structure.consensus && (
+                  <span className="text-muted-foreground">consenso: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{r.structure.consensus.bull}↑</span> · <span className="font-semibold text-rose-600 dark:text-rose-400">{r.structure.consensus.bear}↓</span> de {r.structure.consensus.total}</span>
                 )}
+                {r.structure.perTf?.map((t) => (
+                  <span key={t.tf} className={`num rounded px-1.5 py-0.5 font-semibold ${t.bias >= 12 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : t.bias <= -12 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>{t.tf} {t.bias >= 0 ? "+" : ""}{t.bias}</span>
+                ))}
+                {r.structure.zone && <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>}
               </div>
             )}
             <div className="grid grid-cols-3 gap-3">
