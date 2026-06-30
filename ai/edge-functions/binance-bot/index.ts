@@ -1,5 +1,5 @@
 // Edge Function: binance-bot
-// Robô de trade PESSOAL/admin na BINANCE USDⓈ-M Futures TESTNET (testnet.binancefuture.com).
+// Robô de trade PESSOAL/admin na BINANCE USDⓈ-M Futures DEMO (demo-fapi.binance.com).
 // Espelha a okx-bot, mas p/ a Binance (a OKX bloqueia derivativos p/ conta BR). Só admin
 // (JWT profiles.role='admin'). Chaves em app_secrets (binance_test_key/secret), nunca no front.
 // Ações: 'balance' | 'positions' | 'ticker' | 'candles' | 'order' | 'close' | 'cancel'.
@@ -13,7 +13,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const BASE = "https://testnet.binancefuture.com";
+const BASE = "https://demo-fapi.binance.com";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
