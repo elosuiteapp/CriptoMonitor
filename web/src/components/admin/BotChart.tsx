@@ -23,7 +23,7 @@ export interface BotMarker {
 
 /** Gráfico de velas (Lightweight Charts) com marcadores de compra/venda do robô.
  *  Isolado/reutilizável no /admin/robo. */
-export default function BotChart({ candles, markers, decimals = 2, height = 360 }: { candles: BotCandle[]; markers: BotMarker[]; decimals?: number; height?: number }) {
+export default function BotChart({ candles, markers, decimals = 2, height = 420 }: { candles: BotCandle[]; markers: BotMarker[]; decimals?: number; height?: number }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -40,7 +40,7 @@ export default function BotChart({ candles, markers, decimals = 2, height = 360 
       crosshair: { mode: CrosshairMode.Normal },
       localization: chartLocalization,
       rightPriceScale: { borderColor: c.border, minimumWidth: 64 },
-      timeScale: { borderColor: c.border, timeVisible: true, tickMarkFormatter: chartTickFormatter },
+      timeScale: { borderColor: c.border, timeVisible: true, rightOffset: 4, barSpacing: 9, tickMarkFormatter: chartTickFormatter },
     });
     const series = chart.addCandlestickSeries({ upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, priceFormat: { type: "price", precision: decimals, minMove: 1 / 10 ** decimals } });
     chartRef.current = chart;
@@ -74,7 +74,8 @@ export default function BotChart({ candles, markers, decimals = 2, height = 360 
         text: m.text ?? (m.side === "buy" ? "C" : "V"),
       }));
     s.setMarkers(mk);
-    if (candles.length) chartRef.current?.timeScale().fitContent();
+    // Mostra as ~110 velas mais recentes (candles largos, como no cockpit) — não espreme as 200.
+    if (candles.length) chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 110), to: candles.length + 4 });
   }, [candles, markers, decimals]);
 
   return <div ref={wrapRef} style={{ height }} className="w-full" />;
