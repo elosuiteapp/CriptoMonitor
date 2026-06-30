@@ -45,6 +45,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
   useEffect(() => {
     let alive = true;
     setChartLoading(true);
+    setCandles([]); // limpa ao trocar par/TF → evita ancorar nas velas do ativo anterior ("anos atrás")
     fetchForexChart(pair, tf).then((c) => {
       if (!alive) return;
       setCandles(c);

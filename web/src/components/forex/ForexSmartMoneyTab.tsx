@@ -69,6 +69,7 @@ export default function ForexSmartMoneyTab({ pair }: { pair: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setCandles([]); // limpa ao trocar par/TF → evita o gráfico ancorar nas velas do ativo anterior ("anos atrás")
     fetchForexChart(pair, tf).then((c) => {
       if (!alive) return;
       setCandles(c as unknown as Candle[]);
