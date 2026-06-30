@@ -187,7 +187,7 @@ export default function ForexCockpitTab({ pair, onPair }: { pair: string; onPair
           ) : candles.length < 2 ? (
             <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">Sem dados para {pair}.</div>
           ) : (
-            <ForexChart candles={candles} chartType={chartType} decimals={dec} showEma={showEma} showBollinger={showBollinger} showVolumeProfile={showVolumeProfile} showRsi={showRsi} showMacd={showMacd} />
+            <ForexChart candles={candles} chartType={chartType} decimals={dec} showEma={showEma} showBollinger={showBollinger} showVolumeProfile={showVolumeProfile} showRsi={showRsi} showMacd={showMacd} viewKey={`${pair}-${tf}`} />
           )}
         </div>
       </div>

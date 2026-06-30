@@ -27,20 +27,29 @@ interface Props {
   showVolumeProfile?: boolean;
   showRsi?: boolean;
   showMacd?: boolean;
+  /** Muda quando troca par/timeframe → re-ancora o gráfico no momento atual. Em refreshes do
+   *  mesmo par/TF preserva o zoom/scroll do usuário (pra ler histórico). */
+  viewKey?: string;
 }
 
 /** Gráfico do módulo Forex (Lightweight Charts) — isolado do B3/Crypto. Velas/barras/
  *  linha/área, EMA 9/21/50, Bollinger e Perfil de preço (TPO). RSI/MACD viram
  *  SUBGRÁFICOS sincronizados (zoom/scroll juntos). Sem WS (câmbio spot). */
-export default function ForexChart({ candles, chartType, decimals, showEma, showBollinger = false, showVolumeProfile = false, showRsi = false, showMacd = false }: Props) {
+export default function ForexChart({ candles, chartType, decimals, showEma, showBollinger = false, showVolumeProfile = false, showRsi = false, showMacd = false, viewKey }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const rsiWrapRef = useRef<HTMLDivElement>(null);
   const macdWrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const macdChartRef = useRef<IChartApi | null>(null);
+  const didAnchorRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const { isDark } = useTheme();
+
+  // Troca de par/timeframe → re-ancora no momento atual no próximo render de dados.
+  useEffect(() => {
+    didAnchorRef.current = false;
+  }, [viewKey]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -204,11 +213,20 @@ export default function ForexChart({ candles, chartType, decimals, showEma, show
         add(mc, sig);
       }
 
+      // Ancora no MOMENTO ATUAL (últimas ~120 velas) só ao trocar par/TF; em refreshes do mesmo
+      // par/TF preserva o zoom/scroll (o passado fica de histórico pra leitura). O rAF garante
+      // que aplica DEPOIS do layout — senão a lib às vezes abre mostrando todo o histórico.
       const total = sorted.length;
-      if (total > 0) {
+      if (total > 0 && !didAnchorRef.current) {
+        didAnchorRef.current = true;
         const range = { from: total - Math.min(total, VISIBLE_BARS), to: total + 4 } as LogicalRange;
-        chart.timeScale().setVisibleLogicalRange(range);
-        for (const s of [rsiChartRef.current, macdChartRef.current]) s?.timeScale().setVisibleLogicalRange(range);
+        const apply = () => {
+          if (!chartRef.current) return;
+          chartRef.current.timeScale().setVisibleLogicalRange(range);
+          for (const s of [rsiChartRef.current, macdChartRef.current]) s?.timeScale().setVisibleLogicalRange(range);
+        };
+        apply();
+        requestAnimationFrame(apply);
       }
     } catch {
       /* dados inválidos neste ciclo — não derruba a tela */
