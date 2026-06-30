@@ -300,6 +300,25 @@ export interface Dict {
     m2sub: string;
     footer: string;
   };
+  onchain: {
+    title: string;
+    tip: string;
+    cyclePos: string;
+    cycleBottom: string;
+    cycleCheap: string;
+    cycleNeutral: string;
+    cycleHot: string;
+    cycleTop: string;
+    zCapitulation: string;
+    zDiscount: string;
+    zNeutral: string;
+    zElevated: string;
+    zEuphoria: string;
+    realizedTitle: string;
+    inProfit: string;
+    atLoss: string;
+    footer: string;
+  };
   gammaChart: {
     partialHist: string; // "histórico parcial: {label} (enche até {days}d)"
     accumulating: string; // "{days}"
@@ -754,6 +773,25 @@ const PT: Dict = {
     curveNormal: "normal",
     m2sub: "massa monetária",
     footer: "Fonte: FRED (Fed de St. Louis) · net liquidity = balanço do Fed − reverse repo − conta do Tesouro · atualiza diariamente.",
+  },
+  onchain: {
+    title: "On-chain · valor (ciclo)",
+    tip: "Métricas on-chain de valuation do BTC (bitcoin-data.com, grátis) — posição no ciclo de mercado. MVRV-Z = preço vs custo médio da rede; SOPR <1 = quem move moedas está no prejuízo; NUPL = lucro/prejuízo não realizado; Puell = receita dos mineradores vs média. Atualiza diariamente. Educacional.",
+    cyclePos: "Posição no ciclo",
+    cycleBottom: "Fundo / descontado",
+    cycleCheap: "Barato",
+    cycleNeutral: "Neutro",
+    cycleHot: "Aquecido",
+    cycleTop: "Euforia / topo",
+    zCapitulation: "capitulação",
+    zDiscount: "descontado",
+    zNeutral: "neutro",
+    zElevated: "elevado",
+    zEuphoria: "euforia",
+    realizedTitle: "BTC vs preço realizado",
+    inProfit: "holders no lucro",
+    atLoss: "holders no prejuízo",
+    footer: "Fonte: bitcoin-data.com (on-chain grátis) · market-wide (BTC) · atualiza ~diário. Educacional — não é recomendação.",
   },
   gammaChart: {
     partialHist: "histórico parcial: {label} (enche até {days}d)",
@@ -1226,6 +1264,25 @@ const EN: Dict = {
     curveNormal: "normal",
     m2sub: "money supply",
     footer: "Source: FRED (St. Louis Fed) · net liquidity = Fed balance sheet − reverse repo − Treasury account · updates daily.",
+  },
+  onchain: {
+    title: "On-chain · value (cycle)",
+    tip: "On-chain BTC valuation metrics (bitcoin-data.com, free) — market-cycle position. MVRV-Z = price vs network cost basis; SOPR <1 = coins moving at a loss; NUPL = unrealized profit/loss; Puell = miner revenue vs average. Updates daily. Educational.",
+    cyclePos: "Cycle position",
+    cycleBottom: "Bottom / undervalued",
+    cycleCheap: "Cheap",
+    cycleNeutral: "Neutral",
+    cycleHot: "Hot",
+    cycleTop: "Euphoria / top",
+    zCapitulation: "capitulation",
+    zDiscount: "discounted",
+    zNeutral: "neutral",
+    zElevated: "elevated",
+    zEuphoria: "euphoria",
+    realizedTitle: "BTC vs realized price",
+    inProfit: "holders in profit",
+    atLoss: "holders at a loss",
+    footer: "Source: bitcoin-data.com (free on-chain) · market-wide (BTC) · updates ~daily. Educational — not advice.",
   },
   gammaChart: {
     partialHist: "partial history: {label} (fills to {days}d)",

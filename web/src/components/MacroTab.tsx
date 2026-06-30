@@ -11,6 +11,7 @@ import FearGreedHistoryPanel from "./FearGreedHistoryPanel";
 import InfoTip from "./InfoTip";
 import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
 import MacroGlobalPanel from "./MacroGlobalPanel";
+import OnchainPanel from "./OnchainPanel";
 
 /** Seletor PT/EN para os helpers de módulo (o componente re-renderiza via useT). */
 const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
@@ -352,6 +353,9 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
 
       {/* Maré de liquidez macro (FRED): net liquidity do Fed + condições financeiras — Pro */}
       {pro && <MacroGlobalPanel />}
+
+      {/* On-chain valuation (MVRV-Z, SOPR, NUPL, Puell) + posição no ciclo — bitcoin-data.com (grátis), Pro */}
+      {pro && <OnchainPanel />}
 
       {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME — Pro */}
       {pro && (liquidity || cot) && (
