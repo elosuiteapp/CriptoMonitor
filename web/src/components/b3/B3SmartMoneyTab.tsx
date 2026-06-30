@@ -10,6 +10,7 @@ import InfoTip from "../InfoTip";
 import SmartMoneyChart, { DEFAULT_LAYERS, type SmcLayers } from "../SmartMoneyChart";
 import { PillRow, TogglePill } from "../TogglePill";
 import VolumeDeltaSubchart from "../VolumeDeltaSubchart";
+import B3InvestorFlow from "./B3InvestorFlow";
 import B3StockReadPanel from "./B3StockReadPanel";
 import { Cell, ComingSoon, fmtVol, toneCls } from "./B3Shared";
 
@@ -335,10 +336,13 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         </div>
       )}
 
-      {/* Termômetro do estrangeiro (proxy grátis) */}
+      {/* Fluxo por investidor (estrangeiro/institucional/PF) — o diferencial */}
+      <B3InvestorFlow />
+
+      {/* Termômetro do estrangeiro (ADRs) */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-        <h3 className="text-sm font-semibold text-foreground">Termômetro do estrangeiro (proxy grátis)</h3>
-        <p className="mb-2 text-xs text-muted-foreground">Capital externo por dados livres: prêmio/desconto dos ADRs na NYSE vs ação local.</p>
+        <h3 className="text-sm font-semibold text-foreground">Termômetro do estrangeiro · ADRs</h3>
+        <p className="mb-2 text-xs text-muted-foreground">Prêmio/desconto dos ADRs na NYSE vs ação local — leitura intradiária do apetite externo.</p>
         {adrs.length === 0 ? (
           <p className="text-sm text-muted-foreground">Carregando ADRs…</p>
         ) : (
@@ -351,9 +355,8 @@ export default function B3SmartMoneyTab({ asset }: { asset: string }) {
         )}
       </div>
 
-      <ComingSoon icon="🎯" title="Gamma & Opções (GEX) — fonte paga">
+      <ComingSoon icon="🎯" title="Gamma & Opções (GEX)">
         <p>Call/Put Wall, Zero Gamma, Max Pain e exposição a gama por strike nas opções líquidas (PETR4, VALE3, IBOV).</p>
-        <p className="text-[11px]">Requer OpLab (gregas + open interest por strike). Fluxo oficial por investidor: dadosdemercado.</p>
       </ComingSoon>
     </div>
   );

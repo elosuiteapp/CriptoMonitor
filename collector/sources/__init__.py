@@ -6,6 +6,7 @@ alimenta duas tabelas (options_oi + gamma_profile); as demais, uma cada.
 from __future__ import annotations
 
 from .alternative_me import AlternativeMeSource
+from .b3_flow import B3FlowSource
 from .base import BaseSource, SourceResult, TableRows
 from .binance import BinanceSource
 from .binance_options import BinanceOptionsSource
@@ -49,5 +50,6 @@ def build_sources() -> list[BaseSource]:
         OptionsFlowSource(),
         EtfFlowsSource(),          # ETFs spot BTC/ETH (Farside via relay) — institucional
         MarketLiquiditySource(),   # stablecoins + TVL + DEX + fees (DefiLlama) — liquidez/direção
-        CftcCotSource(),           # CFTC COT (CME BTC/ETH) — posicionamento institucional (aba Macro)
+        CftcCotSource(),           # CFTC COT (CME BTC/ETH + moedas) — posicionamento institucional
+        B3FlowSource(),            # Fluxo de investidor na B3 (estrangeiro/inst./PF) — dadosdemercado
     ]
