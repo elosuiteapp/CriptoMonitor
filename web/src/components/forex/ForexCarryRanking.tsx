@@ -1,4 +1,5 @@
 import { FOREX_PAIRS, pairCarry, type Carry } from "../../lib/forex";
+import InfoTip from "../InfoTip";
 
 /** Ranking de Carry Trade — pares ordenados pelo diferencial de juros (quanto rende
  *  carregar comprado). Estratégia clássica do FX: comprar moeda de juro alto contra
@@ -34,7 +35,10 @@ export default function ForexCarryRanking({ onPick }: { onPick?: (pair: string) 
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">Carry trade · ranking de juros</h3>
+      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        Carry trade · ranking de juros
+        <InfoTip text="Carry é o juro que você ganha (ou paga) por carregar o par. Verde = comprar o par RENDE juros (moeda comprada paga mais que a vendida); vermelho = paga juros. Estratégia clássica: comprar moeda de juro alto contra moeda de juro baixo." />
+      </h3>
       <div className="space-y-0.5">
         {ranked.map((r) => (
           <Row key={r.sym} sym={r.sym} carry={r.carry} />

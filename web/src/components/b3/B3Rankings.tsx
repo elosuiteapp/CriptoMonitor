@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { B3Funds } from "../../lib/b3";
+import InfoTip from "../InfoTip";
 
 type RankKey = "dy" | "cheap" | "roe" | "graham" | "bazin" | "growth";
 const RANKS: { key: RankKey; label: string; desc: string }[] = [
@@ -47,7 +48,10 @@ export default function B3Rankings({ funds, onAsset }: { funds: B3Funds; onAsset
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">Rankings · ações</h3>
+      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        Rankings · ações
+        <InfoTip text="Listas prontas das melhores ações por critério: Maior DY (paga mais dividendos), Mais baratas (menor P/L), Maior ROE (mais rentáveis), Graham e Bazin (métodos clássicos de valor e dividendos) e Crescimento. Clique numa ação para abri-la. Só nomes líquidos. Não é recomendação." />
+      </h3>
       <div className="flex flex-wrap gap-1.5">
         {RANKS.map((r) => (
           <button

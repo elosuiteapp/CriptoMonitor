@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { supabase } from "../../lib/supabase";
+import InfoTip from "../InfoTip";
 
 interface FlowRow {
   date: string;
@@ -63,7 +64,10 @@ export default function B3InvestorFlow() {
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Fluxo por investidor · B3</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Fluxo por investidor · B3
+          <InfoTip text="Mostra quem comprou e quem vendeu a bolsa a cada dia (em R$), separado por tipo: estrangeiro, institucional (fundos), pessoa física, instituição financeira e outros. O estrangeiro costuma puxar o IBOV — se ele está vendendo forte, é sinal de cautela. É o fluxo do mercado todo, não de uma ação só." />
+        </h3>
         <span className="num text-[11px] text-muted-foreground">{new Date(latest.date + "T00:00:00").toLocaleDateString("pt-BR")}</span>
       </div>
       <p className="mb-2 text-[11px] text-muted-foreground">Quem comprou/vendeu a bolsa no dia (líquido, R$). O estrangeiro costuma liderar o IBOV.</p>

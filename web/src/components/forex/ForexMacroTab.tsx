@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchForexCalendar, fetchForexChart, fetchForexOverview, forexSessions, pairCurrencies, pairDecimals, type ForexCandle, type ForexEvent, type ForexQuote } from "../../lib/forex";
+import InfoTip from "../InfoTip";
 import MacroGlobalPanel from "../MacroGlobalPanel";
 import MacroUsPanel from "../MacroUsPanel";
 import ForexCarryRanking from "./ForexCarryRanking";
@@ -137,7 +138,10 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       {/* Barômetro Risk-on / Risk-off */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Apetite a risco (Risk-on / Risk-off)</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Apetite a risco (Risk-on / Risk-off)
+            <InfoTip text="Termômetro do 'humor' do mercado. Risk-on = investidores topam risco: capital vai pra moedas de maior retorno (AUD, NZD) e sai dos portos-seguros (dólar, iene, franco). Risk-off = o contrário (medo). Ajuda a entender o pano de fundo antes de operar qualquer par." />
+          </h3>
           <span className={`text-sm font-bold ${riskTone}`}>{riskLabel}</span>
         </div>
         <div className="relative h-3 rounded-full bg-gradient-to-r from-rose-500/30 via-muted/40 to-emerald-500/30">
@@ -160,7 +164,10 @@ export default function ForexMacroTab({ pair }: { pair: string }) {
       {/* Dólar (DXY) + pares principais */}
       <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Dólar (DXY) e principais</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            Dólar (DXY) e principais
+            <InfoTip text="DXY é o índice de força do dólar contra uma cesta de moedas. Como a maioria dos pares tem dólar de um lado, o DXY move quase tudo: dólar forte derruba EUR/USD, GBP/USD etc.; dólar fraco sobe. É o motor central do câmbio." />
+          </h3>
           {dxy && (
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${(dxy.changePct ?? 0) >= 0 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>
               DXY {fmtPx(dxy.price, 2)} {fmtPct(dxy.changePct)} — dólar {(dxy.changePct ?? 0) >= 0 ? "forte" : "fraco"}

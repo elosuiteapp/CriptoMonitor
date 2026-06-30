@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import InfoTip from "./InfoTip";
 
 interface FmpMacro {
   yieldCurve: { date: string; m1: number | null; m3: number | null; m6: number | null; y1: number | null; y2: number | null; y3: number | null; y5: number | null; y7: number | null; y10: number | null } | null;
@@ -70,7 +71,10 @@ export default function MacroUsPanel() {
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Macro EUA · Tesouro & indicadores</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Macro EUA · Tesouro & indicadores
+          <InfoTip text="Saúde da economia dos EUA, que move dólar, bolsa e cripto. Curva de juros = juros pagos por prazo (1 mês a 10 anos); quando a de 2 anos fica MAIOR que a de 10 (curva invertida) costuma anteceder recessão. Embaixo: inflação (CPI), desemprego, juro do Fed e PIB." />
+        </h3>
         {sp != null && (
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${sp < 0 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"}`}>
             curva 2s10s {sp >= 0 ? "+" : ""}{sp.toFixed(2)} — {sp < 0 ? "invertida (alerta de recessão)" : "normal"}

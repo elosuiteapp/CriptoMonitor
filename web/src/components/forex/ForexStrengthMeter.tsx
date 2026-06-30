@@ -1,4 +1,5 @@
 import { computeCurrencyStrength, type ForexQuote } from "../../lib/forex";
+import InfoTip from "../InfoTip";
 
 const FLAG: Record<string, string> = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", CHF: "🇨🇭", CAD: "🇨🇦", AUD: "🇦🇺", NZD: "🇳🇿", BRL: "🇧🇷" };
 
@@ -22,7 +23,10 @@ export default function ForexStrengthMeter({ quotes }: { quotes: ForexQuote[] })
   return (
     <div className="rounded-2xl border border-border bg-card p-4 dark:bg-card/60">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Força das moedas · 24h</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          Força das moedas · 24h
+          <InfoTip text="Mostra quais moedas estão mais fortes e mais fracas no dia. Calcula a média de quanto cada moeda subiu ou caiu contra todas as outras. Dica: a tendência costuma ser comprar a moeda forte e vender a fraca." />
+        </h3>
         {strongest && weakest && strongest.ccy !== weakest.ccy && (
           <span className="text-[11px] text-muted-foreground">
             mais forte <span className="font-semibold text-emerald-600 dark:text-emerald-400">{strongest.ccy}</span> · mais fraca <span className="font-semibold text-rose-600 dark:text-rose-400">{weakest.ccy}</span>
