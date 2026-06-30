@@ -16,6 +16,8 @@ interface Config {
   order_quote_sz: number;
   buy_threshold: number;
   sell_threshold: number;
+  leverage: number;
+  mgn_mode: string;
   position: string;
   pos_base_sz: number;
   entry_px: number | null;
@@ -44,13 +46,14 @@ interface Reading {
 interface OrderRow {
   id: string;
   source: string;
+  action: string | null;
   inst_id: string | null;
   side: string | null;
   ord_type: string | null;
   sz: string | null;
   avg_px: number | null;
   ok: boolean;
-  result: { msg?: string; data?: { sMsg?: string }[] } | null;
+  result: { msg?: string; data?: { sMsg?: string; ordId?: string }[] } | null;
   created_at: string;
 }
 interface LogRow {
@@ -62,7 +65,7 @@ interface LogRow {
 
 const BARS = ["15m", "1H", "4H", "1D"];
 const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
-const decisionLabel = (d?: string | null) => (d === "buy" ? "Comprar" : d === "sell" ? "Vender" : d === "preview" ? "Prévia" : "Segurar");
+const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
   info: "bg-muted text-muted-foreground",
@@ -121,7 +124,7 @@ export default function AdminBot() {
     const [{ data: st }, { data: c }, { data: ord }, { data: lg }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
     ]);
     setConnected(!!(st as { okx?: boolean })?.okx);
@@ -220,8 +223,9 @@ export default function AdminBot() {
     try {
       const { data, error } = await supabase.functions.invoke("bot-run", { body: { force: true } });
       if (error) throw new Error(error.message);
-      const d = data?.decision;
-      const label = d === "buy" ? "comprou" : d === "sell" ? "vendeu" : d === "preview" ? `faria: ${data?.action?.side === "buy" ? "comprar" : "vender"}` : d === "hold" ? "segurou (sem ação)" : (data?.skipped ?? "executado");
+      const d = data?.decision as string | undefined;
+      const map: Record<string, string> = { long: "abriu LONG", short: "abriu SHORT", flat: "saiu (fechou)", buy: "comprou", sell: "vendeu", hold: "segurou (sem ação)", preview: "prévia (sem operar)", error: `erro: ${data?.error ?? ""}` };
+      const label = (d && map[d]) ?? (data?.skipped ?? "executado");
       setMsg({ kind: "ok", text: `Robô rodou: ${label}.` });
       await loadBase();
       if (cfg) await loadChart(cfg);
@@ -237,12 +241,62 @@ export default function AdminBot() {
     setBusy("manual");
     setMsg(null);
     try {
-      await invoke("order", { instId: cfg.inst_id, side: mSide, ordType: mOrdType, tdMode: "cash", sz: mSz.trim(), px: mOrdType === "limit" ? mPx.trim() : undefined });
+      const swap = cfg.inst_id.toUpperCase().endsWith("-SWAP");
+      const sizing = swap ? { quoteSz: mSz.trim() } : { tdMode: "cash", sz: mSz.trim() };
+      await invoke("order", { instId: cfg.inst_id, side: mSide, ordType: mOrdType, ...sizing, px: mOrdType === "limit" ? mPx.trim() : undefined });
       setMsg({ kind: "ok", text: "Ordem manual enviada (demo)." });
       setMSz(""); setMPx("");
       await refresh();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function closePosition() {
+    if (!cfg) return;
+    if (!window.confirm("Fechar a posição atual do robô a mercado (demo)?")) return;
+    setBusy("close");
+    setMsg(null);
+    try {
+      const r = await invoke("close");
+      if (r?.closed === false) setMsg({ kind: "ok", text: "Não havia posição aberta." });
+      else setMsg({ kind: "ok", text: `Posição fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg.quote_ccy}` : ""}.` });
+      await refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao fechar." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteOrder(id: string) {
+    if (!window.confirm("Excluir esta ordem do histórico? (não afeta a OKX)")) return;
+    setBusy("row" + id);
+    setMsg(null);
+    try {
+      const { error } = await supabase.rpc("bot_delete_order", { p_id: id });
+      if (error) throw new Error(error.message);
+      setOrders((os) => os.filter((o) => o.id !== id));
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao excluir." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancelOrder(o: OrderRow) {
+    const ordId = o.result?.data?.[0]?.ordId;
+    if (!ordId || !o.inst_id) return;
+    setBusy("row" + o.id);
+    setMsg(null);
+    try {
+      await invoke("cancel", { instId: o.inst_id, ordId });
+      setMsg({ kind: "ok", text: "Ordem cancelada na OKX." });
+      await loadBase();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao cancelar." });
     } finally {
       setBusy(null);
     }
@@ -264,6 +318,7 @@ export default function AdminBot() {
 
   const lastPx = candles.length ? candles[candles.length - 1].close : 0;
   const dec = lastPx >= 1000 ? 1 : lastPx >= 1 ? 2 : 6;
+  const isFut = !!cfg?.inst_id && cfg.inst_id.toUpperCase().endsWith("-SWAP");
   const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
 
   return (
@@ -290,7 +345,7 @@ export default function AdminBot() {
         <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
           <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
-          <div className="text-[11px] text-muted-foreground">{cfg ? `Fluxo · limiar ±${cfg.buy_threshold}` : ""}</div>
+          <div className="text-[11px] text-muted-foreground">{cfg ? `${isFut ? `Futuros ${cfg.leverage}x` : "Spot"} · limiar ±${cfg.buy_threshold}` : ""}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
@@ -317,22 +372,27 @@ export default function AdminBot() {
               {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
             </button>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs text-muted-foreground">Par (instId)
               <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
             </label>
-            <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
+            <label className="text-xs text-muted-foreground">{isFut ? "Margem por ordem" : "Tamanho da compra"} ({cfg.quote_ccy})
               <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
             </label>
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Alavancagem (x)
+                <input type="number" min="1" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
+              </label>
+            )}
             <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
               <input type="number" className={`${input} mt-1`} value={cfg.buy_threshold} onChange={(e) => setCfg({ ...cfg, buy_threshold: Number(e.target.value), sell_threshold: Number(e.target.value) })} />
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo (intraday)</strong>. Estrutura SMC em <strong>15m + top-down 30m/1H</strong> é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong> (defende → bounce), CVD, liquidações, gamma/HIRO e ETF confirmam. Só compra com a estrutura a favor (ou parede grande defendendo), fora do premium e sem estar caindo. Compra se viés ≥ +{cfg.buy_threshold}; vende se ≤ −{cfg.sell_threshold}.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. Consenso de estrutura SMC por timeframe (<strong>15m/30m/1H</strong>) é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong>, CVD, liquidações, gamma/HIRO e ETF confirmam. {isFut ? <>Nos futuros abre <strong>LONG</strong> no viés de alta e <strong>SHORT</strong> no de baixa; nunca compra caindo/no premium nem vende subindo/no discount.</> : <>Só compra com a estrutura a favor, fora do premium e sem estar caindo.</>} Compra/long se viés ≥ +{cfg.buy_threshold}; vende/short se ≤ −{cfg.sell_threshold}.</span>
           </div>
         </div>
       )}
@@ -441,21 +501,27 @@ export default function AdminBot() {
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <div className="mb-1 flex items-center justify-between">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Posição do robô</div>
-              {cfg?.position === "long" && <button onClick={resetPosition} disabled={busy !== null} className="text-[10px] text-muted-foreground underline hover:text-foreground">resetar</button>}
+              {cfg && cfg.position !== "flat" && (
+                <div className="flex items-center gap-2">
+                  <button onClick={closePosition} disabled={busy !== null || !connected} className="rounded-md bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-500/25 disabled:opacity-50 dark:text-rose-400">{busy === "close" ? "Fechando…" : "✕ Fechar posição"}</button>
+                  <button onClick={resetPosition} disabled={busy !== null} className="text-[10px] text-muted-foreground underline hover:text-foreground">resetar</button>
+                </div>
+              )}
             </div>
-            {cfg?.position === "long" ? (
+            {cfg && cfg.position !== "flat" ? (
               <>
-                <div className="text-lg font-bold text-emerald-500">Comprado</div>
-                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, 8)} {cfg.base_ccy} · entrada @ <span className="num">{cfg.entry_px != null ? num(cfg.entry_px, dec) : "—"}</span></div>
-                {cfg.entry_px != null && lastPx > 0 && (() => {
+                <div className={`text-lg font-bold ${cfg.position === "long" ? "text-emerald-500" : "text-rose-500"}`}>{cfg.position === "long" ? "Comprado (long)" : "Vendido (short)"}{isFut && cfg.leverage ? ` · ${cfg.leverage}x` : ""}</div>
+                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, isFut ? 2 : 8)} {isFut ? "contratos" : cfg.base_ccy} · entrada @ <span className="num">{cfg.entry_px != null ? num(cfg.entry_px, dec) : "—"}</span></div>
+                {cfg.entry_px != null && lastPx > 0 && !isFut && (() => {
                   const upnl = (lastPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz);
                   return <div className={`num text-[11px] font-medium ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>PnL aberto: {upnl >= 0 ? "+" : ""}{num(upnl)} {cfg.quote_ccy}</div>;
                 })()}
+                {isFut && <div className="text-[11px] text-muted-foreground">PnL apurado no fechamento</div>}
               </>
             ) : (
               <div className="text-lg font-bold text-muted-foreground">Fora do mercado</div>
             )}
-            <p className="mt-1 text-[10px] text-muted-foreground">Opera com capital em {cfg?.quote_ccy ?? "USDT"}; saldos pré-existentes (ex.: o 1 BTC de brinde) ficam intocados.</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">{isFut ? "Futuros: long e short com margem em " : "Opera com capital em "}{cfg?.quote_ccy ?? "USDT"}; saldos pré-existentes ficam intocados.</p>
           </div>
         </div>
       </div>
@@ -469,7 +535,7 @@ export default function AdminBot() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 font-medium">Status</th></tr>
+                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
@@ -480,6 +546,12 @@ export default function AdminBot() {
                     <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
                     <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, dec) : "—"}</td>
                     <td className="px-4 py-2">{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-right">
+                      {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
+                        <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
+                      )}
+                      <button onClick={() => deleteOrder(o.id)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50">excluir</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -534,11 +606,11 @@ export default function AdminBot() {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select className={input} value={mSide} onChange={(e) => setMSide(e.target.value as "buy" | "sell")}><option value="buy">Comprar</option><option value="sell">Vender</option></select>
               <select className={input} value={mOrdType} onChange={(e) => setMOrdType(e.target.value as "market" | "limit")}><option value="market">A mercado</option><option value="limit">Limite</option></select>
-              <input className={input} placeholder={mSide === "buy" ? `Tamanho em ${cfg.quote_ccy} (ex.: 50)` : `Tamanho em ${cfg.base_ccy} (ex.: 0.001)`} value={mSz} onChange={(e) => setMSz(e.target.value)} />
+              <input className={input} placeholder={isFut ? "Tamanho em USDT (ex.: 50)" : mSide === "buy" ? `Tamanho em ${cfg.quote_ccy} (ex.: 50)` : `Tamanho em ${cfg.base_ccy} (ex.: 0.001)`} value={mSz} onChange={(e) => setMSz(e.target.value)} />
               <input className={input} placeholder="Preço (limite)" value={mPx} onChange={(e) => setMPx(e.target.value)} disabled={mOrdType !== "limit"} />
             </div>
             <button onClick={placeManual} disabled={busy !== null || !connected} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busy === "manual" ? "Enviando…" : `Enviar ${mSide === "buy" ? "compra" : "venda"} de ${cfg.inst_id} (demo)`}</button>
-            <p className="mt-2 text-[11px] text-muted-foreground">Spot demo. Compra a mercado: tamanho em {cfg.quote_ccy}; venda: na moeda base. Tudo fake.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">{isFut ? `Futuros demo (${cfg.inst_id}). Tamanho em USDT (nocional); Comprar = abrir/aumentar long, Vender = abrir/aumentar short.` : `Spot demo. Compra a mercado: tamanho em ${cfg.quote_ccy}; venda: na moeda base.`} Tudo fake.</p>
           </div>
         )}
       </div>

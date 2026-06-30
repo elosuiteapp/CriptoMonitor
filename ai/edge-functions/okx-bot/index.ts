@@ -2,7 +2,9 @@
 // Robô de trade PESSOAL/admin no modo DEMO da OKX (x-simulated-trading: 1). Uso isolado
 // do SaaS — só admin (JWT com profiles.role='admin'). As chaves da OKX demo vivem em
 // public.app_secrets (okx_api_key/secret/passphrase), nunca no front.
-// Ações (body.action): 'balance' | 'positions' | 'ticker' | 'order'.
+// Ações (body.action): 'balance' | 'positions' | 'ticker' | 'candles' | 'order' | 'close' | 'cancel'.
+// Futuros (instId -SWAP): 'order' aceita quoteSz (USDT→contratos), reduceOnly; 'close' fecha a
+// posição do robô (reduceOnly) e zera o bot_config; 'cancel' cancela ordem pendente por ordId.
 // Deploy: supabase functions deploy okx-bot
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -101,12 +103,28 @@ Deno.serve(async (req) => {
       const instId = String(body?.instId ?? "");
       const side = String(body?.side ?? "");
       const ordType = String(body?.ordType ?? "market");
-      const tdMode = String(body?.tdMode ?? "cash");
-      const sz = String(body?.sz ?? "");
+      const isSwap = instId.toUpperCase().endsWith("-SWAP");
+      const tdMode = String(body?.tdMode ?? (isSwap ? "cross" : "cash"));
       const px = body?.px != null ? String(body.px) : undefined;
-      if (!instId || !side || !sz) return json(400, { error: "Informe instId, side e tamanho (sz)." });
+      const reduceOnly = body?.reduceOnly === true;
+      let sz = String(body?.sz ?? "");
+      // Futuros: tamanho informado em USDT (nocional) → converte p/ nº de contratos.
+      if (isSwap && body?.quoteSz != null && String(body.quoteSz).trim() !== "") {
+        const usdt = Number(body.quoteSz);
+        const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`, null, creds);
+        const last = Number((tk.data as { last?: string }[])?.[0]?.last) || (px ? Number(px) : 0);
+        const inst = await okx("GET", `/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`, null, creds);
+        const spec = ((inst.data as Record<string, string>[]) ?? [])[0] ?? {};
+        const ctVal = Number(spec.ctVal) || 0.01, lotSz = Number(spec.lotSz) || 0.1, minSz = Number(spec.minSz) || 0.1;
+        const dec = (String(lotSz).split(".")[1] || "").length;
+        let contracts = last > 0 ? Math.floor((usdt / (last * ctVal)) / lotSz) * lotSz : 0;
+        if (contracts < minSz) contracts = minSz;
+        sz = contracts.toFixed(dec);
+      }
+      if (!instId || !side || !sz) return json(400, { error: "Informe instId, side e tamanho." });
       const orderBody: Record<string, unknown> = { instId, tdMode, side, ordType, sz };
       if (ordType === "limit" && px) orderBody.px = px;
+      if (isSwap && reduceOnly) orderBody.reduceOnly = true;
       const r = await okx("POST", "/api/v5/trade/order", orderBody, creds);
       const ok = String((r.code as string) ?? "") === "0";
       const ordId = (r.data as { ordId?: string }[])?.[0]?.ordId;
@@ -119,6 +137,39 @@ Deno.serve(async (req) => {
         fillSz = d?.accFillSz ? Number(d.accFillSz) : null;
       }
       await admin.from("bot_orders").insert({ source: "manual", action: "order", inst_id: instId, side, ord_type: ordType, sz, px: px ?? null, avg_px: avgPx, fill_sz: fillSz, ok, result: r });
+      return json(200, r);
+    }
+    if (action === "close") {
+      // Fecha a posição atual do robô (reduceOnly a mercado) e zera o bot_config.
+      const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
+      if (!cfg || cfg.position === "flat" || !Number(cfg.pos_base_sz)) return json(200, { closed: false, note: "sem posição aberta" });
+      const instId = cfg.inst_id as string;
+      const isSwap = instId.toUpperCase().endsWith("-SWAP");
+      const closeSide = cfg.position === "long" ? "sell" : "buy";
+      const orderBody: Record<string, unknown> = { instId, tdMode: isSwap ? cfg.mgn_mode : "cash", side: closeSide, ordType: "market", sz: String(cfg.pos_base_sz), ...(isSwap ? { reduceOnly: true } : {}) };
+      const r = await okx("POST", "/api/v5/trade/order", orderBody, creds);
+      const ok = String((r.code as string) ?? "") === "0";
+      const ordId = (r.data as { ordId?: string }[])?.[0]?.ordId;
+      let avgPx: number | null = null, fillSz: number | null = null;
+      if (ok && ordId) { const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(instId)}&ordId=${ordId}`, null, creds); const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0]; avgPx = d?.avgPx ? Number(d.avgPx) : null; fillSz = d?.accFillSz ? Number(d.accFillSz) : null; }
+      if (!ok) { await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: instId, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: r }); return json(200, r); }
+      let pnl: number | null = null;
+      if (cfg.entry_px) {
+        let ctVal = 1;
+        if (isSwap) { const inst = await okx("GET", `/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`, null, creds); ctVal = Number(((inst.data as Record<string, string>[]) ?? [])[0]?.ctVal) || 0.01; }
+        pnl = ((avgPx ?? 0) - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * ctVal * (cfg.position === "long" ? 1 : -1);
+      }
+      await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
+      await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: instId, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: avgPx, fill_sz: fillSz, ok: true, result: r, note: `fechada manualmente${pnl != null ? ` · PnL ${pnl.toFixed(2)}` : ""}` });
+      await admin.from("bot_logs").insert({ level: "trade", message: `Posição ${cfg.position} fechada manualmente${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, detail: { ordId } });
+      return json(200, { ...r, closed: true, pnl });
+    }
+    if (action === "cancel") {
+      // Cancela uma ordem pendente (ex.: limite que não executou) na OKX.
+      const instId = String(body?.instId ?? "");
+      const ordId = String(body?.ordId ?? "");
+      if (!instId || !ordId) return json(400, { error: "Informe instId e ordId." });
+      const r = await okx("POST", "/api/v5/trade/cancel-order", { instId, ordId }, creds);
       return json(200, r);
     }
     return json(400, { error: "ação inválida" });

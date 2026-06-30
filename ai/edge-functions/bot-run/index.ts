@@ -1,4 +1,6 @@
-// Edge Function: bot-run (v7) — robô OKX demo: estrutura POR TIMEFRAME + fluxo (intraday).
+// Edge Function: bot-run (v8) — robô OKX demo FUTUROS (perp): estrutura POR TIMEFRAME + fluxo.
+// Opera BTC-USDT-SWAP nos DOIS lados: LONG no viés de alta, SHORT no viés de baixa (long/short/flat,
+// alavancagem, tamanho em USDT → contratos). Cérebro idêntico ao v7; só a execução virou futuros.
 // Cada timeframe (15m/30m/1H) lê a PRÓPRIA estrutura (SMC: swing/BOS/CHoCH, OB, premium/
 // discount + momentum daquele TF) e VOTA. O robô conta o consenso (quantos TFs de compra ×
 // venda). O fluxo (book, paredes/ímã, absorção, CVD-tendência, liquidações, gamma/HIRO,
@@ -315,44 +317,99 @@ Deno.serve(async (req) => {
     const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
     const { bias, conviction, signals, absScore } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum);
 
-    const pos: "long" | "flat" = cfg.position === "long" ? "long" : "flat";
-    const desired: "long" | "flat" | "neutral" = bias >= cfg.buy_threshold ? "long" : bias <= -cfg.sell_threshold ? "flat" : "neutral";
-
-    let act: { side: "buy" | "sell"; sz: string } | null = null;
-    if (desired === "long" && pos === "flat") act = { side: "buy", sz: String(cfg.order_quote_sz) };
-    else if (desired === "flat" && pos === "long" && Number(cfg.pos_base_sz) > 0) act = { side: "sell", sz: String(cfg.pos_base_sz) };
-
-    // GATE: nunca compra caindo nem no premium. Se a MAIORIA dos TFs está de baixa, só
-    // compra se houver parede grande defendendo (bounce confirmado).
+    // ── DIREÇÃO DESEJADA (futuros: long/short/flat; banda neutra mantém posição) ──
+    const isSwap = String(cfg.inst_id).toUpperCase().endsWith("-SWAP");
+    let pos: "long" | "short" | "flat" = cfg.position === "long" ? "long" : cfg.position === "short" ? "short" : "flat";
+    const total = tfReads.length;
+    let want: "long" | "short" | null = bias >= cfg.buy_threshold ? "long" : bias <= -cfg.sell_threshold ? "short" : null;
     let gate = "";
-    if (act?.side === "buy") {
-      if (primary.mom < -0.003) { gate = ` (segurou: preço caindo ${(primary.mom * 100).toFixed(2)}% agora)`; act = null; }
-      else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = " (segurou: preço no premium/caro)"; act = null; }
-      else if (bear > bull && absScore < 55) { gate = ` (segurou: ${bear}/${tfReads.length} TFs de baixa, sem parede defendendo)`; act = null; }
+    if (want === "long") {
+      if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
+      else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
+      else if (bear > bull && absScore < 55) { gate = `${bear}/${total} TFs de baixa sem parede defendendo`; want = null; }
+    } else if (want === "short") {
+      if (!isSwap) { gate = "spot não faz short — use futuros"; want = null; }
+      else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
+      else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
+      else if (bull > bear && absScore > -55) { gate = `${bull}/${total} TFs de alta sem parede barrando`; want = null; }
     }
+    // Alvo: futuros mantém na zona neutra; spot precisa SAIR do long quando vira baixa (não shorta).
+    let target: "long" | "short" | "flat" = want ?? pos;
+    if (!isSwap) { if (target === "short") target = "flat"; if (pos === "long" && bias <= -cfg.sell_threshold) target = "flat"; }
 
-    const decision = !cfg.enabled ? "preview" : act ? act.side : "hold";
-    const structure = { consensus: { bull, bear, total: tfReads.length }, perTf: tfReads.map((t) => ({ tf: t.tf, bias: t.bias, swing: t.smc?.swingBias ?? null })), zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
-    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, desired, position: pos, gate: gate || null, ts: new Date().toISOString() };
+    const decision = !cfg.enabled ? "preview" : target === pos ? "hold" : target;
+    const structure = { consensus: { bull, bear, total }, perTf: tfReads.map((t) => ({ tf: t.tf, bias: t.bias, swing: t.smc?.swingBias ?? null })), zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: isSwap, gate: gate || null, ts: new Date().toISOString() };
     await admin.from("bot_config").update({ last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() }).eq("id", 1);
 
     const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
     const cons = `consenso ${bull}↑/${bear}↓`;
-    if (!act) { await log("info", `Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons}) → ${pos === "long" ? "segura comprado" : "fora"}${gate}. ${top}`, reading); return json(200, { decision: "hold", bias, conviction, signals, structure }); }
-    if (!cfg.enabled) { await log("info", `Preview: viés ${bias >= 0 ? "+" : ""}${bias} (${cons}) → ${act.side === "buy" ? "compraria" : "venderia"}. ${top}`, reading); return json(200, { decision: "preview", action: act, bias, conviction, signals, structure }); }
+    const lbl = (d: string) => d === "long" ? "LONG" : d === "short" ? "SHORT" : "fora";
 
-    const ordRes = await okx("POST", "/api/v5/trade/order", { instId: cfg.inst_id, tdMode: "cash", side: act.side, ordType: "market", sz: act.sz }, creds);
-    const ok = String(ordRes.code ?? "") === "0";
-    const ordId = (ordRes.data as { ordId?: string }[])?.[0]?.ordId;
-    let avgPx: number | null = null, fillSz: number | null = null;
-    if (ok && ordId) { const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(cfg.inst_id)}&ordId=${ordId}`, null, creds); const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0]; avgPx = d?.avgPx ? Number(d.avgPx) : null; fillSz = d?.accFillSz ? Number(d.accFillSz) : null; }
+    // Preview (desligado) ou alvo == posição atual → não opera.
+    if (!cfg.enabled || target === pos) {
+      const head = !cfg.enabled
+        ? `Preview: viés ${bias >= 0 ? "+" : ""}${bias} (${cons}) → ${target === pos ? "manteria " + lbl(pos) : "abriria " + lbl(target)}${gate ? ` [${gate}]` : ""}`
+        : `Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons}) → mantém ${lbl(pos)}${gate ? ` [segurou: ${gate}]` : ""}`;
+      await log("info", `${head}. ${top}`, reading);
+      return json(200, { decision: !cfg.enabled ? "preview" : "hold", bias, conviction, signals, structure });
+    }
+
+    // ── EXECUÇÃO (transição pos → target) ──
+    // Spec do contrato p/ converter USDT → nº de contratos.
+    let ctVal = 1, lotSz = 0.000001, minSz = 0, szDec = 6;
+    if (isSwap) {
+      const inst = await okx("GET", `/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
+      const spec = ((inst.data as Record<string, string>[]) ?? [])[0] ?? {};
+      ctVal = Number(spec.ctVal) || 0.01; lotSz = Number(spec.lotSz) || 0.1; minSz = Number(spec.minSz) || lotSz;
+      szDec = (String(lotSz).split(".")[1] || "").length;
+    }
+    const place = async (side: "buy" | "sell", sz: string, reduceOnly: boolean) => {
+      const body: Record<string, unknown> = isSwap
+        ? { instId: cfg.inst_id, tdMode: cfg.mgn_mode, side, ordType: "market", sz, ...(reduceOnly ? { reduceOnly: true } : {}) }
+        : { instId: cfg.inst_id, tdMode: "cash", side, ordType: "market", sz };
+      const r = await okx("POST", "/api/v5/trade/order", body, creds);
+      const okk = String(r.code ?? "") === "0";
+      const oid = (r.data as { ordId?: string }[])?.[0]?.ordId;
+      let ap: number | null = null, fz: number | null = null;
+      if (okk && oid) { const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(cfg.inst_id)}&ordId=${oid}`, null, creds); const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0]; ap = d?.avgPx ? Number(d.avgPx) : null; fz = d?.accFillSz ? Number(d.accFillSz) : null; }
+      const sMsg = (r.data as { sMsg?: string }[])?.[0]?.sMsg ?? r.msg;
+      return { r, okk, ap, fz, sMsg };
+    };
+
     let pnl: number | null = null;
-    if (ok && act.side === "buy") { const baseSz = fillSz ?? Number(cfg.order_quote_sz) / lastPx; await admin.from("bot_config").update({ position: "long", pos_base_sz: baseSz, entry_px: avgPx ?? lastPx }).eq("id", 1); }
-    else if (ok && act.side === "sell") { if (cfg.entry_px) pnl = ((avgPx ?? lastPx) - Number(cfg.entry_px)) * Number(cfg.pos_base_sz); await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1); }
-
-    await admin.from("bot_orders").insert({ source: "auto", action: "order", inst_id: cfg.inst_id, side: act.side, ord_type: "market", sz: act.sz, avg_px: avgPx, fill_sz: fillSz, ok, result: ordRes, note: `viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons})${act.side === "sell" && pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-    await log(ok ? "trade" : "error", `${act.side === "buy" ? "COMPRA" : "VENDA"} ${ok ? "executada" : "falhou"} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, { ...reading, ordId, code: ordRes.code, msg: ordRes.msg });
-    return json(200, { decision: act.side, ok, bias, conviction, avgPx, pnl, signals, structure });
+    // 1) Fecha posição atual (se houver).
+    if (pos !== "flat") {
+      const closeSide = pos === "long" ? "sell" : "buy";
+      const res = await place(closeSide, String(cfg.pos_base_sz), true);
+      if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: res.r, note: "falha ao fechar" }); await log("error", `Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg }); }
+      const exitPx = res.ap ?? lastPx;
+      if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (isSwap ? ctVal : 1) * (pos === "long" ? 1 : -1);
+      await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
+      await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+      pos = "flat";
+    }
+    // 2) Abre o alvo (se não for ficar fora).
+    if (target !== "flat") {
+      if (isSwap) await okx("POST", "/api/v5/account/set-leverage", { instId: cfg.inst_id, lever: String(cfg.leverage), mgnMode: cfg.mgn_mode }, creds);
+      let sz: string, notional = Number(cfg.order_quote_sz);
+      if (isSwap) {
+        notional = Number(cfg.order_quote_sz) * Number(cfg.leverage);
+        let contracts = Math.floor((notional / (lastPx * ctVal)) / lotSz) * lotSz;
+        if (contracts < minSz) contracts = minSz;
+        sz = contracts.toFixed(szDec); notional = contracts * lastPx * ctVal;
+      } else { sz = String(cfg.order_quote_sz); }
+      const openSide = target === "long" ? "buy" : "sell";
+      const res = await place(openSide, sz, false);
+      if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
+      await admin.from("bot_config").update({ position: target, pos_base_sz: res.fz ?? Number(sz), entry_px: res.ap ?? lastPx }).eq("id", 1);
+      await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${notional.toFixed(0)}${isSwap ? ` (${cfg.leverage}x)` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+      await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${sz}${isSwap ? ` ct ~$${notional.toFixed(0)}` : ` ${cfg.quote_ccy}`}${res.ap ? ` @ ${res.ap}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, code: res.r.code, msg: res.r.msg });
+      return json(200, { decision: target, ok: true, bias, conviction, avgPx: res.ap, notional, pnl, signals, structure });
+    }
+    // target === flat: já fechou acima.
+    await log("trade", `Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
+    return json(200, { decision: "flat", ok: true, bias, conviction, pnl, signals, structure });
   } catch (e) {
     await log("error", "Erro no loop do robô.", { error: e instanceof Error ? e.message : String(e) });
     return json(502, { error: e instanceof Error ? e.message : "falha" });
