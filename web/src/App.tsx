@@ -16,6 +16,7 @@ import Pricing from "./pages/Pricing";
 import AdminAffiliates from "./pages/admin/Affiliates";
 import AdminRoute from "./pages/admin/AdminRoute";
 import AdminAudit from "./pages/admin/Audit";
+import AdminBot from "./pages/admin/Bot";
 import AdminNewsletter from "./pages/admin/Newsletter";
 import AdminSocial from "./pages/admin/Social";
 import AdminOverview from "./pages/admin/Overview";
@@ -105,6 +106,7 @@ export default function App() {
         <Route path="affiliates" element={<AdminAffiliates />} />
         <Route path="newsletter" element={<AdminNewsletter />} />
         <Route path="social" element={<AdminSocial />} />
+        <Route path="robo" element={<AdminBot />} />
         <Route path="system" element={<AdminSystem />} />
         <Route path="audit" element={<AdminAudit />} />
       </Route>

@@ -139,6 +139,16 @@ export const IconSocial = (p: P) => (
   </svg>
 );
 
+export const IconBot = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="4" y="8" width="16" height="11" rx="2" />
+    <path d="M12 8V4M9 2h6" />
+    <circle cx="9" cy="13" r="1" />
+    <circle cx="15" cy="13" r="1" />
+    <path d="M2 13v2M22 13v2" />
+  </svg>
+);
+
 export const IconBack = (p: P) => (
   <svg {...base(p)}>
     <line x1="19" y1="12" x2="5" y2="12" />
