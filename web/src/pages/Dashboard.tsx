@@ -80,7 +80,7 @@ export default function Dashboard() {
   const { t: tr } = useT();
   const GLOSSARY = useGlossary();
   const { user, signOut } = useAuth();
-  const { plan, loading: planLoading } = usePlan(user?.id);
+  const { plan, loading: planLoading, error: planError, reload: reloadPlan } = usePlan(user?.id);
   const { isAdmin } = useIsAdmin(user?.id);
   const { module: market, setModule: setMarket } = useModule();
 
@@ -162,8 +162,26 @@ export default function Dashboard() {
   // acessa (hoje crypto p/ todos; B3/Forex só admin). Ver lib/modules.accessibleModules.
   const notifModules = useMemo(() => accessibleModules(isAdmin), [isAdmin]);
 
-  if (planLoading || !plan) {
+  if (planLoading) {
     return <div className="grid h-full place-items-center text-muted-foreground">{tr.header.loadingPlan}</div>;
+  }
+  if (!plan) {
+    // Falha ao resolver o plano (erro/timeout de rede) — nunca deixa preso: mostra o
+    // motivo + retry em vez de girar "Carregando plano…" pra sempre.
+    return (
+      <div className="grid h-full place-items-center p-6">
+        <div className="max-w-sm space-y-4 text-center">
+          <p className="text-sm text-muted-foreground">{planError ? tr.header.planError : tr.header.loadingPlan}</p>
+          <button
+            type="button"
+            onClick={reloadPlan}
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            {tr.common.retry}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const d = payload?.derivatives;

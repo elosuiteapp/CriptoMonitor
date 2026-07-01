@@ -9,8 +9,8 @@ import { getLocale, useLocale, type Locale } from "../hooks/useLocale";
  * [[i18n-plan]]). Sem libs externas (react-i18next etc.) pra não pesar o bundle.
  */
 export interface Dict {
-  common: { loading: string; soon: string; manage: string };
-  header: { newsletter: string; alerts: string; admin: string; loadingPlan: string };
+  common: { loading: string; soon: string; manage: string; retry: string };
+  header: { newsletter: string; alerts: string; admin: string; loadingPlan: string; planError: string };
   tabs: { cockpit: string; smart: string; indicators: string; macro: string; reports: string };
   modules: { menuTitle: string; soon: string; moreSoon: string; forexLocked: string; tooltip: string };
   account: { plan: string; editProfile: string; signOut: string; incomplete: string; incompleteShort: string };
@@ -473,8 +473,14 @@ export interface Dict {
 }
 
 const PT: Dict = {
-  common: { loading: "Carregando…", soon: "Em breve", manage: "gerenciar" },
-  header: { newsletter: "Newsletter", alerts: "Alertas", admin: "Admin", loadingPlan: "Carregando plano…" },
+  common: { loading: "Carregando…", soon: "Em breve", manage: "gerenciar", retry: "Tentar de novo" },
+  header: {
+    newsletter: "Newsletter",
+    alerts: "Alertas",
+    admin: "Admin",
+    loadingPlan: "Carregando plano…",
+    planError: "Não foi possível carregar seu plano. Verifique a conexão (extensões/adblock podem bloquear) e tente de novo.",
+  },
   tabs: {
     cockpit: "Cockpit Principal",
     smart: "Smart Money & On-chain",
@@ -982,8 +988,14 @@ const PT: Dict = {
 };
 
 const EN: Dict = {
-  common: { loading: "Loading…", soon: "Soon", manage: "manage" },
-  header: { newsletter: "Newsletter", alerts: "Alerts", admin: "Admin", loadingPlan: "Loading plan…" },
+  common: { loading: "Loading…", soon: "Soon", manage: "manage", retry: "Try again" },
+  header: {
+    newsletter: "Newsletter",
+    alerts: "Alerts",
+    admin: "Admin",
+    loadingPlan: "Loading plan…",
+    planError: "Couldn't load your plan. Check your connection (extensions/adblock may block it) and try again.",
+  },
   tabs: {
     cockpit: "Main Cockpit",
     smart: "Smart Money & On-chain",
