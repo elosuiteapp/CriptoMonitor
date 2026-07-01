@@ -249,6 +249,18 @@ export interface Dict {
     institutional: string;
     source: string;
   };
+  whaleWalls: {
+    title: string;
+    tip: string;
+    support: string;
+    resistance: string;
+    balanced: string;
+    weighted: string;
+    unavailable: string;
+    divBuy: string; // baleias defendem suporte, mas pressão geral é vendedora
+    divSell: string; // baleias montam teto, mas pressão geral é compradora
+    aligned: string; // paredes e pressão concordam
+  };
   notif: {
     title: string;
     markRead: string;
@@ -728,6 +740,18 @@ const PT: Dict = {
     balancedWord: "equilibrado",
     institutional: "Institucional",
     source: "Fonte:",
+  },
+  whaleWalls: {
+    title: "Paredes fortes (baleias)",
+    tip: "Soma só as ordens GRANDES do book (baleias, acima do filtro do ativo), ponderadas pela proximidade do preço: suporte (compra, abaixo) × resistência (venda, acima). Diferente da pressão, que soma todo o book. O sinal forte é quando as duas DIVERGEM. SPOOFÁVEL — inclina as chances, não prevê.",
+    support: "suporte",
+    resistance: "resist.",
+    balanced: "equilibrado",
+    weighted: "ponderado por proximidade",
+    unavailable: "Sem paredes relevantes neste ciclo.",
+    divBuy: "⚠ baleias defendendo o suporte, mas a pressão geral está vendedora",
+    divSell: "⚠ baleias montando teto, mas a pressão geral está compradora",
+    aligned: "paredes e pressão concordam",
   },
   notif: {
     title: "Notificações",
@@ -1225,6 +1249,18 @@ const EN: Dict = {
     balancedWord: "balanced",
     institutional: "Institutional",
     source: "Source:",
+  },
+  whaleWalls: {
+    title: "Strong walls (whales)",
+    tip: "Sums only the LARGE resting orders (whales, above the per-asset filter), weighted by how close they are to price: support (bids below) × resistance (asks above). Unlike pressure, which sums the whole book. The strong signal is when the two DIVERGE. SPOOFABLE — tilts the odds, not a prediction.",
+    support: "support",
+    resistance: "resist.",
+    balanced: "balanced",
+    weighted: "proximity-weighted",
+    unavailable: "No relevant walls this cycle.",
+    divBuy: "⚠ whales defending support, but overall pressure is selling",
+    divSell: "⚠ whales building a ceiling, but overall pressure is buying",
+    aligned: "walls and pressure agree",
   },
   notif: {
     title: "Notifications",

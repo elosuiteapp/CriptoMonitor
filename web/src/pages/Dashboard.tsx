@@ -31,6 +31,7 @@ import OrderbookImbalanceCard from "../components/OrderbookImbalanceCard";
 import NotificationsBell from "../components/NotificationsBell";
 import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
+import WhaleWallsGauge from "../components/WhaleWallsGauge";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import LangSwitch from "../components/ui/LangSwitch";
@@ -403,6 +404,7 @@ export default function Dashboard() {
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
                 <OrderbookImbalanceCard data={imbalance.varejo} title={tr.cockpit.bookRetail} source="Binance + OKX" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
+                <WhaleWallsGauge walls={walls} price={livePrice ?? spot} pressure={imbalance.varejo} timestamp={updatedAt} />
               </>
             ) : (
               <>
