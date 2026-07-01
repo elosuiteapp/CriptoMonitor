@@ -42,7 +42,7 @@ interface Reading {
   signals: ReadingSig[];
   spot?: number;
   desired?: string;
-  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; swing: string | null }[]; zone?: string | null } | null;
+  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null } | null;
 }
 interface OrderRow {
   id: string;
@@ -479,8 +479,11 @@ export default function AdminBot() {
                   <span className="text-muted-foreground">consenso: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{r.structure.consensus.bull}↑</span> · <span className="font-semibold text-rose-600 dark:text-rose-400">{r.structure.consensus.bear}↓</span> de {r.structure.consensus.total}</span>
                 )}
                 {r.structure.perTf?.map((t) => (
-                  <span key={t.tf} className={`num rounded px-1.5 py-0.5 font-semibold ${t.bias >= 12 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : t.bias <= -12 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>{t.tf} {t.bias >= 0 ? "+" : ""}{t.bias}</span>
+                  <span key={t.tf} title={t.structure != null && t.pressure != null ? `placar = estrutura ${t.structure} + pressão do book ${t.pressure >= 0 ? "+" : ""}${t.pressure}` : undefined} className={`num rounded px-1.5 py-0.5 font-semibold ${t.bias >= 12 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : t.bias <= -12 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>{t.tf} {t.bias >= 0 ? "+" : ""}{t.bias}</span>
                 ))}
+                {typeof r.structure.flowTilt === "number" && (
+                  <span className="text-muted-foreground" title="Fluxo compartilhado (CVD, gamma, ETF, paredes, absorção). Não dispara sozinho — CONFIRMA e veta a entrada se estiver forte contra.">confirmação (fluxo): <span className={`num font-semibold ${r.structure.flowTilt > 8 ? "text-emerald-600 dark:text-emerald-400" : r.structure.flowTilt < -8 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{r.structure.flowTilt >= 0 ? "+" : ""}{r.structure.flowTilt}</span></span>
+                )}
                 {r.structure.zone && <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>}
               </div>
             )}

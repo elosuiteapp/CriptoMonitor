@@ -211,7 +211,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
 interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
 const TFW: Record<string, number> = { "15m": 0.18, "30m": 0.16, "1H": 0.15 };
-function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null) {
+function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
   const sig: Signal[] = [];
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
   const der = p?.derivatives ?? {}, g = p?.gamma ?? {}, etf = p?.etf_flows ?? {};
@@ -286,13 +286,29 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   if (ef != null) add("etf", "Institucional", "Fluxo de ETF", 0.07, (ef / 300e6) * 70, `${ef >= 0 ? "entrada" : "saída"} $${Math.abs(ef / 1e6).toFixed(0)}M${streak != null ? ` · ${streak}d` : ""}`);
 
   void der;
-  let num = 0, den = 0;
-  for (const x of sig) { num += x.score * x.weight; den += x.weight; }
-  const bias = den ? Math.round(clamp(num / den)) : 0;
-  const voting = sig.filter((x) => Math.abs(x.score) > 8);
-  const agree = voting.filter((x) => Math.sign(x.score) === Math.sign(bias)).length;
-  const conviction = voting.length ? Math.round((agree / voting.length) * 100) : 0;
-  return { bias, conviction, signals: sig, absScore: Math.round(absScore) };
+
+  // ════════ DECISÃO POR TIMEFRAME (voto 2-de-3) ════════
+  // Cada TF tem um PLACAR próprio = estrutura daquele TF + a janela de pressão do book que
+  // casa com o horizonte dele (15m↔30m, 30m↔12h, 1H↔48h). O fluxo "agora" (CVD, gamma, ETF,
+  // paredes, absorção…) NÃO é por-TF → vira CONFIRMAÇÃO compartilhada (não dispara, mas veta).
+  const winTilt = (label: string) => { const r = pressWin.find((x) => x.label === label); if (!r) return 0; const s = Number(r.bid) + Number(r.ask); return s > 0 ? (Number(r.bid) - Number(r.ask)) / s : 0; };
+  const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h" };
+  const perTf = tfReads.map((t) => {
+    const pressure = Math.round(winTilt(tfWindow[t.tf] ?? "12h") * 100); // -100..100
+    const composite = Math.round(clamp(0.6 * t.bias + 0.4 * pressure));
+    return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
+  });
+
+  // Fluxo compartilhado (tudo que é "agora", não por-TF) → confirmação/veto.
+  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "liqs", "gamma", "gflow", "cb_prem", "etf"]);
+  let fn = 0, fd = 0;
+  for (const x of sig) if (flowKeys.has(x.key)) { fn += x.score * x.weight; fd += x.weight; }
+  const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;
+
+  // Placar-resumo (média dos TFs) só p/ exibição; o VOTO 2-de-3 é decidido no handler
+  // com os limiares configuráveis (buy_threshold/sell_threshold).
+  const bias = perTf.length ? Math.round(perTf.reduce((s, t) => s + t.bias, 0) / perTf.length) : 0;
+  return { bias, signals: sig, absScore: Math.round(absScore), perTf, flowTilt };
 }
 
 Deno.serve(async (req) => {
@@ -329,10 +345,11 @@ Deno.serve(async (req) => {
 
   try {
     const base = cfg.base_ccy;
-    const [{ data: snaps }, { data: imbRows }, { data: wallRows }] = await Promise.all([
+    const [{ data: snaps }, { data: imbRows }, { data: wallRows }, { data: pressRows }] = await Promise.all([
       admin.from("market_snapshot").select("payload, ts").eq("asset", base).order("ts", { ascending: false }).limit(6),
       admin.from("orderbook_imbalance").select("exchange, bid_near_usd, ask_near_usd, bid_wide_usd, ask_wide_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(30),
       admin.from("orderbook_walls").select("side, price, notional_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(80),
+      admin.rpc("get_book_pressure_windows", { p_asset: base }), // pressão do book por janela (48h/12h/30m) p/ leitura por TF
     ]);
     const snap = (snaps ?? [])[0];
     if (!snap?.payload) { await log("warn", `Sem snapshot de ${base} — robô aguardando dados.`); return json(200, { skipped: "sem dados de mercado" }); }
@@ -362,35 +379,42 @@ Deno.serve(async (req) => {
       return { tf, smc, mom, bias: structuralBias(smc, mom) };
     });
     const primary = tfReads[0];
-    const bull = tfReads.filter((t) => t.bias >= 12).length, bear = tfReads.filter((t) => t.bias <= -12).length;
 
     const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
-    const { bias, conviction, signals, absScore } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum);
+    const { bias, signals, absScore, perTf, flowTilt } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
 
-    // ── DIREÇÃO DESEJADA (futuros: long/short/flat; banda neutra mantém posição) ──
+    // ── DIREÇÃO DESEJADA — VOTO POR TIMEFRAME (2 de 3) ──
+    // Cada TF vota comprado/vendido se o PLACAR dele (estrutura + pressão do horizonte)
+    // cruza o limiar. ≥2 dos 3 no mesmo lado → dispara. O fluxo compartilhado (flowTilt)
+    // CONFIRMA: veta a entrada se estiver forte contra (e sem parede a favor).
+    const buyTh = Number(cfg.buy_threshold), sellTh = Number(cfg.sell_threshold);
+    const longVotes = perTf.filter((t) => t.bias >= buyTh).length;
+    const shortVotes = perTf.filter((t) => t.bias <= -sellTh).length;
+    const bull = longVotes, bear = shortVotes, total = perTf.length;
+    const conviction = total ? Math.round((Math.max(longVotes, shortVotes) / total) * 100) : 0;
+
     const isSwapOkx = String(cfg.inst_id).toUpperCase().endsWith("-SWAP");
     const fut = venue === "binance" || isSwapOkx; // opera short?
     let pos: "long" | "short" | "flat" = cfg.position === "long" ? "long" : cfg.position === "short" ? "short" : "flat";
-    const total = tfReads.length;
-    let want: "long" | "short" | null = bias >= cfg.buy_threshold ? "long" : bias <= -cfg.sell_threshold ? "short" : null;
+    let want: "long" | "short" | null = (longVotes >= 2 && longVotes > shortVotes) ? "long" : (shortVotes >= 2 && shortVotes > longVotes) ? "short" : null;
     let gate = "";
     if (want === "long") {
       if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
       else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
-      else if (bear > bull && absScore < 55) { gate = `${bear}/${total} TFs de baixa sem parede defendendo`; want = null; }
+      else if (flowTilt < -35 && absScore < 55) { gate = `fluxo contra (${flowTilt}) sem parede defendendo`; want = null; }
     } else if (want === "short") {
       if (!fut) { gate = "spot não faz short — use futuros"; want = null; }
       else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
       else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
-      else if (bull > bear && absScore > -55) { gate = `${bull}/${total} TFs de alta sem parede barrando`; want = null; }
+      else if (flowTilt > 35 && absScore > -55) { gate = `fluxo contra (+${flowTilt}) sem parede barrando`; want = null; }
     }
-    // Alvo: futuros mantém na zona neutra; spot precisa SAIR do long quando vira baixa (não shorta).
+    // Alvo: futuros mantém na zona neutra; spot precisa SAIR do long quando o voto vira baixa (não shorta).
     let target: "long" | "short" | "flat" = want ?? pos;
-    if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && bias <= -cfg.sell_threshold) target = "flat"; }
+    if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && shortVotes >= 2) target = "flat"; }
 
     const decision = !cfg.enabled ? "preview" : target === pos ? "hold" : target;
-    const structure = { consensus: { bull, bear, total }, perTf: tfReads.map((t) => ({ tf: t.tf, bias: t.bias, swing: t.smc?.swingBias ?? null })), zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
-    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+    const structure = { consensus: { bull, bear, total }, perTf, flowTilt, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
     await admin.from("bot_config").update({ last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() }).eq("id", 1);
 
     const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
