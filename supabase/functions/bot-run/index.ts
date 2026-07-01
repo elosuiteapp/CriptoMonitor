@@ -210,7 +210,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   const fdDist = fDem ? (smc.price - fDem.mid) / atr : 99, fsDist = fSup ? (fSup.mid - smc.price) / atr : 99;
   const fvgScore = fdDist < 1.5 && fdDist <= fsDist ? 45 + 40 * Math.max(0, 1 - fdDist / 1.5)
     : fsDist < 1.5 && fsDist < fdDist ? -(45 + 40 * Math.max(0, 1 - fsDist / 1.5)) : 0;
-  add(fvgScore, 0.12);
+  add(fvgScore, 0.18); // imbalance é o nível mais respeitado em todas as moedas (dono validou nos 4 prints) → mais voz que OB/zona
   add(clamp((momTf / 0.006) * 60), 0.12);
   return d ? Math.round(clamp(n / d)) : 0;
 }
@@ -295,6 +295,34 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     add("fvg", "Microestrutura", "Imbalance / FVG", 0.08, sc, note);
   }
 
+  // ── COMPLEMENTO / DIAGNÓSTICO (medidos pelo aprendizado em TODAS as moedas; NÃO entram no
+  //    gatilho — o dono definiu como "leitura complementar". Antes só o BTC tinha histórico deles;
+  //    agora BTC/ETH/SOL/BNB registram o MESMO conjunto → análise por moeda fica completa/comparável). ──
+  // Derivativos (por moeda): funding e long/short são CONTRÁRIOS (extremo = multidão no lado errado).
+  const fr = N(der.funding_rate); // Coinalyze CEX = PERCENT (0,01 = 0,01%); normaliza por 0,05%.
+  if (fr != null && fr !== 0) add("funding", "Fluxo", "Funding (contrário)", 0.02, -Math.sign(fr) * Math.min(Math.abs(fr) / 0.05, 1) * 55, `funding ${fr >= 0 ? "+" : ""}${fr.toFixed(4)}% — ${fr > 0 ? "longs pagam (aperto de longs)" : "shorts pagam (aperto de shorts)"}`);
+  const ls = N(der.long_short_ratio);
+  if (ls != null && ls > 0) add("ls_ratio", "Fluxo", "Long/Short (contrário)", 0.02, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`);
+  // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO + pólvora seca de stablecoins.
+  const fng = N(p?.sentiment?.fng_value);
+  if (fng != null) add("feargreed", "Sentimento", "Fear & Greed (contrário)", 0.02, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
+  const scChg = N(p?.liquidity?.stablecoin_chg_7d_pct);
+  if (scChg != null && scChg !== 0) add("stables", "Institucional", "Liquidez stablecoins (7d)", 0.02, Math.sign(scChg) * Math.min(Math.abs(scChg) / 2, 1) * 45, `stablecoins ${scChg >= 0 ? "+" : ""}${scChg.toFixed(2)}% em 7d — ${scChg >= 0 ? "pólvora seca crescendo" : "saindo do mercado"}`);
+  // Diagnóstico SMC por moeda (já entram no voto via structuralBias; aqui é só p/ MEDIR cada peça).
+  if (psmc) {
+    const at = psmc.atr || psmc.price * 0.01;
+    add("swing", "Estrutura", "Tendência de estrutura (swing)", 0.02, psmc.swingBias === "bullish" ? 78 : psmc.swingBias === "bearish" ? -78 : 0, `swing ${psmc.swingBias === "bullish" ? "de alta" : psmc.swingBias === "bearish" ? "de baixa" : "neutro"}`);
+    if (psmc.lastSwing) add("bos", "Estrutura", "Último evento (BOS/CHoCH)", 0.02, (psmc.lastSwing.bias === "bullish" ? 1 : -1) * (psmc.lastSwing.type === "CHoCH" ? 80 : 55), `${psmc.lastSwing.type} ${psmc.lastSwing.bias === "bullish" ? "de alta" : "de baixa"}`);
+    const dem = psmc.orderBlocks.filter((o) => o.bias === "bullish" && o.mid < psmc.price).sort((a, b) => b.mid - a.mid)[0];
+    const sup = psmc.orderBlocks.filter((o) => o.bias === "bearish" && o.mid > psmc.price).sort((a, b) => a.mid - b.mid)[0];
+    const dD = dem ? (psmc.price - dem.mid) / at : 99, sD = sup ? (sup.mid - psmc.price) / at : 99;
+    add("ob", "Estrutura", "Order block (demanda × oferta)", 0.02, dD < 1.5 && dD <= sD ? 55 : sD < 1.5 && sD < dD ? -55 : 0, dD < 1.5 && dD <= sD ? "demanda colada (suporte)" : sD < 1.5 && sD < dD ? "oferta colada (resistência)" : "sem OB colado");
+    const liqAbove = psmc.liquidity.filter((l) => l.price > psmc.price).sort((a, b) => a.price - b.price)[0];
+    const liqBelow = psmc.liquidity.filter((l) => l.price < psmc.price).sort((a, b) => b.price - a.price)[0];
+    const laD = liqAbove ? (liqAbove.price - psmc.price) / at : 99, lbD = liqBelow ? (psmc.price - liqBelow.price) / at : 99;
+    add("sweep", "Estrutura", "Liquidez (varredura/ímã)", 0.02, laD < lbD && laD < 2 ? 40 : lbD < laD && lbD < 2 ? -40 : 0, laD < lbD && laD < 2 ? "liquidez acima (ímã de alta)" : lbD < laD && lbD < 2 ? "liquidez abaixo (ímã de baixa)" : "sem pool perto");
+  }
+
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
   // CVD agregado é ruído (~50% no aprendizado) → peso baixo. O valor está na DIVERGÊNCIA
   // institucional (Coinbase, mão forte) × varejo (Binance+OKX, mão fraca): seguir o institucional.
@@ -331,9 +359,10 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h", "4H": "48h", "1D": "48h" };
   const perTf = tfReads.map((t) => {
     const pressure = Math.round(winTilt(tfWindow[t.tf] ?? "12h") * 100); // -100..100
-    // Gamma positivo (pinning) → estrutura falha mais (fakeout): pesa MENOS a estrutura e mais a
-    // pressão do book do horizonte; gamma negativo (tendência) → estrutura pesa mais.
-    const structW = gammaPos ? 0.45 : gammaNeg ? 0.65 : 0.6;
+    // BALANÇA SMC × FLUXO: dono definiu 65% Smart Money / 35% pressão do book (o fluxo mais forte).
+    // Neutro = 0.65 (o número). Gamma positivo (pinning) → estrutura falha mais (fakeout): cai p/ 0.55
+    // (book pinga mais, mas SMC ainda maioria — seguro p/ BTC). Gamma negativo (tendência) → 0.72.
+    const structW = gammaPos ? 0.55 : gammaNeg ? 0.72 : 0.65;
     const composite = Math.round(clamp(structW * t.bias + (1 - structW) * pressure));
     return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
   });
