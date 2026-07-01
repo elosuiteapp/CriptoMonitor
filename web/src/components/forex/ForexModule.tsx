@@ -56,12 +56,12 @@ export default function ForexModule({ pair, onPair, full = false }: { pair: stri
         <MarketReadBadge read={badge as unknown as MarketRead} loading={readLoading} onClick={() => setTab("leitura")} />
       </div>
 
-      <ForexTabBar tab={tab} onTab={setTab} />
+      <ForexTabBar tab={tab} onTab={setTab} full={full} />
 
       <ErrorBoundary key={tab} label="o módulo Forex">
         {tab === "cockpit" && <ForexCockpitTab pair={pair} onPair={setPair} />}
         {tab === "smart" && (full ? <ForexSmartMoneyTab pair={pair} /> : <LockedTab title="Smart Money" plan="Forex" />)}
-        {tab === "leitura" && <ForexLeituraTab pair={pair} />}
+        {tab === "leitura" && (full ? <ForexLeituraTab pair={pair} /> : <LockedTab title="Leitura do Mercado" plan="Forex" />)}
         {tab === "macro" && <ForexMacroTab pair={pair} />}
         {tab === "relatorio" && (full ? <ForexReportsTab pair={pair} /> : <LockedTab title="Relatório" plan="Forex" />)}
       </ErrorBoundary>

@@ -8,12 +8,16 @@ const TABS: { id: ForexTabId; label: string }[] = [
   { id: "relatorio", label: "Relatório" },
 ];
 
+// Abas liberadas no Free (vitrine); as demais viram 🔒 até assinar o módulo. Igual à cripto.
+const FREE_TABS: ForexTabId[] = ["cockpit", "macro"];
+
 /** Abas da plataforma Forex — mesmo modelo do cripto/B3, contexto de câmbio. */
-export default function ForexTabBar({ tab, onTab }: { tab: ForexTabId; onTab: (t: ForexTabId) => void }) {
+export default function ForexTabBar({ tab, onTab, full = false }: { tab: ForexTabId; onTab: (t: ForexTabId) => void; full?: boolean }) {
   return (
     <div className="flex flex-wrap gap-1 border-b border-border">
       {TABS.map((t) => {
         const active = tab === t.id;
+        const locked = !full && !FREE_TABS.includes(t.id);
         return (
           <button
             key={t.id}
@@ -22,7 +26,7 @@ export default function ForexTabBar({ tab, onTab }: { tab: ForexTabId; onTab: (t
               active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t.label}
+            {t.label} {locked && <span aria-hidden>🔒</span>}
           </button>
         );
       })}

@@ -7,13 +7,29 @@ interface Props {
   dailyUsed?: number;
   dailyLimit?: number | null;
   to?: string; // rota base da análise (cripto: /analysis · B3: /b3-analysis)
+  locked?: boolean; // Free (sem módulo pago) não usa IA → vira cadeado p/ /pricing
 }
 
 /** Botão fixo "O que está acontecendo?" — costura a narrativa da IA (PRD §8.3).
- *  Contextual por módulo: leva à análise DO ATIVO selecionado (cripto ou B3). */
-export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit, to = "/analysis" }: Props) {
+ *  Contextual por módulo: leva à análise DO ATIVO selecionado (cripto ou B3).
+ *  Free não tem IA: mostra cadeado e leva aos planos. */
+export default function AIAnalysisButton({ asset, dailyUsed, dailyLimit, to = "/analysis", locked = false }: Props) {
   const { t } = useT();
   const navigate = useNavigate();
+
+  if (locked) {
+    return (
+      <button
+        onClick={() => navigate("/pricing")}
+        title={t.aiButton.cta}
+        className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground"
+      >
+        <span aria-hidden>🔒</span>
+        {t.aiButton.cta}
+      </button>
+    );
+  }
+
   const counter =
     dailyLimit === null
       ? t.aiButton.unlimited

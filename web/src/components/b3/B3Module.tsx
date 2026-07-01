@@ -55,13 +55,13 @@ export default function B3Module({ asset, onAsset, full = false }: { asset: stri
         <MarketReadBadge read={badge as unknown as MarketRead} loading={readLoading} onClick={() => setTab("leitura")} />
       </div>
 
-      <B3TabBar tab={tab} onTab={setTab} />
+      <B3TabBar tab={tab} onTab={setTab} full={full} />
 
       <ErrorBoundary key={tab} label="o módulo B3">
         {tab === "cockpit" && <B3CockpitTab asset={asset} onAsset={setAsset} />}
         {tab === "dividendos" && (full ? <B3DividendsTab asset={asset} onAsset={setAsset} /> : <LockedTab title="Dividendos" plan="B3" />)}
         {tab === "fluxo" && (full ? <B3SmartMoneyTab asset={asset} /> : <LockedTab title="Fluxo & Smart Money" plan="B3" />)}
-        {tab === "leitura" && <B3LeituraTab asset={asset} />}
+        {tab === "leitura" && (full ? <B3LeituraTab asset={asset} /> : <LockedTab title="Leitura do Mercado" plan="B3" />)}
         {tab === "macro" && <B3MacroTab />}
         {tab === "reports" && (full ? <B3ReportsTab asset={asset} /> : <LockedTab title="Relatórios" plan="B3" />)}
       </ErrorBoundary>

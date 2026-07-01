@@ -208,6 +208,7 @@ export default function Dashboard() {
             asset={market === "b3" ? b3Asset : asset}
             to={market === "b3" ? "/b3-analysis" : "/analysis"}
             dailyLimit={market === "b3" ? undefined : plan.ai_daily_limit}
+            locked={!(isAdmin || (plan.modules?.includes(market) ?? false))}
           />
           {user && <NotificationsBell user={user} modules={notifModules} />}
           <button
