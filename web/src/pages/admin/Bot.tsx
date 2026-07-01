@@ -76,7 +76,9 @@ interface BotPosition {
   entry_px: number | null;
   adds: number | null;
   last_bias: number | null;
+  last_conviction: number | null;
   last_decision: string | null;
+  last_reading: Reading | null;
 }
 interface LearningSig { key: string; label: string; weight: number; n: number; hitRate: number; edge: number }
 interface Learning {
@@ -133,6 +135,7 @@ export default function AdminBot() {
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [learning, setLearning] = useState<Learning | null>(null);
+  const [selAsset, setSelAsset] = useState("BTC"); // moeda em foco no painel (leitura + gráfico)
 
   // conexão (chaves)
   const [showKeys, setShowKeys] = useState(false);
@@ -152,7 +155,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_decision").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
     const conf = (c as Config) ?? null;
@@ -175,7 +178,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_decision").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
@@ -183,9 +186,9 @@ export default function AdminBot() {
     setPositions((pos as BotPosition[] | null) ?? []);
   }, []);
 
-  const loadChart = useCallback(async (config: Config) => {
+  const loadChart = useCallback(async (instId: string, bar: string, venue: string) => {
     try {
-      const r = await invoke("candles", { instId: config.inst_id, bar: config.bar, limit: 200 }, config.venue === "binance" ? "binance-bot" : "okx-bot");
+      const r = await invoke("candles", { instId, bar, limit: 200 }, venue === "binance" ? "binance-bot" : "okx-bot");
       const rows = ((r?.data ?? []) as string[][]).slice().reverse();
       const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4] }));
       setCandles(cs);
@@ -194,10 +197,13 @@ export default function AdminBot() {
     }
   }, []);
 
-  // Carrega gráfico quando a config chega/muda.
+  // inst_id da moeda em foco (multi-ativo): no binance é ATIVO+quote; fallback ao inst_id do config.
+  const selInst = cfg?.venue === "binance" ? `${selAsset}${cfg?.quote_ccy ?? "USDT"}` : (cfg?.inst_id ?? `${selAsset}USDT`);
+
+  // Carrega gráfico quando a moeda em foco / TF / conexão mudam.
   useEffect(() => {
-    if (cfg && connected) loadChart(cfg);
-  }, [cfg?.inst_id, cfg?.bar, connected, loadChart]);
+    if (cfg && connected) loadChart(selInst, cfg.bar, cfg.venue);
+  }, [selInst, cfg?.bar, cfg?.venue, connected, loadChart]);
 
   // PnL ao vivo: enquanto há posição aberta, lê a posição real da Binance (uPnL + preço de marca).
   useEffect(() => {
@@ -246,7 +252,7 @@ export default function AdminBot() {
         if (active) setTotalEq(bal?.data?.[0]?.totalEq ?? null);
       } catch { /* silencioso */ }
       if (!active) return;
-      await loadChart(cfg);
+      if (cfg) await loadChart(selInst, cfg.bar, cfg.venue);
       await loadLive();
     };
     tick();
@@ -262,7 +268,7 @@ export default function AdminBot() {
     try {
       const bal = await invoke("balance", {}, cfg.venue === "binance" ? "binance-bot" : "okx-bot");
       setTotalEq(bal?.data?.[0]?.totalEq ?? null);
-      await loadChart(cfg);
+      if (cfg) await loadChart(selInst, cfg.bar, cfg.venue);
       await loadBase();
       setMsg({ kind: "ok", text: "Atualizado." });
     } catch (e) {
@@ -335,7 +341,7 @@ export default function AdminBot() {
       const label = (d && map[d]) ?? (data?.skipped ?? "executado");
       setMsg({ kind: "ok", text: `Robô rodou: ${label}.` });
       await loadBase();
-      if (cfg) await loadChart(cfg);
+      if (cfg) await loadChart(selInst, cfg.bar, cfg.venue);
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao rodar." });
     } finally {
@@ -448,14 +454,19 @@ export default function AdminBot() {
     if (!candles.length) return [];
     const times = candles.map((c) => c.time);
     return orders
-      .filter((o) => o.ok && o.side && o.inst_id === cfg?.inst_id)
+      .filter((o) => o.ok && o.side && o.inst_id === selInst)
       .map((o) => {
         const t = Math.floor(new Date(o.created_at).getTime() / 1000);
         let bar = times[0];
         for (const tt of times) { if (tt <= t) bar = tt; else break; }
         return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", text: o.side === "buy" ? "C" : "V" };
       });
-  }, [orders, candles, cfg?.inst_id]);
+  }, [orders, candles, selInst]);
+
+  // Leitura da moeda em foco (cada ativo tem a sua em bot_positions); fallback ao config (BTC legado).
+  const selPos = positions.find((p) => p.asset === selAsset) ?? null;
+  const selReading: Reading | null = (selPos?.last_reading as Reading | null) ?? (selAsset === "BTC" ? cfg?.last_reading ?? null : null);
+  const ASSET_LIST = positions.length ? positions.map((p) => p.asset) : ["BTC"];
 
   const lastPx = candles.length ? candles[candles.length - 1].close : 0;
   const dec = lastPx >= 1000 ? 1 : lastPx >= 1 ? 2 : 6;
@@ -554,16 +565,24 @@ export default function AdminBot() {
         </div>
       )}
 
-      {/* Leitura do robô (fluxo) */}
-      {cfg?.last_reading && (() => {
-        const r = cfg.last_reading;
+      {/* Seletor de moeda em foco (cada ativo tem leitura + gráfico próprios) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Moeda em foco:</span>
+        {ASSET_LIST.map((a) => (
+          <button key={a} onClick={() => setSelAsset(a)} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${selAsset === a ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}>{a}</button>
+        ))}
+      </div>
+
+      {/* Leitura do robô (fluxo) — da moeda em foco */}
+      {selReading && (() => {
+        const r = selReading;
         const bias = r.bias;
         const bc = bias >= 15 ? "text-emerald-500" : bias <= -15 ? "text-rose-500" : "text-muted-foreground";
         return (
           <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · Smart Money + fluxo</h2>
-              <span className="text-[11px] text-muted-foreground">{cfg.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · {selAsset} · Smart Money + fluxo</h2>
+              <span className="text-[11px] text-muted-foreground">{cfg?.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
             </div>
             {r.structure && (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
@@ -596,8 +615,8 @@ export default function AdminBot() {
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Decisão</div>
-                <div className={`text-2xl font-bold ${cfg.last_decision === "buy" ? "text-emerald-500" : cfg.last_decision === "sell" ? "text-rose-500" : "text-foreground"}`}>{decisionLabel(cfg.last_decision)}</div>
-                <div className="text-[10px] text-muted-foreground">limiar ±{cfg.buy_threshold}</div>
+                {(() => { const d = selPos?.last_decision ?? cfg?.last_decision; return <div className={`text-2xl font-bold ${d === "buy" || d === "long" ? "text-emerald-500" : d === "sell" || d === "short" ? "text-rose-500" : "text-foreground"}`}>{decisionLabel(d)}</div>; })()}
+                <div className="text-[10px] text-muted-foreground">limiar ±{cfg?.buy_threshold ?? 15} · consenso {cfg?.min_votes ?? 3}/{selReading.structure?.consensus?.total ?? 4}</div>
               </div>
             </div>
             <div className="mt-3 space-y-3">
@@ -633,7 +652,7 @@ export default function AdminBot() {
       {/* Gráfico com marcações */}
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Gráfico · {cfg?.inst_id ?? ""} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
+          <h2 className="text-sm font-semibold text-foreground">Gráfico · {selInst} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
               {BARS.map((b) => <button key={b} onClick={() => cfg && setCfg({ ...cfg, bar: b })} className={`rounded-md px-2 py-0.5 transition-colors ${cfg?.bar === b ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>{b}</button>)}
@@ -644,7 +663,7 @@ export default function AdminBot() {
           </div>
         </div>
         {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} decimals={dec} fitKey={`${cfg?.inst_id ?? ""}-${cfg?.bar ?? ""}`} />
+          <BotChart candles={candles} markers={markers} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
@@ -768,7 +787,22 @@ export default function AdminBot() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-2">{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span>{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</span>
+                        {o.ok && (() => {
+                          // Status da POSIÇÃO: fechamento; aberta (rodando); ou fechada (não roda mais).
+                          if (o.action === "close") return <span className="text-[10px] text-muted-foreground">fechamento</span>;
+                          const a = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : null;
+                          const posOpen = positions.some((x) => x.asset === a && x.position !== "flat");
+                          const closedAfter = orders.some((x) => x.inst_id === o.inst_id && x.action === "close" && x.ok && new Date(x.created_at) > new Date(o.created_at));
+                          const running = posOpen && !closedAfter;
+                          return running
+                            ? <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />rodando</span>
+                            : <span className="text-[10px] text-muted-foreground">● fechada</span>;
+                        })()}
+                      </div>
+                    </td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">
                       {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
                         <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
