@@ -16,7 +16,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const SWING = 20;
-const TFS = ["15m", "30m", "1H", "4H"];
+const TFS = ["15m", "30m", "1H", "4H", "1D"];
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -28,7 +28,7 @@ const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n :
 // Demo Trading da Binance (demo.binance.com) — base de futuros = demo-fapi.binance.com.
 // (Carteira de Futuros do demo é separada do Spot; abastecida via Reset na aba Futures.)
 const BNB_BASE = "https://demo-fapi.binance.com";
-const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h" };
+const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
 interface BnbCreds { key: string; secret: string }
 async function hmacHex(secret: string, msg: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -191,7 +191,13 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   let n = 0, d = 0; const add = (score: number, w: number) => { n += score * w; d += w; };
   add(smc.swingBias === "bullish" ? 78 : smc.swingBias === "bearish" ? -78 : 0, 0.40);
   if (smc.lastSwing) add((smc.lastSwing.bias === "bullish" ? 1 : -1) * (smc.lastSwing.type === "CHoCH" ? 80 : 55), 0.20);
-  let z = 0; if (smc.price <= smc.discount.top) z = 72; else if (smc.price >= smc.premium.bottom) z = -72; add(z, 0.18);
+  // Zona só vira viés se ESTIVER SENDO RESPEITADA: discount = compra apenas com a estrutura interna
+  // virando pra cima (CHoCH a favor); premium = venda apenas com a interna pra baixo. Senão, neutra.
+  // (estar barato não garante que o discount segura — pode romper pra baixo; idem premium.)
+  let z = 0;
+  if (smc.price <= smc.discount.top) z = smc.internalBias === "bullish" ? 72 : 0;
+  else if (smc.price >= smc.premium.bottom) z = smc.internalBias === "bearish" ? -72 : 0;
+  add(z, 0.18);
   const atr = smc.atr || smc.price * 0.01;
   const dem = smc.orderBlocks.filter((o) => o.bias === "bullish" && o.mid < smc.price).sort((a, b) => b.mid - a.mid)[0];
   const sup = smc.orderBlocks.filter((o) => o.bias === "bearish" && o.mid > smc.price).sort((a, b) => a.mid - b.mid)[0];
@@ -212,7 +218,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 // ════════ Confluência: estrutura POR TF (15m/30m/1H) + fluxo ════════
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
 interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
-const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16 };
+const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16, "1D": 0.16 };
 function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
   const sig: Signal[] = [];
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
@@ -309,7 +315,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // casa com o horizonte dele (15m↔30m, 30m↔12h, 1H↔48h). O fluxo "agora" (CVD, gamma, ETF,
   // paredes, absorção…) NÃO é por-TF → vira CONFIRMAÇÃO compartilhada (não dispara, mas veta).
   const winTilt = (label: string) => { const r = pressWin.find((x) => x.label === label); if (!r) return 0; const s = Number(r.bid) + Number(r.ask); return s > 0 ? (Number(r.bid) - Number(r.ask)) / s : 0; };
-  const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h", "4H": "48h" };
+  const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h", "4H": "48h", "1D": "48h" };
   const perTf = tfReads.map((t) => {
     const pressure = Math.round(winTilt(tfWindow[t.tf] ?? "12h") * 100); // -100..100
     const composite = Math.round(clamp(0.6 * t.bias + 0.4 * pressure));
@@ -364,11 +370,11 @@ Deno.serve(async (req) => {
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
-      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds").eq("asset", asset).maybeSingle();
-      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0) };
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend };
     };
-    const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0) => {
-      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, updated_at: new Date().toISOString() }, { onConflict: "asset" });
+    const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false) => {
+      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, updated_at: new Date().toISOString() }, { onConflict: "asset" });
     };
     const saveReading = async (asset: string, patch: Record<string, unknown>) => {
       await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
@@ -406,7 +412,13 @@ Deno.serve(async (req) => {
       const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
       const { bias, signals, absScore, perTf, flowTilt } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
 
-      // ── VOTO POR TIMEFRAME (2 de 3) + fluxo como confirmação ──
+      // ── REGIME (tendência) pelos TFs MAIORES (4H + 1D): manda no LADO da operação. ──
+      const trendTfs = tfReads.filter((t) => (t.tf === "4H" || t.tf === "1D") && t.smc);
+      const trendBias = trendTfs.length ? Math.round(trendTfs.reduce((s, t) => s + t.bias, 0) / trendTfs.length) : 0;
+      const regime: "up" | "down" | "range" = trendBias >= 18 ? "up" : trendBias <= -18 ? "down" : "range";
+      const regimeDir = regime === "up" ? 1 : regime === "down" ? -1 : 0;
+
+      // ── VOTO POR TIMEFRAME (N-de-M dos 5 TFs) + fluxo como confirmação ──
       const buyTh = Number(cfg.buy_threshold), sellTh = Number(cfg.sell_threshold);
       const longVotes = perTf.filter((t) => t.bias >= buyTh).length;
       const shortVotes = perTf.filter((t) => t.bias <= -sellTh).length;
@@ -417,41 +429,80 @@ Deno.serve(async (req) => {
       const fut = venue === "binance" || isSwapOkx; // opera short?
       const st = await loadPos(asset);
       let pos: "long" | "short" | "flat" = st.position;
-      // Consenso mínimo de TFs p/ abrir (configurável; padrão 3, ex.: 3-de-4 com o 4H somado).
+
+      // ── STOP DE RISCO (checado a cada ciclo): se a posição furou o stop_px, fecha a mercado e sai. ──
+      const fillPxOf = async (orderId: string | number) => {
+        const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol: instId, orderId, limit: 20 }, bnbCreds, true);
+        const arr = Array.isArray(tr.body) ? tr.body : []; let q = 0, qv = 0;
+        for (const t of arr) { const p = Number(t.price), tq = Number(t.qty); if (p > 0 && tq > 0) { q += tq; qv += p * tq; } }
+        return q > 0 ? qv / q : null;
+      };
+      if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.stop_px && lastPx > 0) {
+        const breached = pos === "long" ? lastPx <= st.stop_px : lastPx >= st.stop_px;
+        if (breached) {
+          const closeSide = pos === "long" ? "SELL" : "BUY";
+          const rr = await bnb("POST", "/fapi/v1/order", { symbol: instId, side: closeSide, type: "MARKET", quantity: String(st.pos_base_sz), reduceOnly: true, newOrderRespType: "RESULT" }, bnbCreds, true);
+          const okk = !!rr.body?.orderId && !rr.body?.code;
+          const exitPx = (Number(rr.body?.avgPrice) || (okk && rr.body?.orderId ? await fillPxOf(rr.body.orderId) : null)) ?? lastPx;
+          const pnl = st.entry_px ? (exitPx - st.entry_px) * st.pos_base_sz * (pos === "long" ? 1 : -1) : null;
+          await savePos(asset, instId, "flat", 0, null);
+          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: String(st.pos_base_sz), avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] 🛑 STOP ${st.ctrend ? "curto (contra-tendência) " : ""}@ ${st.stop_px}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+          await log("trade", `[${asset}] 🛑 STOP ${st.ctrend ? "curto " : ""}acionado @ ${lastPx} (nível ${st.stop_px})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
+          return { asset, decision: "flat", stopped: true, pnl };
+        }
+      }
+
+      // Consenso mínimo de TFs p/ abrir (configurável; ex.: 3-de-5 com 15m/30m/1H/4H/1D).
       const minVotes = Math.max(2, Math.min(Number(cfg.min_votes ?? 3), total || 3));
       let want: "long" | "short" | null = (longVotes >= minVotes && longVotes > shortVotes) ? "long" : (shortVotes >= minVotes && shortVotes > longVotes) ? "short" : null;
       let gate = "";
+      // Gates básicos (momentum/zona/fluxo). Zona agora é TREND-AWARE: não bloqueia a operação a FAVOR
+      // da tendência (long no premium se o regime é de alta; short no discount se o regime é de baixa).
       if (want === "long") {
         if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
-        else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
+        else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom && regime !== "up") { gate = "preço no premium (caro)"; want = null; }
         else if (flowTilt < -35 && absScore < 55) { gate = `fluxo contra (${flowTilt}) sem parede defendendo`; want = null; }
       } else if (want === "short") {
         if (!fut) { gate = "spot não faz short — use futuros"; want = null; }
         else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
-        else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
+        else if (primary.smc && primary.smc.price <= primary.smc.discount.top && regime !== "down") { gate = "preço no discount (barato)"; want = null; }
         else if (flowTilt > 35 && absScore > -55) { gate = `fluxo contra (+${flowTilt}) sem parede barrando`; want = null; }
       }
+
+      // ── A FAVOR × CONTRA a tendência (o 4H/1D manda no lado). ──
+      const wantDir = want === "long" ? 1 : want === "short" ? -1 : 0;
+      const counterTrend = wantDir !== 0 && regimeDir !== 0 && wantDir !== regimeDir;
+      const CT_FLOW = 30;
+      if (counterTrend) {
+        if (String(cfg.counter_trend ?? "tight") === "block") { gate = `contra a tendência (${regime}) — bloqueado`; want = null; }
+        else {
+          // 'tight': só permite contra-tendência se o FLUXO confirmar forte (stop curto + tamanho menor + sem pirâmide).
+          const flowOk = want === "long" ? flowTilt >= CT_FLOW : flowTilt <= -CT_FLOW;
+          if (!flowOk) { gate = `contra a tendência (${regime}) sem fluxo forte confirmando`; want = null; }
+        }
+      }
+      const isCounter = counterTrend && want != null; // entrada contra-tendência autorizada (stop curto)
+
       let target: "long" | "short" | "flat" = want ?? pos;
       if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && shortVotes >= 2) target = "flat"; }
 
-      // SAÍDA DE PROTEÇÃO (opção A): a posição PERDEU o próprio consenso (< 2 TFs a favor) E o fluxo
-      // virou claramente contra → sai pra FORA sem esperar o voto oposto pleno. Evita segurar no
-      // vermelho quando a leitura deteriorou (numa reversão franca o voto oposto já faz a virada acima).
+      // SAÍDA DE PROTEÇÃO: a posição PERDEU o próprio consenso (< 2 TFs a favor) E o fluxo virou contra.
       let protExit = false;
       const EXIT_FLOW = 25;
       if (fut && target === pos && pos !== "flat") {
         const posVotes = pos === "long" ? longVotes : shortVotes;
         const flowAgainst = pos === "long" ? flowTilt <= -EXIT_FLOW : flowTilt >= EXIT_FLOW;
-        if (posVotes < 2 && flowAgainst) { target = "flat"; protExit = true; gate = `saída de proteção: ${pos === "long" ? "LONG" : "SHORT"} perdeu consenso (${posVotes}/3) e fluxo contra (${flowTilt})`; }
+        if (posVotes < 2 && flowAgainst) { target = "flat"; protExit = true; gate = `saída de proteção: ${pos === "long" ? "LONG" : "SHORT"} perdeu consenso (${posVotes}/${total}) e fluxo contra (${flowTilt})`; }
       }
 
-      // PIRÂMIDE (opcional): novo sinal na MESMA direção da posição → adiciona (até pyramid_max).
+      // PIRÂMIDE: só A FAVOR da tendência, com a posição NO LUCRO e que não seja contra-tendência (nunca faz preço médio pra baixo).
       const pyramidMax = Number(cfg.pyramid_max ?? 2);
-      const pyramidAdd = !!cfg.pyramid && fut && want != null && want === pos && st.adds < pyramidMax;
+      const inProfit = pos !== "flat" && st.entry_px != null && lastPx > 0 ? (pos === "long" ? lastPx > st.entry_px : lastPx < st.entry_px) : false;
+      const pyramidAdd = !!cfg.pyramid && fut && want != null && want === pos && !counterTrend && !st.ctrend && inProfit && st.adds < pyramidMax;
 
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
-      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
-      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, regime, trendBias, counter: isCounter, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, regime, counter: isCounter, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
       const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
@@ -510,7 +561,9 @@ Deno.serve(async (req) => {
           const newSz = st.pos_base_sz + filled;
           const newEntry = st.entry_px != null && st.pos_base_sz > 0 ? (st.entry_px * st.pos_base_sz + addPx * filled) / newSz : addPx;
           const nAdds = st.adds + 1;
-          await savePos(asset, instId, pos, newSz, newEntry, nAdds);
+          const addStopDist = newEntry * Number(cfg.stop_pct ?? 1.5) / 100;
+          const addStop = pos === "long" ? newEntry - addStopDist : newEntry + addStopDist; // trava o stop no novo médio
+          await savePos(asset, instId, pos, newSz, newEntry, nAdds, addStop, false);
           await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] PIRÂMIDE ${nAdds}/${pyramidMax}: +${qtyStr} ${asset} em ${lbl(pos)}${addPx ? ` @ ${addPx}` : ""} · novo médio ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons}). ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: "add", ok: true, bias, conviction, avgPx: addPx, adds: nAdds };
@@ -527,10 +580,11 @@ Deno.serve(async (req) => {
           await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: String(st.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
           pos = "flat";
         }
-        // 2) Abre o alvo (se não for ficar fora).
+        // 2) Abre o alvo (se não for ficar fora). Contra-tendência entra com tamanho menor e stop curto.
         if (target !== "flat") {
           await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
-          const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage);
+          const szMult = isCounter ? 0.5 : 1;
+          const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage) * szMult;
           let qty = roundStep(notionalWanted / lastPx);
           if (qty < minQty) qty = minQty;
           if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
@@ -539,10 +593,12 @@ Deno.serve(async (req) => {
           const res = await place(openSide, qtyStr, false);
           if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
-          await savePos(asset, instId, target, filled, entryPx);
-          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
-          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
-          return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl };
+          const stopPctUse = isCounter ? Number(cfg.ct_stop_pct ?? 0.6) : Number(cfg.stop_pct ?? 1.5);
+          const stopPx = entryPx * (1 - (target === "long" ? 1 : -1) * stopPctUse / 100);
+          await savePos(asset, instId, target, filled, entryPx, 0, stopPx, isCounter);
+          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · stop ${stopPx.toFixed(2)} (${stopPctUse}%) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
+          return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };
         }
         await log("trade", `[${asset}] ${protExit ? "🛡️ SAÍDA DE PROTEÇÃO · " : ""}Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${gate && protExit ? ` [${gate}]` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
         return { asset, decision: "flat", ok: true, bias, conviction, pnl, protExit };

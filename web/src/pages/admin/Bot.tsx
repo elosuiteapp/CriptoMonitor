@@ -26,6 +26,9 @@ interface Config {
   pyramid: boolean;
   pyramid_max: number;
   min_votes: number;
+  stop_pct: number;
+  ct_stop_pct: number;
+  counter_trend: string; // 'block' | 'tight'
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -46,7 +49,7 @@ interface Reading {
   signals: ReadingSig[];
   spot?: number;
   desired?: string;
-  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null } | null;
+  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null; regime?: string; trendBias?: number; counter?: boolean } | null;
 }
 interface OrderRow {
   id: string;
@@ -75,6 +78,8 @@ interface BotPosition {
   pos_base_sz: number;
   entry_px: number | null;
   adds: number | null;
+  stop_px: number | null;
+  ctrend: boolean | null;
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -161,7 +166,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
     const conf = (c as Config) ?? null;
@@ -184,9 +189,9 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -637,9 +642,27 @@ export default function AdminBot() {
             <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
               <input type="number" className={`${input} mt-1`} value={cfg.buy_threshold} onChange={(e) => setCfg({ ...cfg, buy_threshold: Number(e.target.value), sell_threshold: Number(e.target.value) })} />
             </label>
-            <label className="text-xs text-muted-foreground">Consenso mínimo (TFs p/ abrir · máx 4)
-              <input type="number" min="1" max="4" className={`${input} mt-1`} value={cfg.min_votes ?? 3} onChange={(e) => setCfg({ ...cfg, min_votes: Number(e.target.value) })} />
+            <label className="text-xs text-muted-foreground">Consenso mínimo (TFs p/ abrir · de 5)
+              <input type="number" min="1" max="5" className={`${input} mt-1`} value={cfg.min_votes ?? 3} onChange={(e) => setCfg({ ...cfg, min_votes: Number(e.target.value) })} />
             </label>
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Stop de risco (%)
+                <input type="number" step="0.1" min="0" className={`${input} mt-1`} value={cfg.stop_pct ?? 1.5} onChange={(e) => setCfg({ ...cfg, stop_pct: Number(e.target.value) })} />
+              </label>
+            )}
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Contra a tendência (4H+1D)
+                <select className={`${input} mt-1`} value={cfg.counter_trend ?? "tight"} onChange={(e) => setCfg({ ...cfg, counter_trend: e.target.value })}>
+                  <option value="tight">Permitir com stop curto</option>
+                  <option value="block">Bloquear (só a favor)</option>
+                </select>
+              </label>
+            )}
+            {isFut && (cfg.counter_trend ?? "tight") !== "block" && (
+              <label className="text-xs text-muted-foreground">Stop curto (contra-tendência · %)
+                <input type="number" step="0.1" min="0" className={`${input} mt-1`} value={cfg.ct_stop_pct ?? 0.6} onChange={(e) => setCfg({ ...cfg, ct_stop_pct: Number(e.target.value) })} />
+              </label>
+            )}
             {isFut && (
               <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
                 <input type="checkbox" checked={!!cfg.pyramid} onChange={(e) => setCfg({ ...cfg, pyramid: e.target.checked })} className="h-4 w-4 rounded border-border" />
@@ -651,10 +674,10 @@ export default function AdminBot() {
             )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. Consenso de estrutura SMC por timeframe (<strong>15m/30m/1H/4H</strong>) — swing/BOS/CHoCH, zonas, order blocks e <strong>FVG/imbalance</strong> — é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong>, CVD, liquidações, gamma/HIRO e ETF confirmam. {isFut ? <>Nos futuros abre <strong>LONG</strong> no viés de alta e <strong>SHORT</strong> no de baixa; nunca compra caindo/no premium nem vende subindo/no discount.</> : <>Só compra com a estrutura a favor, fora do premium e sem estar caindo.</>} Compra/long se viés ≥ +{cfg.buy_threshold}; vende/short se ≤ −{cfg.sell_threshold}.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência. Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e <strong>FVG/imbalance</strong>. A <strong>tendência (4H+1D) manda no lado</strong>: <strong>a favor</strong> opera normal (pirâmide só no lucro); <strong>contra</strong> só entra com fluxo forte, <strong>stop curto e tamanho menor</strong> (ou bloqueia). Zona (discount/premium) só vira viés <strong>com confirmação</strong> de estrutura. Book, absorção, CVD, liquidações, gamma/HIRO e ETF confirmam; <strong>stop de risco</strong> em toda posição. Abre com consenso ≥ {cfg.min_votes ?? 3}/5 e viés ≥ ±{cfg.buy_threshold}.</span>
           </div>
         </div>
       )}
@@ -673,6 +696,9 @@ export default function AdminBot() {
             {r.structure && (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
                 <span className="font-semibold uppercase tracking-wide text-muted-foreground">Por timeframe</span>
+                {r.structure.regime && (
+                  <span className={`rounded px-1.5 py-0.5 font-bold ${r.structure.regime === "up" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : r.structure.regime === "down" ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Tendência dos TFs maiores (4H+1D) — manda no lado da operação">tendência: {r.structure.regime === "up" ? "ALTA" : r.structure.regime === "down" ? "BAIXA" : "range"}{typeof r.structure.trendBias === "number" ? ` (${r.structure.trendBias >= 0 ? "+" : ""}${r.structure.trendBias})` : ""}</span>
+                )}
                 {r.structure.consensus && (
                   <span className="text-muted-foreground">consenso: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{r.structure.consensus.bull}↑</span> · <span className="font-semibold text-rose-600 dark:text-rose-400">{r.structure.consensus.bear}↓</span> de {r.structure.consensus.total}</span>
                 )}
@@ -683,6 +709,7 @@ export default function AdminBot() {
                   <span className="text-muted-foreground" title="Fluxo compartilhado (CVD, gamma, ETF, paredes, absorção). Não dispara sozinho — CONFIRMA e veta a entrada se estiver forte contra.">confirmação (fluxo): <span className={`num font-semibold ${r.structure.flowTilt > 8 ? "text-emerald-600 dark:text-emerald-400" : r.structure.flowTilt < -8 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{r.structure.flowTilt >= 0 ? "+" : ""}{r.structure.flowTilt}</span></span>
                 )}
                 {r.structure.zone && <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>}
+                {r.structure.counter && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400" title="Entrada contra a tendência do 4H/1D: stop curto e tamanho reduzido">⚠ contra-tendência</span>}
               </div>
             )}
             <div className="grid grid-cols-3 gap-3">
@@ -814,13 +841,13 @@ export default function AdminBot() {
                       <span className="text-sm font-bold text-foreground">{p.asset}</span>
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${long ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/20 text-rose-600 dark:text-rose-400"}`}>{long ? "▲ LONG" : "▼ SHORT"}{isFut && cfg?.leverage ? ` ${cfg.leverage}x` : ""}</span>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />rodando</div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold"><span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />rodando</span>{p.ctrend && <span className="rounded bg-amber-500/15 px-1 py-0.5 text-amber-600 dark:text-amber-400" title="Aberta contra a tendência — stop curto e tamanho reduzido">contra-tend.</span>}</div>
                     {live ? (
                       <div className={`num mt-1 text-lg font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {quote}{movePct != null && <span className="ml-1 text-[11px] font-medium">({live.uPnl >= 0 ? "+" : ""}{movePct.toFixed(2)}%)</span>}</div>
                     ) : (
                       <div className="mt-1 text-[11px] text-muted-foreground">PnL ao vivo indisponível</div>
                     )}
-                    <div className="mt-1 text-[10px] text-muted-foreground">entrada <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{mark ? <> · agora <span className="num">{num(mark, pdec)}</span></> : null}{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">entrada <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{mark ? <> · agora <span className="num">{num(mark, pdec)}</span></> : null}{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}{p.stop_px != null && <span className="ml-1 text-rose-500/80" title="Nível de stop de risco (fecha se furar)"> · stop <span className="num">{num(p.stop_px, pdec)}</span></span>}</div>
                     {p.last_bias != null && (
                       <div className="mt-0.5 text-[10px] text-muted-foreground">viés atual <span className={`num font-semibold ${p.last_bias > 0 ? "text-emerald-600 dark:text-emerald-400" : p.last_bias < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>{p.last_bias >= 0 ? "+" : ""}{p.last_bias}</span></div>
                     )}
@@ -833,7 +860,7 @@ export default function AdminBot() {
           {flatAssets.length > 0 && (
             <p className="mt-3 text-[11px] text-muted-foreground">Fora do mercado: <span className="font-medium text-foreground">{flatAssets.join(" · ")}</span></p>
           )}
-          <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (voto 2-de-3 por timeframe). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (consenso de 5 timeframes; a tendência 4H+1D manda no lado). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
         </div>
       )}
 
