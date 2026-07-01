@@ -64,6 +64,15 @@ interface LogRow {
   message: string;
   created_at: string;
 }
+interface BotPosition {
+  asset: string;
+  inst_id: string | null;
+  position: string;
+  pos_base_sz: number;
+  entry_px: number | null;
+  last_bias: number | null;
+  last_decision: string | null;
+}
 
 const BARS = ["15m", "1H", "4H", "1D"];
 const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
@@ -110,6 +119,8 @@ export default function AdminBot() {
   const [totalEq, setTotalEq] = useState<string | null>(null);
   const [candles, setCandles] = useState<BotCandle[]>([]);
   const [posInfo, setPosInfo] = useState<{ uPnl: number | null; markPx: number | null; entryPx: number | null } | null>(null);
+  const [positions, setPositions] = useState<BotPosition[]>([]);
+  const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
 
   // conexão (chaves)
   const [showKeys, setShowKeys] = useState(false);
@@ -124,17 +135,19 @@ export default function AdminBot() {
   const [mPx, setMPx] = useState("");
 
   const loadBase = useCallback(async () => {
-    const [{ data: st }, { data: c }, { data: ord }, { data: lg }] = await Promise.all([
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, last_bias, last_decision").order("asset"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
     setCfg(conf);
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
+    setPositions((pos as BotPosition[] | null) ?? []);
   }, []);
 
   useEffect(() => {
@@ -144,14 +157,16 @@ export default function AdminBot() {
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
   const loadLive = useCallback(async () => {
-    const [{ data: c }, { data: ord }, { data: lg }] = await Promise.all([
+    const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, last_bias, last_decision").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
+    setPositions((pos as BotPosition[] | null) ?? []);
   }, []);
 
   const loadChart = useCallback(async (config: Config) => {
@@ -187,6 +202,24 @@ export default function AdminBot() {
     const id = setInterval(poll, 15000);
     return () => { active = false; clearInterval(id); };
   }, [connected, cfg?.position, cfg?.inst_id, cfg?.venue]);
+
+  // PnL ao vivo de TODAS as moedas (multi-ativo): 1 call traz todas as posições da Binance.
+  useEffect(() => {
+    if (!connected || cfg?.venue !== "binance") { setLivePos({}); return; }
+    let active = true;
+    const poll = async () => {
+      try {
+        const r = await invoke("positions", {}, "binance-bot");
+        const arr = (r?.data as { symbol?: string; unRealizedProfit?: string; markPrice?: string; positionAmt?: string }[]) ?? [];
+        const map: Record<string, { uPnl: number; markPx: number }> = {};
+        for (const p of arr) { if (p.symbol && Math.abs(Number(p.positionAmt)) > 0) map[p.symbol] = { uPnl: Number(p.unRealizedProfit), markPx: Number(p.markPrice) || 0 }; }
+        if (active) setLivePos(map);
+      } catch { /* ignora */ }
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { active = false; clearInterval(id); };
+  }, [connected, cfg?.venue]);
 
   // Painel ao vivo: patrimônio + gráfico + leitura/posição/ordens/diário a cada 20s (silencioso).
   useEffect(() => {
@@ -603,6 +636,44 @@ export default function AdminBot() {
           </div>
         </div>
       </div>
+
+      {/* Posições por moeda (multi-ativo): o robô opera BTC/ETH/SOL/BNB de forma independente. */}
+      {positions.length > 0 && (
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">Posições por moeda</h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {positions.map((p) => {
+              const live = p.inst_id ? livePos[p.inst_id] : undefined;
+              const flat = p.position === "flat";
+              const pdec = p.entry_px != null && p.entry_px >= 1000 ? 1 : p.entry_px != null && p.entry_px >= 1 ? 2 : 4;
+              return (
+                <div key={p.asset} className="rounded-lg border border-border/70 bg-background/40 p-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-foreground">{p.asset}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${flat ? "bg-muted text-muted-foreground" : p.position === "long" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{flat ? "fora" : p.position === "long" ? "long" : "short"}</span>
+                  </div>
+                  {!flat ? (
+                    <>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">entrada @ <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span></div>
+                      {live ? (
+                        <div className={`num text-sm font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {cfg?.quote_ccy}</div>
+                      ) : (
+                        <div className="text-[10px] text-muted-foreground">PnL —</div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">sem posição</div>
+                  )}
+                  {p.last_bias != null && (
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">viés <span className={`num font-semibold ${p.last_bias > 0 ? "text-emerald-600 dark:text-emerald-400" : p.last_bias < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>{p.last_bias >= 0 ? "+" : ""}{p.last_bias}</span></div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground">Cada moeda vota e opera sozinha (voto 2-de-3 por timeframe). PnL ao vivo da Binance demo.</p>
+        </div>
+      )}
 
       {/* Histórico de ordens */}
       <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">

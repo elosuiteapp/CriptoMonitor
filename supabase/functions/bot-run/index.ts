@@ -344,207 +344,230 @@ Deno.serve(async (req) => {
   else if (!creds.key || !creds.secret || !creds.passphrase) { await log("error", "Sem credenciais da OKX demo."); return json(400, { error: "sem credenciais" }); }
 
   try {
-    const base = cfg.base_ccy;
-    const [{ data: snaps }, { data: imbRows }, { data: wallRows }, { data: pressRows }] = await Promise.all([
-      admin.from("market_snapshot").select("payload, ts").eq("asset", base).order("ts", { ascending: false }).limit(6),
-      admin.from("orderbook_imbalance").select("exchange, bid_near_usd, ask_near_usd, bid_wide_usd, ask_wide_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(30),
-      admin.from("orderbook_walls").select("side, price, notional_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(80),
-      admin.rpc("get_book_pressure_windows", { p_asset: base }), // pressão do book por janela (48h/12h/30m) p/ leitura por TF
-    ]);
-    const snap = (snaps ?? [])[0];
-    if (!snap?.payload) { await log("warn", `Sem snapshot de ${base} — robô aguardando dados.`); return json(200, { skipped: "sem dados de mercado" }); }
-    let cvdSum: number | null = null;
-    for (const s of (snaps ?? [])) { const pr = (s.payload as any)?.price ?? {}; for (const ex of ["binance", "okx", "coinbase"]) { const v = N(pr?.[ex]?.cvd); if (v != null) cvdSum = (cvdSum ?? 0) + v; } }
+    // ════════ MULTI-MOEDA: no binance opera as 4 majors (dados completos). OKX legado = 1 ativo. ════════
+    const ASSETS = venue === "binance" ? ["BTC", "ETH", "SOL", "BNB"] : [String(cfg.base_ccy)];
+    const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
+    // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
+    const loadPos = async (asset: string) => {
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null };
+    };
+    const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null) => {
+      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
+    };
+    const saveReading = async (asset: string, patch: Record<string, unknown>) => {
+      await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
+      if (asset === "BTC") await admin.from("bot_config").update(patch).eq("id", 1);
+    };
 
-    // Preço + velas por TF (Binance futures testnet ou OKX), normalizados p/ [time,o,h,l,c].
-    let lastPx = 0;
-    let candleRows: string[][][] = [];
-    if (venue === "binance") {
-      const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: cfg.inst_id }, bnbCreds, false);
-      lastPx = Number(tkb.body?.price) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
-      const sets = await Promise.all(TFS.map((tf) => bnb("GET", "/fapi/v1/klines", { symbol: cfg.inst_id, interval: BNB_INTERVAL[tf] ?? "1h", limit: 300 }, bnbCreds, false)));
-      candleRows = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4])]));
-    } else {
-      const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
-      lastPx = Number((tk.data as { last?: string }[])?.[0]?.last) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
-      const sets = await Promise.all(TFS.map((tf) => okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(cfg.inst_id)}&bar=${tf}&limit=300`, null, creds)));
-      candleRows = sets.map((s) => ((s.data as string[][]) ?? []).slice().reverse().map((r) => [r[0], r[1], r[2], r[3], r[4]]));
-    }
-    // Estrutura por TF: cada timeframe lê a sua + momentum dele.
-    const tfReads: TfRead[] = TFS.map((tf, i) => {
-      const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
-      const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
-      const cl = cs.map((c) => c.close);
-      const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
-      return { tf, smc, mom, bias: structuralBias(smc, mom) };
-    });
-    const primary = tfReads[0];
+    const processAsset = async (asset: string, instId: string) => {
+      const base = asset;
+      const [{ data: snaps }, { data: imbRows }, { data: wallRows }, { data: pressRows }] = await Promise.all([
+        admin.from("market_snapshot").select("payload, ts").eq("asset", base).order("ts", { ascending: false }).limit(6),
+        admin.from("orderbook_imbalance").select("exchange, bid_near_usd, ask_near_usd, bid_wide_usd, ask_wide_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(30),
+        admin.from("orderbook_walls").select("side, price, notional_usd, ts").eq("asset", base).order("ts", { ascending: false }).limit(80),
+        admin.rpc("get_book_pressure_windows", { p_asset: base }),
+      ]);
+      const snap = (snaps ?? [])[0];
+      if (!snap?.payload) { return { asset, skipped: "sem dados de mercado" }; }
+      let cvdSum: number | null = null;
+      for (const s of (snaps ?? [])) { const pr = (s.payload as any)?.price ?? {}; for (const ex of ["binance", "okx", "coinbase"]) { const v = N(pr?.[ex]?.cvd); if (v != null) cvdSum = (cvdSum ?? 0) + v; } }
 
-    const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
-    const { bias, signals, absScore, perTf, flowTilt } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
+      // Preço + velas por TF (Binance futures testnet ou OKX), normalizados p/ [time,o,h,l,c].
+      let lastPx = 0;
+      let candleRows: string[][][] = [];
+      if (venue === "binance") {
+        const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: instId }, bnbCreds, false);
+        lastPx = Number(tkb.body?.price) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
+        const sets = await Promise.all(TFS.map((tf) => bnb("GET", "/fapi/v1/klines", { symbol: instId, interval: BNB_INTERVAL[tf] ?? "1h", limit: 300 }, bnbCreds, false)));
+        candleRows = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4])]));
+      } else {
+        const tk = await okx("GET", `/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`, null, creds);
+        lastPx = Number((tk.data as { last?: string }[])?.[0]?.last) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
+        const sets = await Promise.all(TFS.map((tf) => okx("GET", `/api/v5/market/candles?instId=${encodeURIComponent(instId)}&bar=${tf}&limit=300`, null, creds)));
+        candleRows = sets.map((s) => ((s.data as string[][]) ?? []).slice().reverse().map((r) => [r[0], r[1], r[2], r[3], r[4]]));
+      }
+      // Estrutura por TF: cada timeframe lê a sua + momentum dele.
+      const tfReads: TfRead[] = TFS.map((tf, i) => {
+        const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
+        const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
+        const cl = cs.map((c) => c.close);
+        const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
+        return { tf, smc, mom, bias: structuralBias(smc, mom) };
+      });
+      const primary = tfReads[0];
 
-    // ── DIREÇÃO DESEJADA — VOTO POR TIMEFRAME (2 de 3) ──
-    // Cada TF vota comprado/vendido se o PLACAR dele (estrutura + pressão do horizonte)
-    // cruza o limiar. ≥2 dos 3 no mesmo lado → dispara. O fluxo compartilhado (flowTilt)
-    // CONFIRMA: veta a entrada se estiver forte contra (e sem parede a favor).
-    const buyTh = Number(cfg.buy_threshold), sellTh = Number(cfg.sell_threshold);
-    const longVotes = perTf.filter((t) => t.bias >= buyTh).length;
-    const shortVotes = perTf.filter((t) => t.bias <= -sellTh).length;
-    const bull = longVotes, bear = shortVotes, total = perTf.length;
-    const conviction = total ? Math.round((Math.max(longVotes, shortVotes) / total) * 100) : 0;
+      const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
+      const { bias, signals, absScore, perTf, flowTilt } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
 
-    const isSwapOkx = String(cfg.inst_id).toUpperCase().endsWith("-SWAP");
-    const fut = venue === "binance" || isSwapOkx; // opera short?
-    let pos: "long" | "short" | "flat" = cfg.position === "long" ? "long" : cfg.position === "short" ? "short" : "flat";
-    let want: "long" | "short" | null = (longVotes >= 2 && longVotes > shortVotes) ? "long" : (shortVotes >= 2 && shortVotes > longVotes) ? "short" : null;
-    let gate = "";
-    if (want === "long") {
-      if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
-      else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
-      else if (flowTilt < -35 && absScore < 55) { gate = `fluxo contra (${flowTilt}) sem parede defendendo`; want = null; }
-    } else if (want === "short") {
-      if (!fut) { gate = "spot não faz short — use futuros"; want = null; }
-      else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
-      else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
-      else if (flowTilt > 35 && absScore > -55) { gate = `fluxo contra (+${flowTilt}) sem parede barrando`; want = null; }
-    }
-    // Alvo: futuros mantém na zona neutra; spot precisa SAIR do long quando o voto vira baixa (não shorta).
-    let target: "long" | "short" | "flat" = want ?? pos;
-    if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && shortVotes >= 2) target = "flat"; }
+      // ── VOTO POR TIMEFRAME (2 de 3) + fluxo como confirmação ──
+      const buyTh = Number(cfg.buy_threshold), sellTh = Number(cfg.sell_threshold);
+      const longVotes = perTf.filter((t) => t.bias >= buyTh).length;
+      const shortVotes = perTf.filter((t) => t.bias <= -sellTh).length;
+      const bull = longVotes, bear = shortVotes, total = perTf.length;
+      const conviction = total ? Math.round((Math.max(longVotes, shortVotes) / total) * 100) : 0;
 
-    const decision = !cfg.enabled ? "preview" : target === pos ? "hold" : target;
-    const structure = { consensus: { bull, bear, total }, perTf, flowTilt, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
-    const reading = { bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
-    await admin.from("bot_config").update({ last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() }).eq("id", 1);
+      const isSwapOkx = String(instId).toUpperCase().endsWith("-SWAP");
+      const fut = venue === "binance" || isSwapOkx; // opera short?
+      const st = await loadPos(asset);
+      let pos: "long" | "short" | "flat" = st.position;
+      let want: "long" | "short" | null = (longVotes >= 2 && longVotes > shortVotes) ? "long" : (shortVotes >= 2 && shortVotes > longVotes) ? "short" : null;
+      let gate = "";
+      if (want === "long") {
+        if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
+        else if (primary.smc && primary.smc.price >= primary.smc.premium.bottom) { gate = "preço no premium (caro)"; want = null; }
+        else if (flowTilt < -35 && absScore < 55) { gate = `fluxo contra (${flowTilt}) sem parede defendendo`; want = null; }
+      } else if (want === "short") {
+        if (!fut) { gate = "spot não faz short — use futuros"; want = null; }
+        else if (primary.mom > 0.003) { gate = `subindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
+        else if (primary.smc && primary.smc.price <= primary.smc.discount.top) { gate = "preço no discount (barato)"; want = null; }
+        else if (flowTilt > 35 && absScore > -55) { gate = `fluxo contra (+${flowTilt}) sem parede barrando`; want = null; }
+      }
+      let target: "long" | "short" | "flat" = want ?? pos;
+      if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && shortVotes >= 2) target = "flat"; }
 
-    const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
-    const cons = `consenso ${bull}↑/${bear}↓`;
-    const lbl = (d: string) => d === "long" ? "LONG" : d === "short" ? "SHORT" : "fora";
+      const decision = !cfg.enabled ? "preview" : target === pos ? "hold" : target;
+      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+      await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
-    // Preview (desligado) ou alvo == posição atual → não opera.
-    if (!cfg.enabled || target === pos) {
-      const head = !cfg.enabled
-        ? `Preview: viés ${bias >= 0 ? "+" : ""}${bias} (${cons}) → ${target === pos ? "manteria " + lbl(pos) : "abriria " + lbl(target)}${gate ? ` [${gate}]` : ""}`
-        : `Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons}) → mantém ${lbl(pos)}${gate ? ` [segurou: ${gate}]` : ""}`;
-      await log("info", `${head}. ${top}`, reading);
-      return json(200, { decision: !cfg.enabled ? "preview" : "hold", bias, conviction, signals, structure });
-    }
+      const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
+      const cons = `consenso ${bull}↑/${bear}↓`;
+      const lbl = (d: string) => d === "long" ? "LONG" : d === "short" ? "SHORT" : "fora";
 
-    // ════════ EXECUÇÃO — BINANCE FUTURES TESTNET (long/short, tamanho em USDT) ════════
-    if (venue === "binance") {
-      const info = await bnb("GET", "/fapi/v1/exchangeInfo", {}, bnbCreds, false);
-      const symInfo = ((info.body?.symbols as any[]) ?? []).find((s) => s.symbol === cfg.inst_id) ?? {};
-      const lot = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "LOT_SIZE") ?? {};
-      const notf = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "MIN_NOTIONAL") ?? {};
-      const stepSz = Number(lot.stepSize) || 0.001, minQty = Number(lot.minQty) || 0.001, minNot = Number(notf.notional) || 100;
-      const ss = String(stepSz); const qDec = ss.includes(".") ? ss.replace(/0+$/, "").split(".")[1].length : 0;
-      const roundStep = (q: number) => Math.floor(q / stepSz) * stepSz;
-      const place = async (side: "BUY" | "SELL", qty: string, reduceOnly: boolean) => {
-        const params: Record<string, string | number | boolean> = { symbol: cfg.inst_id, side, type: "MARKET", quantity: qty, newOrderRespType: "RESULT" };
-        if (reduceOnly) params.reduceOnly = true;
-        const r = await bnb("POST", "/fapi/v1/order", params, bnbCreds, true);
-        const okk = !!r.body?.orderId && r.body?.status !== "REJECTED" && !r.body?.code;
-        let ap = Number(r.body?.avgPrice) || null;
-        const fz = Number(r.body?.executedQty) || null;
-        // Binance demo costuma devolver avgPrice=0 no RESULT → busca o preço real dos fills.
-        if (okk && (!ap || ap === 0) && r.body?.orderId) {
-          const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol: cfg.inst_id, orderId: r.body.orderId, limit: 20 }, bnbCreds, true);
-          const arr = Array.isArray(tr.body) ? tr.body : [];
-          let q = 0, qv = 0;
-          for (const t of arr) { const p = Number(t.price), tq = Number(t.qty); if (p > 0 && tq > 0) { q += tq; qv += p * tq; } }
-          if (q > 0) ap = qv / q;
+      // Preview (desligado) ou alvo == posição atual → não opera.
+      if (!cfg.enabled || target === pos) {
+        const head = !cfg.enabled
+          ? `[${asset}] Preview: viés ${bias >= 0 ? "+" : ""}${bias} (${cons}) → ${target === pos ? "manteria " + lbl(pos) : "abriria " + lbl(target)}${gate ? ` [${gate}]` : ""}`
+          : `[${asset}] Leitura: viés ${bias >= 0 ? "+" : ""}${bias} (conv ${conviction}%, ${cons}) → mantém ${lbl(pos)}${gate ? ` [segurou: ${gate}]` : ""}`;
+        await log("info", `${head}. ${top}`, reading);
+        return { asset, decision: !cfg.enabled ? "preview" : "hold", bias, conviction };
+      }
+
+      // ════════ EXECUÇÃO — BINANCE FUTURES TESTNET (long/short, tamanho em USDT) ════════
+      if (venue === "binance") {
+        const info = await bnb("GET", "/fapi/v1/exchangeInfo", {}, bnbCreds, false);
+        const symInfo = ((info.body?.symbols as any[]) ?? []).find((s) => s.symbol === instId) ?? {};
+        const lot = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "LOT_SIZE") ?? {};
+        const notf = ((symInfo.filters as any[]) ?? []).find((f) => f.filterType === "MIN_NOTIONAL") ?? {};
+        const stepSz = Number(lot.stepSize) || 0.001, minQty = Number(lot.minQty) || 0.001, minNot = Number(notf.notional) || 100;
+        const ss = String(stepSz); const qDec = ss.includes(".") ? ss.replace(/0+$/, "").split(".")[1].length : 0;
+        const roundStep = (q: number) => Math.floor(q / stepSz) * stepSz;
+        const place = async (side: "BUY" | "SELL", qty: string, reduceOnly: boolean) => {
+          const params: Record<string, string | number | boolean> = { symbol: instId, side, type: "MARKET", quantity: qty, newOrderRespType: "RESULT" };
+          if (reduceOnly) params.reduceOnly = true;
+          const r = await bnb("POST", "/fapi/v1/order", params, bnbCreds, true);
+          const okk = !!r.body?.orderId && r.body?.status !== "REJECTED" && !r.body?.code;
+          let ap = Number(r.body?.avgPrice) || null;
+          const fz = Number(r.body?.executedQty) || null;
+          // Binance demo costuma devolver avgPrice=0 no RESULT → busca o preço real dos fills.
+          if (okk && (!ap || ap === 0) && r.body?.orderId) {
+            const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol: instId, orderId: r.body.orderId, limit: 20 }, bnbCreds, true);
+            const arr = Array.isArray(tr.body) ? tr.body : [];
+            let q = 0, qv = 0;
+            for (const t of arr) { const p = Number(t.price), tq = Number(t.qty); if (p > 0 && tq > 0) { q += tq; qv += p * tq; } }
+            if (q > 0) ap = qv / q;
+          }
+          return { r: r.body, okk, ap, fz, sMsg: r.body?.msg ?? null };
+        };
+        let pnl: number | null = null;
+        // 1) Fecha posição atual (se houver).
+        if (pos !== "flat") {
+          const closeSide = pos === "long" ? "SELL" : "BUY";
+          const res = await place(closeSide, String(st.pos_base_sz), true);
+          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: String(st.pos_base_sz), ok: false, result: res.r, note: `[${asset}] falha ao fechar` }); await log("error", `[${asset}] Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
+          const exitPx = res.ap ?? lastPx;
+          if (st.entry_px) pnl = (exitPx - st.entry_px) * st.pos_base_sz * (pos === "long" ? 1 : -1);
+          await savePos(asset, instId, "flat", 0, null);
+          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: String(st.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+          pos = "flat";
         }
-        return { r: r.body, okk, ap, fz, sMsg: r.body?.msg ?? null };
+        // 2) Abre o alvo (se não for ficar fora).
+        if (target !== "flat") {
+          await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
+          const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage);
+          let qty = roundStep(notionalWanted / lastPx);
+          if (qty < minQty) qty = minQty;
+          if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
+          const qtyStr = qty.toFixed(qDec);
+          const openSide = target === "long" ? "BUY" : "SELL";
+          const res = await place(openSide, qtyStr, false);
+          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
+          const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
+          await savePos(asset, instId, target, filled, entryPx);
+          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
+          return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl };
+        }
+        await log("trade", `[${asset}] Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
+        return { asset, decision: "flat", ok: true, bias, conviction, pnl };
+      }
+
+      // ── EXECUÇÃO OKX (legado spot/swap) ──
+      const isSwap = isSwapOkx;
+      // Spec do contrato p/ converter USDT → nº de contratos.
+      let ctVal = 1, lotSz = 0.000001, minSz = 0, szDec = 6;
+      if (isSwap) {
+        const inst = await okx("GET", `/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`, null, creds);
+        const spec = ((inst.data as Record<string, string>[]) ?? [])[0] ?? {};
+        ctVal = Number(spec.ctVal) || 0.01; lotSz = Number(spec.lotSz) || 0.1; minSz = Number(spec.minSz) || lotSz;
+        szDec = (String(lotSz).split(".")[1] || "").length;
+      }
+      const place = async (side: "buy" | "sell", sz: string, reduceOnly: boolean) => {
+        const body: Record<string, unknown> = isSwap
+          ? { instId, tdMode: cfg.mgn_mode, side, ordType: "market", sz, ...(reduceOnly ? { reduceOnly: true } : {}) }
+          : { instId, tdMode: "cash", side, ordType: "market", sz };
+        const r = await okx("POST", "/api/v5/trade/order", body, creds);
+        const okk = String(r.code ?? "") === "0";
+        const oid = (r.data as { ordId?: string }[])?.[0]?.ordId;
+        let ap: number | null = null, fz: number | null = null;
+        if (okk && oid) { const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(instId)}&ordId=${oid}`, null, creds); const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0]; ap = d?.avgPx ? Number(d.avgPx) : null; fz = d?.accFillSz ? Number(d.accFillSz) : null; }
+        const sMsg = (r.data as { sMsg?: string }[])?.[0]?.sMsg ?? r.msg;
+        return { r, okk, ap, fz, sMsg };
       };
+
       let pnl: number | null = null;
       // 1) Fecha posição atual (se houver).
       if (pos !== "flat") {
-        const closeSide = pos === "long" ? "SELL" : "BUY";
-        const res = await place(closeSide, String(cfg.pos_base_sz), true);
-        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: res.r, note: "falha ao fechar" }); await log("error", `Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg }); }
+        const closeSide = pos === "long" ? "sell" : "buy";
+        const res = await place(closeSide, String(st.pos_base_sz), true);
+        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide, ord_type: "market", sz: String(st.pos_base_sz), ok: false, result: res.r, note: `[${asset}] falha ao fechar` }); await log("error", `[${asset}] Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
         const exitPx = res.ap ?? lastPx;
-        if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (pos === "long" ? 1 : -1);
-        await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
-        await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+        if (st.entry_px) pnl = (exitPx - st.entry_px) * st.pos_base_sz * (isSwap ? ctVal : 1) * (pos === "long" ? 1 : -1);
+        await savePos(asset, instId, "flat", 0, null);
+        await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide, ord_type: "market", sz: String(st.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
         pos = "flat";
       }
       // 2) Abre o alvo (se não for ficar fora).
       if (target !== "flat") {
-        await bnb("POST", "/fapi/v1/leverage", { symbol: cfg.inst_id, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
-        const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage);
-        let qty = roundStep(notionalWanted / lastPx);
-        if (qty < minQty) qty = minQty;
-        if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
-        const qtyStr = qty.toFixed(qDec);
-        const openSide = target === "long" ? "BUY" : "SELL";
-        const res = await place(openSide, qtyStr, false);
-        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
-        const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
-        await admin.from("bot_config").update({ position: target, pos_base_sz: filled, entry_px: entryPx }).eq("id", 1);
-        await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
-        await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${cfg.base_ccy} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
-        return json(200, { decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, signals, structure });
+        if (isSwap) await okx("POST", "/api/v5/account/set-leverage", { instId, lever: String(cfg.leverage), mgnMode: cfg.mgn_mode }, creds);
+        let sz: string, notional = Number(cfg.order_quote_sz);
+        if (isSwap) {
+          notional = Number(cfg.order_quote_sz) * Number(cfg.leverage);
+          let contracts = Math.floor((notional / (lastPx * ctVal)) / lotSz) * lotSz;
+          if (contracts < minSz) contracts = minSz;
+          sz = contracts.toFixed(szDec); notional = contracts * lastPx * ctVal;
+        } else { sz = String(cfg.order_quote_sz); }
+        const openSide = target === "long" ? "buy" : "sell";
+        const res = await place(openSide, sz, false);
+        if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide, ord_type: "market", sz, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
+        await savePos(asset, instId, target, res.fz ?? Number(sz), res.ap ?? lastPx);
+        await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide, ord_type: "market", sz, avg_px: res.ap ?? lastPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ~$${notional.toFixed(0)}${isSwap ? ` (${cfg.leverage}x)` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+        await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${sz}${isSwap ? ` ct ~$${notional.toFixed(0)}` : ` ${cfg.quote_ccy}`}${res.ap ? ` @ ${res.ap}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, code: res.r.code, msg: res.r.msg });
+        return { asset, decision: target, ok: true, bias, conviction, avgPx: res.ap, notional, pnl };
       }
-      await log("trade", `Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
-      return json(200, { decision: "flat", ok: true, bias, conviction, pnl, signals, structure });
-    }
-
-    // ── EXECUÇÃO OKX (legado spot/swap) ──
-    const isSwap = isSwapOkx;
-    // Spec do contrato p/ converter USDT → nº de contratos.
-    let ctVal = 1, lotSz = 0.000001, minSz = 0, szDec = 6;
-    if (isSwap) {
-      const inst = await okx("GET", `/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(cfg.inst_id)}`, null, creds);
-      const spec = ((inst.data as Record<string, string>[]) ?? [])[0] ?? {};
-      ctVal = Number(spec.ctVal) || 0.01; lotSz = Number(spec.lotSz) || 0.1; minSz = Number(spec.minSz) || lotSz;
-      szDec = (String(lotSz).split(".")[1] || "").length;
-    }
-    const place = async (side: "buy" | "sell", sz: string, reduceOnly: boolean) => {
-      const body: Record<string, unknown> = isSwap
-        ? { instId: cfg.inst_id, tdMode: cfg.mgn_mode, side, ordType: "market", sz, ...(reduceOnly ? { reduceOnly: true } : {}) }
-        : { instId: cfg.inst_id, tdMode: "cash", side, ordType: "market", sz };
-      const r = await okx("POST", "/api/v5/trade/order", body, creds);
-      const okk = String(r.code ?? "") === "0";
-      const oid = (r.data as { ordId?: string }[])?.[0]?.ordId;
-      let ap: number | null = null, fz: number | null = null;
-      if (okk && oid) { const det = await okx("GET", `/api/v5/trade/order?instId=${encodeURIComponent(cfg.inst_id)}&ordId=${oid}`, null, creds); const d = (det.data as { avgPx?: string; accFillSz?: string }[])?.[0]; ap = d?.avgPx ? Number(d.avgPx) : null; fz = d?.accFillSz ? Number(d.accFillSz) : null; }
-      const sMsg = (r.data as { sMsg?: string }[])?.[0]?.sMsg ?? r.msg;
-      return { r, okk, ap, fz, sMsg };
+      // target === flat: já fechou acima.
+      await log("trade", `[${asset}] Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
+      return { asset, decision: "flat", ok: true, bias, conviction, pnl };
     };
 
-    let pnl: number | null = null;
-    // 1) Fecha posição atual (se houver).
-    if (pos !== "flat") {
-      const closeSide = pos === "long" ? "sell" : "buy";
-      const res = await place(closeSide, String(cfg.pos_base_sz), true);
-      if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), ok: false, result: res.r, note: "falha ao fechar" }); await log("error", `Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg }); }
-      const exitPx = res.ap ?? lastPx;
-      if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (isSwap ? ctVal : 1) * (pos === "long" ? 1 : -1);
-      await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
-      await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-      pos = "flat";
+    // Roda cada moeda de forma independente; uma falha não derruba as outras.
+    const results: unknown[] = [];
+    for (const asset of ASSETS) {
+      try { results.push(await processAsset(asset, instOf(asset))); }
+      catch (e) { await log("error", `[${asset}] erro no processamento.`, { error: e instanceof Error ? e.message : String(e) }); results.push({ asset, error: e instanceof Error ? e.message : String(e) }); }
     }
-    // 2) Abre o alvo (se não for ficar fora).
-    if (target !== "flat") {
-      if (isSwap) await okx("POST", "/api/v5/account/set-leverage", { instId: cfg.inst_id, lever: String(cfg.leverage), mgnMode: cfg.mgn_mode }, creds);
-      let sz: string, notional = Number(cfg.order_quote_sz);
-      if (isSwap) {
-        notional = Number(cfg.order_quote_sz) * Number(cfg.leverage);
-        let contracts = Math.floor((notional / (lastPx * ctVal)) / lotSz) * lotSz;
-        if (contracts < minSz) contracts = minSz;
-        sz = contracts.toFixed(szDec); notional = contracts * lastPx * ctVal;
-      } else { sz = String(cfg.order_quote_sz); }
-      const openSide = target === "long" ? "buy" : "sell";
-      const res = await place(openSide, sz, false);
-      if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
-      await admin.from("bot_config").update({ position: target, pos_base_sz: res.fz ?? Number(sz), entry_px: res.ap ?? lastPx }).eq("id", 1);
-      await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, avg_px: res.ap ?? lastPx, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${notional.toFixed(0)}${isSwap ? ` (${cfg.leverage}x)` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
-      await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${sz}${isSwap ? ` ct ~$${notional.toFixed(0)}` : ` ${cfg.quote_ccy}`}${res.ap ? ` @ ${res.ap}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, code: res.r.code, msg: res.r.msg });
-      return json(200, { decision: target, ok: true, bias, conviction, avgPx: res.ap, notional, pnl, signals, structure });
-    }
-    // target === flat: já fechou acima.
-    await log("trade", `Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
-    return json(200, { decision: "flat", ok: true, bias, conviction, pnl, signals, structure });
+    return json(200, { results });
   } catch (e) {
     await log("error", "Erro no loop do robô.", { error: e instanceof Error ? e.message : String(e) });
     return json(502, { error: e instanceof Error ? e.message : "falha" });

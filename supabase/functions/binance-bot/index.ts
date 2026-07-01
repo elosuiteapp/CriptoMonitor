@@ -73,8 +73,10 @@ Deno.serve(async (req) => {
       return json(200, { data: [{ totalEq: usdt?.balance ?? "0", avail: usdt?.availableBalance ?? "0" }], raw: r });
     }
     if (action === "positions") {
-      const symbol = String(body?.symbol ?? body?.instId ?? "BTCUSDT");
-      const r = await bnb("GET", "/fapi/v2/positionRisk", { symbol }, creds, true);
+      // Sem símbolo → TODAS as posições (p/ o painel multi-moeda ler uPnL de cada uma numa call).
+      const sym = body?.symbol ?? body?.instId;
+      const params = sym ? { symbol: String(sym) } : {};
+      const r = await bnb("GET", "/fapi/v2/positionRisk", params, creds, true);
       return json(200, { data: r });
     }
     if (action === "ticker") {
