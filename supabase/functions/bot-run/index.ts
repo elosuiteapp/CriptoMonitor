@@ -452,11 +452,11 @@ Deno.serve(async (req) => {
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
-      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend").eq("asset", asset).maybeSingle();
-      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend };
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null };
     };
-    const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false) => {
-      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, updated_at: new Date().toISOString() }, { onConflict: "asset" });
+    const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false, peak_px: number | null = null) => {
+      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
     };
     const saveReading = async (asset: string, patch: Record<string, unknown>) => {
       await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
@@ -519,6 +519,28 @@ Deno.serve(async (req) => {
       const st = await loadPos(asset);
       let pos: "long" | "short" | "flat" = st.position;
 
+      // ── TRAILING STOP (por ciclo): trava a trail_pct abaixo do MAIOR preço desde a entrada (long) /
+      //    acima do menor (short). Sobe junto com o lucro e NUNCA afrouxa. Arma só depois que a posição
+      //    já está no lucro por trail_pct (antes disso o stop fixo inicial segura). DESLIGADO por padrão. ──
+      if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.entry_px && lastPx > 0) {
+        const prevPeak = st.peak_px != null ? st.peak_px : st.entry_px;
+        const peak = pos === "long" ? Math.max(prevPeak, lastPx) : Math.min(prevPeak, lastPx);
+        let newStop = st.stop_px;
+        const trailPct = Number(cfg.trail_pct ?? 1);
+        if (cfg.trail_on && trailPct > 0) {
+          const armed = pos === "long" ? peak >= st.entry_px * (1 + trailPct / 100) : peak <= st.entry_px * (1 - trailPct / 100);
+          if (armed) {
+            const trailStop = pos === "long" ? peak * (1 - trailPct / 100) : peak * (1 + trailPct / 100);
+            newStop = st.stop_px == null ? trailStop : pos === "long" ? Math.max(st.stop_px, trailStop) : Math.min(st.stop_px, trailStop);
+          }
+        }
+        if (peak !== prevPeak || newStop !== st.stop_px) {
+          await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
+          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)}).`, {});
+          st.stop_px = newStop; st.peak_px = peak;
+        }
+      }
+
       // ── STOP DE RISCO (checado a cada ciclo): se a posição furou o stop_px, fecha a mercado e sai. ──
       const fillPxOf = async (orderId: string | number) => {
         const tr = await bnb("GET", "/fapi/v1/userTrades", { symbol: instId, orderId, limit: 20 }, bnbCreds, true);
@@ -540,9 +562,12 @@ Deno.serve(async (req) => {
           const okk = !!rr.body?.orderId && !rr.body?.code;
           const exitPx = (Number(rr.body?.avgPrice) || (okk && rr.body?.orderId ? await fillPxOf(rr.body.orderId) : null)) ?? lastPx;
           const pnl = st.entry_px ? (exitPx - st.entry_px) * Number(stopQty) * (pos === "long" ? 1 : -1) : null;
+          // Trailing travou lucro? (stop já está do lado do lucro em relação à entrada)
+          const trailed = !!(st.entry_px && st.stop_px && (pos === "long" ? st.stop_px >= st.entry_px : st.stop_px <= st.entry_px));
+          const stopLbl = trailed ? "🛑 STOP MÓVEL (lucro travado)" : `🛑 STOP ${st.ctrend ? "curto (contra-tendência) " : ""}`;
           await savePos(asset, instId, "flat", 0, null);
-          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] 🛑 STOP ${st.ctrend ? "curto (contra-tendência) " : ""}@ ${st.stop_px}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-          await log("trade", `[${asset}] 🛑 STOP ${st.ctrend ? "curto " : ""}acionado @ ${lastPx} (nível ${st.stop_px})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
+          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] ${stopLbl}@ ${st.stop_px}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+          await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${st.stop_px})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
           return { asset, decision: "flat", stopped: true, pnl };
         }
       }
@@ -659,7 +684,8 @@ Deno.serve(async (req) => {
           const nAdds = st.adds + 1;
           const addStopDist = newEntry * Number(cfg.stop_pct ?? 1.5) / 100;
           const addStop = pos === "long" ? newEntry - addStopDist : newEntry + addStopDist; // trava o stop no novo médio
-          await savePos(asset, instId, pos, Number(newSz.toFixed(qDec)), newEntry, nAdds, addStop, false); // guarda o tamanho limpo (sem ruído de float)
+          const addPeak = pos === "long" ? Math.max(st.peak_px ?? newEntry, lastPx) : Math.min(st.peak_px ?? newEntry, lastPx); // preserva o pico do trailing na pirâmide
+          await savePos(asset, instId, pos, Number(newSz.toFixed(qDec)), newEntry, nAdds, addStop, false, addPeak); // guarda o tamanho limpo (sem ruído de float)
           await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] PIRÂMIDE ${nAdds}/${pyramidMax}: +${qtyStr} ${asset} em ${lbl(pos)}${addPx ? ` @ ${addPx}` : ""} · novo médio ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons}). ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: "add", ok: true, bias, conviction, avgPx: addPx, adds: nAdds };
@@ -692,7 +718,7 @@ Deno.serve(async (req) => {
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
           const stopPctUse = isCounter ? Number(cfg.ct_stop_pct ?? 0.6) : Number(cfg.stop_pct ?? 1.5);
           const stopPx = entryPx * (1 - (target === "long" ? 1 : -1) * stopPctUse / 100);
-          await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter);
+          await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
           await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · stop ${stopPx.toFixed(2)} (${stopPctUse}%) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };

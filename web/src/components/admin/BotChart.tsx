@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesMarker, type UTCTimestamp } from "lightweight-charts";
+import { ColorType, CrosshairMode, createChart, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type UTCTimestamp } from "lightweight-charts";
 
 import { useTheme } from "../../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
@@ -22,13 +22,20 @@ export interface BotMarker {
   kind?: "entry" | "add" | "exit"; // entrada, pirâmide (adição) ou SAÍDA/fechamento
   text?: string;
 }
+export interface BotPriceLine {
+  price: number;
+  color: string;
+  title: string;
+  dashed?: boolean; // tracejada (entrada/pico) × sólida (stop)
+}
 
 /** Gráfico de velas (Lightweight Charts) com marcadores de compra/venda do robô.
  *  Isolado/reutilizável no /admin/robo. */
-export default function BotChart({ candles, markers, decimals = 2, height = 420, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; decimals?: number; height?: number; fitKey?: string }) {
+export default function BotChart({ candles, markers, priceLines = [], decimals = 2, height = 420, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; priceLines?: BotPriceLine[]; decimals?: number; height?: number; fitKey?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const didFitRef = useRef(false);
   const { isDark } = useTheme();
 
@@ -102,6 +109,17 @@ export default function BotChart({ candles, markers, decimals = 2, height = 420,
       didFitRef.current = true;
     }
   }, [candles, markers, decimals]);
+
+  // Linhas de nível da posição aberta: Entrada (tracejada), 🛑 Stop (sólida, sobe c/ o trailing), Pico.
+  useEffect(() => {
+    const s = seriesRef.current;
+    if (!s) return;
+    for (const pl of priceLinesRef.current) s.removePriceLine(pl);
+    priceLinesRef.current = priceLines.map((l) =>
+      s.createPriceLine({ price: l.price, color: l.color, lineWidth: 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, axisLabelVisible: true, title: l.title }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceLines.map((l) => `${l.title}:${l.price}`).join("|")]);
 
   return <div ref={wrapRef} style={{ height }} className="w-full" />;
 }

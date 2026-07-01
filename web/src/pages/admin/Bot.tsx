@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { UTCTimestamp } from "lightweight-charts";
 
-import BotChart, { type BotCandle, type BotMarker } from "../../components/admin/BotChart";
+import BotChart, { type BotCandle, type BotMarker, type BotPriceLine } from "../../components/admin/BotChart";
 import Markdown from "../../components/Markdown";
 import { supabase } from "../../lib/supabase";
 
@@ -30,6 +30,8 @@ interface Config {
   ct_stop_pct: number;
   counter_trend: string; // 'block' | 'tight'
   auto_weight: boolean;  // auto-ponderar sinais por moeda (usa o aprendizado)
+  trail_on: boolean;     // stop móvel (trailing) ligado
+  trail_pct: number;     // distância do trailing (%)
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -81,6 +83,7 @@ interface BotPosition {
   adds: number | null;
   stop_px: number | null;
   ctrend: boolean | null;
+  peak_px: number | null;
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -167,7 +170,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
     const conf = (c as Config) ?? null;
@@ -190,9 +193,9 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -477,6 +480,14 @@ export default function AdminBot() {
   const quote = cfg?.quote_ccy ?? "USDT";
   const pxDec = (v: number | null | undefined) => (v == null ? 2 : v >= 1000 ? 1 : v >= 1 ? 2 : 4);
 
+  // Linhas de nível da posição aberta da moeda em foco: Entrada, Pico e 🛑 Stop (sobe c/ o trailing).
+  const priceLines: BotPriceLine[] = [];
+  if (selPos && selPos.position !== "flat") {
+    if (selPos.entry_px) priceLines.push({ price: selPos.entry_px, color: "#94a3b8", title: "Entrada", dashed: true });
+    if (selPos.peak_px && selPos.peak_px !== selPos.entry_px) priceLines.push({ price: selPos.peak_px, color: "#10b981", title: "Pico", dashed: true });
+    if (selPos.stop_px) priceLines.push({ price: selPos.stop_px, color: "#f43f5e", title: cfg?.trail_on ? "🛑 Stop móvel" : "🛑 Stop" });
+  }
+
   // Posições ABERTAS agora (net por ativo) + as que estão fora do mercado.
   const openPositions = positions.filter((p) => p.position !== "flat");
   const flatAssets = positions.filter((p) => p.position === "flat").map((p) => p.asset);
@@ -673,13 +684,22 @@ export default function AdminBot() {
                 )}
               </label>
             )}
+            {isFut && (
+              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                <input type="checkbox" checked={!!cfg.trail_on} onChange={(e) => setCfg({ ...cfg, trail_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                <span><strong>Stop móvel (trailing)</strong>: o stop sobe junto com o maior preço desde a entrada e nunca desce — trava o lucro se o preço voltar. Arma só depois de entrar no lucro.</span>
+                {cfg.trail_on && (
+                  <span className="flex items-center gap-1">· trava <input type="number" step="0.1" min="0.1" value={cfg.trail_pct ?? 1} onChange={(e) => setCfg({ ...cfg, trail_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% abaixo do pico</span>
+                )}
+              </label>
+            )}
             <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
               <input type="checkbox" checked={!!cfg.auto_weight} onChange={(e) => setCfg({ ...cfg, auto_weight: e.target.checked })} className="h-4 w-4 rounded border-border" />
               <span><strong>Auto-ponderar por moeda</strong>: usa o que o robô aprendeu em CADA ativo p/ pesar os sinais (estrutura pesada onde acerta, leve onde erra). Trava anti-overfit: só age com amostra ≥20, ajuste cresce devagar e limitado. <em>Deixe desligado até o aprendizado amadurecer.</em></span>
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
@@ -793,7 +813,7 @@ export default function AdminBot() {
           </div>
         </div>
         {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
+          <BotChart candles={candles} markers={markers} priceLines={priceLines} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
