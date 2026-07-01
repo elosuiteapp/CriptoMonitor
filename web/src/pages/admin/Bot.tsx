@@ -29,6 +29,7 @@ interface Config {
   stop_pct: number;
   ct_stop_pct: number;
   counter_trend: string; // 'block' | 'tight'
+  auto_weight: boolean;  // auto-ponderar sinais por moeda (usa o aprendizado)
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -191,7 +192,7 @@ export default function AdminBot() {
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -672,9 +673,13 @@ export default function AdminBot() {
                 )}
               </label>
             )}
+            <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+              <input type="checkbox" checked={!!cfg.auto_weight} onChange={(e) => setCfg({ ...cfg, auto_weight: e.target.checked })} className="h-4 w-4 rounded border-border" />
+              <span><strong>Auto-ponderar por moeda</strong>: usa o que o robô aprendeu em CADA ativo p/ pesar os sinais (estrutura pesada onde acerta, leve onde erra). Trava anti-overfit: só age com amostra ≥20, ajuste cresce devagar e limitado. <em>Deixe desligado até o aprendizado amadurecer.</em></span>
+            </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>

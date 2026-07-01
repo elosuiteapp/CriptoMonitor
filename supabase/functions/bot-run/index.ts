@@ -215,13 +215,43 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   return d ? Math.round(clamp(n / d)) : 0;
 }
 
+// ════════ AUTO-PONDERAÇÃO POR MOEDA (usa os hit-rates do aprendizado) ════════
+// DESLIGADA por padrão (cfg.auto_weight=false). Deixa o robô pesar cada sinal conforme o que
+// ELE aprendeu que funciona NAQUELA moeda (estrutura pesada no SOL, leve no BTC). Trava anti-overfit:
+//   • amostra mínima (MIN_N) — sinal com pouca história não mexe em nada;
+//   • shrinkage (conf = n/(n+K)) — o ajuste cresce devagar com a amostra, nunca de uma vez;
+//   • limites duros — cada sinal fica em [0.5×, 1.5×] e o structW se move no máx ±0.12.
+// Sinal preditivo (hitRate>50%) pesa MAIS; ruidoso/contrário (<50%) pesa MENOS.
+interface Tune { sigMult: Record<string, number>; structWAdj: number; applied: { key: string; label?: string; mult: number; n: number; hit: number }[] }
+const NEUTRAL_TUNE: Tune = { sigMult: {}, structWAdj: 0, applied: [] };
+function buildTune(assetLearn: { key: string; label?: string; hitRate: number; n: number }[] | null, on: boolean): Tune {
+  if (!on || !assetLearn?.length) return NEUTRAL_TUNE;
+  const MIN_N = 20, K_SHRINK = 40, GAIN = 1.2, STRUCT_GAIN = 0.5;
+  const structKeys = new Set(["tf_15m", "tf_30m", "tf_1H", "tf_4H", "tf_1D", "swing", "bos"]);
+  const sigMult: Record<string, number> = {}; const applied: Tune["applied"] = [];
+  let structEdge = 0, structConf = 0;
+  for (const s of assetLearn) {
+    if (!s || !Number.isFinite(s.hitRate) || s.n < MIN_N) continue;
+    const edge = s.hitRate / 100 - 0.5;      // -0.5..+0.5 (acerto acima/abaixo da moeda ao ar)
+    const conf = s.n / (s.n + K_SHRINK);      // shrinkage 0..~1 (confiança pela amostra)
+    const mult = Math.max(0.5, Math.min(1.5, 1 + edge * conf * GAIN));
+    sigMult[s.key] = mult;
+    applied.push({ key: s.key, label: s.label, mult: Math.round(mult * 100) / 100, n: s.n, hit: s.hitRate });
+    if (structKeys.has(s.key)) { structEdge += edge * conf; structConf += conf; }
+  }
+  const structWAdj = structConf > 0 ? Math.max(-0.12, Math.min(0.12, (structEdge / structConf) * STRUCT_GAIN)) : 0;
+  applied.sort((a, b) => Math.abs(b.mult - 1) - Math.abs(a.mult - 1));
+  return { sigMult, structWAdj, applied };
+}
+
 // ════════ Confluência: estrutura POR TF (15m/30m/1H) + fluxo ════════
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
 interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
 const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16, "1D": 0.16 };
-function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdRetail: number | null, cvdInst: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
+function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdRetail: number | null, cvdInst: number | null, pressWin: { label: string; bid: number; ask: number }[], tune: Tune = NEUTRAL_TUNE) {
   const sig: Signal[] = [];
-  const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
+  // Peso final = peso base × multiplicador aprendido daquela moeda (1× quando a auto-ponderação está off).
+  const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight: Math.round(weight * (tune.sigMult[key] ?? 1) * 1000) / 1000, score: Math.round(clamp(score)), note });
   const der = p?.derivatives ?? {}, g = p?.gamma ?? {}, etf = p?.etf_flows ?? {};
   const mom = tfReads[0]?.mom ?? 0;
   let absScore = 0;
@@ -362,7 +392,9 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     // BALANÇA SMC × FLUXO: dono definiu 65% Smart Money / 35% pressão do book (o fluxo mais forte).
     // Neutro = 0.65 (o número). Gamma positivo (pinning) → estrutura falha mais (fakeout): cai p/ 0.55
     // (book pinga mais, mas SMC ainda maioria — seguro p/ BTC). Gamma negativo (tendência) → 0.72.
-    const structW = gammaPos ? 0.55 : gammaNeg ? 0.72 : 0.65;
+    // Auto-ponderação (se ligada) empurra ±0.12 conforme a estrutura acerta mais/menos NAQUELA moeda.
+    const structWBase = gammaPos ? 0.55 : gammaNeg ? 0.72 : 0.65;
+    const structW = Math.max(0.40, Math.min(0.80, structWBase + tune.structWAdj));
     const composite = Math.round(clamp(structW * t.bias + (1 - structW) * pressure));
     return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
   });
@@ -404,6 +436,11 @@ Deno.serve(async (req) => {
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
   if (!cfg.enabled && !forced) return json(200, { skipped: "robo desligado" });
+
+  // Auto-ponderação por moeda (OFF por padrão): lê os hit-rates que o robô aprendeu por ativo.
+  const autoWeightOn = !!cfg.auto_weight;
+  const { data: learnRow } = await admin.from("bot_learning").select("data").eq("id", 1).maybeSingle();
+  const learnByAsset: Record<string, { perSignal?: { key: string; label?: string; hitRate: number; n: number }[] }> = ((learnRow?.data as any)?.byAsset) ?? {};
 
   const venue = String(cfg.venue ?? "binance");
   const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
@@ -460,7 +497,8 @@ Deno.serve(async (req) => {
       const primary = tfReads[0];
 
       const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
-      const { bias, signals, absScore, perTf, flowTilt, gammaPos, gammaNeg } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdRetail, cvdInst, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
+      const tune = buildTune(learnByAsset[asset]?.perSignal ?? null, autoWeightOn);
+      const { bias, signals, absScore, perTf, flowTilt, gammaPos, gammaNeg } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdRetail, cvdInst, (pressRows as { label: string; bid: number; ask: number }[]) ?? [], tune);
 
       // ── REGIME (tendência) — DAYTRADE: o 4H é o CHEFE; o 1D só reforça (contexto leve). ──
       const b4 = tfReads.find((t) => t.tf === "4H")?.bias ?? 0;
@@ -559,7 +597,7 @@ Deno.serve(async (req) => {
       const pyramidAdd = !!cfg.pyramid && fut && want != null && want === pos && !counterTrend && !st.ctrend && inProfit && st.adds < pyramidMax;
 
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
-      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, regime, trendBias, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", counter: isCounter, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, regime, trendBias, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", counter: isCounter, autoWeight: autoWeightOn ? { on: true, structWAdj: Math.round(tune.structWAdj * 100) / 100, top: tune.applied.slice(0, 6) } : { on: false }, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
       const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, regime, counter: isCounter, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
