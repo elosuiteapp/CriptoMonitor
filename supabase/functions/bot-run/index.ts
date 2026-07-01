@@ -399,6 +399,17 @@ Deno.serve(async (req) => {
       let target: "long" | "short" | "flat" = want ?? pos;
       if (!fut) { if (target === "short") target = "flat"; if (pos === "long" && shortVotes >= 2) target = "flat"; }
 
+      // SAÍDA DE PROTEÇÃO (opção A): a posição PERDEU o próprio consenso (< 2 TFs a favor) E o fluxo
+      // virou claramente contra → sai pra FORA sem esperar o voto oposto pleno. Evita segurar no
+      // vermelho quando a leitura deteriorou (numa reversão franca o voto oposto já faz a virada acima).
+      let protExit = false;
+      const EXIT_FLOW = 25;
+      if (fut && target === pos && pos !== "flat") {
+        const posVotes = pos === "long" ? longVotes : shortVotes;
+        const flowAgainst = pos === "long" ? flowTilt <= -EXIT_FLOW : flowTilt >= EXIT_FLOW;
+        if (posVotes < 2 && flowAgainst) { target = "flat"; protExit = true; gate = `saída de proteção: ${pos === "long" ? "LONG" : "SHORT"} perdeu consenso (${posVotes}/3) e fluxo contra (${flowTilt})`; }
+      }
+
       // PIRÂMIDE (opcional): novo sinal na MESMA direção da posição → adiciona (até pyramid_max).
       const pyramidMax = Number(cfg.pyramid_max ?? 2);
       const pyramidAdd = !!cfg.pyramid && fut && want != null && want === pos && st.adds < pyramidMax;
@@ -498,8 +509,8 @@ Deno.serve(async (req) => {
           await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl };
         }
-        await log("trade", `[${asset}] Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
-        return { asset, decision: "flat", ok: true, bias, conviction, pnl };
+        await log("trade", `[${asset}] ${protExit ? "🛡️ SAÍDA DE PROTEÇÃO · " : ""}Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${gate && protExit ? ` [${gate}]` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
+        return { asset, decision: "flat", ok: true, bias, conviction, pnl, protExit };
       }
 
       return { asset, skipped: "venue não suportado (só binance)" };
