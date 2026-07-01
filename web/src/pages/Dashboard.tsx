@@ -31,7 +31,6 @@ import OrderbookImbalanceCard from "../components/OrderbookImbalanceCard";
 import NotificationsBell from "../components/NotificationsBell";
 import PriceHeader from "../components/PriceHeader";
 import ReportsTab from "../components/ReportsTab";
-import WhaleWallsGauge from "../components/WhaleWallsGauge";
 import SmartMoneyTab from "../components/SmartMoneyTab";
 import TabBar, { type TabId } from "../components/TabBar";
 import LangSwitch from "../components/ui/LangSwitch";
@@ -300,6 +299,12 @@ export default function Dashboard() {
             walls={walls}
             depth={depth}
             oiSeries={oiSeries}
+            pressureImb={
+              imbalance.varejo && imbalance.varejo.bid_wide_usd + imbalance.varejo.ask_wide_usd > 0
+                ? (imbalance.varejo.bid_wide_usd - imbalance.varejo.ask_wide_usd) /
+                  (imbalance.varejo.bid_wide_usd + imbalance.varejo.ask_wide_usd)
+                : null
+            }
             onPrice={setLivePrice}
           />
           <LayerToggles layers={layers} onToggle={toggleLayer} access={access} showUpsell={!advanced} />
@@ -404,7 +409,6 @@ export default function Dashboard() {
                 />
                 <OIDeltaCard asset={asset} timestamp={updatedAt} />
                 <OrderbookImbalanceCard data={imbalance.varejo} title={tr.cockpit.bookRetail} source="Binance + OKX" timestamp={updatedAt} info={GLOSSARY.bookImbalance} />
-                <WhaleWallsGauge walls={walls} price={livePrice ?? spot} pressure={imbalance.varejo} timestamp={updatedAt} />
               </>
             ) : (
               <>

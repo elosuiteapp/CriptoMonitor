@@ -57,6 +57,7 @@ interface ChartProps {
   walls?: OrderbookWall[];
   depth?: OrderbookDepthRow[] | null; // escada do book (heatmap de liquidez parada)
   oiSeries?: OiPoint[];
+  pressureImb?: number | null; // imbalance (bid−ask)/(bid+ask) ±2% do book — p/ divergência baleias × pressão
   // Emite o último preço (close do candle em formação, ao vivo via WS) para o pai —
   // assim o preço do topo (PriceHeader) espelha EXATAMENTE o do gráfico, em tempo real.
   onPrice?: (price: number) => void;
@@ -65,7 +66,9 @@ interface ChartProps {
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 
-export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, depth, oiSeries, onPrice }: ChartProps) {
+const fmtMi = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}k`);
+
+export default function Chart({ asset, timeframe, chartType, gamma, layers, canUseLayers, walls, depth, oiSeries, pressureImb, onPrice }: ChartProps) {
   const [expanded, setExpanded] = useState(false); // gráfico em altura ampliada (ver as camadas)
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -82,7 +85,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const { isDark } = useTheme();
-  const { isEn } = useT();
+  const { isEn, t } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
   // Pressão do book (±2%) por JANELA — 48h (estrutura) / 12h (médio) / 30m (liquidez do
   // momento) — p/ ver de que lado a liquidez vem ganhando força (a curta reage mais
@@ -95,6 +98,29 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     ];
     return wins.map((w) => ({ label: w.label, imb: windowedBookImbalance(depth ?? null, 0.02, w.ms) }));
   }, [depth]);
+
+  // Paredes FORTES (baleias): soma só as ordens grandes do book, ponderadas pela
+  // proximidade do preço (colada=1; a 0,5%≈0,5; a 3,5%≈0,12) → suporte (bids) × resistência
+  // (asks). Diferente da pressão (todo o book). O overlay aparece com a camada Paredes.
+  const whaleWalls = useMemo(() => {
+    const ref = candles.length ? candles[candles.length - 1].close : null;
+    let support = 0;
+    let resistance = 0;
+    for (const wall of walls ?? []) {
+      const w = ref != null && ref > 0 ? 1 / (1 + Math.abs(wall.price - ref) / ref / 0.005) : 1;
+      if (wall.side === "bid") support += wall.notional_usd * w;
+      else resistance += wall.notional_usd * w;
+    }
+    const total = support + resistance;
+    const supportPct = total > 0 ? support / total : 0.5;
+    const side = supportPct > 0.55 ? "support" : supportPct < 0.45 ? "resistance" : "flat";
+    const pBuyer = pressureImb != null && pressureImb > 0.05;
+    const pSeller = pressureImb != null && pressureImb < -0.05;
+    // divergência baleias × pressão geral (o sinal forte): baleia defende chão com pressão
+    // vendendo, ou monta teto com pressão comprando.
+    const divKind = side === "support" && pSeller ? "buy" : side === "resistance" && pBuyer ? "sell" : null;
+    return { support, resistance, total, supportPct, side, divKind };
+  }, [walls, candles, pressureImb]);
 
   // Espelhamento do preço ao vivo para o topo: ref evita re-subscrever o WS, e o
   // throttle (~1s) evita re-render do Dashboard a cada tick.
@@ -911,6 +937,47 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           />
         </>
       )}
+
+      {/* Medidor "paredes fortes (baleias)": suporte × resistência somando SÓ as ordens
+          grandes, ponderadas por proximidade. Aparece junto da camada Paredes do book.
+          Divergência vs pressão geral (todo o book) = o sinal forte. Spoofável. */}
+      {canUseLayers && layers.orderbookWalls && (
+        <div
+          className={`absolute left-2 z-10 max-w-[196px] space-y-1 rounded bg-background/85 px-1.5 py-1 text-[9px] text-muted-foreground ${layers.bookHeatmap ? "top-24" : "top-2"}`}
+          title={t.whaleWalls.tip}
+        >
+          <div className="font-semibold text-foreground/80">{t.whaleWalls.title}</div>
+          {whaleWalls.total <= 0 ? (
+            <div className="opacity-60">{t.whaleWalls.unavailable}</div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="relative h-2 w-20 overflow-hidden rounded-full bg-rose-500/70">
+                  <span className="absolute inset-y-0 left-0 bg-emerald-500/80" style={{ width: `${whaleWalls.supportPct * 100}%` }} />
+                </span>
+                <span
+                  className={`num font-semibold ${whaleWalls.side === "support" ? "text-emerald-600 dark:text-emerald-400" : whaleWalls.side === "resistance" ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}
+                >
+                  {Math.round((whaleWalls.supportPct >= 0.5 ? whaleWalls.supportPct : 1 - whaleWalls.supportPct) * 100)}%{" "}
+                  {whaleWalls.side === "support" ? t.whaleWalls.support : whaleWalls.side === "resistance" ? t.whaleWalls.resistance : t.whaleWalls.balanced}
+                </span>
+              </div>
+              <div className="num opacity-80">
+                <span className="text-emerald-600 dark:text-emerald-400">{fmtMi(whaleWalls.support)}</span> {t.whaleWalls.support} ·{" "}
+                <span className="text-rose-600 dark:text-rose-400">{fmtMi(whaleWalls.resistance)}</span> {t.whaleWalls.resistance}
+              </div>
+              {whaleWalls.divKind && (
+                <div className="text-amber-500">
+                  {whaleWalls.divKind === "buy"
+                    ? tt("⚠ baleia compra · pressão vende", "⚠ whales buy · pressure sells")
+                    : tt("⚠ baleia vende · pressão compra", "⚠ whales sell · pressure buys")}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className="absolute inset-0 z-20 grid place-items-center text-sm text-muted-foreground">
           {tt("Gráfico indisponível", "Chart unavailable")} ({error === "load_error" ? tt("falha ao carregar candles", "failed to load candles") : error})
