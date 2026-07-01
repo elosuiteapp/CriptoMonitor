@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchB3Chart, fetchB3Macro, fetchMacroGlobal, type B3Candle } from "../../lib/b3";
 import type { MarketRead } from "../../lib/indicators/confluence";
 import ErrorBoundary from "../ErrorBoundary";
+import LockedTab from "../LockedTab";
 import MarketReadBadge from "../MarketReadBadge";
 import B3CockpitTab from "./B3CockpitTab";
 import B3DividendsTab from "./B3DividendsTab";
@@ -15,7 +16,9 @@ import B3TabBar, { type B3TabId } from "./B3TabBar";
 /** Plataforma B3 (admin-only) — mesmo modelo do cripto (abas), contexto B3.
  *  O ativo é compartilhado: vem do seletor do header (Dashboard). 100% isolado da cripto.
  *  Medidor de viés no cabeçalho (mesmo padrão do cripto) — espelha a Leitura. */
-export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (s: string) => void }) {
+export default function B3Module({ asset, onAsset, full = false }: { asset: string; onAsset: (s: string) => void; full?: boolean }) {
+  // Free (não-admin): vitrine travada no ativo showcase — o cockpit não troca de ativo.
+  const setAsset = full ? onAsset : () => {};
   const [tab, setTab] = useState<B3TabId>("cockpit");
   const [read, setRead] = useState<Read | null>(null);
   const [readLoading, setReadLoading] = useState(true);
@@ -41,9 +44,13 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
         <div>
           <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
             🇧🇷 B3 · Ações & FIIs
-            <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
+            {full
+              ? <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
+              : <span className="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">prévia grátis</span>}
           </h2>
-          <p className="text-xs text-muted-foreground">Plataforma da bolsa brasileira — ações e FIIs: cockpit, dividendos, fluxo, leitura, macro e relatórios.</p>
+          <p className="text-xs text-muted-foreground">{full
+            ? "Plataforma da bolsa brasileira — ações e FIIs: cockpit, dividendos, fluxo, leitura, macro e relatórios."
+            : `Prévia grátis: cockpit, leitura e macro de ${asset}. Assine o módulo B3 para todos os ativos, dividendos, fluxo/Smart Money e relatórios.`}</p>
         </div>
         <MarketReadBadge read={badge as unknown as MarketRead} loading={readLoading} onClick={() => setTab("leitura")} />
       </div>
@@ -51,12 +58,12 @@ export default function B3Module({ asset, onAsset }: { asset: string; onAsset: (
       <B3TabBar tab={tab} onTab={setTab} />
 
       <ErrorBoundary key={tab} label="o módulo B3">
-        {tab === "cockpit" && <B3CockpitTab asset={asset} onAsset={onAsset} />}
-        {tab === "dividendos" && <B3DividendsTab asset={asset} onAsset={onAsset} />}
-        {tab === "fluxo" && <B3SmartMoneyTab asset={asset} />}
+        {tab === "cockpit" && <B3CockpitTab asset={asset} onAsset={setAsset} />}
+        {tab === "dividendos" && (full ? <B3DividendsTab asset={asset} onAsset={setAsset} /> : <LockedTab title="Dividendos" plan="B3" />)}
+        {tab === "fluxo" && (full ? <B3SmartMoneyTab asset={asset} /> : <LockedTab title="Fluxo & Smart Money" plan="B3" />)}
         {tab === "leitura" && <B3LeituraTab asset={asset} />}
         {tab === "macro" && <B3MacroTab />}
-        {tab === "reports" && <B3ReportsTab asset={asset} />}
+        {tab === "reports" && (full ? <B3ReportsTab asset={asset} /> : <LockedTab title="Relatórios" plan="B3" />)}
       </ErrorBoundary>
     </section>
   );

@@ -81,7 +81,7 @@ export default function Dashboard() {
   const GLOSSARY = useGlossary();
   const { user, signOut } = useAuth();
   const { plan, loading: planLoading } = usePlan(user?.id);
-  const { isAdmin, loading: adminLoading } = useIsAdmin(user?.id);
+  const { isAdmin } = useIsAdmin(user?.id);
   const { module: market, setModule: setMarket } = useModule();
 
   const allowed = plan?.assets ?? ["BTC"];
@@ -118,11 +118,6 @@ export default function Dashboard() {
     setLivePrice(null);
   }, [asset]);
 
-  // Mercados ainda não liberados (B3, Forex) são preview só de admin. Se um não-admin
-  // tiver um deles salvo no localStorage, volta para Crypto quando o papel resolver.
-  useEffect(() => {
-    if (market !== "crypto" && !adminLoading && !isAdmin) setMarket("crypto");
-  }, [market, adminLoading, isAdmin]);
 
   const { payload, updatedAt } = useSnapshot(asset, plan);
   const series = useSeries(asset, plan);
@@ -193,13 +188,13 @@ export default function Dashboard() {
           {market === "crypto" && (
             <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
           )}
-          {market === "b3" && (
+          {market === "b3" && isAdmin && (
             <div className="flex items-center gap-2">
               <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_ASSETS} label="Ações" />
               <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_FIIS} label="FIIs" />
             </div>
           )}
-          {market === "forex" && <ForexAssetSelector current={fxPair} onChange={setFxPair} />}
+          {market === "forex" && isAdmin && <ForexAssetSelector current={fxPair} onChange={setFxPair} />}
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -233,9 +228,9 @@ export default function Dashboard() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         {market === "b3" ? (
-          <B3Module asset={b3Asset} onAsset={setB3Asset} />
+          <B3Module asset={b3Asset} onAsset={setB3Asset} full={isAdmin} />
         ) : market === "forex" ? (
-          <ForexModule pair={fxPair} onPair={setFxPair} />
+          <ForexModule pair={fxPair} onPair={setFxPair} full={isAdmin} />
         ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (

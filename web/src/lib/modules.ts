@@ -48,24 +48,24 @@ export const MODULES: MarketModule[] = [
     label: "B3 · Ações & FIIs",
     icon: "🇧🇷",
     description: "Ações e FIIs da B3 — fundamentos, dividendos, indicadores e fluxo",
-    available: false,
+    available: true,
   },
   {
     id: "forex",
     label: "Forex",
     icon: "💱",
     description: "Pares de moedas e câmbio",
-    available: false,
+    available: true,
   },
 ];
 
 export const DEFAULT_MODULE: ModuleId = "crypto";
 
-/** Módulos que o usuário PODE acessar — fonte única do isolamento de módulos
- *  (alertas/notificações só aparecem dos módulos contratados). Hoje: crypto p/
- *  todos; B3/Forex são preview só do admin (espelha o gating do ModuleSwitcher).
- *  QUANDO B3/Forex virarem produto vendável, trocar esta regra para ler a
- *  assinatura/entitlement do usuário (este é o único ponto a mudar). */
-export function accessibleModules(isAdmin: boolean): ModuleId[] {
-  return isAdmin ? ["crypto", "b3", "forex"] : ["crypto"];
+/** Módulos que o usuário PODE acessar/abrir. Os TRÊS ficam abertos (vitrine Free
+ *  em B3/Forex, igual ao BTC grátis na cripto); o gating de PROFUNDIDADE (1 ativo +
+ *  abas básicas no Free × tudo no pago/admin) é feito dentro de cada módulo.
+ *  QUANDO a cobrança POR MÓDULO (fase 2) entrar, trocar para ler o entitlement do
+ *  usuário aqui (p/ isolar alertas/notificações por módulo contratado). */
+export function accessibleModules(_isAdmin?: boolean): ModuleId[] {
+  return ["crypto", "b3", "forex"];
 }
