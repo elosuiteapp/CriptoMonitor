@@ -14,7 +14,9 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const PRIMARY_MODEL = "gemini-2.5-pro";
+// FLASH direto: a cota free do PRO é muito apertada (dava 429). O FLASH tem limites
+// bem maiores no free; primary=fallback=flash → nunca chama o PRO.
+const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.5-flash";
 const ASSETS = ["BTC", "ETH", "SOL"];
 
@@ -28,7 +30,7 @@ const SYSTEM_PROMPT = [
   "- excerpt: 1 frase (max 160 caracteres) que vende a leitura, para SEO/preview.",
   "- cover_emoji: UM emoji que represente o tema.",
   "- teaser_md: a ABERTURA publica (markdown): um lead afiado de 1-2 paragrafos + o bloco 'Resumo rapido', cortando ANTES do detalhamento para dar gancho. Sem titulo grande.",
-  "- body_md: a edicao COMPLETA em markdown, entre 500 e 800 palavras, com EXATAMENTE estas secoes e titulos:",
+  "- body_md: a edicao COMPLETA em markdown, entre 400 e 550 palavras (enxuta e afiada), com EXATAMENTE estas secoes e titulos:",
   "    ## Resumo rapido  (3 bullets com as conclusoes da semana; comece cada um com o insight, nao com o numero)",
   "    ## A semana em uma frase  (a tese central, afiada)",
   "    ## O que aconteceu  (movimento de BTC/ETH/SOL e o regime de gamma - e POR QUE importa)",
@@ -91,13 +93,12 @@ function gammaReliable(g: Record<string, unknown> | undefined): boolean {
 
 async function callGemini(model: string, key: string, system: string, user: string): Promise<Response> {
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: 16384, // folga p/ o "thinking" do PRO + corpo de ~800 palavras
+    maxOutputTokens: 6144, // corpo ~400-550 palavras (enxuto p/ caber no free tier)
     temperature: 0.75,
     responseMimeType: "application/json",
     responseSchema: RESPONSE_SCHEMA,
+    thinkingConfig: { thinkingBudget: 0 }, // thinking OFF: economiza muito token → fica no free
   };
-  // Sem desativar o "thinking": a newsletter e semanal, entao priorizamos qualidade
-  // de sintese sobre latencia (vale tanto p/ o PRO quanto p/ o FLASH).
   return await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     {

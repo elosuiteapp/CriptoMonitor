@@ -12,7 +12,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const PRIMARY_MODEL = "gemini-2.5-pro";
+// FLASH direto (cota free do PRO é apertada); primary=fallback=flash → nunca chama o PRO.
+const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.5-flash";
 
 function json(status: number, body: unknown) {
@@ -32,7 +33,7 @@ const RESPONSE_SCHEMA = {
 };
 
 const BASE_VOICE =
-  "VOZ: analista senior - clara, direta, com personalidade; zero enchecao de linguica; portugues brasileiro com acentuacao correta. Explique cada termo tecnico na 1a vez. PRINCIPIO: conecte os dados numa TESE da semana; nao liste metricas soltas; escolha os 2-3 numeros que importam e diga O QUE SIGNIFICAM. Negrito nos termos e niveis-chave. Proibido: recomendar compra/venda, prever preco-alvo, linguagem de certeza (use 'tende a', 'historicamente', 'sugere'). NUNCA invente numeros: se faltar dado, diga indisponivel neste ciclo. Responda APENAS com um JSON valido: title (chamada forte ~6-10 palavras), excerpt (1 frase max 160 char), cover_emoji (1 emoji), teaser_md (abertura publica: lead 1-2 paragrafos + 'Resumo rapido', cortando antes do detalhe), body_md (edicao completa 500-800 palavras em markdown com EXATAMENTE as secoes pedidas).";
+  "VOZ: analista senior - clara, direta, com personalidade; zero enchecao de linguica; portugues brasileiro com acentuacao correta. Explique cada termo tecnico na 1a vez. PRINCIPIO: conecte os dados numa TESE da semana; nao liste metricas soltas; escolha os 2-3 numeros que importam e diga O QUE SIGNIFICAM. Negrito nos termos e niveis-chave. Proibido: recomendar compra/venda, prever preco-alvo, linguagem de certeza (use 'tende a', 'historicamente', 'sugere'). NUNCA invente numeros: se faltar dado, diga indisponivel neste ciclo. Responda APENAS com um JSON valido: title (chamada forte ~6-10 palavras), excerpt (1 frase max 160 char), cover_emoji (1 emoji), teaser_md (abertura publica: lead 1-2 paragrafos + 'Resumo rapido', cortando antes do detalhe), body_md (edicao completa 400-550 palavras, enxuta e afiada, em markdown com EXATAMENTE as secoes pedidas).";
 
 const CFG: Record<string, { emoji: string; label: string; system: string; intro: string }> = {
   b3: {
@@ -60,7 +61,7 @@ async function callGemini(model: string, key: string, system: string, user: stri
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: { maxOutputTokens: 16384, temperature: 0.75, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
+      generationConfig: { maxOutputTokens: 6144, temperature: 0.75, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, thinkingConfig: { thinkingBudget: 0 } },
     }),
   });
 }
