@@ -228,9 +228,9 @@ export default function Dashboard() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         {market === "b3" ? (
-          <B3Module asset={b3Asset} onAsset={setB3Asset} full={isAdmin} />
+          <B3Module asset={b3Asset} onAsset={setB3Asset} full={isAdmin || (plan.modules?.includes("b3") ?? false)} />
         ) : market === "forex" ? (
-          <ForexModule pair={fxPair} onPair={setFxPair} full={isAdmin} />
+          <ForexModule pair={fxPair} onPair={setFxPair} full={isAdmin || (plan.modules?.includes("forex") ?? false)} />
         ) : market !== "crypto" ? (
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (

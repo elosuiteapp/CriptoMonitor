@@ -6,11 +6,17 @@ export type Asset =
   | "AAVE" | "UNI" | "LDO" | "ARB" | "ATOM" | "PEPE";
 export type Level = "green" | "yellow" | "red" | "neutral";
 
-/** Linha da tabela `plans` (limites parametrizados). */
+/** Linha da tabela `plans` (limites parametrizados). Slug é aberto: free, mod_crypto,
+ *  mod_b3, mod_forex, complete (+ legados pro/expert). `modules` = mercados liberados. */
 export interface Plan {
-  slug: "free" | "pro" | "expert";
+  slug: string;
   name: string;
   price_cents: number;
+  price_annual_cents?: number;     // BRL total/ano no plano anual
+  price_usd_cents?: number;
+  price_usd_annual_cents?: number; // USD total/ano no plano anual
+  paddle_price_id?: string | null;
+  modules?: string[];              // ['crypto'] | ['b3'] | ['forex'] | ['crypto','b3','forex']
   assets: string[];
   snapshot_interval_min: number;
   advanced_metrics: boolean;

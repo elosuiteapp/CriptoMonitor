@@ -31,10 +31,10 @@ Deno.serve(async (req) => {
   if (!user) return json(401, { error: "não autenticado" });
 
   const { plan_slug, cycle: cycleIn } = await req.json().catch(() => ({ plan_slug: "" }));
-  if (!["pro", "expert"].includes(plan_slug)) return json(400, { error: "plano inválido" });
+  if (!["mod_crypto", "mod_b3", "mod_forex", "complete"].includes(plan_slug)) return json(400, { error: "plano inválido" });
   const cycle = cycleIn === "annual" ? "annual" : "monthly";
 
-  const { data: plan } = await admin.from("plans").select("name, price_cents").eq("slug", plan_slug).single();
+  const { data: plan } = await admin.from("plans").select("name, price_cents, price_annual_cents").eq("slug", plan_slug).single();
   if (!plan) return json(400, { error: "plano não encontrado" });
 
   const { data: prof } = await admin.from("profiles").select("full_name, cpf").eq("id", user.id).maybeSingle();
@@ -78,12 +78,11 @@ Deno.serve(async (req) => {
   } catch (_) { /* não bloqueia a nova assinatura */ }
 
   // 2) Assinatura. externalReference carrega user.id:plan_slug:cycle para o webhook
-  //    saber quem ativar, em qual plano e por quanto tempo. Anual = 12 meses com 30%
-  //    OFF de lançamento. Manter ANNUAL_DISCOUNT em sincronia com o Pricing.tsx
-  //    (preço exibido == preço cobrado).
-  const ANNUAL_DISCOUNT = 0.30;
+  //    saber quem ativar, em qual plano e por quanto tempo. Preço vem da tabela plans:
+  //    mensal = price_cents; anual = price_annual_cents (TOTAL/ano, definido no /admin).
   const monthly = plan.price_cents / 100;
-  const value = cycle === "annual" ? Math.round(monthly * 12 * (1 - ANNUAL_DISCOUNT)) : monthly;
+  const annual = (plan.price_annual_cents ?? 0) / 100;
+  const value = cycle === "annual" ? (annual || Math.round(monthly * 12)) : monthly;
   const asaasCycle = cycle === "annual" ? "YEARLY" : "MONTHLY";
   const cycleLabel = cycle === "annual" ? "anual" : "mensal";
 
