@@ -48,9 +48,10 @@ type Bias = "bullish" | "bearish";
 interface Candle { time: number; open: number; high: number; low: number; close: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
 interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
+interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; premium: Zone; equilibrium: Zone; discount: Zone }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; premium: Zone; equilibrium: Zone; discount: Zone }
 
 function atrArray(candles: Candle[], len: number): number[] {
   const tr: number[] = [];
@@ -132,6 +133,17 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     for (let k = 0; k < n; k++) { if (candles[k].time <= ob.time) continue; if (ob.bias === "bullish" && candles[k].close < ob.bottom) return false; if (ob.bias === "bearish" && candles[k].close > ob.top) return false; }
     return true;
   }).filter((ob) => ob.time < lastTime).slice(-obCount * 3);
+  // Fair value gaps (3 velas) NÃO preenchidos = imbalance deixado pelo impulso (zona que o preço respeita).
+  const fvgsRaw: FVG[] = [];
+  for (let i = 2; i < n; i++) {
+    const gapUp = candles[i].low - candles[i - 2].high, gapDn = candles[i - 2].low - candles[i].high, thr = 0.25 * atr200[i];
+    if (gapUp > thr && candles[i - 1].close > candles[i - 2].high) fvgsRaw.push({ top: candles[i].low, bottom: candles[i - 2].high, mid: (candles[i - 2].high + candles[i].low) / 2, time: candles[i].time, bias: "bullish" });
+    else if (gapDn > thr && candles[i - 1].close < candles[i - 2].low) fvgsRaw.push({ top: candles[i - 2].low, bottom: candles[i].high, mid: (candles[i].high + candles[i - 2].low) / 2, time: candles[i].time, bias: "bearish" });
+  }
+  const fvgs = fvgsRaw.filter((g) => {
+    for (let k = 0; k < n; k++) { if (candles[k].time <= g.time) continue; if (g.bias === "bullish" && candles[k].low < g.bottom) return false; if (g.bias === "bearish" && candles[k].high > g.top) return false; }
+    return true;
+  }).slice(-5);
   const pivHighs: { price: number; idx: number }[] = [], pivLows: { price: number; idx: number }[] = [];
   const Lk = 7, Rk = 1;
   for (let i = Lk; i < n - Rk; i++) {
@@ -169,7 +181,7 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     swingBias: swingTrend === 1 ? "bullish" : swingTrend === -1 ? "bearish" : null,
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
-    orderBlocks, liquidity, trailingTop, trailingBottom, premium, equilibrium, discount,
+    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, premium, equilibrium, discount,
   };
 }
 
@@ -185,6 +197,14 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   const sup = smc.orderBlocks.filter((o) => o.bias === "bearish" && o.mid > smc.price).sort((a, b) => a.mid - b.mid)[0];
   const dDist = dem ? (smc.price - dem.mid) / atr : 99, sDist = sup ? (sup.mid - smc.price) / atr : 99;
   add(dDist < 1.5 && dDist <= sDist ? 55 : sDist < 1.5 && sDist < dDist ? -55 : 0, 0.10);
+  // FVG/imbalance: zona não preenchida perto do preço vira demanda (abaixo) / oferta (acima).
+  // Quanto mais colado/dentro da zona (respeitando), mais forte — igual o gráfico do módulo.
+  const fDem = smc.fvgs.filter((f) => f.bias === "bullish" && f.mid < smc.price).sort((a, b) => b.mid - a.mid)[0];
+  const fSup = smc.fvgs.filter((f) => f.bias === "bearish" && f.mid > smc.price).sort((a, b) => a.mid - b.mid)[0];
+  const fdDist = fDem ? (smc.price - fDem.mid) / atr : 99, fsDist = fSup ? (fSup.mid - smc.price) / atr : 99;
+  const fvgScore = fdDist < 1.5 && fdDist <= fsDist ? 45 + 40 * Math.max(0, 1 - fdDist / 1.5)
+    : fsDist < 1.5 && fsDist < fdDist ? -(45 + 40 * Math.max(0, 1 - fsDist / 1.5)) : 0;
+  add(fvgScore, 0.12);
   add(clamp((momTf / 0.006) * 60), 0.12);
   return d ? Math.round(clamp(n / d)) : 0;
 }
@@ -254,6 +274,19 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     const older = (bidPctAt(tss[0]) + bidPctAt(tss[1])) / 2;
     const accel = recent - older; // >0 = pressão ficando mais compradora
     add("book_trend", "Microestrutura", "Pressão do book (tendência)", 0.05, clamp(accel * 600), `${accel >= 0 ? "compra" : "venda"} ganhando força · ${Math.round(recent * 100)}% bid agora vs ${Math.round(older * 100)}% antes`);
+  }
+
+  // ── IMBALANCE / FVG (fair value gaps não preenchidos perto do preço, no TF base) ──
+  const psmc = tfReads[0]?.smc;
+  if (psmc && psmc.fvgs?.length) {
+    const atrp = psmc.atr || psmc.price * 0.01;
+    const fDem = psmc.fvgs.filter((f) => f.bias === "bullish" && f.mid < psmc.price).sort((a, b) => b.mid - a.mid)[0];
+    const fSup = psmc.fvgs.filter((f) => f.bias === "bearish" && f.mid > psmc.price).sort((a, b) => a.mid - b.mid)[0];
+    const fd = fDem ? (psmc.price - fDem.mid) / atrp : 99, fs = fSup ? (fSup.mid - psmc.price) / atrp : 99;
+    let sc = 0, note = "sem FVG aberto perto do preço";
+    if (fd < 1.5 && fd <= fs) { sc = 45 + 40 * Math.max(0, 1 - fd / 1.5); note = `FVG de alta (demanda) ~${fd.toFixed(1)} ATR abaixo — suporte/ímã de compra`; }
+    else if (fs < 1.5 && fs < fd) { sc = -(45 + 40 * Math.max(0, 1 - fs / 1.5)); note = `FVG de baixa (oferta) ~${fs.toFixed(1)} ATR acima — resistência/ímã de venda`; }
+    add("fvg", "Microestrutura", "Imbalance / FVG", 0.08, sc, note);
   }
 
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──

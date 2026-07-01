@@ -393,24 +393,31 @@ export default function AdminBot() {
     const p = positions.find((x) => x.asset === asset);
     const hasPos = !!p && p.position !== "flat";
     const isLimit = o.ord_type === "limit" && !!o.result?.data?.[0]?.ordId;
-    const confirmMsg = isLimit
-      ? "Cancelar esta ordem pendente e removê-la do histórico?"
-      : hasPos
-        ? `Fechar a posição de ${asset} (${p!.position === "long" ? "long" : "short"}) a mercado e remover esta ordem? (demo)`
-        : "Remover esta ordem do histórico? (não afeta a corretora)";
+    // Ordem que FALHOU (erro) não executou nada na corretora → só remove do histórico, nunca fecha posição.
+    const failed = !o.ok;
+    const confirmMsg = failed
+      ? "Remover esta ordem com erro do histórico? (ela não executou na corretora, não afeta a posição)"
+      : isLimit
+        ? "Cancelar esta ordem pendente e removê-la do histórico?"
+        : hasPos
+          ? `Fechar a posição de ${asset} (${p!.position === "long" ? "long" : "short"}) a mercado e remover esta ordem? (demo)`
+          : "Remover esta ordem do histórico? (não afeta a corretora)";
     if (!window.confirm(confirmMsg)) return;
     setBusy("row" + o.id);
     setMsg(null);
     try {
       const fn = cfg?.venue === "binance" ? "binance-bot" : "okx-bot";
-      if (isLimit) {
-        await invoke("cancel", { instId: o.inst_id, ordId: o.result!.data![0].ordId }, fn);
-      } else if (hasPos) {
-        const r = await invoke("close", { symbol: o.inst_id }, fn);
-        setMsg({ kind: "ok", text: r?.closed === false ? "Não havia posição aberta." : `Posição de ${asset} fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg?.quote_ccy}` : ""}.` });
+      if (!failed) {
+        if (isLimit) {
+          await invoke("cancel", { instId: o.inst_id, ordId: o.result!.data![0].ordId }, fn);
+        } else if (hasPos) {
+          const r = await invoke("close", { symbol: o.inst_id }, fn);
+          setMsg({ kind: "ok", text: r?.closed === false ? "Não havia posição aberta." : `Posição de ${asset} fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg?.quote_ccy}` : ""}.` });
+        }
       }
       const { error } = await supabase.rpc("bot_delete_order", { p_id: o.id });
       if (error) throw new Error(error.message);
+      if (failed) setMsg({ kind: "ok", text: "Ordem com erro removida do histórico." });
       await loadBase();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao cancelar/excluir." });
@@ -552,8 +559,8 @@ export default function AdminBot() {
                   {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
                     <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
                   )}
-                  <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
-                    {hasPos ? "cancelar" : "excluir"}
+                  <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={!o.ok ? "Remove a ordem com erro do histórico (não afeta a posição)" : hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
+                    {o.ok && hasPos ? "cancelar" : "excluir"}
                   </button>
                 </td>
               </tr>
@@ -647,7 +654,7 @@ export default function AdminBot() {
             <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. Consenso de estrutura SMC por timeframe (<strong>15m/30m/1H</strong>) é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong>, CVD, liquidações, gamma/HIRO e ETF confirmam. {isFut ? <>Nos futuros abre <strong>LONG</strong> no viés de alta e <strong>SHORT</strong> no de baixa; nunca compra caindo/no premium nem vende subindo/no discount.</> : <>Só compra com a estrutura a favor, fora do premium e sem estar caindo.</>} Compra/long se viés ≥ +{cfg.buy_threshold}; vende/short se ≤ −{cfg.sell_threshold}.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. Consenso de estrutura SMC por timeframe (<strong>15m/30m/1H/4H</strong>) — swing/BOS/CHoCH, zonas, order blocks e <strong>FVG/imbalance</strong> — é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong>, CVD, liquidações, gamma/HIRO e ETF confirmam. {isFut ? <>Nos futuros abre <strong>LONG</strong> no viés de alta e <strong>SHORT</strong> no de baixa; nunca compra caindo/no premium nem vende subindo/no discount.</> : <>Só compra com a estrutura a favor, fora do premium e sem estar caindo.</>} Compra/long se viés ≥ +{cfg.buy_threshold}; vende/short se ≤ −{cfg.sell_threshold}.</span>
           </div>
         </div>
       )}
