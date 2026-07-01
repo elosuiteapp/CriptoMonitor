@@ -7,8 +7,6 @@ import { SIGNUP_URL, PRICING, COMPARISON } from "../../consts";
 import { PRICING_EN, COMPARISON_EN } from "../../consts.en";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-const annual = (monthly: number) => Math.round(monthly * 12 * (1 - PRICING.annualDiscount));
-const annualUsd = (usd: number) => Math.round(usd * 12 * (1 - PRICING.annualDiscount));
 ---
 
 <Nav />
@@ -19,8 +17,8 @@ const annualUsd = (usd: number) => Math.round(usd * 12 * (1 - PRICING.annualDisc
     <p class="mt-3 text-muted">
       <T
         html
-        pt='Comece grátis e suba quando quiser o cockpit completo. No plano <strong class="text-fg">anual</strong> você leva <strong class="text-primary">30% OFF</strong> de lançamento.'
-        en='Start free and upgrade whenever you want the complete cockpit. On the <strong class="text-fg">annual</strong> plan you get <strong class="text-primary">30% off</strong> at launch.'
+        pt='Comece grátis. Assine <strong class="text-fg">1 módulo</strong> (Cripto, B3 ou Forex) ou leve <strong class="text-primary">os três no Completo</strong>. O plano anual sai mais barato.'
+        en='Start free. Subscribe to <strong class="text-fg">1 module</strong> (Crypto, B3, or Forex) or get <strong class="text-primary">all three in Complete</strong>. The annual plan is cheaper.'
       />
     </p>
   </div>
@@ -40,7 +38,7 @@ const annualUsd = (usd: number) => Math.round(usd * 12 * (1 - PRICING.annualDisc
         </div>
         {p.monthly > 0 && (
           <p class="mt-1 text-xs text-muted">
-            <T pt="ou" en="or" /> <span class="num text-fg"><T pt={brl(annual(p.monthly))} en={`$${annualUsd(PRICING_EN.plans[i].usd)}`} /></span><T pt="/ano · economize 30%" en="/yr · save 30%" />
+            <T pt="ou" en="or" /> <span class="num text-fg"><T pt={brl(p.annual)} en={`$${PRICING_EN.plans[i].usdAnnual}`} /></span><T pt="/mês no plano anual" en="/mo billed annually" />
           </p>
         )}
 
@@ -72,8 +70,8 @@ const annualUsd = (usd: number) => Math.round(usd * 12 * (1 - PRICING.annualDisc
           <tr class="bg-card">
             <th class="px-4 py-3 text-left font-semibold"><T pt="Recurso" en="Feature" /></th>
             <th class="px-3 py-3 text-center font-semibold">Free</th>
-            <th class="bg-primary/[0.06] px-3 py-3 text-center font-semibold text-primary">Pro</th>
-            <th class="px-3 py-3 text-center font-semibold">Expert</th>
+            <th class="px-3 py-3 text-center font-semibold"><T pt="1 Módulo" en="1 Module" /></th>
+            <th class="bg-primary/[0.06] px-3 py-3 text-center font-semibold text-primary"><T pt="Completo" en="Complete" /></th>
           </tr>
         </thead>
         <tbody>
@@ -88,11 +86,11 @@ const annualUsd = (usd: number) => Math.round(usd * 12 * (1 - PRICING.annualDisc
                   <td class="px-3 py-2.5 text-center">
                     {typeof r.free === "boolean" ? (r.free ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="text-fg"><T pt={r.free} en={String(COMPARISON_EN[gi].rows[ri].free)} /></span>}
                   </td>
-                  <td class="bg-primary/[0.06] px-3 py-2.5 text-center">
-                    {typeof r.pro === "boolean" ? (r.pro ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="font-medium text-fg"><T pt={r.pro} en={String(COMPARISON_EN[gi].rows[ri].pro)} /></span>}
-                  </td>
                   <td class="px-3 py-2.5 text-center">
-                    {typeof r.expert === "boolean" ? (r.expert ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="text-fg"><T pt={r.expert} en={String(COMPARISON_EN[gi].rows[ri].expert)} /></span>}
+                    {typeof r.module === "boolean" ? (r.module ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="text-fg"><T pt={r.module} en={String(COMPARISON_EN[gi].rows[ri].module)} /></span>}
+                  </td>
+                  <td class="bg-primary/[0.06] px-3 py-2.5 text-center">
+                    {typeof r.complete === "boolean" ? (r.complete ? <span class="text-up">✓</span> : <span class="text-muted opacity-40">—</span>) : <span class="font-medium text-fg"><T pt={r.complete} en={String(COMPARISON_EN[gi].rows[ri].complete)} /></span>}
                   </td>
                 </tr>
               ))}

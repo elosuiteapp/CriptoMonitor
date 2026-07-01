@@ -5,19 +5,20 @@ export const SITE_URL = "https://orbeview.com";
 export const SIGNUP_URL = `${APP_URL}/login`;
 export const LOGIN_URL = `${APP_URL}/login`;
 
-// Preços de lançamento (BRL). Fonte da verdade é a tabela `plans` no Supabase;
-// aqui é vitrine — manter em sincronia ao alterar preços no /admin.
+// Preços de lançamento (BRL). Modelo POR MÓDULO: um mercado completo, ou os três no Completo.
+// Fonte da verdade é a tabela `plans` no Supabase; aqui é vitrine — manter em sincronia.
+// `annual` = preço POR MÊS quando cobrado no plano anual (mais barato que o mensal).
 export const PRICING = {
-  annualDiscount: 0.3, // 30% OFF de lançamento (casar com Pricing do app + asaas-checkout)
   plans: [
     {
       slug: "free",
       name: "Free",
       monthly: 0,
-      tagline: "Comece a ler o mercado",
+      annual: 0,
+      tagline: "Conheça os 3 mercados",
       features: [
-        "Cockpit do BTC (atualização a cada 60 min)",
-        "Prévia de Macro & Correlações (DXY, Nasdaq, VIX)",
+        "Vitrine ao vivo dos 3 módulos: Cripto, B3 e Forex",
+        "Cripto: cockpit do BTC + camadas (gamma, VP, CVD do varejo)",
         "Notícias, Fear & Greed e calendário econômico",
         "Newsletter semanal completa",
       ],
@@ -25,41 +26,41 @@ export const PRICING = {
       highlight: false,
     },
     {
-      slug: "pro",
-      name: "Pro",
-      monthly: 59,
-      tagline: "O cockpit completo",
+      slug: "module",
+      name: "1 Módulo",
+      monthly: 79,
+      annual: 59,
+      tagline: "Um mercado, completo e sem travas",
       features: [
-        "20 ativos, dados a cada 5 min",
-        "Gamma, volatilidade e Macro & Correlações",
-        "Cockpit de varejo: funding, CVD, long/short e liquidações",
-        "Níveis de opções no gráfico + paredes do book",
-        "Alertas in-app e relatórios diários por IA",
+        "Escolha 1 módulo: Cripto, B3 ou Forex",
+        "Cockpit completo do mercado, dados a cada 5 min",
+        "Gamma/opções, fluxo, Smart Money e macro",
+        "Leitura do Mercado: viés, convicção e alvos",
+        "IA + alertas (in-app, push e e-mail)",
       ],
-      cta: "Assinar Pro",
-      highlight: true,
+      cta: "Assinar 1 módulo",
+      highlight: false,
     },
     {
-      slug: "expert",
-      name: "Expert",
-      monthly: 149,
-      tagline: "Inteligência institucional",
+      slug: "complete",
+      name: "OrbeView Completo",
+      monthly: 159,
+      annual: 129,
+      tagline: "Cripto + B3 + Forex, tudo liberado",
       features: [
-        "Tudo do Pro +",
-        "Leitura do Mercado: viés, convicção e alvos numa síntese só (exclusivo)",
-        "Institucional × varejo: quem compra à vista vs quem alavanca (ETFs, opções e liquidez do book)",
-        "Camadas avançadas no gráfico: CVD, funding, pressão do book e heatmap",
-        "Smart Money & On-chain · qualquer moeda",
-        "Relatórios sob demanda · 30 análises de IA/dia",
+        "Os 3 módulos completos, sem limites",
+        "3 mercados pelo preço de 2",
+        "Toda a profundidade em cada mercado",
+        "IA + alertas em todos os módulos",
+        "Prioridade nos próximos módulos",
       ],
-      cta: "Assinar Expert",
-      highlight: false,
+      cta: "Assinar Completo",
+      highlight: true,
     },
   ],
 };
 
-// Mercados do switcher da home. `live` define se já está no ar (Crypto) ou "em breve"
-// (B3/Forex). Cada um traz suas peculiaridades — o painel troca ao clicar na aba.
+// Mercados do switcher da home. `live` = já está no ar. Os TRÊS no ar (Cripto, B3, Forex).
 export const MARKETS = [
   {
     id: "crypto",
@@ -71,7 +72,7 @@ export const MARKETS = [
     points: [
       "Gamma e opções (BTC, ETH, SOL) no estilo SpotGamma",
       "Fluxo de varejo × institucional, funding e liquidações",
-      "Smart Money & On-chain: SMC, unlocks e stablecoins",
+      "Smart Money & On-chain: SMC, order blocks, FVG e unlocks",
       "Mercado 24/7, sem pregão — leitura em tempo real",
     ],
   },
@@ -79,101 +80,63 @@ export const MARKETS = [
     id: "b3",
     icon: "🇧🇷",
     label: "B3 · Ações",
-    note: "em breve",
-    live: false,
+    note: "no ar",
+    live: true,
     tagline: "A bolsa brasileira com a leitura de quem move o fluxo.",
     points: [
-      "Gamma e opções de ações e índice (PETR, VALE, IBOV)",
-      "Fluxo de estrangeiro e institucional × pessoa física",
-      "Pregão, leilão de abertura/fechamento e after-market",
-      "Proventos, dividendos e datas-com no radar",
+      "Cockpit de ações e índice (IBOV, PETR, VALE e cia)",
+      "Smart Money: estrutura, zonas e liquidez (SMC)",
+      "Fluxo por investidor: estrangeiro × institucional × pessoa física",
+      "Proventos, dividendos e calendário no radar",
     ],
   },
   {
     id: "forex",
     icon: "💱",
     label: "Forex",
-    note: "em breve",
-    live: false,
+    note: "no ar",
+    live: true,
     tagline: "Câmbio global lido pelas mãos fortes.",
     points: [
-      "Pares principais e o dólar (DXY) como bússola",
-      "Sessões Ásia / Londres / Nova York e a liquidez de cada uma",
-      "Juros, carry trade e diferencial de taxas",
-      "Calendário macro (Fed, Copom, payroll) integrado",
+      "Pares principais + força de moedas e o dólar (DXY)",
+      "Smart Money e leitura top-down por timeframe",
+      "COT/CFTC: posicionamento institucional e carry",
+      "Sessões (Ásia/Londres/NY) e calendário macro (Fed, Copom, payroll)",
     ],
   },
 ];
 
-// Matriz de comparação detalhada (Free × Pro × Expert) para a página /precos.
+// Matriz de comparação (Free × 1 Módulo × Completo) para a página /precos.
 // Em cada célula: true = ✓ incluído, false = — não incluído, string = detalhe/limite.
+// module e complete têm a MESMA profundidade; o que muda é quantos mercados.
 export const COMPARISON = [
   {
-    group: "Leitura do Mercado (síntese exclusiva)",
+    group: "Mercados",
     rows: [
-      { label: "Leitura sintetizada: viés + convicção + regime + divergências", free: false, pro: false, expert: true },
-      { label: "Alvos de liquidez (pra onde o preço é puxado)", free: false, pro: false, expert: true },
+      { label: "Mercados incluídos", free: "Vitrine dos 3", module: "1 à escolha", complete: "Cripto + B3 + Forex" },
+      { label: "Cockpit completo, sem travas", free: false, module: true, complete: true },
+      { label: "Atualização dos dados", free: "A cada 1h", module: "Tempo real (5 min)", complete: "Tempo real (5 min)" },
     ],
   },
   {
-    group: "Ativos e dados",
+    group: "O que vem em cada módulo",
     rows: [
-      { label: "Ativos no cockpit", free: "Só BTC", pro: "20 ativos", expert: "20 ativos" },
-      { label: "Atualização dos dados", free: "A cada 1h", pro: "A cada 5 min", expert: "A cada 5 min" },
+      { label: "Gamma, opções e níveis institucionais", free: false, module: true, complete: true },
+      { label: "Fluxo: funding, CVD, long/short e liquidações", free: false, module: true, complete: true },
+      { label: "Smart Money: estrutura, order blocks, liquidez e FVG", free: false, module: true, complete: true },
+      { label: "Institucional × varejo (mãos fortes vs alavancado)", free: false, module: true, complete: true },
+      { label: "Leitura do Mercado: viés, convicção e alvos", free: false, module: true, complete: true },
+      { label: "Camadas avançadas no gráfico (CVD, book, heatmap)", free: false, module: true, complete: true },
     ],
   },
   {
-    group: "Gráfico e opções",
+    group: "Macro, IA e alertas",
     rows: [
-      { label: "Módulo Gamma (regime, Zero Gamma, Max Pain, Call/Put Wall)", free: false, pro: true, expert: true },
-      { label: "Volatilidade (DVOL, IV percentile, term structure)", free: false, pro: true, expert: true },
-      { label: "Volume Profile (POC) e paredes do book", free: false, pro: true, expert: true },
-      { label: "Camadas avançadas: CVD, funding, pressão do book e heatmap", free: false, pro: false, expert: true },
-    ],
-  },
-  {
-    group: "Fluxo do varejo",
-    rows: [
-      { label: "Funding, CVD, long/short, liquidações e risco de squeeze", free: false, pro: true, expert: true },
-      { label: "Pressão do book do varejo", free: false, pro: true, expert: true },
-    ],
-  },
-  {
-    group: "Institucional × varejo",
-    rows: [
-      { label: "Viés institucional × varejo (quem compra à vista vs quem alavanca)", free: false, pro: false, expert: true },
-      { label: "ETFs spot, hedge de opções e liquidez do book institucional", free: false, pro: false, expert: true },
-    ],
-  },
-  {
-    group: "Macro e contexto",
-    rows: [
-      { label: "Macro & Correlações", free: "Prévia (4 pares)", pro: "Completo", expert: "Completo" },
-      { label: "Calendário econômico global", free: true, pro: true, expert: true },
-      { label: "Notícias e Fear & Greed", free: true, pro: true, expert: true },
-    ],
-  },
-  {
-    group: "Smart Money e On-chain",
-    rows: [
-      { label: "Smart Money (SMC, order blocks, liquidez) · 100 moedas", free: false, pro: false, expert: true },
-      { label: "On-chain: unlocks, stablecoins e atividade de rede", free: false, pro: false, expert: true },
-    ],
-  },
-  {
-    group: "IA e relatórios",
-    rows: [
-      { label: "Análises de IA por dia", free: "1", pro: "10", expert: "30" },
-      { label: "Relatórios diários por IA", free: false, pro: true, expert: "+ sob demanda" },
-      { label: "Newsletter semanal completa", free: true, pro: true, expert: true },
-    ],
-  },
-  {
-    group: "Alertas",
-    rows: [
-      { label: "Alertas in-app e push (preço, funding, gamma)", free: false, pro: true, expert: true },
-      { label: "Alerta por e-mail", free: false, pro: false, expert: true },
-      { label: "Histórico de alertas", free: false, pro: "30 dias", expert: "Completo" },
+      { label: "Macro & Correlações", free: "Prévia", module: "Completo", complete: "Completo" },
+      { label: "Calendário econômico e notícias", free: true, module: true, complete: true },
+      { label: "Relatórios e análises por IA", free: "Limitado", module: "Completo", complete: "Completo" },
+      { label: "Alertas in-app, push e e-mail", free: false, module: true, complete: true },
+      { label: "Newsletter semanal completa", free: true, module: true, complete: true },
     ],
   },
 ];

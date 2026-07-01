@@ -22,16 +22,8 @@ const FEATURES = [
 const STEPS = [
   { n: "1", title: { pt: "Crie sua conta grátis", en: "Create your free account" }, desc: { pt: "Comece pelo cockpit do BTC e pela newsletter semanal, sem cartão.", en: "Start with the BTC cockpit and the weekly newsletter — no card required." } },
   { n: "2", title: { pt: "Leia o mercado com clareza", en: "Read the market clearly" }, desc: { pt: "Gamma, fluxo e liquidez traduzidos em semáforo — sem precisar ser quant.", en: "Gamma, flow, and liquidity turned into a simple signal — no quant background needed." } },
-  { n: "3", title: { pt: "Suba quando quiser mais", en: "Upgrade whenever you want more" }, desc: { pt: "Pro abre 20 ativos, gamma, macro e alertas. Expert adiciona a camada institucional, o fluxo avançado e o Smart Money.", en: "Pro unlocks 20 assets, gamma, macro, and alerts. Expert adds the institutional layer, advanced flow, and Smart Money." } },
+  { n: "3", title: { pt: "Assine o que você usa", en: "Subscribe to what you use" }, desc: { pt: "Um módulo (Cripto, B3 ou Forex) libera tudo daquele mercado — ou leve os três no Completo por um preço só.", en: "One module (Crypto, B3, or Forex) unlocks everything in that market — or get all three in Complete for one price." } },
 ];
-
-// Cor do selo de plano em cada recurso (qual plano libera).
-const tierBadge = (tier: string) =>
-  tier === "Expert"
-    ? "bg-primary-strong text-white"
-    : tier === "Pro"
-      ? "border border-primary text-primary"
-      : "border border-line text-muted";
 
 // Candles do mockup do hero (decorativo). t/b = topo/base do corpo; o pavio extrapola ±9.
 const CANDLES = [
@@ -71,8 +63,8 @@ const CANDLES = [
       </h1>
       <p class="mt-5 max-w-md text-lg text-muted">
         <T
-          pt="OrbeView traduz gamma, smart money e fluxo de capital em uma leitura clara — para você decidir com a visão de quem move o mercado. Cripto agora; ações (B3) e câmbio chegando."
-          en="OrbeView turns gamma, smart money, and capital flow into a clear read — so you can decide with the perspective of those who move the market. Crypto now; stocks (B3) and forex on the way."
+          pt="OrbeView traduz gamma, smart money e fluxo de capital em uma leitura clara — para você decidir com a visão de quem move o mercado. Cripto, ações (B3) e câmbio (Forex): os três no ar."
+          en="OrbeView turns gamma, smart money, and capital flow into a clear read — so you can decide with the perspective of those who move the market. Crypto, stocks (B3), and forex — all three live."
         />
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-3">
@@ -191,14 +183,13 @@ const CANDLES = [
 <section id="recursos" class="mx-auto max-w-6xl px-4 py-20">
   <div class="mx-auto max-w-2xl text-center">
     <h2 class="text-3xl font-bold tracking-tight"><T pt="As ferramentas que faltavam pro varejo" en="The tools retail was missing" /></h2>
-    <p class="mt-3 text-muted"><T pt="O que antes só mesa institucional via — agora num semáforo que qualquer trader entende. O selo em cada recurso mostra o plano que o libera." en="What only the institutional desk used to see — now in a simple read any trader can follow. The badge on each feature shows the plan that unlocks it." /></p>
+    <p class="mt-3 text-muted"><T pt="O que antes só mesa institucional via — agora num semáforo que qualquer trader entende. Tudo isso vem em qualquer módulo pago; o Free mostra uma prévia." en="What only the institutional desk used to see — now in a simple read any trader can follow. It all comes with any paid module; Free gives you a preview." /></p>
   </div>
   <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
     {FEATURES.map((f) => (
       <div class="card-lift rounded-2xl border border-line bg-card p-6">
         <div class="flex items-start justify-between gap-3">
           <div class="icon-pop text-2xl" aria-hidden>{f.icon}</div>
-          <span class={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tierBadge(f.tier)}`}><T pt={f.tier} en={f.tierEn} /></span>
         </div>
         <h3 class="mt-3 font-semibold"><T pt={f.title.pt} en={f.title.en} /></h3>
         <p class="mt-1.5 text-sm text-muted"><T pt={f.desc.pt} en={f.desc.en} /></p>
@@ -226,7 +217,7 @@ const CANDLES = [
 <section id="precos" class="mx-auto max-w-6xl px-4 py-20">
   <div class="mx-auto max-w-2xl text-center">
     <h2 class="text-3xl font-bold tracking-tight"><T pt="Planos" en="Plans" /></h2>
-    <p class="mt-3 text-muted"><T pt="Comece grátis. Suba quando quiser o cockpit completo. Anual com 30% OFF de lançamento." en="Start free. Upgrade whenever you want the complete cockpit. Annual plans launch at 30% off." /></p>
+    <p class="mt-3 text-muted"><T pt="Comece grátis. Assine um módulo ou leve os três no Completo. O anual sai mais barato." en="Start free. Subscribe to one module or get all three in Complete. Annual is cheaper." /></p>
   </div>
   <div class="mt-12 grid gap-5 lg:grid-cols-3">
     {PRICING.plans.map((p, i) => (
@@ -240,6 +231,9 @@ const CANDLES = [
           </span>
           {p.monthly > 0 && <span class="text-sm text-muted"><T pt="/mês" en="/mo" /></span>}
         </div>
+        {p.monthly > 0 && (
+          <p class="mt-1 text-xs text-muted"><T pt="ou" en="or" /> <span class="num text-fg"><T pt={brl(p.annual)} en={`$${PRICING_EN.plans[i].usdAnnual}`} /></span><T pt="/mês no anual" en="/mo billed annually" /></p>
+        )}
         <ul class="mt-5 space-y-2 text-sm">
           {p.features.map((f, j) => (
             <li class="flex gap-2 text-muted"><span class="text-up">✓</span><span><T pt={f} en={PRICING_EN.plans[i].features[j]} /></span></li>
