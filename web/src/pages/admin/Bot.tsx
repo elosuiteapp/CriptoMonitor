@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { UTCTimestamp } from "lightweight-charts";
 
@@ -201,23 +201,36 @@ export default function AdminBot() {
     setPositions((pos as BotPosition[] | null) ?? []);
   }, []);
 
+  // Guarda contra respostas obsoletas: cada chamada ganha um token; só a MAIS RECENTE
+  // aplica o resultado. Sem isso, ao trocar de ativo/TF (ou com o poll + rede lenta) a
+  // resposta que chega por último vence — mesmo sendo de outro ativo (velas do BTC sob BNB).
+  const chartReqRef = useRef(0);
   const loadChart = useCallback(async (instId: string, bar: string, venue: string) => {
+    const token = ++chartReqRef.current;
     try {
       const r = await invoke("candles", { instId, bar, limit: 200 }, venue === "binance" ? "binance-bot" : "okx-bot");
+      if (token !== chartReqRef.current) return; // trocou de ativo/TF em voo → descarta
       const rows = ((r?.data ?? []) as string[][]).slice().reverse();
       const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4] }));
       setCandles(cs);
     } catch {
-      setCandles([]);
+      if (token === chartReqRef.current) setCandles([]);
     }
   }, []);
 
   // inst_id da moeda em foco (multi-ativo): no binance é ATIVO+quote; fallback ao inst_id do config.
   const selInst = cfg?.venue === "binance" ? `${selAsset}${cfg?.quote_ccy ?? "USDT"}` : (cfg?.inst_id ?? `${selAsset}USDT`);
 
-  // Carrega gráfico quando a moeda em foco / TF / conexão mudam.
+  // Carrega o gráfico da moeda/TF em foco e reatualiza sozinho a cada 20s (o refresh vivo
+  // não passa mais por aqui — evita o poll fixar um selInst obsoleto e sobrescrever o ativo).
+  // Limpa na hora ao trocar: nunca mostra as velas do ativo anterior sob o header novo.
   useEffect(() => {
-    if (cfg && connected) loadChart(selInst, cfg.bar, cfg.venue);
+    if (!cfg || !connected) return;
+    setCandles([]);
+    loadChart(selInst, cfg.bar, cfg.venue);
+    const id = setInterval(() => loadChart(selInst, cfg.bar, cfg.venue), 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selInst, cfg?.bar, cfg?.venue, connected, loadChart]);
 
   // PnL ao vivo de TODAS as moedas (multi-ativo): 1 call traz todas as posições da Binance.
@@ -249,14 +262,13 @@ export default function AdminBot() {
         if (active) setTotalEq(bal?.data?.[0]?.totalEq ?? null);
       } catch { /* silencioso */ }
       if (!active) return;
-      if (cfg) await loadChart(selInst, cfg.bar, cfg.venue);
-      await loadLive();
+      await loadLive(); // o gráfico se atualiza sozinho no efeito dedicado (nada de selInst obsoleto aqui)
     };
     tick();
     const id = setInterval(tick, 20000);
     return () => { active = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, cfg?.inst_id, cfg?.bar, cfg?.venue, loadChart, loadLive]);
+  }, [connected, cfg?.inst_id, cfg?.venue, loadLive]);
 
   async function refresh() {
     if (!connected || !cfg) return;
