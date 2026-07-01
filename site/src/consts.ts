@@ -61,6 +61,9 @@ export const PRICING = {
 };
 
 // Mercados do switcher da home. `live` = já está no ar. Os TRÊS no ar (Cripto, B3, Forex).
+// `accent` = token de cor do mercado (indigo/verde/âmbar) — as classes literais ficam
+// no Home.astro (mapa ACCENT) p/ o Tailwind detectar. `features` = as ferramentas que
+// cada mercado entrega (a seção "As ferramentas..." troca junto com o switcher).
 export const MARKETS = [
   {
     id: "crypto",
@@ -74,6 +77,14 @@ export const MARKETS = [
       "Fluxo de varejo × institucional, funding e liquidações",
       "Smart Money & On-chain: SMC, order blocks, FVG e unlocks",
       "Mercado 24/7, sem pregão — leitura em tempo real",
+    ],
+    features: [
+      { icon: "🧭", title: "Leitura do Mercado", desc: "Tendência, fluxo e liquidez viram um só veredito — comprar, vender ou esperar — com convicção, divergências e alvos." },
+      { icon: "📊", title: "Gamma e opções", desc: "Regime de gamma, Zero Gamma, Max Pain e as paredes de call e put — os níveis que as opções defendem, estilo SpotGamma." },
+      { icon: "🌊", title: "Fluxo e alavancagem", desc: "Funding, CVD, long/short e liquidações: onde o dinheiro alavancado se acumula e quando vira combustível de squeeze." },
+      { icon: "🏦", title: "Institucional × varejo", desc: "Quem compra à vista — spot, ETFs e hedge de opções — contra o varejo alavancado. Cruzar os dois lados é a leitura mais forte." },
+      { icon: "🧠", title: "Smart Money & On-chain", desc: "Estrutura SMC, order blocks, liquidez, unlocks e atividade da rede — em qualquer moeda." },
+      { icon: "🌐", title: "Macro & Correlações", desc: "Correlação com DXY, Nasdaq, ouro e VIX, liquidez em stablecoins e o calendário econômico global." },
     ],
   },
   {
@@ -89,6 +100,14 @@ export const MARKETS = [
       "Fluxo por investidor: estrangeiro × institucional × pessoa física",
       "Proventos, dividendos e calendário no radar",
     ],
+    features: [
+      { icon: "🧭", title: "Leitura do Mercado", desc: "Tendência, estrutura e o macro brasileiro num só viés por ação ou índice — o que muda a leitura e onde estão os gatilhos, em reais." },
+      { icon: "🌡️", title: "Medo & Ganância Brasil", desc: "Um termômetro próprio do humor da bolsa: amplitude do mercado, momento do IBOV, volatilidade e câmbio porto-seguro num número de 0 a 100." },
+      { icon: "👥", title: "Fluxo por investidor", desc: "Quem está comprando: estrangeiro, institucional ou pessoa física. O placar que revela a mão que sustenta — ou derruba — o pregão." },
+      { icon: "🧠", title: "Smart Money (SMC)", desc: "Estrutura, zonas de compra e venda, order blocks e liquidez — a mesma engenharia de mão forte, aplicada a ações e FIIs." },
+      { icon: "🏢", title: "FIIs a fundo", desc: "Dividend yield vs CDI, P/VP e deságio, segmento e sustentabilidade do rendimento — o raio-x de cada fundo imobiliário." },
+      { icon: "🌐", title: "Macro BR & Commodities", desc: "CDI, IBC-Br e desemprego, mais Brent, ouro e cobre que movem PETR, VALE e as siderúrgicas — e a maré global do Fed." },
+    ],
   },
   {
     id: "forex",
@@ -102,6 +121,14 @@ export const MARKETS = [
       "Smart Money e leitura top-down por timeframe",
       "COT/CFTC: posicionamento institucional e carry",
       "Sessões (Ásia/Londres/NY) e calendário macro (Fed, Copom, payroll)",
+    ],
+    features: [
+      { icon: "🧭", title: "Leitura do Mercado", desc: "Tendência, estrutura e a força do dólar num só viés por par — com cabo de guerra das forças, cenários e divergências." },
+      { icon: "💪", title: "Força das moedas & DXY", desc: "Quem está forte e quem está fraco (24h e 5 dias) e o dólar (DXY) que comanda o câmbio — pra operar o par certo, no lado certo." },
+      { icon: "🏦", title: "Posicionamento COT", desc: "O smart money do câmbio (CFTC): institucional × hedge funds × varejo. Quando institucional e varejo divergem, o varejo costuma errar." },
+      { icon: "💰", title: "Carry & juros", desc: "O motor de longo prazo do FX: o diferencial de juros entre as moedas — quem paga mais atrai capital e sustenta a tendência." },
+      { icon: "🌗", title: "Risk-on/off & sessões", desc: "O humor global (AUD e NZD × JPY e CHF) e as sessões Ásia, Londres e NY que ligam e desligam a liquidez do câmbio." },
+      { icon: "🗓️", title: "Calendário macro", desc: "Fed, Copom, payroll e cia. organizados por moeda — os eventos que sacodem os pares, antes de eles te sacudirem." },
     ],
   },
 ];

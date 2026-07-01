@@ -57,6 +57,14 @@ export const MARKETS_EN = [
       "Smart Money & On-chain: SMC, order blocks, FVG, and unlocks",
       "A 24/7 market, no closing bell — read it in real time",
     ],
+    features: [
+      { title: "Market Read", desc: "Trend, flow, and liquidity become a single verdict — buy, sell, or wait — with conviction, divergences, and targets." },
+      { title: "Gamma & options", desc: "Gamma regime, Zero Gamma, Max Pain, and the call/put walls — the levels options defend, SpotGamma-style." },
+      { title: "Flow & leverage", desc: "Funding, CVD, long/short, and liquidations: where leveraged money piles up and when it turns into squeeze fuel." },
+      { title: "Institutional vs. retail", desc: "Who buys spot — spot markets, ETFs, and options hedging — against leveraged retail. Cross-referencing both sides is the strongest read." },
+      { title: "Smart Money & On-chain", desc: "SMC structure, order blocks, liquidity, unlocks, and network activity — on any coin." },
+      { title: "Macro & Correlations", desc: "Correlations with DXY, Nasdaq, gold, and VIX, plus stablecoin liquidity and the global economic calendar." },
+    ],
   },
   {
     label: "B3 · Stocks",
@@ -68,6 +76,14 @@ export const MARKETS_EN = [
       "Flow by investor type: foreign vs. institutional vs. retail",
       "Earnings, dividends, and calendar on your radar",
     ],
+    features: [
+      { title: "Market Read", desc: "Trend, structure, and Brazil's macro in a single bias per stock or index — what shifts the read and where the triggers are, in reais." },
+      { title: "Fear & Greed Brazil", desc: "A homegrown gauge of the exchange's mood: market breadth, IBOV momentum, volatility, and safe-haven FX in one 0–100 score." },
+      { title: "Flow by investor", desc: "Who's buying: foreign, institutional, or retail. The scoreboard that reveals the hand holding up — or sinking — the session." },
+      { title: "Smart Money (SMC)", desc: "Structure, buy/sell zones, order blocks, and liquidity — the same smart-money engineering, applied to stocks and REITs." },
+      { title: "REITs in depth", desc: "Dividend yield vs. CDI, P/BV and discount, segment, and payout sustainability — the x-ray of every Brazilian REIT (FII)." },
+      { title: "Brazil macro & commodities", desc: "CDI, IBC-Br, and unemployment, plus Brent, gold, and copper that move PETR, VALE, and the steelmakers — and the Fed's global tide." },
+    ],
   },
   {
     label: "Forex",
@@ -78,6 +94,14 @@ export const MARKETS_EN = [
       "Smart Money and top-down read across timeframes",
       "COT/CFTC: institutional positioning and carry",
       "Sessions (Asia/London/NY) and macro calendar (Fed, Copom, payrolls)",
+    ],
+    features: [
+      { title: "Market Read", desc: "Trend, structure, and dollar strength in a single bias per pair — with a force tug-of-war, scenarios, and divergences." },
+      { title: "Currency strength & DXY", desc: "Who's strong and who's weak (24h and 5 days) and the dollar (DXY) that runs FX — so you trade the right pair, on the right side." },
+      { title: "COT positioning", desc: "FX's smart money (CFTC): institutional vs. hedge funds vs. retail. When institutions and retail diverge, retail is usually wrong." },
+      { title: "Carry & rates", desc: "FX's long-term engine: the interest-rate differential between currencies — whoever pays more attracts capital and sustains the trend." },
+      { title: "Risk-on/off & sessions", desc: "The global mood (AUD and NZD vs. JPY and CHF) and the Asia, London, and NY sessions that switch FX liquidity on and off." },
+      { title: "Macro calendar", desc: "Fed, Copom, payrolls, and more, organized by currency — the events that shake the pairs, before they shake you." },
     ],
   },
 ];
