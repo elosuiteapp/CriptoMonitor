@@ -122,6 +122,8 @@ Deno.serve(async (req) => {
       const ok = !!r?.orderId && !r?.code;
       let avgPx = Number(r?.avgPrice) || null;
       if (ok && (!avgPx || avgPx === 0) && r?.orderId) avgPx = await fillPrice(symbol, r.orderId, creds);
+      // Fallback: se o fill não voltou (demo às vezes atrasa), usa o ticker do momento — evita PREÇO "—".
+      if (ok && (!avgPx || avgPx === 0)) { const tk = await bnb("GET", "/fapi/v1/ticker/price", { symbol }, creds, false); avgPx = Number(tk?.price) || avgPx; }
       await admin.from("bot_orders").insert({ source: "manual", action: "order", inst_id: symbol, side: side.toLowerCase(), ord_type: ordType.toLowerCase(), sz: qty, px: px ?? null, avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok, result: r });
       return json(200, { ...r, avgPrice: avgPx ?? r?.avgPrice });
     }
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
       let pnl: number | null = null;
       if (cfg.entry_px && avgPx) pnl = (avgPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (cfg.position === "long" ? 1 : -1);
       await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
-      await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok: true, result: r, note: `fechada manualmente${pnl != null ? ` · PnL ${pnl.toFixed(2)}` : ""}` });
+      await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok: true, result: r, pnl, note: `fechada manualmente${pnl != null ? ` · PnL ${pnl.toFixed(2)}` : ""}` });
       await admin.from("bot_logs").insert({ level: "trade", message: `Posição ${cfg.position} fechada manualmente${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, detail: { orderId: r?.orderId } });
       return json(200, { ...r, closed: true, pnl });
     }

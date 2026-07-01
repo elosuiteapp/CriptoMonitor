@@ -425,7 +425,7 @@ Deno.serve(async (req) => {
         const exitPx = res.ap ?? lastPx;
         if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (pos === "long" ? 1 : -1);
         await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
-        await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+        await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
         pos = "flat";
       }
       // 2) Abre o alvo (se não for ficar fora).
@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
         if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
         const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
         await admin.from("bot_config").update({ position: target, pos_base_sz: filled, entry_px: entryPx }).eq("id", 1);
-        await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+        await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
         await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${qtyStr} ${cfg.base_ccy} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
         return json(200, { decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, signals, structure });
       }
@@ -481,7 +481,7 @@ Deno.serve(async (req) => {
       const exitPx = res.ap ?? lastPx;
       if (cfg.entry_px) pnl = (exitPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (isSwap ? ctVal : 1) * (pos === "long" ? 1 : -1);
       await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
-      await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+      await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: cfg.inst_id, side: closeSide, ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
       pos = "flat";
     }
     // 2) Abre o alvo (se não for ficar fora).
@@ -498,7 +498,7 @@ Deno.serve(async (req) => {
       const res = await place(openSide, sz, false);
       if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, ok: false, result: res.r, note: "falha ao abrir" }); await log("error", `Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return json(200, { decision: "error", error: res.sMsg, pnl }); }
       await admin.from("bot_config").update({ position: target, pos_base_sz: res.fz ?? Number(sz), entry_px: res.ap ?? lastPx }).eq("id", 1);
-      await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, avg_px: res.ap, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${notional.toFixed(0)}${isSwap ? ` (${cfg.leverage}x)` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+      await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: cfg.inst_id, side: openSide, ord_type: "market", sz, avg_px: res.ap ?? lastPx, fill_sz: res.fz, ok: true, result: res.r, note: `abriu ${lbl(target)} ~$${notional.toFixed(0)}${isSwap ? ` (${cfg.leverage}x)` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
       await log("trade", `${target === "long" ? "LONG (compra)" : "SHORT (venda)"} aberto · ${sz}${isSwap ? ` ct ~$${notional.toFixed(0)}` : ` ${cfg.quote_ccy}`}${res.ap ? ` @ ${res.ap}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, code: res.r.code, msg: res.r.msg });
       return json(200, { decision: target, ok: true, bias, conviction, avgPx: res.ap, notional, pnl, signals, structure });
     }

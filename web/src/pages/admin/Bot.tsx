@@ -53,6 +53,7 @@ interface OrderRow {
   ord_type: string | null;
   sz: string | null;
   avg_px: number | null;
+  pnl: number | null;
   ok: boolean;
   result: { msg?: string; data?: { sMsg?: string; ordId?: string }[] } | null;
   created_at: string;
@@ -126,7 +127,7 @@ export default function AdminBot() {
     const [{ data: st }, { data: c }, { data: ord }, { data: lg }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
     ]);
     const conf = (c as Config) ?? null;
@@ -145,7 +146,7 @@ export default function AdminBot() {
   const loadLive = useCallback(async () => {
     const [{ data: c }, { data: ord }, { data: lg }] = await Promise.all([
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold } : (c as Config)));
@@ -380,6 +381,9 @@ export default function AdminBot() {
   const isBinance = cfg?.venue === "binance";
   const isFut = isBinance || (!!cfg?.inst_id && cfg.inst_id.toUpperCase().endsWith("-SWAP"));
   const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
+  // Ordem que abriu a posição ATUAL (a mais recente de abertura, com posição não-flat) → mostra
+  // PnL ao vivo na linha. Fechamentos mostram o PnL realizado salvo (o.pnl). Resto: "—".
+  const openEntryId = cfg && cfg.position !== "flat" ? orders.find((o) => (o.action === "order" || o.action === "open") && o.ok)?.id ?? null : null;
 
   return (
     <section className="space-y-5">
@@ -606,7 +610,7 @@ export default function AdminBot() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
+                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Receita</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
@@ -616,6 +620,19 @@ export default function AdminBot() {
                     <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
                     <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
                     <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, dec) : "—"}</td>
+                    <td className="num px-4 py-2 text-right">
+                      {(() => {
+                        // Fechamento → PnL realizado salvo; ordem da posição aberta → PnL ao vivo; resto → "—".
+                        const live = o.id === openEntryId ? posInfo?.uPnl ?? null : null;
+                        const v = o.pnl != null ? o.pnl : live;
+                        if (v == null) return <span className="text-muted-foreground">—</span>;
+                        return (
+                          <span className={v >= 0 ? "text-emerald-500" : "text-rose-500"} title={o.pnl != null ? "realizado" : "em aberto (ao vivo)"}>
+                            {v >= 0 ? "+" : ""}{num(v)}{live != null && o.pnl == null ? "*" : ""}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-2">{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">
                       {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
@@ -627,6 +644,7 @@ export default function AdminBot() {
                 ))}
               </tbody>
             </table>
+            <p className="px-4 py-2 text-[10px] text-muted-foreground">Receita: <span className="text-emerald-500">verde</span>/<span className="text-rose-500">vermelho</span> = ganho/perda. <span className="num">*</span> = ao vivo (posição em aberto); demais = realizado no fechamento.</p>
           </div>
         )}
       </div>
