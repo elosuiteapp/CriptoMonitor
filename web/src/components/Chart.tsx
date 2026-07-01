@@ -30,9 +30,10 @@ import {
   type Timeframe,
   type VolumeProfile,
 } from "../lib/marketData";
-import { buildBookDepthGrid, bookHeatColor, BOOK_HEAT_GRADIENT, windowedBookImbalance } from "../lib/bookDepthGrid";
+import { buildBookDepthGrid, bookHeatColor, BOOK_HEAT_GRADIENT } from "../lib/bookDepthGrid";
 import { aggregateWalls, type WallZone } from "../lib/orderbookWalls";
 import type { GammaData, OrderbookDepthRow, OrderbookWall } from "../lib/types";
+import { useBookPressureWindows } from "../hooks/useBookPressureWindows";
 
 export interface ActiveLayers {
   gex: boolean; // Call Wall + Put Wall
@@ -88,16 +89,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const { isEn, t } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
   // Pressão do book (±2%) por JANELA — 48h (estrutura) / 12h (médio) / 30m (liquidez do
-  // momento) — p/ ver de que lado a liquidez vem ganhando força (a curta reage mais
-  // rápido que a longa). 3 janelas bastam; depth tem resolução de 4min (sobra p/ 30m).
-  const bookPressures = useMemo(() => {
-    const wins: { label: string; ms: number }[] = [
-      { label: "48h", ms: 48 * 3600_000 },
-      { label: "12h", ms: 12 * 3600_000 },
-      { label: "30m", ms: 30 * 60_000 },
-    ];
-    return wins.map((w) => ({ label: w.label, imb: windowedBookImbalance(depth ?? null, 0.02, w.ms) }));
-  }, [depth]);
+  // momento). Vem do orderbook_imbalance (RPC, sql/071) → funciona em TODAS as moedas
+  // (o depth/heatmap só cobre BTC/ETH/SOL/BNB). Só busca com a camada de heatmap ligada.
+  const bookPressures = useBookPressureWindows(asset, canUseLayers && layers.bookHeatmap);
 
   // Paredes FORTES (baleias): soma só as ordens grandes do book, ponderadas pela
   // proximidade do preço (colada=1; a 0,5%≈0,5; a 3,5%≈0,12) → suporte (bids) × resistência
@@ -892,8 +886,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
             )}
           >
             <div className="font-semibold text-foreground/80">{tt("pressão do book ±2%", "book pressure ±2%")}</div>
-            {bookPressures.map(({ label, imb }) => {
-              if (!imb) {
+            {(bookPressures ?? []).map(({ label, bid, ask, tilt }) => {
+              const total = bid + ask;
+              if (total <= 0) {
                 return (
                   <div key={label} className="flex items-center gap-1.5">
                     <span className="num w-7 font-semibold text-foreground">{label}</span>
@@ -901,10 +896,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
                   </div>
                 );
               }
-              const total = imb.bid + imb.ask;
-              const bidPct = Math.round((imb.bid / total) * 100);
+              const bidPct = Math.round((bid / total) * 100);
               const askPct = 100 - bidPct;
-              const lead = imb.tilt > 0.08 ? "bid" : imb.tilt < -0.08 ? "ask" : "flat";
+              const lead = tilt > 0.08 ? "bid" : tilt < -0.08 ? "ask" : "flat";
               const arrow = lead === "bid" ? "▲" : lead === "ask" ? "▼" : "▬";
               return (
                 <div key={label} className="flex items-center gap-1.5">
