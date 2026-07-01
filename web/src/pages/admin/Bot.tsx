@@ -393,16 +393,34 @@ export default function AdminBot() {
     }
   }
 
-  async function deleteOrder(id: string) {
-    if (!window.confirm("Excluir esta ordem do histórico? (não afeta a OKX)")) return;
-    setBusy("row" + id);
+  // "Excluir" agora CANCELA o trade: se o ativo da ordem tem posição aberta, fecha a mercado;
+  // se for ordem pendente (limit), cancela; depois remove o registro. Vale p/ manual e robô.
+  async function deleteOrder(o: OrderRow) {
+    const asset = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : null;
+    const p = positions.find((x) => x.asset === asset);
+    const hasPos = !!p && p.position !== "flat";
+    const isLimit = o.ord_type === "limit" && !!o.result?.data?.[0]?.ordId;
+    const confirmMsg = isLimit
+      ? "Cancelar esta ordem pendente e removê-la do histórico?"
+      : hasPos
+        ? `Fechar a posição de ${asset} (${p!.position === "long" ? "long" : "short"}) a mercado e remover esta ordem? (demo)`
+        : "Remover esta ordem do histórico? (não afeta a corretora)";
+    if (!window.confirm(confirmMsg)) return;
+    setBusy("row" + o.id);
     setMsg(null);
     try {
-      const { error } = await supabase.rpc("bot_delete_order", { p_id: id });
+      const fn = cfg?.venue === "binance" ? "binance-bot" : "okx-bot";
+      if (isLimit) {
+        await invoke("cancel", { instId: o.inst_id, ordId: o.result!.data![0].ordId }, fn);
+      } else if (hasPos) {
+        const r = await invoke("close", { symbol: o.inst_id }, fn);
+        setMsg({ kind: "ok", text: r?.closed === false ? "Não havia posição aberta." : `Posição de ${asset} fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg?.quote_ccy}` : ""}.` });
+      }
+      const { error } = await supabase.rpc("bot_delete_order", { p_id: o.id });
       if (error) throw new Error(error.message);
-      setOrders((os) => os.filter((o) => o.id !== id));
+      await loadBase();
     } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao excluir." });
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao cancelar/excluir." });
     } finally {
       setBusy(null);
     }
@@ -751,7 +769,15 @@ export default function AdminBot() {
                       {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
                         <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
                       )}
-                      <button onClick={() => deleteOrder(o.id)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50">excluir</button>
+                      {(() => {
+                        const a = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : null;
+                        const hasPos = positions.some((x) => x.asset === a && x.position !== "flat");
+                        return (
+                          <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
+                            {hasPos ? "cancelar" : "excluir"}
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

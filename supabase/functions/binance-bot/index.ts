@@ -130,6 +130,27 @@ Deno.serve(async (req) => {
       return json(200, { ...r, avgPrice: avgPx ?? r?.avgPrice });
     }
     if (action === "close") {
+      // Fecha a posição de UMA moeda (se vier symbol/instId → lê bot_positions), senão o legado (bot_config).
+      const reqSym = body?.symbol ?? body?.instId;
+      const quoteCcy = "USDT";
+      if (reqSym) {
+        const asset = String(reqSym).toUpperCase().replace(/USDT$/i, "").replace(/-.*/, "");
+        const { data: p } = await admin.from("bot_positions").select("*").eq("asset", asset).maybeSingle();
+        if (!p || p.position === "flat" || !Number(p.pos_base_sz)) return json(200, { closed: false, note: "sem posição aberta" });
+        const symbol = (p.inst_id as string) || `${asset}USDT`;
+        const closeSide = p.position === "long" ? "SELL" : "BUY";
+        const r = await bnb("POST", "/fapi/v1/order", { symbol, side: closeSide, type: "MARKET", quantity: String(p.pos_base_sz), reduceOnly: true, newOrderRespType: "RESULT" }, creds, true);
+        const ok = !!r?.orderId && !r?.code;
+        if (!ok) { await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(p.pos_base_sz), ok: false, result: r }); return json(200, r); }
+        let avgPx = Number(r?.avgPrice) || null;
+        if ((!avgPx || avgPx === 0) && r?.orderId) avgPx = await fillPrice(symbol, r.orderId, creds);
+        let pnl: number | null = null;
+        if (p.entry_px && avgPx) pnl = (avgPx - Number(p.entry_px)) * Number(p.pos_base_sz) * (p.position === "long" ? 1 : -1);
+        await admin.from("bot_positions").upsert({ asset, inst_id: symbol, position: "flat", pos_base_sz: 0, entry_px: null, adds: 0, updated_at: new Date().toISOString() }, { onConflict: "asset" });
+        await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(p.pos_base_sz), avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok: true, result: r, pnl, note: `[${asset}] fechada manualmente${pnl != null ? ` · PnL ${pnl.toFixed(2)}` : ""}` });
+        await admin.from("bot_logs").insert({ level: "trade", message: `[${asset}] Posição ${p.position} fechada manualmente${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${quoteCcy}` : ""}.`, detail: { orderId: r?.orderId } });
+        return json(200, { ...r, closed: true, pnl });
+      }
       const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
       if (!cfg || cfg.position === "flat" || !Number(cfg.pos_base_sz)) return json(200, { closed: false, note: "sem posição aberta" });
       const symbol = cfg.inst_id as string;
@@ -142,6 +163,9 @@ Deno.serve(async (req) => {
       let pnl: number | null = null;
       if (cfg.entry_px && avgPx) pnl = (avgPx - Number(cfg.entry_px)) * Number(cfg.pos_base_sz) * (cfg.position === "long" ? 1 : -1);
       await admin.from("bot_config").update({ position: "flat", pos_base_sz: 0, entry_px: null }).eq("id", 1);
+      // Espelha p/ bot_positions do ativo do config (multi-moeda).
+      const legacyAsset = String(cfg.base_ccy ?? symbol.replace(/USDT$/i, ""));
+      await admin.from("bot_positions").upsert({ asset: legacyAsset, inst_id: symbol, position: "flat", pos_base_sz: 0, entry_px: null, adds: 0, updated_at: new Date().toISOString() }, { onConflict: "asset" });
       await admin.from("bot_orders").insert({ source: "manual", action: "close", inst_id: symbol, side: closeSide.toLowerCase(), ord_type: "market", sz: String(cfg.pos_base_sz), avg_px: avgPx, fill_sz: Number(r?.executedQty) || null, ok: true, result: r, pnl, note: `fechada manualmente${pnl != null ? ` · PnL ${pnl.toFixed(2)}` : ""}` });
       await admin.from("bot_logs").insert({ level: "trade", message: `Posição ${cfg.position} fechada manualmente${avgPx ? ` @ ${avgPx}` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, detail: { orderId: r?.orderId } });
       return json(200, { ...r, closed: true, pnl });
