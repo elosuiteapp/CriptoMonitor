@@ -51,7 +51,7 @@ interface OrderBlock { top: number; bottom: number; mid: number; time: number; b
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; premium: Zone; equilibrium: Zone; discount: Zone }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
 
 function atrArray(candles: Candle[], len: number): number[] {
   const tr: number[] = [];
@@ -181,7 +181,7 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     swingBias: swingTrend === 1 ? "bullish" : swingTrend === -1 ? "bearish" : null,
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
-    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, premium, equilibrium, discount,
+    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, premium, equilibrium, discount,
   };
 }
 
@@ -519,24 +519,42 @@ Deno.serve(async (req) => {
       const st = await loadPos(asset);
       let pos: "long" | "short" | "flat" = st.position;
 
-      // ── TRAILING STOP (por ciclo): trava a trail_pct abaixo do MAIOR preço desde a entrada (long) /
-      //    acima do menor (short). Sobe junto com o lucro e NUNCA afrouxa. Arma só depois que a posição
-      //    já está no lucro por trail_pct (antes disso o stop fixo inicial segura). DESLIGADO por padrão. ──
+      // Volatilidade + estrutura do ativo (TF primário) — base dos STOPS ADAPTATIVOS POR ATR.
+      // O ATR mede o "ruído típico" da moeda naquele TF → o stop escala com a volatilidade dela
+      // (1% do BTC ≠ 1% de um alt). swingLo/Hi = último pivô de estrutura, p/ o piso de estrutura.
+      const atrPx = primary?.smc?.atr && primary.smc.atr > 0 ? primary.smc.atr : lastPx * 0.01;
+      const swingLo = primary?.smc && Number.isFinite(primary.smc.swingLowLevel) ? primary.smc.swingLowLevel : null;
+      const swingHi = primary?.smc && Number.isFinite(primary.smc.swingHighLevel) ? primary.smc.swingHighLevel : null;
+
+      // ── TRAILING STOP por ATR (Chandelier) + PISO DE ESTRUTURA (por ciclo). A distância é
+      //    k × ATR do ativo (não % fixo) → a trilha respira na volatilidade de CADA moeda. O stop
+      //    sobe com o pico (long)/desce (short) e NUNCA afrouxa (ratchet). Piso de estrutura: nunca
+      //    fica mais JUSTO que logo além do último swing (protege do ruído em baixa vol). Arma quando
+      //    a trilha alcança o breakeven (lucro ≥ k×ATR). DESLIGADO por padrão. ──
       if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.entry_px && lastPx > 0) {
         const prevPeak = st.peak_px != null ? st.peak_px : st.entry_px;
         const peak = pos === "long" ? Math.max(prevPeak, lastPx) : Math.min(prevPeak, lastPx);
         let newStop = st.stop_px;
-        const trailPct = Number(cfg.trail_pct ?? 1);
-        if (cfg.trail_on && trailPct > 0) {
-          const armed = pos === "long" ? peak >= st.entry_px * (1 + trailPct / 100) : peak <= st.entry_px * (1 - trailPct / 100);
+        const kTrail = Number(cfg.trail_atr_mult ?? 3);
+        if (cfg.trail_on && kTrail > 0 && atrPx > 0) {
+          const dist = kTrail * atrPx;
+          const buf = 0.25 * atrPx; // respiro além do swing, proporcional à volatilidade
+          const armed = pos === "long" ? peak - st.entry_px >= dist : st.entry_px - peak >= dist;
           if (armed) {
-            const trailStop = pos === "long" ? peak * (1 - trailPct / 100) : peak * (1 + trailPct / 100);
-            newStop = st.stop_px == null ? trailStop : pos === "long" ? Math.max(st.stop_px, trailStop) : Math.min(st.stop_px, trailStop);
+            let trailStop = pos === "long" ? peak - dist : peak + dist;
+            // Piso de estrutura: só LEVE FROUXO — nunca deixa o stop mais justo que além do swing.
+            if (pos === "long") {
+              if (swingLo != null && swingLo < peak) trailStop = Math.min(trailStop, swingLo - buf);
+              newStop = st.stop_px == null ? trailStop : Math.max(st.stop_px, trailStop); // ratchet: só sobe
+            } else {
+              if (swingHi != null && swingHi > peak) trailStop = Math.max(trailStop, swingHi + buf);
+              newStop = st.stop_px == null ? trailStop : Math.min(st.stop_px, trailStop); // ratchet: só desce
+            }
           }
         }
         if (peak !== prevPeak || newStop !== st.stop_px) {
           await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
-          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)}).`, {});
+          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing ATR: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)} · ${kTrail}×ATR ${atrPx.toFixed(2)}).`, {});
           st.stop_px = newStop; st.peak_px = peak;
         }
       }
@@ -682,8 +700,8 @@ Deno.serve(async (req) => {
           const newSz = st.pos_base_sz + filled;
           const newEntry = st.entry_px != null && st.pos_base_sz > 0 ? (st.entry_px * st.pos_base_sz + addPx * filled) / newSz : addPx;
           const nAdds = st.adds + 1;
-          const addStopDist = newEntry * Number(cfg.stop_pct ?? 1.5) / 100;
-          const addStop = pos === "long" ? newEntry - addStopDist : newEntry + addStopDist; // trava o stop no novo médio
+          const addStopDist = cfg.stop_atr_on && atrPx > 0 ? Number(cfg.stop_atr_mult ?? 4) * atrPx : newEntry * Number(cfg.stop_pct ?? 1.5) / 100;
+          const addStop = pos === "long" ? newEntry - addStopDist : newEntry + addStopDist; // trava o stop no novo médio (ATR ou %)
           const addPeak = pos === "long" ? Math.max(st.peak_px ?? newEntry, lastPx) : Math.min(st.peak_px ?? newEntry, lastPx); // preserva o pico do trailing na pirâmide
           await savePos(asset, instId, pos, Number(newSz.toFixed(qDec)), newEntry, nAdds, addStop, false, addPeak); // guarda o tamanho limpo (sem ruído de float)
           await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
@@ -717,9 +735,15 @@ Deno.serve(async (req) => {
           if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
           const stopPctUse = isCounter ? Number(cfg.ct_stop_pct ?? 0.6) : Number(cfg.stop_pct ?? 1.5);
-          const stopPx = entryPx * (1 - (target === "long" ? 1 : -1) * stopPctUse / 100);
+          // Stop de risco: por ATR (adaptativo à volatilidade do ativo; contra-tendência = metade da
+          // distância) quando ligado; senão, % fixo (fallback). Escala com a moeda em vez de nº mágico.
+          const kStop = Number(cfg.stop_atr_mult ?? 4) * (isCounter ? 0.5 : 1);
+          const useAtrStop = !!cfg.stop_atr_on && atrPx > 0;
+          const riskDist = useAtrStop ? kStop * atrPx : entryPx * stopPctUse / 100;
+          const stopPx = target === "long" ? entryPx - riskDist : entryPx + riskDist;
+          const stopBasis = useAtrStop ? `${kStop.toFixed(1)}×ATR` : `${stopPctUse}%`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
-          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · stop ${stopPx.toFixed(2)} (${stopPctUse}%) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · stop ${stopPx.toFixed(2)} (${stopBasis}) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };
         }

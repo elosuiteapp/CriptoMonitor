@@ -31,7 +31,10 @@ interface Config {
   counter_trend: string; // 'block' | 'tight'
   auto_weight: boolean;  // auto-ponderar sinais por moeda (usa o aprendizado)
   trail_on: boolean;     // stop móvel (trailing) ligado
-  trail_pct: number;     // distância do trailing (%)
+  trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
+  trail_atr_mult: number; // distância do trailing = k × ATR do ativo (adaptativo)
+  stop_atr_on: boolean;  // stop de risco por ATR (senão, % fixo)
+  stop_atr_mult: number; // distância do stop de risco = k × ATR do ativo
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -719,9 +722,18 @@ export default function AdminBot() {
             {isFut && (
               <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
                 <input type="checkbox" checked={!!cfg.trail_on} onChange={(e) => setCfg({ ...cfg, trail_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Stop móvel (trailing)</strong>: o stop sobe junto com o maior preço desde a entrada e nunca desce — trava o lucro se o preço voltar. Arma só depois de entrar no lucro.</span>
+                <span><strong>Stop móvel (trailing) por ATR</strong>: o stop sobe junto com o maior preço desde a entrada e nunca desce — trava o lucro se o preço voltar. A distância é <strong>k × ATR</strong> (a volatilidade do próprio ativo), com piso de estrutura — assim cada moeda tem a trilha na sua escala (1% do BTC ≠ 1% de um alt). Arma só no lucro.</span>
                 {cfg.trail_on && (
-                  <span className="flex items-center gap-1">· trava <input type="number" step="0.1" min="0.1" value={cfg.trail_pct ?? 1} onChange={(e) => setCfg({ ...cfg, trail_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% abaixo do pico</span>
+                  <span className="flex items-center gap-1">· trava <input type="number" step="0.5" min="0.5" value={cfg.trail_atr_mult ?? 3} onChange={(e) => setCfg({ ...cfg, trail_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR abaixo do pico</span>
+                )}
+              </label>
+            )}
+            {isFut && (
+              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                <input type="checkbox" checked={!!cfg.stop_atr_on} onChange={(e) => setCfg({ ...cfg, stop_atr_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                <span><strong>Stop de risco por ATR</strong>: usa a volatilidade do ativo em vez do % fixo — cada moeda ganha um stop na sua escala (a contra-tendência entra pela metade da distância). Desligado, valem os campos de % acima.</span>
+                {cfg.stop_atr_on && (
+                  <span className="flex items-center gap-1">· distância <input type="number" step="0.5" min="0.5" value={cfg.stop_atr_mult ?? 4} onChange={(e) => setCfg({ ...cfg, stop_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR</span>
                 )}
               </label>
             )}
@@ -731,7 +743,7 @@ export default function AdminBot() {
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
