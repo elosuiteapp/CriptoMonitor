@@ -233,16 +233,19 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   for (const ex of ["binance", "okx"]) { const r = byEx[ex]; if (r) { rbid += Number(r.bid_near_usd || 0); rask += Number(r.ask_near_usd || 0); } }
   if (rbid + rask > 0) { const r = (rbid - rask) / (rbid + rask); add("book_retail", "Microestrutura", "Book varejo (Binance+OKX)", 0.04, r * 140, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((rbid / (rbid + rask)) * 100)}% bid`); }
   if (spot > 0 && walls.length) {
-    const agg: Record<string, number> = {};
-    for (const w of walls) { const k = w.side + ":" + Math.round(Number(w.price)); agg[k] = (agg[k] || 0) + Number(w.notional_usd || 0); }
-    let barSup = 0, barRes = 0, barSupPx = 0, barResPx = 0, farBelow = 0, farAbove = 0;
+    // Absorção: a MAIOR parede colada no preço (±0,7%) sendo testada agora.
+    // Paredes de baleia: MESMO medidor do gráfico — suporte (bids) × resistência (asks)
+    // ponderado por proximidade (colada=1; a 0,5%≈0,5). Substitui os antigos "barreira" + "ímã"
+    // (que se contradiziam e contavam em dobro). Tela e robô agora falam a mesma língua.
     let bestN = 0, bestSide = "", bestPx = 0, bestDist = 9;
-    for (const k in agg) {
-      const [side, pstr] = k.split(":"); const price = Number(pstr), nn = agg[k]; const distPct = Math.abs(price - spot) / spot * 100;
-      if (distPct <= 0.7 && nn > bestN) { bestN = nn; bestSide = side; bestPx = price; bestDist = distPct; }
-      if (distPct > 4) continue;
-      if (distPct <= 1.0) { const pull = nn / Math.max(distPct, 0.1); if (side === "bid" && price < spot && pull > barSup) { barSup = pull; barSupPx = price; } if (side === "ask" && price > spot && pull > barRes) { barRes = pull; barResPx = price; } }
-      else { if (side === "bid" && price < spot) farBelow += nn; if (side === "ask" && price > spot) farAbove += nn; }
+    let wSup = 0, wRes = 0;
+    for (const w of walls) {
+      const price = Number(w.price), nn = Number(w.notional_usd || 0);
+      if (!(price > 0) || nn <= 0) continue;
+      const distPct = Math.abs(price - spot) / spot * 100;
+      if (distPct <= 0.7 && nn > bestN) { bestN = nn; bestSide = String(w.side); bestPx = price; bestDist = distPct; }
+      const pw = 1 / (1 + (distPct / 100) / 0.005);
+      if (w.side === "bid") wSup += nn * pw; else wRes += nn * pw;
     }
     let absNote = "sem parede grande sendo testada";
     if (bestN >= 4e6) {
@@ -252,8 +255,21 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
       else { absScore = -strength; absNote = `parede de VENDA $${(bestN / 1e6).toFixed(1)}M barrando ~$${Math.round(bestPx / 1000)}k → rejeição provável`; }
     }
     add("absorb", "Microestrutura", "Teste de parede (absorção)", 0.13, absScore, absNote);
-    if (barSup > 0 || barRes > 0) { const r = (barSup - barRes) / (barSup + barRes || 1); add("walls", "Microestrutura", "Paredes (barreira imediata)", 0.10, r * 110, `${barRes >= barSup ? "resistência" : "suporte"} domina perto${barResPx ? " · res $" + Math.round(barResPx / 1000) + "k" : ""}${barSupPx ? " · sup $" + Math.round(barSupPx / 1000) + "k" : ""}`); }
-    if (farBelow > 0 || farAbove > 0) { const r = (farAbove - farBelow) / (farAbove + farBelow || 1); add("magnet", "Microestrutura", "Ímã de liquidez (book)", 0.08, r * 100, `maior liquidez ${farBelow > farAbove ? "ABAIXO" : "ACIMA"} ($${(Math.max(farBelow, farAbove) / 1e6).toFixed(1)}M) — preço tende a buscá-la`); }
+    const wTot = wSup + wRes;
+    if (wTot > 0) { const r = (wSup - wRes) / wTot; add("walls", "Microestrutura", "Paredes de baleia (suporte × resistência)", 0.11, r * 120, `${r >= 0 ? "suporte" : "resistência"} ${Math.round((r >= 0 ? wSup : wRes) / wTot * 100)}% · $${(wSup / 1e6).toFixed(1)}M sup × $${(wRes / 1e6).toFixed(1)}M res`); }
+  }
+
+  // ── PRESSÃO DO BOOK (±2%): TENDÊNCIA recente (agora vs início da janela coletada) — o
+  //    desempate que faltava: capta a compra/venda GANHANDO força, não só o placar estático. ──
+  const byTs: Record<string, { b: number; a: number }> = {};
+  for (const r of imb) { const tk = String(r.ts); if (!byTs[tk]) byTs[tk] = { b: 0, a: 0 }; byTs[tk].b += Number(r.bid_wide_usd || 0); byTs[tk].a += Number(r.ask_wide_usd || 0); }
+  const tss = Object.keys(byTs).sort();
+  if (tss.length >= 4) {
+    const bidPctAt = (tk: string) => { const x = byTs[tk]; const s = x.b + x.a; return s > 0 ? x.b / s : 0.5; };
+    const recent = (bidPctAt(tss[tss.length - 1]) + bidPctAt(tss[tss.length - 2])) / 2;
+    const older = (bidPctAt(tss[0]) + bidPctAt(tss[1])) / 2;
+    const accel = recent - older; // >0 = pressão ficando mais compradora
+    add("book_trend", "Microestrutura", "Pressão do book (tendência)", 0.05, clamp(accel * 600), `${accel >= 0 ? "compra" : "venda"} ganhando força · ${Math.round(recent * 100)}% bid agora vs ${Math.round(older * 100)}% antes`);
   }
 
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
