@@ -81,8 +81,9 @@ interface BotPosition {
   last_reading: Reading | null;
 }
 interface LearningSig { key: string; label: string; weight: number; n: number; hitRate: number; edge: number }
+interface LearnAssetStat { n: number; hitRate: number; perSignal?: LearningSig[]; ai_report?: string | null }
 interface Learning {
-  data: { window: string; labeled: number; overall: { n: number; hitRate: number }; byAsset: Record<string, { n: number; hitRate: number }>; perSignal: LearningSig[] } | null;
+  data: { window: string; labeled: number; overall: { n: number; hitRate: number }; byAsset: Record<string, LearnAssetStat>; perSignal: LearningSig[] } | null;
   ai_report: string | null;
   updated_at: string;
 }
@@ -131,11 +132,16 @@ export default function AdminBot() {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [totalEq, setTotalEq] = useState<string | null>(null);
   const [candles, setCandles] = useState<BotCandle[]>([]);
-  const [posInfo, setPosInfo] = useState<{ uPnl: number | null; markPx: number | null; entryPx: number | null } | null>(null);
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [learning, setLearning] = useState<Learning | null>(null);
   const [selAsset, setSelAsset] = useState("BTC"); // moeda em foco no painel (leitura + gráfico)
+  const [learnAsset, setLearnAsset] = useState("all"); // moeda em foco no aprendizado (all = geral)
+  // filtros das ordens (moeda / status / período)
+  const [fAsset, setFAsset] = useState("all");
+  const [fStatus, setFStatus] = useState("all"); // all | ok | erro
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
 
   // conexão (chaves)
   const [showKeys, setShowKeys] = useState(false);
@@ -204,24 +210,6 @@ export default function AdminBot() {
   useEffect(() => {
     if (cfg && connected) loadChart(selInst, cfg.bar, cfg.venue);
   }, [selInst, cfg?.bar, cfg?.venue, connected, loadChart]);
-
-  // PnL ao vivo: enquanto há posição aberta, lê a posição real da Binance (uPnL + preço de marca).
-  useEffect(() => {
-    if (!connected || !cfg || cfg.position === "flat" || cfg.venue !== "binance") { setPosInfo(null); return; }
-    const sym = cfg.inst_id;
-    let active = true;
-    const poll = async () => {
-      try {
-        const r = await invoke("positions", { instId: sym }, "binance-bot");
-        const arr = r?.data as { symbol?: string; unRealizedProfit?: string; markPrice?: string; entryPrice?: string }[] | undefined;
-        const p = Array.isArray(arr) ? arr.find((x) => x.symbol === sym) : null;
-        if (active && p) setPosInfo({ uPnl: Number(p.unRealizedProfit), markPx: Number(p.markPrice) || null, entryPx: Number(p.entryPrice) || null });
-      } catch { /* ignora */ }
-    };
-    poll();
-    const id = setInterval(poll, 15000);
-    return () => { active = false; clearInterval(id); };
-  }, [connected, cfg?.position, cfg?.inst_id, cfg?.venue]);
 
   // PnL ao vivo de TODAS as moedas (multi-ativo): 1 call traz todas as posições da Binance.
   useEffect(() => {
@@ -326,10 +314,6 @@ export default function AdminBot() {
     await saveConfig({ enabled: !cfg.enabled });
   }
 
-  async function resetPosition() {
-    await saveConfig({ position: "flat", pos_base_sz: 0, entry_px: null });
-  }
-
   async function runNow() {
     setBusy("run");
     setMsg(null);
@@ -383,15 +367,17 @@ export default function AdminBot() {
     }
   }
 
-  async function closePosition() {
+  // Fecha a posição de UMA moeda a mercado (demo) — botão por card em "Posições abertas".
+  async function closeAsset(asset: string, instId: string | null) {
     if (!cfg) return;
-    if (!window.confirm("Fechar a posição atual do robô a mercado (demo)?")) return;
-    setBusy("close");
+    if (!window.confirm(`Fechar a posição de ${asset} a mercado agora? (demo)`)) return;
+    setBusy("close" + asset);
     setMsg(null);
     try {
-      const r = await invoke("close", {}, cfg.venue === "binance" ? "binance-bot" : "okx-bot");
-      if (r?.closed === false) setMsg({ kind: "ok", text: "Não havia posição aberta." });
-      else setMsg({ kind: "ok", text: `Posição fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg.quote_ccy}` : ""}.` });
+      const fn = cfg.venue === "binance" ? "binance-bot" : "okx-bot";
+      const r = await invoke("close", { symbol: instId ?? `${asset}USDT` }, fn);
+      if (r?.closed === false) setMsg({ kind: "ok", text: `${asset}: não havia posição aberta.` });
+      else setMsg({ kind: "ok", text: `Posição de ${asset} fechada${r?.pnl != null ? ` · PnL ${num(r.pnl)} ${cfg.quote_ccy}` : ""}.` });
       await refresh();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao fechar." });
@@ -473,9 +459,108 @@ export default function AdminBot() {
   const isBinance = cfg?.venue === "binance";
   const isFut = isBinance || (!!cfg?.inst_id && cfg.inst_id.toUpperCase().endsWith("-SWAP"));
   const input = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
-  // Ordem que abriu a posição ATUAL (a mais recente de abertura, com posição não-flat) → mostra
-  // PnL ao vivo na linha. Fechamentos mostram o PnL realizado salvo (o.pnl). Resto: "—".
-  const openEntryId = cfg && cfg.position !== "flat" ? orders.find((o) => (o.action === "order" || o.action === "open") && o.ok)?.id ?? null : null;
+  const quote = cfg?.quote_ccy ?? "USDT";
+  const pxDec = (v: number | null | undefined) => (v == null ? 2 : v >= 1000 ? 1 : v >= 1 ? 2 : 4);
+
+  // Posições ABERTAS agora (net por ativo) + as que estão fora do mercado.
+  const openPositions = positions.filter((p) => p.position !== "flat");
+  const flatAssets = positions.filter((p) => p.position === "flat").map((p) => p.asset);
+  // PnL ao vivo somado (só das posições que a Binance devolveu).
+  const openPnl = openPositions.reduce((s, p) => { const l = p.inst_id ? livePos[p.inst_id] : undefined; return l ? s + l.uPnl : s; }, 0);
+  const hasLivePnl = openPositions.some((p) => p.inst_id && livePos[p.inst_id]);
+
+  // TRADES ENCERRADOS: cada ordem de fechamento (action='close', ok) é um round-trip fechado.
+  // O PnL realizado já vem salvo; a entrada média é reconstruída: entry = saída − PnL/(tam·direção).
+  const closedTrades = orders
+    .filter((o) => o.action === "close" && o.ok)
+    .map((o) => {
+      const asset = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "—";
+      const wasLong = o.side === "sell"; // fechou LONG vendendo; SHORT comprando
+      const dir = wasLong ? 1 : -1;
+      const exit = o.avg_px != null ? Number(o.avg_px) : null;
+      const sz = o.sz != null && o.sz !== "" ? Number(o.sz) : null;
+      const pnl = o.pnl != null ? Number(o.pnl) : null;
+      const entry = exit != null && sz && pnl != null && sz !== 0 ? exit - pnl / (sz * dir) : null;
+      const pct = entry && entry !== 0 && exit != null ? ((exit - entry) / entry) * 100 * dir : null;
+      return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at };
+    });
+  const realizedSum = closedTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const scored = closedTrades.filter((t) => t.pnl != null).length;
+  const wins = closedTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+
+  // ── FILTROS (moeda / status / período) aplicados às ordens e aos trades ──
+  const assetOf = (o: OrderRow) => (o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "");
+  const orderAssets = [...new Set(orders.map(assetOf).filter(Boolean))].sort();
+  const inPeriod = (iso: string) => {
+    const t = new Date(iso).getTime();
+    if (fFrom && t < new Date(fFrom + "T00:00:00").getTime()) return false;
+    if (fTo && t > new Date(fTo + "T23:59:59").getTime()) return false;
+    return true;
+  };
+  const matchOrder = (o: OrderRow) =>
+    (fAsset === "all" || assetOf(o) === fAsset) &&
+    (fStatus === "all" || (fStatus === "ok" ? o.ok : !o.ok)) &&
+    inPeriod(o.created_at);
+  const filtered = orders.filter(matchOrder);
+  const botOrders = filtered.filter((o) => o.source === "auto");
+  const manualOrders = filtered.filter((o) => o.source !== "auto");
+  const sumPnl = (rows: OrderRow[]) => rows.reduce((s, o) => s + (o.pnl ?? 0), 0);
+  const hasPnl = (rows: OrderRow[]) => rows.some((o) => o.pnl != null);
+  const fClosedTrades = closedTrades.filter((t) => (fAsset === "all" || t.asset === fAsset) && inPeriod(t.at));
+  const fRealized = fClosedTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const fWins = fClosedTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+  const fScored = fClosedTrades.filter((t) => t.pnl != null).length;
+  const filtersOn = fAsset !== "all" || fStatus !== "all" || !!fFrom || !!fTo;
+  const clearFilters = () => { setFAsset("all"); setFStatus("all"); setFFrom(""); setFTo(""); };
+
+  // Tabela de execuções reusável (mesmo layout p/ robô e manual).
+  const ordersTable = (rows: OrderRow[]) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+          <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Tipo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Situação</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((o) => {
+            const a = assetOf(o) || null;
+            const hasPos = positions.some((x) => x.asset === a && x.position !== "flat");
+            const tipo = o.action === "open" ? "Abertura" : o.action === "add" ? "Adição" : o.action === "close" ? "Saída" : "Manual";
+            return (
+              <tr key={o.id} className="border-b border-border last:border-0">
+                <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                <td className="px-4 py-2 font-semibold text-foreground">{a ?? "—"}</td>
+                <td className="px-4 py-2 text-[11px] text-muted-foreground">{tipo}</td>
+                <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
+                <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
+                <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, pxDec(o.avg_px)) : "—"}</td>
+                <td className="num px-4 py-2 text-right">{o.pnl != null ? <span className={o.pnl >= 0 ? "text-emerald-500" : "text-rose-500"} title="resultado realizado no fechamento">{o.pnl >= 0 ? "+" : ""}{num(o.pnl)}</span> : <span className="text-muted-foreground">—</span>}</td>
+                <td className="px-4 py-2">
+                  {!o.ok ? (
+                    <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>
+                  ) : o.action === "close" ? (
+                    <span className="text-[10px] text-muted-foreground">saída ok</span>
+                  ) : (() => {
+                    const closedAfter = orders.some((x) => x.inst_id === o.inst_id && x.action === "close" && x.ok && new Date(x.created_at) > new Date(o.created_at));
+                    return hasPos && !closedAfter
+                      ? <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />posição aberta</span>
+                      : <span className="text-[10px] text-muted-foreground">encerrada</span>;
+                  })()}
+                </td>
+                <td className="whitespace-nowrap px-4 py-2 text-right">
+                  {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
+                    <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
+                  )}
+                  <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
+                    {hasPos ? "cancelar" : "excluir"}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <section className="space-y-5">
@@ -565,15 +650,7 @@ export default function AdminBot() {
         </div>
       )}
 
-      {/* Seletor de moeda em foco (cada ativo tem leitura + gráfico próprios) */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Moeda em foco:</span>
-        {ASSET_LIST.map((a) => (
-          <button key={a} onClick={() => setSelAsset(a)} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${selAsset === a ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}>{a}</button>
-        ))}
-      </div>
-
-      {/* Leitura do robô (fluxo) — da moeda em foco */}
+      {/* Leitura do robô (fluxo) — da moeda em foco (seletor no cabeçalho do gráfico) */}
       {selReading && (() => {
         const r = selReading;
         const bias = r.bias;
@@ -652,7 +729,15 @@ export default function AdminBot() {
       {/* Gráfico com marcações */}
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Gráfico · {selInst} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground">Gráfico · {selInst} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
+            {/* Seletor de moeda: troca o gráfico + a leitura (viés/decisão/sinais) para o ativo escolhido. */}
+            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-0.5">
+              {ASSET_LIST.map((a) => (
+                <button key={a} onClick={() => setSelAsset(a)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${selAsset === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a}</button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
               {BARS.map((b) => <button key={b} onClick={() => cfg && setCfg({ ...cfg, bar: b })} className={`rounded-md px-2 py-0.5 transition-colors ${cfg?.bar === b ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>{b}</button>)}
@@ -669,199 +754,226 @@ export default function AdminBot() {
         )}
       </div>
 
-      {/* Conta demo */}
+      {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <h2 className="mb-2 text-sm font-semibold text-foreground">Conta demo</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">Resumo da conta (demo)</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio total (demo)</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio total</div>
             <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="mb-1 flex items-center justify-between">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Posição do robô</div>
-              {cfg && cfg.position !== "flat" && (
-                <div className="flex items-center gap-2">
-                  <button onClick={closePosition} disabled={busy !== null || !connected} className="rounded-md bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-500/25 disabled:opacity-50 dark:text-rose-400">{busy === "close" ? "Fechando…" : "✕ Fechar posição"}</button>
-                  <button onClick={resetPosition} disabled={busy !== null} className="text-[10px] text-muted-foreground underline hover:text-foreground">resetar</button>
-                </div>
-              )}
-            </div>
-            {cfg && cfg.position !== "flat" ? (
-              <>
-                <div className={`text-lg font-bold ${cfg.position === "long" ? "text-emerald-500" : "text-rose-500"}`}>{cfg.position === "long" ? "Comprado (long)" : "Vendido (short)"}{isFut && cfg.leverage ? ` · ${cfg.leverage}x` : ""}</div>
-                <div className="text-[11px] text-muted-foreground">{num(cfg.pos_base_sz, 6)} {cfg.base_ccy} · entrada @ <span className="num">{(posInfo?.entryPx ?? cfg.entry_px) != null ? num(posInfo?.entryPx ?? cfg.entry_px, dec) : "—"}</span></div>
-                {(() => {
-                  const entry = posInfo?.entryPx ?? (cfg.entry_px != null ? Number(cfg.entry_px) : null);
-                  const mark = posInfo?.markPx ?? lastPx;
-                  const qty = Number(cfg.pos_base_sz);
-                  const dir = cfg.position === "long" ? 1 : -1;
-                  const upnl = posInfo?.uPnl != null ? posInfo.uPnl : (entry != null && mark > 0 ? (mark - entry) * qty * dir : null);
-                  if (upnl == null) return null;
-                  const movePct = entry && entry > 0 && mark > 0 ? ((mark - entry) / entry) * 100 * dir : null;
-                  return (
-                    <div className="mt-1">
-                      <span className={`num text-base font-bold ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>PnL: {upnl >= 0 ? "+" : ""}{num(upnl)} {cfg.quote_ccy}</span>
-                      {movePct != null && <span className={`num ml-1 text-[11px] font-medium ${upnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>({upnl >= 0 ? "+" : ""}{movePct.toFixed(2)}%)</span>}
-                      {mark > 0 && <span className="ml-2 text-[10px] text-muted-foreground">preço agora <span className="num">{num(mark, dec)}</span></span>}
-                    </div>
-                  );
-                })()}
-              </>
-            ) : (
-              <div className="text-lg font-bold text-muted-foreground">Fora do mercado</div>
-            )}
-            <p className="mt-1 text-[10px] text-muted-foreground">{isFut ? "Futuros: long e short com margem em " : "Opera com capital em "}{cfg?.quote_ccy ?? "USDT"}; saldos pré-existentes ficam intocados.</p>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">PnL aberto agora</div>
+            <div className={`num text-2xl font-bold ${!hasLivePnl ? "text-muted-foreground" : openPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{hasLivePnl ? `${openPnl >= 0 ? "+" : ""}${num(openPnl)} ${quote}` : "—"}</div>
+            <div className="text-[10px] text-muted-foreground">soma das posições em aberto</div>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado realizado (recente)</div>
+            <div className={`num text-2xl font-bold ${scored === 0 ? "text-muted-foreground" : realizedSum >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{scored ? `${realizedSum >= 0 ? "+" : ""}${num(realizedSum)} ${quote}` : "—"}</div>
+            <div className="text-[10px] text-muted-foreground">{scored ? `${wins}/${scored} trades no verde` : "sem trades fechados ainda"}</div>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Situação</div>
+            <div className={`text-lg font-bold ${openPositions.length ? "text-foreground" : "text-muted-foreground"}`}>{openPositions.length ? `${openPositions.length} rodando` : "Fora do mercado"}</div>
+            <div className="text-[10px] text-muted-foreground">{cfg?.enabled ? "robô ligado" : "robô desligado"}</div>
           </div>
         </div>
+        <p className="mt-2 text-[10px] text-muted-foreground">{isFut ? "Futuros: long e short com margem em " : "Opera com capital em "}{quote}; saldos pré-existentes ficam intocados.</p>
       </div>
 
-      {/* Posições por moeda (multi-ativo): o robô opera BTC/ETH/SOL/BNB de forma independente. */}
+      {/* Posições abertas — o que o robô tem em aberto AGORA, com PnL ao vivo e fechar por moeda. */}
       {positions.length > 0 && (
         <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Posições por moeda</h2>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {positions.map((p) => {
-              const live = p.inst_id ? livePos[p.inst_id] : undefined;
-              const flat = p.position === "flat";
-              const pdec = p.entry_px != null && p.entry_px >= 1000 ? 1 : p.entry_px != null && p.entry_px >= 1 ? 2 : 4;
-              return (
-                <div key={p.asset} className="rounded-lg border border-border/70 bg-background/40 p-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-foreground">{p.asset}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${flat ? "bg-muted text-muted-foreground" : p.position === "long" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{flat ? "fora" : p.position === "long" ? "long" : "short"}</span>
-                  </div>
-                  {!flat ? (
-                    <>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">entrada @ <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}</div>
-                      {live ? (
-                        <div className={`num text-sm font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {cfg?.quote_ccy}</div>
-                      ) : (
-                        <div className="text-[10px] text-muted-foreground">PnL —</div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">sem posição</div>
-                  )}
-                  {p.last_bias != null && (
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">viés <span className={`num font-semibold ${p.last_bias > 0 ? "text-emerald-600 dark:text-emerald-400" : p.last_bias < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>{p.last_bias >= 0 ? "+" : ""}{p.last_bias}</span></div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground">Posições abertas</h2>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${openPositions.length ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{openPositions.length ? `${openPositions.length} rodando` : "nenhuma aberta"}</span>
           </div>
-          <p className="mt-2 text-[10px] text-muted-foreground">Cada moeda vota e opera sozinha (voto 2-de-3 por timeframe). PnL ao vivo da Binance demo.</p>
-        </div>
-      )}
-
-      {/* Histórico de ordens */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
-        <div className="px-4 py-3"><h2 className="text-sm font-semibold text-foreground">Histórico de ordens</h2></div>
-        {orders.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma ordem ainda.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Receita</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id} className="border-b border-border last:border-0">
-                    <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
-                    <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{o.source === "auto" ? "robô" : "manual"}</span></td>
-                    <td className="px-4 py-2 font-semibold text-foreground">{o.inst_id ? o.inst_id.replace(/USDT$/, "") : "—"}</td>
-                    <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
-                    <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
-                    <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, dec) : "—"}</td>
-                    <td className="num px-4 py-2 text-right">
-                      {(() => {
-                        // Fechamento → PnL realizado salvo; ordem da posição aberta → PnL ao vivo; resto → "—".
-                        const live = o.id === openEntryId ? posInfo?.uPnl ?? null : null;
-                        const v = o.pnl != null ? o.pnl : live;
-                        if (v == null) return <span className="text-muted-foreground">—</span>;
-                        return (
-                          <span className={v >= 0 ? "text-emerald-500" : "text-rose-500"} title={o.pnl != null ? "realizado" : "em aberto (ao vivo)"}>
-                            {v >= 0 ? "+" : ""}{num(v)}{live != null && o.pnl == null ? "*" : ""}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        <span>{o.ok ? <span className="text-emerald-500">ok</span> : <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>}</span>
-                        {o.ok && (() => {
-                          // Status da POSIÇÃO: fechamento; aberta (rodando); ou fechada (não roda mais).
-                          if (o.action === "close") return <span className="text-[10px] text-muted-foreground">fechamento</span>;
-                          const a = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : null;
-                          const posOpen = positions.some((x) => x.asset === a && x.position !== "flat");
-                          const closedAfter = orders.some((x) => x.inst_id === o.inst_id && x.action === "close" && x.ok && new Date(x.created_at) > new Date(o.created_at));
-                          const running = posOpen && !closedAfter;
-                          return running
-                            ? <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />rodando</span>
-                            : <span className="text-[10px] text-muted-foreground">● fechada</span>;
-                        })()}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right">
-                      {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
-                        <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
-                      )}
-                      {(() => {
-                        const a = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : null;
-                        const hasPos = positions.some((x) => x.asset === a && x.position !== "flat");
-                        return (
-                          <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
-                            {hasPos ? "cancelar" : "excluir"}
-                          </button>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="px-4 py-2 text-[10px] text-muted-foreground">Receita: <span className="text-emerald-500">verde</span>/<span className="text-rose-500">vermelho</span> = ganho/perda. <span className="num">*</span> = ao vivo (posição em aberto); demais = realizado no fechamento.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Aprendizado do robô (cérebro que aprende) */}
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
-          <button onClick={runLearn} disabled={busy !== null} className="rounded-md bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-50">{busy === "learn" ? "Analisando…" : "Gerar diagnóstico"}</button>
-        </div>
-        {learning?.data ? (
-          <>
-            <div className="mb-2 text-[11px] text-muted-foreground">
-              Acerto direcional do viés ({learning.data.window}): <span className={`num font-bold ${learning.data.overall.hitRate >= 52 ? "text-emerald-500" : learning.data.overall.hitRate <= 48 ? "text-rose-500" : "text-foreground"}`}>{learning.data.overall.hitRate}%</span> em {learning.data.overall.n} chamadas · {learning.data.labeled} leituras rotuladas
-            </div>
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              {learning.data.perSignal.map((s) => {
-                const good = s.hitRate >= 55, bad = s.hitRate <= 45;
+          {openPositions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma posição aberta — o robô está <strong>fora do mercado</strong> em todas as moedas.</p>
+          ) : (
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+              {openPositions.map((p) => {
+                const live = p.inst_id ? livePos[p.inst_id] : undefined;
+                const long = p.position === "long";
+                const pdec = pxDec(p.entry_px);
+                const mark = live?.markPx ?? null;
+                const movePct = p.entry_px && mark ? ((mark - p.entry_px) / p.entry_px) * 100 * (long ? 1 : -1) : null;
                 return (
-                  <div key={s.key} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-36 shrink-0 truncate text-muted-foreground" title={s.label}>{s.label}</span>
-                    <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span className="absolute inset-y-0 left-1/2 z-10 w-px bg-background/80" />
-                      <span className={`absolute inset-y-0 left-0 ${good ? "bg-emerald-500" : bad ? "bg-rose-500" : "bg-muted-foreground/50"}`} style={{ width: `${s.hitRate}%` }} />
-                    </span>
-                    <span className={`num w-9 text-right font-semibold ${good ? "text-emerald-500" : bad ? "text-rose-500" : "text-muted-foreground"}`}>{s.hitRate}%</span>
-                    <span className="num w-14 text-right text-muted-foreground/70">n{s.n}·{s.weight}</span>
+                  <div key={p.asset} className={`rounded-lg border p-3 ${long ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-rose-500/30 bg-rose-500/[0.06]"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-foreground">{p.asset}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${long ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/20 text-rose-600 dark:text-rose-400"}`}>{long ? "▲ LONG" : "▼ SHORT"}{isFut && cfg?.leverage ? ` ${cfg.leverage}x` : ""}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />rodando</div>
+                    {live ? (
+                      <div className={`num mt-1 text-lg font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {quote}{movePct != null && <span className="ml-1 text-[11px] font-medium">({live.uPnl >= 0 ? "+" : ""}{movePct.toFixed(2)}%)</span>}</div>
+                    ) : (
+                      <div className="mt-1 text-[11px] text-muted-foreground">PnL ao vivo indisponível</div>
+                    )}
+                    <div className="mt-1 text-[10px] text-muted-foreground">entrada <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{mark ? <> · agora <span className="num">{num(mark, pdec)}</span></> : null}{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}</div>
+                    {p.last_bias != null && (
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">viés atual <span className={`num font-semibold ${p.last_bias > 0 ? "text-emerald-600 dark:text-emerald-400" : p.last_bias < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>{p.last_bias >= 0 ? "+" : ""}{p.last_bias}</span></div>
+                    )}
+                    <button onClick={() => closeAsset(p.asset, p.inst_id)} disabled={busy !== null || !connected} className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-500/25 disabled:opacity-50 dark:text-rose-400">{busy === "close" + p.asset ? "Fechando…" : "✕ Fechar agora"}</button>
                   </div>
                 );
               })}
             </div>
-            {learning.ai_report && (
-              <div className="mt-3 rounded-lg border border-border/70 bg-background/40 p-3 text-xs">
-                <Markdown text={learning.ai_report} />
-              </div>
-            )}
-            <p className="mt-2 text-[10px] text-muted-foreground">Rotula cada leitura com o que o preço fez ~1h depois → mede quantas vezes cada sinal acertou a direção. &gt;55% ajuda, &lt;45% atrapalha (contrário). Amostra ainda pequena; melhora conforme o robô roda. Atualizado {new Date(learning.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.</p>
-          </>
+          )}
+          {flatAssets.length > 0 && (
+            <p className="mt-3 text-[11px] text-muted-foreground">Fora do mercado: <span className="font-medium text-foreground">{flatAssets.join(" · ")}</span></p>
+          )}
+          <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (voto 2-de-3 por timeframe). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
+        </div>
+      )}
+
+      {/* Filtros das ordens — moeda / status / período (valem p/ trades e p/ as ordens abaixo). */}
+      <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <div className="flex flex-wrap items-end gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Filtros</span>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Moeda
+            <select value={fAsset} onChange={(e) => setFAsset(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+              <option value="all">Todas</option>
+              {orderAssets.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Status
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+              <option value="all">Todos</option>
+              <option value="ok">OK</option>
+              <option value="erro">Erro</option>
+            </select>
+          </label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">De
+            <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
+          </label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Até
+            <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
+          </label>
+          {filtersOn && (
+            <button onClick={clearFilters} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Limpar filtros</button>
+          )}
+          <span className="ml-auto text-[11px] text-muted-foreground">{filtered.length} de {orders.length} ordens{filtersOn ? " (filtradas)" : ""}</span>
+        </div>
+      </div>
+
+      {/* Trades encerrados — round-trips fechados (pelo robô ou por você), com resultado realizado. */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">Trades encerrados <span className="text-xs font-normal text-muted-foreground">· receita realizada</span></h2>
+          {fScored > 0 && (
+            <span className="text-[11px] text-muted-foreground">{fWins}/{fScored} no verde · resultado <span className={`num font-semibold ${fRealized >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fRealized >= 0 ? "+" : ""}{num(fRealized)} {quote}</span></span>
+          )}
+        </div>
+        {fClosedTrades.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">{closedTrades.length === 0 ? "Nenhum trade encerrado ainda. Quando o robô sair de uma posição (ou você fechar), o resultado aparece aqui." : "Nenhum trade encerrado no filtro atual."}</p>
         ) : (
-          <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+                <tr><th className="px-4 py-2 font-medium">Fechado</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Direção</th><th className="px-4 py-2 text-right font-medium">Entrada → Saída</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Por</th></tr>
+              </thead>
+              <tbody>
+                {fClosedTrades.map((t) => {
+                  const pdec = pxDec(t.exit);
+                  return (
+                    <tr key={t.id} className="border-b border-border last:border-0">
+                      <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(t.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                      <td className="px-4 py-2 font-semibold text-foreground">{t.asset}</td>
+                      <td className="px-4 py-2"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.wasLong ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{t.wasLong ? "long" : "short"}</span></td>
+                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground">{t.entry != null ? num(t.entry, pdec) : "—"} <span className="text-muted-foreground/50">→</span> <span className="text-foreground">{t.exit != null ? num(t.exit, pdec) : "—"}</span></td>
+                      <td className="num px-4 py-2 text-right text-foreground">{t.sz != null ? num(t.sz, 6) : "—"}</td>
+                      <td className="num whitespace-nowrap px-4 py-2 text-right">{t.pnl != null ? <span className={`font-semibold ${t.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{t.pnl >= 0 ? "+" : ""}{num(t.pnl)} {quote}{t.pct != null && <span className="ml-1 text-[11px] font-normal">({t.pct >= 0 ? "+" : ""}{t.pct.toFixed(2)}%)</span>}</span> : <span className="text-muted-foreground">—</span>}</td>
+                      <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${t.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{t.source === "auto" ? "robô" : "manual"}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="px-4 py-2 text-[10px] text-muted-foreground">Cada linha é um trade que <strong>já fechou</strong> (abriu → fechou). Entrada = preço médio reconstruído do resultado; % = variação do preço a favor da posição.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Ordens do robô — só as execuções automáticas (source=auto). */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">robô</span>Ordens do robô</h2>
+          <span className="text-[11px] text-muted-foreground">{botOrders.length} ordens{hasPnl(botOrders) ? <> · receita realizada <span className={`num font-semibold ${sumPnl(botOrders) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{sumPnl(botOrders) >= 0 ? "+" : ""}{num(sumPnl(botOrders))} {quote}</span></> : null}</span>
+        </div>
+        {botOrders.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.some((o) => o.source === "auto") ? "Nenhuma ordem do robô no filtro atual." : "O robô ainda não enviou ordens."}</p>
+        ) : ordersTable(botOrders)}
+        <p className="px-4 py-2 text-[10px] text-muted-foreground"><strong>Receita</strong> só aparece na <strong>Saída</strong> (o lucro/prejuízo é do trade inteiro, não de cada compra/venda). PnL ao vivo das posições abertas está em “Posições abertas”.</p>
+      </div>
+
+      {/* Ordens manuais — só as que você enviou à mão (source=manual). */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">manual</span>Ordens manuais</h2>
+          <span className="text-[11px] text-muted-foreground">{manualOrders.length} ordens{hasPnl(manualOrders) ? <> · receita realizada <span className={`num font-semibold ${sumPnl(manualOrders) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{sumPnl(manualOrders) >= 0 ? "+" : ""}{num(sumPnl(manualOrders))} {quote}</span></> : null}</span>
+        </div>
+        {manualOrders.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.some((o) => o.source !== "auto") ? "Nenhuma ordem manual no filtro atual." : "Você ainda não enviou nenhuma ordem manual (use “Ordem manual (avançado)” no fim da página)."}</p>
+        ) : ordersTable(manualOrders)}
+      </div>
+
+      {/* Aprendizado do robô (cérebro que aprende) */}
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
+          <button onClick={runLearn} disabled={busy !== null} className="rounded-md bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-50">{busy === "learn" ? "Analisando…" : "Gerar diagnóstico"}</button>
+        </div>
+        {learning?.data ? (() => {
+          const d = learning.data!;
+          const assetKeys = Object.keys(d.byAsset ?? {}).sort();
+          const cur = learnAsset === "all" ? null : d.byAsset?.[learnAsset];
+          // Geral usa overall + perSignal global; por-moeda usa o breakdown do ativo.
+          const stat = learnAsset === "all" ? { hitRate: d.overall.hitRate, n: d.overall.n } : cur ? { hitRate: cur.hitRate, n: cur.n } : null;
+          const sigs = learnAsset === "all" ? d.perSignal : cur?.perSignal ?? [];
+          const report = learnAsset === "all" ? learning.ai_report : cur?.ai_report ?? null;
+          return (
+            <>
+              {/* Seletor de moeda do aprendizado (Geral + cada ativo com amostra) */}
+              <div className="mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-0.5 w-fit">
+                <button onClick={() => setLearnAsset("all")} className={`rounded-md px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${learnAsset === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Geral</button>
+                {assetKeys.map((a) => (
+                  <button key={a} onClick={() => setLearnAsset(a)} className={`rounded-md px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${learnAsset === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a} <span className="opacity-60">{d.byAsset[a].hitRate}%</span></button>
+                ))}
+              </div>
+              <div className="mb-2 text-[11px] text-muted-foreground">
+                {learnAsset === "all" ? "Acerto direcional do viés (geral" : `Acerto do viés em ${learnAsset} (`}{d.window}): {stat ? <><span className={`num font-bold ${stat.hitRate >= 52 ? "text-emerald-500" : stat.hitRate <= 48 ? "text-rose-500" : "text-foreground"}`}>{stat.hitRate}%</span> em {stat.n} amostras</> : "amostra insuficiente"}{learnAsset === "all" ? <> · {d.labeled} leituras rotuladas</> : null}
+              </div>
+              {sigs.length > 0 ? (
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {sigs.map((s) => {
+                    const good = s.hitRate >= 55, bad = s.hitRate <= 45;
+                    return (
+                      <div key={s.key} className="flex items-center gap-2 text-[11px]">
+                        <span className="w-36 shrink-0 truncate text-muted-foreground" title={s.label}>{s.label}</span>
+                        <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <span className="absolute inset-y-0 left-1/2 z-10 w-px bg-background/80" />
+                          <span className={`absolute inset-y-0 left-0 ${good ? "bg-emerald-500" : bad ? "bg-rose-500" : "bg-muted-foreground/50"}`} style={{ width: `${s.hitRate}%` }} />
+                        </span>
+                        <span className={`num w-9 text-right font-semibold ${good ? "text-emerald-500" : bad ? "text-rose-500" : "text-muted-foreground"}`}>{s.hitRate}%</span>
+                        <span className="num w-14 text-right text-muted-foreground/70">n{s.n}·{s.weight}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">Ainda sem acerto por sinal para {learnAsset === "all" ? "o geral" : learnAsset} — precisa de mais leituras rotuladas nessa moeda.</p>
+              )}
+              {report && (
+                <div className="mt-3 rounded-lg border border-border/70 bg-background/40 p-3 text-xs">
+                  <Markdown text={report} />
+                </div>
+              )}
+              <p className="mt-2 text-[10px] text-muted-foreground">Rotula cada leitura com o que o preço fez ~1h depois → mede quantas vezes cada sinal acertou a direção, <strong>por moeda</strong>. &gt;55% ajuda, &lt;45% atrapalha (contrário). Amostra ainda pequena; melhora conforme o robô roda. Atualizado {new Date(learning.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.</p>
+            </>
+          );
+        })() : (
+          <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal, separado por moeda.</p>
         )}
       </div>
 

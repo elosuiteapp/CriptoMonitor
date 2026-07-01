@@ -76,8 +76,10 @@ Deno.serve(async (req) => {
       (byAsset[asset] ??= []).push({ tsMs: new Date(row.created_at).getTime(), spot, bias, signals });
     }
 
-    // 3) Rotula com o retorno ~1h e acumula acerto por sinal + geral + por ativo.
-    const perSig: Record<string, { label: string; weight: number; n: number; hits: number }> = {};
+    // 3) Rotula com o retorno ~1h e acumula acerto por sinal (GLOBAL + POR MOEDA) + geral + por ativo.
+    type Acc = { label: string; weight: number; n: number; hits: number };
+    const perSig: Record<string, Acc> = {};
+    const perSigByAsset: Record<string, Record<string, Acc>> = {};
     let ovN = 0, ovHits = 0;
     const assetStats: Record<string, { n: number; hits: number }> = {};
     let labeledTotal = 0;
@@ -85,6 +87,7 @@ Deno.serve(async (req) => {
     for (const asset in byAsset) {
       const arr = byAsset[asset].sort((a, b) => a.tsMs - b.tsMs);
       assetStats[asset] = { n: 0, hits: 0 };
+      const pa = (perSigByAsset[asset] ??= {});
       for (let i = 0; i < arr.length; i++) {
         // acha a leitura ~1h à frente
         let fwd: number | null = null;
@@ -100,34 +103,56 @@ Deno.serve(async (req) => {
         labeledTotal++;
         // geral (viés)
         if (Math.abs(arr[i].bias) >= SIG_MIN) { ovN++; assetStats[asset].n++; if (sign(arr[i].bias) === moveDir) { ovHits++; assetStats[asset].hits++; } }
-        // por sinal
+        // por sinal (acumula no global e no da moeda)
         for (const s of arr[i].signals) {
           const sc = Number(s.score);
           if (!Number.isFinite(sc) || Math.abs(sc) < SIG_MIN) continue;
           const k = String(s.key);
+          const hit = sign(sc) === moveDir ? 1 : 0;
           const e = (perSig[k] ??= { label: String(s.label ?? k), weight: Number(s.weight ?? 0), n: 0, hits: 0 });
-          e.n++;
-          if (sign(sc) === moveDir) e.hits++;
+          e.n++; e.hits += hit;
+          const ea = (pa[k] ??= { label: String(s.label ?? k), weight: Number(s.weight ?? 0), n: 0, hits: 0 });
+          ea.n++; ea.hits += hit;
         }
       }
     }
 
-    const perSignal = Object.entries(perSig)
-      .map(([key, v]) => ({ key, label: v.label, weight: v.weight, n: v.n, hitRate: v.n ? Math.round((v.hits / v.n) * 100) : 0, edge: v.n ? Math.round((v.hits / v.n - 0.5) * 100) : 0 }))
-      .filter((s) => s.n >= 5)
-      .sort((a, b) => b.n - a.n);
+    const buildPerSignal = (m: Record<string, Acc>, minN: number) =>
+      Object.entries(m)
+        .map(([key, v]) => ({ key, label: v.label, weight: v.weight, n: v.n, hitRate: v.n ? Math.round((v.hits / v.n) * 100) : 0, edge: v.n ? Math.round((v.hits / v.n - 0.5) * 100) : 0 }))
+        .filter((s) => s.n >= minN)
+        .sort((a, b) => b.n - a.n);
+
+    const perSignal = buildPerSignal(perSig, 5);
     const overallHitRate = ovN ? Math.round((ovHits / ovN) * 100) : 0;
-    const byAssetOut = Object.fromEntries(Object.entries(assetStats).filter(([, v]) => v.n >= 3).map(([a, v]) => [a, { n: v.n, hitRate: Math.round((v.hits / v.n) * 100) }]));
+    // Por moeda: acerto geral + acerto por sinal daquela moeda (minN menor, amostra é menor).
+    const byAssetOut: Record<string, { n: number; hitRate: number; perSignal: ReturnType<typeof buildPerSignal>; ai_report: string | null }> = {};
+    for (const [a, v] of Object.entries(assetStats)) {
+      if (v.n < 3) continue;
+      byAssetOut[a] = { n: v.n, hitRate: Math.round((v.hits / v.n) * 100), perSignal: buildPerSignal(perSigByAsset[a] ?? {}, 3), ai_report: null };
+    }
 
     const summary = { window: "~1h", labeled: labeledTotal, overall: { n: ovN, hitRate: overallHitRate }, byAsset: byAssetOut, perSignal };
 
-    // 4) Diagnóstico da IA (se houver amostra e chave).
+    // 4) Diagnóstico da IA — GERAL + um por MOEDA (com amostra suficiente).
     let aiReport: string | null = null;
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    if (geminiKey && perSignal.length > 0 && labeledTotal >= 10) {
-      const system = "Você é um analista quant avaliando um robô de trade DEMO (educacional). Recebe a taxa de acerto direcional (~1h) de cada SINAL da leitura do robô, medida sobre o histórico. hitRate>55% = preditivo; ~50% = ruído/moeda ao ar; <45% = contrário (o sinal erra mais do que acerta). Responda em PORTUGUÊS, curto e direto, em markdown. Estrutura: **Como está indo** (1-2 frases sobre o acerto geral), **Sinais que ajudam** (os preditivos), **Sinais que atrapalham** (ruído ou contrários — inclua o peso atual deles), **Ajustes sugeridos** (2-4 bullets concretos: reduzir/aumentar peso de sinal X, etc.). Seja honesto sobre amostra pequena. NÃO invente números além dos fornecidos.";
-      const user = `Avalie o robô com estes dados (janela ${summary.window}, ${labeledTotal} leituras rotuladas, acerto geral do viés ${overallHitRate}% em ${ovN} amostras):\n\n${JSON.stringify(summary, null, 1)}`;
-      aiReport = await callGemini(geminiKey, system, user).catch(() => null);
+    if (geminiKey && labeledTotal >= 10) {
+      const systemBase = "Você é um analista quant avaliando um robô de trade DEMO (educacional). Recebe a taxa de acerto direcional (~1h) de cada SINAL da leitura do robô. hitRate>55% = preditivo; ~50% = ruído; <45% = contrário (erra mais do que acerta). Responda em PORTUGUÊS, curto e direto, em markdown. NÃO invente números além dos fornecidos.";
+      // Geral
+      if (perSignal.length > 0) {
+        const system = systemBase + " Estrutura: **Como está indo** (1-2 frases sobre o acerto geral), **Sinais que ajudam** (os preditivos), **Sinais que atrapalham** (ruído ou contrários — inclua o peso atual deles), **Ajustes sugeridos** (2-4 bullets concretos). Seja honesto sobre amostra pequena.";
+        const perAssetHit = Object.fromEntries(Object.entries(byAssetOut).map(([a, v]) => [a, { n: v.n, hitRate: v.hitRate }]));
+        const user = `Avalie o robô no GERAL (todas as moedas, janela ${summary.window}, ${labeledTotal} leituras, acerto do viés ${overallHitRate}% em ${ovN} amostras):\n\n${JSON.stringify({ overall: summary.overall, byAsset: perAssetHit, perSignal }, null, 1)}`;
+        aiReport = await callGemini(geminiKey, system, user).catch(() => null);
+      }
+      // Por moeda: só ativos com amostra decente (>=8) e sinais medidos → diagnóstico focado.
+      const assetsForAi = Object.entries(byAssetOut).filter(([, v]) => v.n >= 8 && v.perSignal.length > 0);
+      const systemAsset = systemBase + " Foque SÓ nesta moeda. Estrutura curta: **{MOEDA}** (1 frase sobre o acerto dela), **Ajuda nessa moeda** (1-3 sinais preditivos), **Atrapalha** (1-3 ruidosos/contrários). No máximo ~6 linhas.";
+      const reports = await Promise.all(assetsForAi.map(([a, v]) =>
+        callGemini(geminiKey, systemAsset.replace("{MOEDA}", a), `Moeda ${a} (janela ${summary.window}): acerto do viés ${v.hitRate}% em ${v.n} amostras. Acerto por sinal:\n\n${JSON.stringify(v.perSignal, null, 1)}`).catch(() => null)
+      ));
+      assetsForAi.forEach(([a], i) => { if (byAssetOut[a]) byAssetOut[a].ai_report = reports[i]; });
     }
 
     await admin.from("bot_learning").upsert({ id: 1, data: summary, ai_report: aiReport, updated_at: new Date().toISOString() }, { onConflict: "id" });
