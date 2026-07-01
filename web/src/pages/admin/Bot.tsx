@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 
 import BotChart, { type BotCandle, type BotMarker } from "../../components/admin/BotChart";
+import Markdown from "../../components/Markdown";
 import { supabase } from "../../lib/supabase";
 
 interface Config {
@@ -76,6 +77,12 @@ interface BotPosition {
   last_bias: number | null;
   last_decision: string | null;
 }
+interface LearningSig { key: string; label: string; weight: number; n: number; hitRate: number; edge: number }
+interface Learning {
+  data: { window: string; labeled: number; overall: { n: number; hitRate: number }; byAsset: Record<string, { n: number; hitRate: number }>; perSignal: LearningSig[] } | null;
+  ai_report: string | null;
+  updated_at: string;
+}
 
 const BARS = ["15m", "1H", "4H", "1D"];
 const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
@@ -124,6 +131,7 @@ export default function AdminBot() {
   const [posInfo, setPosInfo] = useState<{ uPnl: number | null; markPx: number | null; entryPx: number | null } | null>(null);
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
+  const [learning, setLearning] = useState<Learning | null>(null);
 
   // conexão (chaves)
   const [showKeys, setShowKeys] = useState(false);
@@ -138,12 +146,13 @@ export default function AdminBot() {
   const [mPx, setMPx] = useState("");
 
   const loadBase = useCallback(async () => {
-    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_decision").order("asset"),
+      supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -151,6 +160,7 @@ export default function AdminBot() {
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
+    setLearning((lrn as Learning | null) ?? null);
   }, []);
 
   useEffect(() => {
@@ -327,6 +337,22 @@ export default function AdminBot() {
       if (cfg) await loadChart(cfg);
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao rodar." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runLearn() {
+    setBusy("learn");
+    setMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("bot-learn", { body: {} });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      setMsg({ kind: "ok", text: `Diagnóstico atualizado (${data?.labeled ?? 0} leituras avaliadas).` });
+      await loadBase();
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha ao aprender." });
     } finally {
       setBusy(null);
     }
@@ -733,6 +759,45 @@ export default function AdminBot() {
             </table>
             <p className="px-4 py-2 text-[10px] text-muted-foreground">Receita: <span className="text-emerald-500">verde</span>/<span className="text-rose-500">vermelho</span> = ganho/perda. <span className="num">*</span> = ao vivo (posição em aberto); demais = realizado no fechamento.</p>
           </div>
+        )}
+      </div>
+
+      {/* Aprendizado do robô (cérebro que aprende) */}
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
+          <button onClick={runLearn} disabled={busy !== null} className="rounded-md bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-50">{busy === "learn" ? "Analisando…" : "Gerar diagnóstico"}</button>
+        </div>
+        {learning?.data ? (
+          <>
+            <div className="mb-2 text-[11px] text-muted-foreground">
+              Acerto direcional do viés ({learning.data.window}): <span className={`num font-bold ${learning.data.overall.hitRate >= 52 ? "text-emerald-500" : learning.data.overall.hitRate <= 48 ? "text-rose-500" : "text-foreground"}`}>{learning.data.overall.hitRate}%</span> em {learning.data.overall.n} chamadas · {learning.data.labeled} leituras rotuladas
+            </div>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {learning.data.perSignal.map((s) => {
+                const good = s.hitRate >= 55, bad = s.hitRate <= 45;
+                return (
+                  <div key={s.key} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-36 shrink-0 truncate text-muted-foreground" title={s.label}>{s.label}</span>
+                    <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <span className="absolute inset-y-0 left-1/2 z-10 w-px bg-background/80" />
+                      <span className={`absolute inset-y-0 left-0 ${good ? "bg-emerald-500" : bad ? "bg-rose-500" : "bg-muted-foreground/50"}`} style={{ width: `${s.hitRate}%` }} />
+                    </span>
+                    <span className={`num w-9 text-right font-semibold ${good ? "text-emerald-500" : bad ? "text-rose-500" : "text-muted-foreground"}`}>{s.hitRate}%</span>
+                    <span className="num w-14 text-right text-muted-foreground/70">n{s.n}·{s.weight}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {learning.ai_report && (
+              <div className="mt-3 rounded-lg border border-border/70 bg-background/40 p-3 text-xs">
+                <Markdown text={learning.ai_report} />
+              </div>
+            )}
+            <p className="mt-2 text-[10px] text-muted-foreground">Rotula cada leitura com o que o preço fez ~1h depois → mede quantas vezes cada sinal acertou a direção. &gt;55% ajuda, &lt;45% atrapalha (contrário). Amostra ainda pequena; melhora conforme o robô roda. Atualizado {new Date(learning.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal.</p>
         )}
       </div>
 
