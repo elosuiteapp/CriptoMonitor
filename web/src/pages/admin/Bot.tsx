@@ -700,7 +700,8 @@ export default function AdminBot() {
             {isFut && (
               <label className="text-xs text-muted-foreground">Contra a tendência (4H+1D)
                 <select className={`${input} mt-1`} value={cfg.counter_trend ?? "tight"} onChange={(e) => setCfg({ ...cfg, counter_trend: e.target.value })}>
-                  <option value="tight">Permitir com stop curto</option>
+                  <option value="always">Permitir sempre (3 de 5 basta · day-trade)</option>
+                  <option value="tight">Permitir só com fluxo forte</option>
                   <option value="block">Bloquear (só a favor)</option>
                 </select>
               </label>

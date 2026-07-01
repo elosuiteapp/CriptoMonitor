@@ -613,7 +613,12 @@ Deno.serve(async (req) => {
       // Gamma positivo (fade/reversão) facilita a contra-tendência; negativo (trend) dificulta.
       const CT_FLOW = gammaPos ? 22 : gammaNeg ? 38 : 30;
       if (counterTrend) {
-        if (String(cfg.counter_trend ?? "tight") === "block") { gate = `contra a tendência (${regime}) — bloqueado`; want = null; }
+        const ctMode = String(cfg.counter_trend ?? "tight");
+        if (ctMode === "block") { gate = `contra a tendência (${regime}) — bloqueado`; want = null; }
+        else if (ctMode === "always") {
+          // 'always' (DAY-TRADE): 3-de-5 já basta — entra a FAVOR e CONTRA a tendência. A contra
+          // ainda entra com tamanho pela metade + stop curto (isCounter); só NÃO exige fluxo forte.
+        }
         else {
           // 'tight': só permite contra-tendência se o FLUXO confirmar forte (stop curto + tamanho menor + sem pirâmide).
           const flowOk = want === "long" ? flowTilt >= CT_FLOW : flowTilt <= -CT_FLOW;
