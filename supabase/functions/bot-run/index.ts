@@ -219,7 +219,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
 interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
 const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16, "1D": 0.16 };
-function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
+function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdRetail: number | null, cvdInst: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
   const sig: Signal[] = [];
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
   const der = p?.derivatives ?? {}, g = p?.gamma ?? {}, etf = p?.etf_flows ?? {};
@@ -239,7 +239,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   if (cb) { const bid = Number(cb.bid_wide_usd || cb.bid_near_usd || 0), ask = Number(cb.ask_wide_usd || cb.ask_near_usd || 0); if (bid + ask > 0) { const r = (bid - ask) / (bid + ask); add("book_inst", "Microestrutura", "Book institucional (Coinbase)", 0.09, r * 150, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((bid / (bid + ask)) * 100)}% bid`); } }
   let rbid = 0, rask = 0;
   for (const ex of ["binance", "okx"]) { const r = byEx[ex]; if (r) { rbid += Number(r.bid_near_usd || 0); rask += Number(r.ask_near_usd || 0); } }
-  if (rbid + rask > 0) { const r = (rbid - rask) / (rbid + rask); add("book_retail", "Microestrutura", "Book varejo (Binance+OKX)", 0.04, r * 140, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((rbid / (rbid + rask)) * 100)}% bid`); }
+  if (rbid + rask > 0) { const r = (rbid - rask) / (rbid + rask); add("book_retail", "Microestrutura", "Book varejo (Binance+OKX)", 0.02, r * 140, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((rbid / (rbid + rask)) * 100)}% bid`); }
   if (spot > 0 && walls.length) {
     // Absorção: a MAIOR parede colada no preço (±0,7%) sendo testada agora.
     // Paredes de baleia: MESMO medidor do gráfico — suporte (ABAIXO do preço) × resistência (ACIMA).
@@ -279,7 +279,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     const recent = (bidPctAt(tss[tss.length - 1]) + bidPctAt(tss[tss.length - 2])) / 2;
     const older = (bidPctAt(tss[0]) + bidPctAt(tss[1])) / 2;
     const accel = recent - older; // >0 = pressão ficando mais compradora
-    add("book_trend", "Microestrutura", "Pressão do book (tendência)", 0.05, clamp(accel * 600), `${accel >= 0 ? "compra" : "venda"} ganhando força · ${Math.round(recent * 100)}% bid agora vs ${Math.round(older * 100)}% antes`);
+    add("book_trend", "Microestrutura", "Pressão do book (tendência)", 0.02, clamp(accel * 600), `${accel >= 0 ? "compra" : "venda"} ganhando força · ${Math.round(recent * 100)}% bid agora vs ${Math.round(older * 100)}% antes`);
   }
 
   // ── IMBALANCE / FVG (fair value gaps não preenchidos perto do preço, no TF base) ──
@@ -296,7 +296,14 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   }
 
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
-  if (cvdSum != null) add("cvd", "Fluxo", "CVD agregado (~30 min)", 0.09, (cvdSum / 2500000) * 70, `${cvdSum >= 0 ? "compra" : "venda"} líquida $${Math.abs(cvdSum / 1e6).toFixed(1)}M em ~30 min`);
+  // CVD agregado é ruído (~50% no aprendizado) → peso baixo. O valor está na DIVERGÊNCIA
+  // institucional (Coinbase, mão forte) × varejo (Binance+OKX, mão fraca): seguir o institucional.
+  const cvdAgg = (cvdRetail ?? 0) + (cvdInst ?? 0);
+  if (cvdRetail != null || cvdInst != null) add("cvd", "Fluxo", "CVD agregado (~30 min)", 0.03, (cvdAgg / 2500000) * 70, `${cvdAgg >= 0 ? "compra" : "venda"} líquida $${Math.abs(cvdAgg / 1e6).toFixed(1)}M`);
+  if (cvdInst != null && cvdRetail != null && Math.sign(cvdInst) !== 0 && Math.sign(cvdRetail) !== 0 && Math.sign(cvdInst) !== Math.sign(cvdRetail)) {
+    const sc = Math.sign(cvdInst) * (55 + 30 * Math.min(Math.abs(cvdInst) / 300000, 1));
+    add("cvd_div", "Fluxo", "Divergência CVD (institucional × varejo)", 0.11, sc, cvdInst > 0 ? "institucional COMPRA e varejo vende — acumulação (tell de alta)" : "institucional VENDE e varejo compra — distribuição (tell de baixa)");
+  }
   const llq = N(der.liq_long_usd) ?? 0, lshq = N(der.liq_short_usd) ?? 0;
   if (llq + lshq > 0) add("liqs", "Fluxo", "Liquidações", 0.06, ((lshq - llq) / (llq + lshq)) * 85, llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`);
   const pw = N(g.put_wall), cw = N(g.call_wall);
@@ -304,9 +311,15 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const gex = N(g.net_gex_spot);
   if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.07, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   const cbp = N(p?.coinbase_premium);
-  if (cbp != null) add("cb_prem", "Institucional", "Prêmio Coinbase", 0.05, cbp * 100 * 60, `${cbp >= 0 ? "+" : ""}${(cbp * 100).toFixed(3)}%`);
+  if (cbp != null) add("cb_prem", "Institucional", "Prêmio Coinbase", 0.02, cbp * 100 * 60, `${cbp >= 0 ? "+" : ""}${(cbp * 100).toFixed(3)}%`);
   const ef = N(etf.net_flow_usd), streak = N(etf.streak_days);
   if (ef != null) add("etf", "Institucional", "Fluxo de ETF", 0.07, (ef / 300e6) * 70, `${ef >= 0 ? "entrada" : "saída"} $${Math.abs(ef / 1e6).toFixed(0)}M${streak != null ? ` · ${streak}d` : ""}`);
+
+  // ── REGIME DE GAMMA (chave de modo): positivo = dealers amortecem (pinning/reversão) → estrutura
+  //    falha mais e rompimento vira fade; negativo = amplifica (tendência) → solta o trend. ──
+  const gexAll = N(g.net_gex_spot);
+  const gammaPos = g.regime === "positive" || (gexAll != null && gexAll > 0);
+  const gammaNeg = g.regime === "negative" || (gexAll != null && gexAll < 0);
 
   void der;
 
@@ -318,12 +331,15 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h", "4H": "48h", "1D": "48h" };
   const perTf = tfReads.map((t) => {
     const pressure = Math.round(winTilt(tfWindow[t.tf] ?? "12h") * 100); // -100..100
-    const composite = Math.round(clamp(0.6 * t.bias + 0.4 * pressure));
+    // Gamma positivo (pinning) → estrutura falha mais (fakeout): pesa MENOS a estrutura e mais a
+    // pressão do book do horizonte; gamma negativo (tendência) → estrutura pesa mais.
+    const structW = gammaPos ? 0.45 : gammaNeg ? 0.65 : 0.6;
+    const composite = Math.round(clamp(structW * t.bias + (1 - structW) * pressure));
     return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
   });
 
   // Fluxo compartilhado (tudo que é "agora", não por-TF) → confirmação/veto.
-  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "liqs", "gamma", "gflow", "cb_prem", "etf"]);
+  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow", "cb_prem", "etf"]);
   let fn = 0, fd = 0;
   for (const x of sig) if (flowKeys.has(x.key)) { fn += x.score * x.weight; fd += x.weight; }
   const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;
@@ -331,7 +347,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // Placar-resumo (média dos TFs) só p/ exibição; o VOTO 2-de-3 é decidido no handler
   // com os limiares configuráveis (buy_threshold/sell_threshold).
   const bias = perTf.length ? Math.round(perTf.reduce((s, t) => s + t.bias, 0) / perTf.length) : 0;
-  return { bias, signals: sig, absScore: Math.round(absScore), perTf, flowTilt };
+  return { bias, signals: sig, absScore: Math.round(absScore), perTf, flowTilt, gammaPos, gammaNeg };
 }
 
 Deno.serve(async (req) => {
@@ -391,8 +407,13 @@ Deno.serve(async (req) => {
       ]);
       const snap = (snaps ?? [])[0];
       if (!snap?.payload) { return { asset, skipped: "sem dados de mercado" }; }
-      let cvdSum: number | null = null;
-      for (const s of (snaps ?? [])) { const pr = (s.payload as any)?.price ?? {}; for (const ex of ["binance", "okx", "coinbase"]) { const v = N(pr?.[ex]?.cvd); if (v != null) cvdSum = (cvdSum ?? 0) + v; } }
+      // CVD separado: VAREJO (Binance+OKX) × INSTITUCIONAL (Coinbase) — p/ medir a divergência (mão forte).
+      let cvdRetail: number | null = null, cvdInst: number | null = null;
+      for (const s of (snaps ?? [])) {
+        const pr = (s.payload as any)?.price ?? {};
+        for (const ex of ["binance", "okx"]) { const v = N(pr?.[ex]?.cvd); if (v != null) cvdRetail = (cvdRetail ?? 0) + v; }
+        const vc = N(pr?.coinbase?.cvd); if (vc != null) cvdInst = (cvdInst ?? 0) + vc;
+      }
 
       // Preço + velas por TF (Binance futures testnet), normalizados p/ [time,o,h,l,c].
       const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: instId }, bnbCreds, false);
@@ -410,15 +431,16 @@ Deno.serve(async (req) => {
       const primary = tfReads[0];
 
       const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
-      const { bias, signals, absScore, perTf, flowTilt } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdSum, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
+      const { bias, signals, absScore, perTf, flowTilt, gammaPos, gammaNeg } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdRetail, cvdInst, (pressRows as { label: string; bid: number; ask: number }[]) ?? []);
 
-      // ── REGIME (tendência) pelos TFs MAIORES (4H + 1D): manda no LADO da operação. ──
-      const trendTfs = tfReads.filter((t) => (t.tf === "4H" || t.tf === "1D") && t.smc);
-      const trendBias = trendTfs.length ? Math.round(trendTfs.reduce((s, t) => s + t.bias, 0) / trendTfs.length) : 0;
+      // ── REGIME (tendência) — DAYTRADE: o 4H é o CHEFE; o 1D só reforça (contexto leve). ──
+      const b4 = tfReads.find((t) => t.tf === "4H")?.bias ?? 0;
+      const b1d = tfReads.find((t) => t.tf === "1D")?.bias ?? 0;
+      const trendBias = Math.round(b4 * 0.7 + b1d * 0.3);
       const regime: "up" | "down" | "range" = trendBias >= 18 ? "up" : trendBias <= -18 ? "down" : "range";
       const regimeDir = regime === "up" ? 1 : regime === "down" ? -1 : 0;
 
-      // ── VOTO POR TIMEFRAME (N-de-M dos 5 TFs) + fluxo como confirmação ──
+      // ── VOTO POR TIMEFRAME (3-de-5) + fluxo como confirmação ──
       const buyTh = Number(cfg.buy_threshold), sellTh = Number(cfg.sell_threshold);
       const longVotes = perTf.filter((t) => t.bias >= buyTh).length;
       const shortVotes = perTf.filter((t) => t.bias <= -sellTh).length;
@@ -478,7 +500,8 @@ Deno.serve(async (req) => {
       // ── A FAVOR × CONTRA a tendência (o 4H/1D manda no lado). ──
       const wantDir = want === "long" ? 1 : want === "short" ? -1 : 0;
       const counterTrend = wantDir !== 0 && regimeDir !== 0 && wantDir !== regimeDir;
-      const CT_FLOW = 30;
+      // Gamma positivo (fade/reversão) facilita a contra-tendência; negativo (trend) dificulta.
+      const CT_FLOW = gammaPos ? 22 : gammaNeg ? 38 : 30;
       if (counterTrend) {
         if (String(cfg.counter_trend ?? "tight") === "block") { gate = `contra a tendência (${regime}) — bloqueado`; want = null; }
         else {
@@ -507,7 +530,7 @@ Deno.serve(async (req) => {
       const pyramidAdd = !!cfg.pyramid && fut && want != null && want === pos && !counterTrend && !st.ctrend && inProfit && st.adds < pyramidMax;
 
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
-      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, regime, trendBias, counter: isCounter, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
+      const structure = { consensus: { bull, bear, total }, perTf, flowTilt, regime, trendBias, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", counter: isCounter, zone: primary.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null };
       const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary.mom, absScore, flowTilt, regime, counter: isCounter, votes: { long: longVotes, short: shortVotes, total }, structure, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 

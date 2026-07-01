@@ -49,7 +49,7 @@ interface Reading {
   signals: ReadingSig[];
   spot?: number;
   desired?: string;
-  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null; regime?: string; trendBias?: number; counter?: boolean } | null;
+  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null; regime?: string; trendBias?: number; gammaRegime?: string; counter?: boolean } | null;
 }
 interface OrderRow {
   id: string;
@@ -677,7 +677,7 @@ export default function AdminBot() {
             <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência. Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e <strong>FVG/imbalance</strong>. A <strong>tendência (4H+1D) manda no lado</strong>: <strong>a favor</strong> opera normal (pirâmide só no lucro); <strong>contra</strong> só entra com fluxo forte, <strong>stop curto e tamanho menor</strong> (ou bloqueia). Zona (discount/premium) só vira viés <strong>com confirmação</strong> de estrutura. Book, absorção, CVD, liquidações, gamma/HIRO e ETF confirmam; <strong>stop de risco</strong> em toda posição. Abre com consenso ≥ {cfg.min_votes ?? 3}/5 e viés ≥ ±{cfg.buy_threshold}.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
           </div>
         </div>
       )}
@@ -697,7 +697,10 @@ export default function AdminBot() {
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
                 <span className="font-semibold uppercase tracking-wide text-muted-foreground">Por timeframe</span>
                 {r.structure.regime && (
-                  <span className={`rounded px-1.5 py-0.5 font-bold ${r.structure.regime === "up" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : r.structure.regime === "down" ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Tendência dos TFs maiores (4H+1D) — manda no lado da operação">tendência: {r.structure.regime === "up" ? "ALTA" : r.structure.regime === "down" ? "BAIXA" : "range"}{typeof r.structure.trendBias === "number" ? ` (${r.structure.trendBias >= 0 ? "+" : ""}${r.structure.trendBias})` : ""}</span>
+                  <span className={`rounded px-1.5 py-0.5 font-bold ${r.structure.regime === "up" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : r.structure.regime === "down" ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Tendência — o 4H manda (o 1D só reforça). Define o lado a favor/contra.">tendência: {r.structure.regime === "up" ? "ALTA" : r.structure.regime === "down" ? "BAIXA" : "range"}{typeof r.structure.trendBias === "number" ? ` (${r.structure.trendBias >= 0 ? "+" : ""}${r.structure.trendBias})` : ""}</span>
+                )}
+                {r.structure.gammaRegime && r.structure.gammaRegime !== "neutral" && (
+                  <span className={`rounded px-1.5 py-0.5 font-semibold ${r.structure.gammaRegime === "negative" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400"}`} title={r.structure.gammaRegime === "positive" ? "Gamma positivo: dealers amortecem (pinning/reversão) — estrutura pesa menos, contra-tendência mais fácil" : "Gamma negativo: amplifica (tendência) — estrutura pesa mais, breakout solto"}>γ {r.structure.gammaRegime === "positive" ? "positivo (reversão)" : "negativo (tendência)"}</span>
                 )}
                 {r.structure.consensus && (
                   <span className="text-muted-foreground">consenso: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{r.structure.consensus.bull}↑</span> · <span className="font-semibold text-rose-600 dark:text-rose-400">{r.structure.consensus.bear}↓</span> de {r.structure.consensus.total}</span>
