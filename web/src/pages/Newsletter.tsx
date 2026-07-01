@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import ThemeToggle from "../components/ui/ThemeToggle";
 import { useT } from "../lib/i18n";
-import { listEditions, fmtDate, TIER_LABEL, type EditionCard } from "../lib/newsletter";
+import { listEditions, fmtDate, TIER_LABEL, MODULE_LABEL, type EditionCard } from "../lib/newsletter";
 
 /** Arquivo da newsletter dentro do app (rota /newsletter). Lista as edições
  *  publicadas; a leitura completa (e o paywall por plano) fica em /newsletter/:slug. */
@@ -48,6 +48,7 @@ export default function Newsletter() {
               >
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span aria-hidden>{e.cover_emoji ?? "📰"}</span>
+                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{MODULE_LABEL[e.module ?? "crypto"] ?? "Cripto"}</span>
                   <span>{fmtDate(e.published_at)}</span>
                   {e.min_tier !== "free" && (
                     <span className="ml-auto rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">

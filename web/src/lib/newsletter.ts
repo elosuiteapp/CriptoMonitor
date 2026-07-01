@@ -9,8 +9,11 @@ export interface EditionCard {
   excerpt: string;
   cover_emoji: string | null;
   min_tier: Tier;
+  module?: string; // crypto | b3 | forex
   published_at: string;
 }
+
+export const MODULE_LABEL: Record<string, string> = { crypto: "Cripto", b3: "B3", forex: "Forex" };
 
 export interface EditionFull extends EditionCard {
   body_md: string | null; // null quando o plano não alcança o min_tier
@@ -23,7 +26,7 @@ export const TIER_LABEL: Record<Tier, string> = { free: "Free", pro: "Pro", expe
 export async function listEditions(): Promise<EditionCard[]> {
   const { data } = await supabase
     .from("newsletter_editions")
-    .select("slug, title, excerpt, cover_emoji, min_tier, published_at")
+    .select("slug, title, excerpt, cover_emoji, min_tier, module, published_at")
     .eq("published", true)
     .order("published_at", { ascending: false });
   return (data as EditionCard[] | null) ?? [];
