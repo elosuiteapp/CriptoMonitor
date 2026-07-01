@@ -22,6 +22,8 @@ interface Config {
   position: string;
   pos_base_sz: number;
   entry_px: number | null;
+  pyramid: boolean;
+  pyramid_max: number;
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -70,6 +72,7 @@ interface BotPosition {
   position: string;
   pos_base_sz: number;
   entry_px: number | null;
+  adds: number | null;
   last_bias: number | null;
   last_decision: string | null;
 }
@@ -140,7 +143,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, last_bias, last_decision").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_decision").order("asset"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -161,9 +164,9 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, last_bias, last_decision").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, last_bias, last_decision").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -484,9 +487,18 @@ export default function AdminBot() {
             <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
               <input type="number" className={`${input} mt-1`} value={cfg.buy_threshold} onChange={(e) => setCfg({ ...cfg, buy_threshold: Number(e.target.value), sell_threshold: Number(e.target.value) })} />
             </label>
+            {isFut && (
+              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                <input type="checkbox" checked={!!cfg.pyramid} onChange={(e) => setCfg({ ...cfg, pyramid: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                <span><strong>Pirâmide</strong>: adicionar à posição quando vier novo sinal na MESMA direção</span>
+                {cfg.pyramid && (
+                  <span className="flex items-center gap-1">· máx <input type="number" min="1" max="10" value={cfg.pyramid_max ?? 2} onChange={(e) => setCfg({ ...cfg, pyramid_max: Number(e.target.value) })} className="w-14 rounded border border-border bg-background px-2 py-0.5 num" /> adições</span>
+                )}
+              </label>
+            )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>. Consenso de estrutura SMC por timeframe (<strong>15m/30m/1H</strong>) é a espinha dorsal; book, paredes/ímã, <strong>absorção de parede</strong>, CVD, liquidações, gamma/HIRO e ETF confirmam. {isFut ? <>Nos futuros abre <strong>LONG</strong> no viés de alta e <strong>SHORT</strong> no de baixa; nunca compra caindo/no premium nem vende subindo/no discount.</> : <>Só compra com a estrutura a favor, fora do premium e sem estar caindo.</>} Compra/long se viés ≥ +{cfg.buy_threshold}; vende/short se ≤ −{cfg.sell_threshold}.</span>
@@ -654,7 +666,7 @@ export default function AdminBot() {
                   </div>
                   {!flat ? (
                     <>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">entrada @ <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span></div>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">entrada @ <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}</div>
                       {live ? (
                         <div className={`num text-sm font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {cfg?.quote_ccy}</div>
                       ) : (
@@ -684,13 +696,14 @@ export default function AdminBot() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Receita</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
+                <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Origem</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Receita</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
                   <tr key={o.id} className="border-b border-border last:border-0">
                     <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                     <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{o.source === "auto" ? "robô" : "manual"}</span></td>
+                    <td className="px-4 py-2 font-semibold text-foreground">{o.inst_id ? o.inst_id.replace(/USDT$/, "") : "—"}</td>
                     <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
                     <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
                     <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, dec) : "—"}</td>

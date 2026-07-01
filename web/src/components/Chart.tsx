@@ -101,8 +101,11 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     let support = 0;
     let resistance = 0;
     for (const wall of walls ?? []) {
-      const w = ref != null && ref > 0 ? 1 / (1 + Math.abs(wall.price - ref) / ref / 0.005) : 1;
-      if (wall.side === "bid") support += wall.notional_usd * w;
+      // Classifica pela POSIÇÃO vs preço ao vivo (igual as barras do gráfico): abaixo = suporte,
+      // acima = resistência — não pelo w.side do snapshot (que fica errado quando o preço atravessa).
+      // Peso por proximidade: meia-força a 1% (não crucifica paredes um pouco mais distantes).
+      const w = ref != null && ref > 0 ? 1 / (1 + Math.abs(wall.price - ref) / ref / 0.01) : 1;
+      if (ref != null && wall.price < ref) support += wall.notional_usd * w;
       else resistance += wall.notional_usd * w;
     }
     const total = support + resistance;
