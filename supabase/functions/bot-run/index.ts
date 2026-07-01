@@ -16,7 +16,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const SWING = 20;
-const TFS = ["15m", "30m", "1H"];
+const TFS = ["15m", "30m", "1H", "4H"];
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -28,7 +28,7 @@ const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n :
 // Demo Trading da Binance (demo.binance.com) — base de futuros = demo-fapi.binance.com.
 // (Carteira de Futuros do demo é separada do Spot; abastecida via Reset na aba Futures.)
 const BNB_BASE = "https://demo-fapi.binance.com";
-const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h" };
+const BNB_INTERVAL: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h" };
 interface BnbCreds { key: string; secret: string }
 async function hmacHex(secret: string, msg: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -192,7 +192,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 // ════════ Confluência: estrutura POR TF (15m/30m/1H) + fluxo ════════
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
 interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
-const TFW: Record<string, number> = { "15m": 0.18, "30m": 0.16, "1H": 0.15 };
+const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16 };
 function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdSum: number | null, pressWin: { label: string; bid: number; ask: number }[]) {
   const sig: Signal[] = [];
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight, score: Math.round(clamp(score)), note });
@@ -276,7 +276,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // casa com o horizonte dele (15m↔30m, 30m↔12h, 1H↔48h). O fluxo "agora" (CVD, gamma, ETF,
   // paredes, absorção…) NÃO é por-TF → vira CONFIRMAÇÃO compartilhada (não dispara, mas veta).
   const winTilt = (label: string) => { const r = pressWin.find((x) => x.label === label); if (!r) return 0; const s = Number(r.bid) + Number(r.ask); return s > 0 ? (Number(r.bid) - Number(r.ask)) / s : 0; };
-  const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h" };
+  const tfWindow: Record<string, string> = { "15m": "30m", "30m": "12h", "1H": "48h", "4H": "48h" };
   const perTf = tfReads.map((t) => {
     const pressure = Math.round(winTilt(tfWindow[t.tf] ?? "12h") * 100); // -100..100
     const composite = Math.round(clamp(0.6 * t.bias + 0.4 * pressure));
@@ -384,7 +384,9 @@ Deno.serve(async (req) => {
       const fut = venue === "binance" || isSwapOkx; // opera short?
       const st = await loadPos(asset);
       let pos: "long" | "short" | "flat" = st.position;
-      let want: "long" | "short" | null = (longVotes >= 2 && longVotes > shortVotes) ? "long" : (shortVotes >= 2 && shortVotes > longVotes) ? "short" : null;
+      // Consenso mínimo de TFs p/ abrir (configurável; padrão 3, ex.: 3-de-4 com o 4H somado).
+      const minVotes = Math.max(2, Math.min(Number(cfg.min_votes ?? 3), total || 3));
+      let want: "long" | "short" | null = (longVotes >= minVotes && longVotes > shortVotes) ? "long" : (shortVotes >= minVotes && shortVotes > longVotes) ? "short" : null;
       let gate = "";
       if (want === "long") {
         if (primary.mom < -0.003) { gate = `caindo ${(primary.mom * 100).toFixed(2)}% agora`; want = null; }
