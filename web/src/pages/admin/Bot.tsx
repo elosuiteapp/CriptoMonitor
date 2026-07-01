@@ -145,6 +145,7 @@ export default function AdminBot() {
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [learning, setLearning] = useState<Learning | null>(null);
   const [selAsset, setSelAsset] = useState("BTC"); // moeda em foco no painel (leitura + gráfico)
+  const [tab, setTab] = useState<"grafico" | "ordens" | "aprendizado" | "config">("grafico"); // aba do módulo do robô
   const [learnAsset, setLearnAsset] = useState("all"); // moeda em foco no aprendizado (all = geral)
   // filtros das ordens (moeda / status / período)
   const [fAsset, setFAsset] = useState("all");
@@ -636,8 +637,27 @@ export default function AdminBot() {
         </div>
       </div>
 
-      {/* Robô automático */}
-      {cfg && (
+      {/* Abas do módulo do robô — organiza a página em seções (menos rolagem) */}
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {([
+          ["grafico", "📈 Gráfico & posições"],
+          ["ordens", "📋 Ordens"],
+          ["aprendizado", "🧠 Aprendizado"],
+          ["config", "⚙️ Configuração"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${tab === id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Robô automático · aba Configuração */}
+      {tab === "config" && cfg && (
         <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -719,6 +739,8 @@ export default function AdminBot() {
         </div>
       )}
 
+      {/* Gráfico, leitura e posições · aba Gráfico */}
+      {tab === "grafico" && (<>
       {/* Leitura do robô (fluxo) — da moeda em foco (seletor no cabeçalho do gráfico) */}
       {selReading && (() => {
         const r = selReading;
@@ -903,7 +925,10 @@ export default function AdminBot() {
           <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (consenso de 5 timeframes; a tendência 4H+1D manda no lado). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
         </div>
       )}
+      </>)}
 
+      {/* Ordens (trades, robô, manuais, diário) · aba Ordens */}
+      {tab === "ordens" && (<>
       {/* Filtros das ordens — moeda / status / período (valem p/ trades e p/ as ordens abaixo). */}
       <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
         <div className="flex flex-wrap items-end gap-3">
@@ -995,7 +1020,25 @@ export default function AdminBot() {
         ) : ordersTable(manualOrders)}
       </div>
 
-      {/* Aprendizado do robô (cérebro que aprende) */}
+      {/* Diário do robô · aba Ordens */}
+      {logs.length > 0 && (
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
+          <div className="space-y-1.5">
+            {logs.map((l) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
+                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="text-foreground">{l.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      </>)}
+
+      {/* Aprendizado do robô · aba Aprendizado */}
+      {tab === "aprendizado" && (
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
@@ -1053,24 +1096,10 @@ export default function AdminBot() {
           <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal, separado por moeda.</p>
         )}
       </div>
-
-      {/* Diário do robô */}
-      {logs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
-          <div className="space-y-1.5">
-            {logs.map((l) => (
-              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
-                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="text-foreground">{l.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
-      {/* Conexão (chaves) — recolhível */}
+      {/* Conexão (chaves) · aba Configuração */}
+      {tab === "config" && (
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <button onClick={() => setShowKeys((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
           <span>{isBinance ? "Conexão Binance (Testnet)" : "Conexão OKX (Demo)"} {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
@@ -1090,8 +1119,10 @@ export default function AdminBot() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Ordem manual — recolhível */}
+      {/* Ordem manual (avançado) · aba Ordens */}
+      {tab === "ordens" && (
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <button onClick={() => setShowManual((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
           <span>Ordem manual (avançado)</span>
@@ -1110,6 +1141,7 @@ export default function AdminBot() {
           </div>
         )}
       </div>
+      )}
     </section>
   );
 }
