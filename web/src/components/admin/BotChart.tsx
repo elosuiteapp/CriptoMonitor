@@ -7,6 +7,7 @@ import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../li
 
 const UP = "#10b981";
 const DOWN = "#f43f5e";
+const EXIT = "#3b82f6"; // azul — ponto de SAÍDA/fechamento (distinto de compra/venda)
 
 export interface BotCandle {
   time: UTCTimestamp;
@@ -18,6 +19,7 @@ export interface BotCandle {
 export interface BotMarker {
   time: UTCTimestamp;
   side: "buy" | "sell";
+  kind?: "entry" | "add" | "exit"; // entrada, pirâmide (adição) ou SAÍDA/fechamento
   text?: string;
 }
 
@@ -72,13 +74,26 @@ export default function BotChart({ candles, markers, decimals = 2, height = 420,
     const mk: SeriesMarker<UTCTimestamp>[] = markers
       .slice()
       .sort((a, b) => a.time - b.time)
-      .map((m) => ({
-        time: m.time,
-        position: m.side === "buy" ? "belowBar" : "aboveBar",
-        color: m.side === "buy" ? UP : DOWN,
-        shape: m.side === "buy" ? "arrowUp" : "arrowDown",
-        text: m.text ?? (m.side === "buy" ? "C" : "V"),
-      }));
+      .map((m): SeriesMarker<UTCTimestamp> => {
+        // SAÍDA/fechamento: quadrado AZUL destacado (posicionado do lado do fechamento).
+        if (m.kind === "exit") {
+          return {
+            time: m.time,
+            position: m.side === "buy" ? "belowBar" : "aboveBar",
+            color: EXIT,
+            shape: "square",
+            text: m.text ?? "Saída",
+          };
+        }
+        // ENTRADA (arrow C/V) ou PIRÂMIDE (círculo "+", mesma direção).
+        return {
+          time: m.time,
+          position: m.side === "buy" ? "belowBar" : "aboveBar",
+          color: m.side === "buy" ? UP : DOWN,
+          shape: m.kind === "add" ? "circle" : m.side === "buy" ? "arrowUp" : "arrowDown",
+          text: m.text ?? (m.side === "buy" ? "C" : "V"),
+        };
+      });
     s.setMarkers(mk);
     // Mostra as ~110 velas mais recentes (candles largos) — SÓ no 1º carregamento/troca de TF;
     // em atualizações ao vivo preserva o zoom/scroll do usuário.

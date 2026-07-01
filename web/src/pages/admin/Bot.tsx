@@ -435,7 +435,7 @@ export default function AdminBot() {
     }
   }
 
-  // Marcadores de C/V no gráfico (alinhados à vela que contém a ordem).
+  // Marcadores no gráfico (alinhados à vela que contém a ordem): entrada C/V, pirâmide "+" e SAÍDA.
   const markers = useMemo<BotMarker[]>(() => {
     if (!candles.length) return [];
     const times = candles.map((c) => c.time);
@@ -445,7 +445,9 @@ export default function AdminBot() {
         const t = Math.floor(new Date(o.created_at).getTime() / 1000);
         let bar = times[0];
         for (const tt of times) { if (tt <= t) bar = tt; else break; }
-        return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", text: o.side === "buy" ? "C" : "V" };
+        const kind: BotMarker["kind"] = o.action === "close" ? "exit" : o.action === "add" ? "add" : "entry";
+        const text = kind === "exit" ? "Saída" : kind === "add" ? "+" : o.side === "buy" ? "C" : "V";
+        return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", kind, text };
       });
   }, [orders, candles, selInst]);
 
@@ -744,6 +746,7 @@ export default function AdminBot() {
             </div>
             <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
             <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
+            <span className="flex items-center gap-1"><span className="text-blue-500">■</span> saída</span>
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
           </div>
         </div>
