@@ -26,10 +26,12 @@ interface AlertRow {
   last_triggered_at: string | null;
 }
 
-const METRIC_LABEL: Record<string, string> = {
-  price: "Preço",
-  funding: "Funding",
-  gamma_regime: "Regime de gamma",
+// Rótulos por idioma — o texto da notificação sai no idioma do usuário (profiles.lang);
+// antes era sempre PT, mesmo pra quem usa o app em EN (auditoria 02/jul).
+const METRIC_LABEL: Record<string, { pt: string; en: string }> = {
+  price: { pt: "Preço", en: "Price" },
+  funding: { pt: "Funding", en: "Funding" },
+  gamma_regime: { pt: "Regime de gamma", en: "Gamma regime" },
 };
 
 /** Extrai o valor da métrica a partir do payload do snapshot. */
@@ -60,22 +62,21 @@ function triggered(alert: AlertRow, value: number | string | null): boolean {
   }
 }
 
-/** Texto legível do disparo (título + corpo). */
-function describe(alert: AlertRow, value: number | string): { title: string; body: string } {
-  const label = METRIC_LABEL[alert.metric] ?? alert.metric;
+/** Texto legível do disparo (título + corpo), no idioma do usuário. */
+function describe(alert: AlertRow, value: number | string, en: boolean): { title: string; body: string } {
+  const label = (METRIC_LABEL[alert.metric] ?? { pt: alert.metric, en: alert.metric })[en ? "en" : "pt"];
   const c = alert.condition ?? {};
   if (alert.metric === "gamma_regime") {
-    return {
-      title: `${alert.asset} · regime de gamma`,
-      body: `O regime de gamma do ${alert.asset} virou ${value}.`,
-    };
+    return en
+      ? { title: `${alert.asset} · gamma regime`, body: `${alert.asset} gamma regime turned ${value}.` }
+      : { title: `${alert.asset} · regime de gamma`, body: `O regime de gamma do ${alert.asset} virou ${value}.` };
   }
-  const cond = `${c.op === "<" ? "abaixo de" : "acima de"} ${c.value}${alert.metric === "funding" ? "%" : ""}`;
-  const shown = alert.metric === "price" ? `US$ ${value}` : `${value}${alert.metric === "funding" ? "%" : ""}`;
-  return {
-    title: `${alert.asset} · ${label} ${cond}`,
-    body: `${label} do ${alert.asset} está em ${shown}.`,
-  };
+  const pct = alert.metric === "funding" ? "%" : "";
+  const cond = en ? `${c.op === "<" ? "below" : "above"} ${c.value}${pct}` : `${c.op === "<" ? "abaixo de" : "acima de"} ${c.value}${pct}`;
+  const shown = alert.metric === "price" ? `US$ ${value}` : `${value}${pct}`;
+  return en
+    ? { title: `${alert.asset} · ${label} ${cond}`, body: `${alert.asset} ${label.toLowerCase()} is at ${shown}.` }
+    : { title: `${alert.asset} · ${label} ${cond}`, body: `${label} do ${alert.asset} está em ${shown}.` };
 }
 
 Deno.serve(async (req) => {
@@ -131,17 +132,27 @@ Deno.serve(async (req) => {
     return target;
   }
 
-  // E-mail simples e legível do disparo (HTML mínimo, marca OrbeView).
-  function emailHtml(title: string, body: string): string {
+  // E-mail simples e legível do disparo (HTML mínimo, marca OrbeView), no idioma do usuário.
+  function emailHtml(title: string, body: string, en: boolean): string {
     return `<div style="font-family:Inter,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
       <div style="font-weight:700;color:#6366f1;font-size:18px;margin-bottom:16px">OrbeView</div>
       <div style="border:1px solid #e5e7eb;border-radius:14px;padding:20px">
         <div style="font-weight:600;font-size:16px;color:#111827">${title}</div>
         <div style="margin-top:8px;color:#374151;font-size:14px">${body}</div>
-        <a href="https://app.orbeview.com/alerts" style="display:inline-block;margin-top:16px;background:#6366f1;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px">Abrir no OrbeView →</a>
+        <a href="https://app.orbeview.com/alerts" style="display:inline-block;margin-top:16px;background:#6366f1;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px">${en ? "Open in OrbeView →" : "Abrir no OrbeView →"}</a>
       </div>
-      <div style="color:#9ca3af;font-size:11px;margin-top:14px">Você recebe este e-mail porque ativou alertas por e-mail no plano Expert. Desative no painel de alertas.</div>
+      <div style="color:#9ca3af;font-size:11px;margin-top:14px">${en ? "You are receiving this because you enabled email alerts in your plan. Turn it off in the alerts panel." : "Você recebe este e-mail porque ativou alertas por e-mail no seu plano. Desative no painel de alertas."}</div>
     </div>`;
+  }
+
+  // Idioma do usuário (profiles.lang, sincronizado pelo front) — cache por execução.
+  const langCache: Record<string, "pt" | "en"> = {};
+  async function userLang(userId: string): Promise<"pt" | "en"> {
+    if (userId in langCache) return langCache[userId];
+    const { data } = await admin.from("profiles").select("lang").eq("id", userId).maybeSingle();
+    const l = (data as { lang?: string } | null)?.lang === "en" ? "en" : "pt";
+    langCache[userId] = l;
+    return l;
   }
 
   const { data: alerts } = await admin
@@ -179,7 +190,8 @@ Deno.serve(async (req) => {
     const value = metricValue(alert.metric, snapByAsset[alert.asset]);
     if (!triggered(alert, value)) continue;
 
-    const { title, body } = describe(alert, value as number | string);
+    const en = (await userLang(alert.user_id)) === "en";
+    const { title, body } = describe(alert, value as number | string, en);
 
     // 1) in-app — grava a notificação (dispara o Realtime no front)
     await admin.from("notifications").insert({
@@ -228,7 +240,7 @@ Deno.serve(async (req) => {
           const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ from: fromEmail, to, subject: `OrbeView · ${title}`, html: emailHtml(title, body) }),
+            body: JSON.stringify({ from: fromEmail, to, subject: `OrbeView · ${title}`, html: emailHtml(title, body, en) }),
           });
           if (res.ok) emailed++;
         } catch {

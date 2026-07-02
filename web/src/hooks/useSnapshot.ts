@@ -24,6 +24,10 @@ export function useSnapshot(asset: string, plan: Plan | null) {
   useEffect(() => {
     if (!plan) return;
     let active = true;
+    // Troca de ativo: zera o payload NA HORA — sem isso os cards mostram os dados da moeda
+    // ANTERIOR sob o header do novo ativo até a query resolver (auditoria 02/jul).
+    setPayload(null);
+    setUpdatedAt(null);
 
     async function loadAdvanced() {
       const { data } = await supabase

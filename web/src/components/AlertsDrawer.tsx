@@ -121,8 +121,10 @@ export default function AlertsDrawer({ user, plan, currentAsset, price, funding,
   const [regime, setRegime] = useState("negative");
 
   const canCreate = (plan.alert_channels ?? []).length > 0;
-  const isExpert = plan.slug === "expert";
-  // Opt-in de e-mail (só Expert) — guardado em profiles.email_alerts.
+  // Opt-in de e-mail: por CAPACIDADE (canal 'email' no plano), não por slug legado —
+  // mod_crypto/complete têm o canal e não conseguiam ativá-lo (auditoria 02/jul).
+  const isExpert = (plan.alert_channels ?? []).includes("email");
+  // Opt-in de e-mail — guardado em profiles.email_alerts.
   const [emailAlerts, setEmailAlerts] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
   // Preço/funding/níveis de referência só valem para o ativo que está aberto no cockpit.

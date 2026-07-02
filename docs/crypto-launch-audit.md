@@ -1,5 +1,15 @@
 # Auditoria de lançamento — Módulo Cripto (02/jul/2026)
 
+> **STATUS (02/jul, fim do dia): CORRIGIDO E DEPLOYADO** — C1/C2/A1/A2/A3/A4 + M1-M9 aplicados
+> (sql/095+096, market-read/alerts-dispatch/generate-analysis redeployadas, front na Vercel).
+> **Correção do próprio relatório:** o C3 (vitrine Free sem snapshot) era **FALSO POSITIVO** —
+> o front tem caminho próprio pro Free (`useSnapshot.loadBasic` monta payload de `prices_cex`+
+> `sentiment`+`gamma_profile`, tudo acessível ao Free); o bloqueio do snapshot é por desenho.
+> Verificado impersonando usuário Free real: prices_cex 18 linhas/30min ✓, sentiment ✓, CVD no
+> PriceRow ✓. Ficam pendentes (aceitos p/ lançamento): baixos de performance (RAF 60fps),
+> medidor de paredes vs canvas, fórmula do tooltip do book heatmap, auth no crypto-onchain,
+> cosméticos de gamma (paredes sem sinal/Max Pain igualdade exata), fallback de watchlist.
+
 Auditoria completa pré-lançamento: 5 agentes de código (cockpit, Smart Money/gamma,
 Leitura/alertas, Macro/IA/i18n, gating/planos) + verificação ao vivo de dados/RLS no banco
 (impersonando usuário Free real, testes anon via REST, advisors).

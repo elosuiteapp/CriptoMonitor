@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import { supabase } from "../lib/supabase";
+
 export type Locale = "pt" | "en";
 
 const LS_KEY = "cm.locale"; // localStorage (compat + sync entre abas)
@@ -75,8 +77,22 @@ function persist(next: Locale) {
   }
 }
 
+/** Sincroniza o idioma no perfil (profiles.lang) — as notificações do SERVIDOR (sino/push/
+ *  e-mail dos alertas e da mudança de leitura) saem no idioma do usuário. Fire-and-forget:
+ *  deslogado/offline só ignora. */
+async function syncProfileLang(next: Locale) {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (uid) await supabase.from("profiles").update({ lang: next }).eq("id", uid);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setLocale(next: Locale) {
   persist(next);
+  void syncProfileLang(next);
   if (next === current) return;
   current = next;
   emit();
@@ -92,6 +108,11 @@ if (typeof window !== "undefined") {
   // Persiste o idioma detectado já na 1ª carga (cookie + LS + <html lang>), p/ que
   // app, abas e o handoff da landing fiquem coerentes a partir daí.
   persist(current);
+  // Ao logar (ou já logado na 1ª carga), grava o idioma no perfil — o servidor usa
+  // profiles.lang pra mandar notificações no idioma certo.
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_IN" || event === "INITIAL_SESSION") void syncProfileLang(current);
+  });
   window.addEventListener("storage", (e) => {
     if (e.key === LS_KEY && isLocale(e.newValue) && e.newValue !== current) {
       current = e.newValue;

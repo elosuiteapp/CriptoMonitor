@@ -29,6 +29,7 @@ export default function PriceHeader({ asset, payload, updatedAt, livePrice, read
   const [change24h, setChange24h] = useState<number | null>(null);
   useEffect(() => {
     let active = true;
+    setChange24h(null); // troca de ativo: não exibir a variação da moeda anterior
     fetch24hChange(asset).then((v) => active && setChange24h(v));
     return () => {
       active = false;

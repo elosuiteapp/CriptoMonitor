@@ -342,7 +342,7 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
               <h3 className="mb-2 text-sm font-semibold text-foreground">{tt("Mapa de liquidez · pra onde o preço é puxado", "Liquidity map · where price is being pulled")}</h3>
               <div>
                 {sortedTargets.map((t, i) => (
-                  <div key={t.label}>
+                  <div key={`${t.label}-${t.price}`}>
                     {i === firstBelow && read.price != null && <TargetRow t={{ ...t, price: read.price }} current />}
                     <TargetRow t={t} />
                   </div>

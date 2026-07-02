@@ -8,6 +8,7 @@ import Chart, { type ActiveLayers } from "../components/Chart";
 import ChartTypeSelector from "../components/ChartTypeSelector";
 import CvdSubchart from "../components/CvdSubchart";
 import Disclaimer from "../components/Disclaimer";
+import ErrorBoundary from "../components/ErrorBoundary";
 import MarketPlaceholder from "../components/MarketPlaceholder";
 import B3Module from "../components/b3/B3Module";
 import ForexModule from "../components/forex/ForexModule";
@@ -254,6 +255,8 @@ export default function Dashboard() {
           <MarketPlaceholder module={market} onBack={() => setMarket("crypto")} />
         ) : (
           <>
+        {/* Mesmo guarda-chuva do B3/Forex: crash de render numa seção degrada, não vira tela branca. */}
+        <ErrorBoundary key={tab} label="o módulo cripto">
         <PriceHeader
           asset={asset}
           payload={payload}
@@ -392,7 +395,8 @@ export default function Dashboard() {
             {advanced ? (
               <>
                 <MetricCard title={tr.cockpit.fundingCex} reading={readFunding(d?.funding_rate == null ? null : d.funding_rate / 100)} source="Coinalyze" timestamp={updatedAt} info={GLOSSARY.fundingCex} />
-                <MetricCard title={tr.cockpit.fundingOnchain} reading={readFunding(onchain?.funding_rate)} source="Hyperliquid" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
+                {/* Hyperliquid cobra funding POR HORA; ×8 converte p/ equivalente de 8h — mesma régua do CEX (auditoria 02/jul). */}
+                <MetricCard title={tr.cockpit.fundingOnchain} reading={readFunding(onchain?.funding_rate == null ? null : onchain.funding_rate * 8)} source="Hyperliquid (equiv. 8h)" timestamp={updatedAt} info={GLOSSARY.fundingOnchain} />
                 <MetricCard
                   title={tr.cockpit.cvdRetail}
                   info={GLOSSARY.cvd}
@@ -536,6 +540,7 @@ export default function Dashboard() {
         <NewsBlock asset={asset} plan={plan} />
           </>
         )}
+        </ErrorBoundary>
           </>
         )}
       </main>

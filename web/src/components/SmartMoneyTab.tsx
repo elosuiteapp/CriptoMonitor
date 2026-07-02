@@ -756,7 +756,10 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
   const glossary = useGlossary();
   const range = smc.trailingTop - smc.trailingBottom;
   const pos = range > 0 ? Math.max(0, Math.min(1, (smc.price - smc.trailingBottom) / range)) : 0.5;
-  const zoneKey = smc.price >= smc.premium.bottom ? "premium" : smc.price <= smc.discount.top ? "discount" : "equilibrium";
+  // Classifica pela banda de EQUILÍBRIO (47,5–52,5% do range): acima = lado premium, abaixo =
+  // lado discount — igual às bandas desenhadas e ao glossário. (Antes usava premium.bottom/
+  // discount.top = bordas 95%/5%, então preço a 70% do range era rotulado "equilíbrio".)
+  const zoneKey = smc.price > smc.equilibrium.top ? "premium" : smc.price < smc.equilibrium.bottom ? "discount" : "equilibrium";
   const zoneLabel = zoneKey === "premium" ? t.smart.zonePremium : zoneKey === "discount" ? t.smart.zoneDiscount : t.smart.zoneEquilibrium;
   const zoneColor = zoneKey === "premium" ? "text-rose-600 dark:text-rose-400" : zoneKey === "discount" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground";
   return (

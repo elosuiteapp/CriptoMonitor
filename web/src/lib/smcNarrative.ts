@@ -133,10 +133,11 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
     });
   }
 
-  // 3) Posição premium/discount
-  if (price >= smc.premium.bottom) {
+  // 3) Posição premium/discount — pela banda de equilíbrio (47,5–52,5%), não pelas bordas
+  // 95%/5% (que rotulavam quase todo o range como "equilíbrio"; auditoria 02/jul).
+  if (price > smc.equilibrium.top) {
     lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço na zona PREMIUM (caro) — região onde a mão forte tende a distribuir/vender.", "Price in the PREMIUM zone (expensive) — where smart money tends to distribute/sell."), tone: "warn" });
-  } else if (price <= smc.discount.top) {
+  } else if (price < smc.equilibrium.bottom) {
     lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço na zona DISCOUNT (barato) — região onde a mão forte tende a acumular/comprar.", "Price in the DISCOUNT zone (cheap) — where smart money tends to accumulate/buy."), tone: "good" });
   } else {
     lines.push({ id: "zone", title: tl("Zona de preço", "Price zone"), text: tl("Preço em EQUILÍBRIO (meio do range) — sem desconto nem prêmio claro.", "Price at EQUILIBRIUM (middle of the range) — no clear discount or premium."), tone: "neutral" });

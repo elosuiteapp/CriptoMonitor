@@ -1,6 +1,7 @@
 import { LineStyle } from "lightweight-charts";
 import type { IChartApi, IPriceLine, ISeriesApi, Logical, MouseEventParams, Time } from "lightweight-charts";
 
+import { getLocale } from "../hooks/useLocale";
 import { buildLiquidationGrid, heatColor, liquidationMagnets, type OiPoint } from "./liquidationModel";
 import type { Candle } from "./marketData";
 
@@ -172,9 +173,10 @@ export function runLiquidationHeatmap(p: Params): () => void {
       tip.style.display = "none";
       return;
     }
+    const en = getLocale() === "en";
     const side = vs >= vl ? "shorts ↑" : "longs ↓";
-    const word = ratio >= 0.66 ? "forte" : ratio >= 0.33 ? "média" : "fraca";
-    tip.textContent = `Liq. de ${side} · ~$${Math.round(price).toLocaleString("pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
+    const word = ratio >= 0.66 ? (en ? "strong" : "forte") : ratio >= 0.33 ? (en ? "medium" : "média") : (en ? "weak" : "fraca");
+    tip.textContent = `${en ? "Liq. of" : "Liq. de"} ${side} · ~$${Math.round(price).toLocaleString(en ? "en-US" : "pt-BR")} · ${Math.round(ratio * 100)}% (${word})`;
     tip.style.display = "block";
     tip.style.left = `${param.point.x + 12}px`;
     tip.style.top = `${param.point.y + 12}px`;

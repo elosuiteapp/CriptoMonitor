@@ -309,8 +309,12 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
 
   useEffect(() => {
     let active = true;
-    supabase.functions.invoke("econ-calendar").then(({ data }) => {
-      if (active) setEvents(((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[]);
+    // EUA (high/medium) + Japão/Euro/China (só high) — igual ao que o rodapé do calendário
+    // promete. (Antes chamava sem `countries` → só EUA; auditoria 02/jul.)
+    supabase.functions.invoke("econ-calendar", { body: { countries: ["USD", "JPY", "EUR", "CNY"] } }).then(({ data }) => {
+      const evs = (((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[])
+        .filter((e) => e.country === "USD" || e.impact === "High");
+      if (active) setEvents(evs);
     });
     return () => {
       active = false;

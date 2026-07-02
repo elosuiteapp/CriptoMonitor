@@ -297,23 +297,26 @@ function computeRead(candles: any[], payload: any) {
 
   let regime_key: string;
   let regime_label: string;
+  let regime_label_en: string; // versão EN — a notificação sai no idioma do usuário (profiles.lang)
   let tone: string;
-  if (!ws) (regime_key = "sem_dados"), (regime_label = "Sem dados suficientes."), (tone = "neutral");
-  else if (Math.abs(bias) < 12) (regime_key = "indeciso"), (regime_label = "Indeciso — forças em conflito, aguardando catalisador."), (tone = "neutral");
+  if (!ws) (regime_key = "sem_dados"), (regime_label = "Sem dados suficientes."), (regime_label_en = "Not enough data."), (tone = "neutral");
+  else if (Math.abs(bias) < 12) (regime_key = "indeciso"), (regime_label = "Indeciso — forças em conflito, aguardando catalisador."), (regime_label_en = "Undecided — forces in conflict, waiting for a catalyst."), (tone = "neutral");
   else if (charState === "comprimido")
-    (regime_key = "comprimido"), (regime_label = `Comprimido — rompimento define o lado (viés leve de ${bias > 0 ? "alta" : "baixa"}).`), (tone = bias > 0 ? "bull" : "bear");
+    (regime_key = "comprimido"), (regime_label = `Comprimido — rompimento define o lado (viés leve de ${bias > 0 ? "alta" : "baixa"}).`), (regime_label_en = `Compressed — a breakout picks the side (slight ${bias > 0 ? "bullish" : "bearish"} lean).`), (tone = bias > 0 ? "bull" : "bear");
   else if (flowOpposesTrend)
     (regime_key = "fragil"),
       (regime_label = bias > 0 ? "Alta frágil — preço sobe, mas o institucional não acompanha." : "Baixa frágil — preço cai, mas o institucional não confirma."),
+      (regime_label_en = bias > 0 ? "Fragile rally — price rises but institutional flow isn't following." : "Fragile decline — price falls but institutional flow doesn't confirm."),
       (tone = bias > 0 ? "bull" : "bear");
   else if (bias > 0 && funding != null && funding > 0.03 && (ls ?? 1) > 1.3)
-    (regime_key = "squeeze"), (regime_label = "Perseguição alavancada — longs lotados, risco de squeeze."), (tone = "bull");
+    (regime_key = "squeeze"), (regime_label = "Perseguição alavancada — longs lotados, risco de squeeze."), (regime_label_en = "Leveraged chase — longs crowded, squeeze risk."), (tone = "bull");
   else
     (regime_key = bias > 0 ? "trend_up" : "trend_down"),
       (regime_label = `Tendência de ${bias > 0 ? "alta" : "baixa"}${conviction >= 60 ? " com convicção" : ""} — ${agree} de ${voting.length} forças alinhadas.`),
+      (regime_label_en = `${bias > 0 ? "Uptrend" : "Downtrend"}${conviction >= 60 ? " with conviction" : ""} — ${agree} of ${voting.length} forces aligned.`),
       (tone = bias > 0 ? "bull" : "bear");
 
-  return { bias, conviction, regime_key, regime_label, tone, char_state: charState };
+  return { bias, conviction, regime_key, regime_label, regime_label_en, tone, char_state: charState };
 }
 
 async function fetchCandles(asset: string): Promise<C[]> {
@@ -346,10 +349,12 @@ Deno.serve(async (req) => {
   for (const r of (prevRows ?? []) as Array<{ asset: string; tone: string; bias: number; conviction: number }>)
     if (!prevByAsset.has(r.asset)) prevByAsset.set(r.asset, { tone: r.tone, bias: Number(r.bias), conviction: Number(r.conviction) });
 
-  // Experts (destinatários do alerta) — 1 query.
-  const { data: subs } = await admin.from("subscriptions").select("user_id, plan:plans(slug)").eq("status", "active");
-  const experts = ((subs ?? []) as Array<{ user_id: string; plan?: { slug?: string } }>)
-    .filter((s) => s.plan?.slug === "expert").map((s) => s.user_id);
+  // Destinatários do alerta: qualquer plano com smart_money (mod_crypto/complete/expert
+  // legado) — por CAPACIDADE, não slug. O filtro antigo (slug==='expert') deixava os planos
+  // VENDIDOS sem nenhum alerta de leitura (auditoria 02/jul, docs/crypto-launch-audit.md).
+  const { data: subs } = await admin.from("subscriptions").select("user_id, plan:plans(slug, smart_money)").eq("status", "active");
+  const experts = ((subs ?? []) as Array<{ user_id: string; plan?: { slug?: string; smart_money?: boolean } }>)
+    .filter((s) => !!s.plan?.smart_money).map((s) => s.user_id);
 
   // Watchlist por usuário — personaliza o alerta: só notifica as moedas FAVORITAS de
   // cada Expert (antes era broadcast de ~100 moedas p/ todos). Quem não favoritou
@@ -402,7 +407,14 @@ Deno.serve(async (req) => {
     })),
   );
 
-  // Alerta os Experts quando a moeda ENTRA num estado relevante ou VIRA de direção
+  // Idioma de cada destinatário (profiles.lang, sincronizado pelo front) — notificação
+  // sai em PT ou EN conforme o usuário (antes era sempre PT; auditoria 02/jul).
+  const { data: langRows } = experts.length
+    ? await admin.from("profiles").select("id, lang").in("id", experts)
+    : { data: [] as Array<{ id: string; lang: string }> };
+  const langByUser = new Map(((langRows ?? []) as Array<{ id: string; lang?: string }>).map((r) => [r.id, r.lang === "en" ? "en" : "pt"]));
+
+  // Alerta quando a moeda ENTRA num estado relevante ou VIRA de direção
   // (não só na virada crua de tone) — com tier por riqueza de dado e cooldown (1 insert).
   const notifs: Array<Record<string, unknown>> = [];
   let changed = 0;
@@ -418,7 +430,13 @@ Deno.serve(async (req) => {
       onCooldown.add(asset); // trava p/ o resto deste ciclo também
       for (const uid of experts) {
         if (!wantsAsset(uid, asset)) continue; // só as favoritas do usuário
-        notifs.push({ user_id: uid, title: `${asset} · mudança de leitura`, body: `O viés do ${asset} virou: ${read.regime_label}`, asset, metric: "regime", value: read.regime_key });
+        const en = langByUser.get(uid) === "en";
+        notifs.push({
+          user_id: uid,
+          title: en ? `${asset} · read change` : `${asset} · mudança de leitura`,
+          body: en ? `${asset} read changed: ${read.regime_label_en}` : `A leitura do ${asset} mudou: ${read.regime_label}`,
+          asset, metric: "regime", value: read.regime_key,
+        });
       }
     }
   }

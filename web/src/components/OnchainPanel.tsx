@@ -1,4 +1,5 @@
 import { useCryptoOnchain } from "../hooks/useCryptoOnchain";
+import { getLocale } from "../hooks/useLocale";
 import { useT } from "../lib/i18n";
 import InfoTip from "./InfoTip";
 
@@ -79,7 +80,7 @@ export default function OnchainPanel() {
         <div className="mt-3 flex items-center justify-between rounded-xl border border-border/70 bg-background/40 px-3 py-2 text-xs">
           <span className="text-muted-foreground">{o.realizedTitle}</span>
           <span>
-            <span className="num font-semibold text-foreground">US$ {Math.round(realized).toLocaleString("pt-BR")}</span>
+            <span className="num font-semibold text-foreground">US$ {Math.round(realized).toLocaleString(getLocale() === "en" ? "en-US" : "pt-BR")}</span>
             {profit != null && <span className={`ml-2 font-semibold ${profit ? "text-emerald-500" : "text-rose-500"}`}>{profit ? o.inProfit : o.atLoss}</span>}
           </span>
         </div>

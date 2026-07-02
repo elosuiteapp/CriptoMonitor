@@ -17,8 +17,8 @@ const I18N: Record<GlossaryKey, { pt: string; en: string }> = {
     en: "Perpetuals funding rate (aggregated across exchanges). Positive = longs paying shorts (excess optimism); negative = shorts paying.",
   },
   fundingOnchain: {
-    pt: "Funding dos perpétuos on-chain (DEX). Mesma ideia do funding de CEX, mas no mercado descentralizado — bom pra comparar varejo CEX × DeFi.",
-    en: "On-chain (DEX) perpetuals funding. Same idea as CEX funding, but in the decentralized market — handy to compare CEX retail vs DeFi.",
+    pt: "Funding dos perpétuos on-chain (Hyperliquid). A taxa lá é cobrada POR HORA; aqui mostramos o equivalente de 8h (×8) pra ficar na mesma régua do funding de CEX — bom pra comparar varejo CEX × DeFi.",
+    en: "On-chain (Hyperliquid) perpetuals funding. It accrues HOURLY there; we show the 8h equivalent (×8) so it sits on the same scale as CEX funding — handy to compare CEX retail vs DeFi.",
   },
   cvd: {
     pt: "CVD (Cumulative Volume Delta): saldo entre compra e venda agressora (a mercado). Subindo = compradores no comando; caindo = vendedores.",

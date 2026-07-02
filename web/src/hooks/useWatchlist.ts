@@ -36,15 +36,24 @@ export function useWatchlist() {
     async (asset: string) => {
       if (!user) return;
       const has = favorites.has(asset);
-      // otimista
+      // otimista, com ROLLBACK se a escrita falhar (senão a estrela diverge do banco)
       setFavorites((prev) => {
         const next = new Set(prev);
         if (has) next.delete(asset);
         else next.add(asset);
         return next;
       });
-      if (has) await supabase.from("watchlist").delete().eq("user_id", user.id).eq("asset", asset);
-      else await supabase.from("watchlist").insert({ user_id: user.id, asset });
+      const { error } = has
+        ? await supabase.from("watchlist").delete().eq("user_id", user.id).eq("asset", asset)
+        : await supabase.from("watchlist").insert({ user_id: user.id, asset });
+      if (error) {
+        setFavorites((prev) => {
+          const next = new Set(prev);
+          if (has) next.add(asset);
+          else next.delete(asset);
+          return next;
+        });
+      }
     },
     [user, favorites],
   );
