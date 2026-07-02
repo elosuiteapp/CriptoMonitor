@@ -33,6 +33,7 @@ interface Config {
   trail_on: boolean;     // stop móvel (trailing) ligado
   rev_mode?: string;     // reversão: off (nunca vira a mão) | imbalance (só FVG fresco) | any (antigo)
   ta_gate?: boolean;     // filtro técnico EMA20×50 + VWAP no setup estrutural
+  flow_veto?: number;    // força mínima do fluxo CONTRA p/ vetar o setup (era 50 fixo — nunca disparava)
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
   trail_atr_mult: number; // distância do trailing = k × ATR do ativo (adaptativo)
   stop_atr_on: boolean;  // stop de risco por ATR (senão, % fixo)
@@ -250,7 +251,7 @@ export default function AdminBot() {
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -840,6 +841,12 @@ export default function AdminBot() {
               </label>
             )}
             {isFut && (
+              <label className="text-xs text-muted-foreground">Veto de fluxo (força mínima contra)
+                <input type="number" min="1" max="100" className={`${input} mt-1`} value={cfg.flow_veto ?? 10} onChange={(e) => setCfg({ ...cfg, flow_veto: Number(e.target.value) })} />
+                <span className="mt-0.5 block text-[10px]">Segura o setup estrutural quando o fluxo está contra além disso. O |fluxo| real fica em ~0-30 (o antigo 50 nunca disparava); nos trades, fluxo contra = 19% de acerto.</span>
+              </label>
+            )}
+            {isFut && (
               <label className="text-xs text-muted-foreground">Reversão (virar a mão)
                 <select className={`${input} mt-1`} value={cfg.rev_mode ?? "off"} onChange={(e) => setCfg({ ...cfg, rev_mode: e.target.value })}>
                   <option value="off">Nunca — sai só por stop/alvo/trailing (recomendado)</option>
@@ -883,7 +890,7 @@ export default function AdminBot() {
             )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", ta_gate: cfg.ta_gate !== false })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", ta_gate: cfg.ta_gate !== false, flow_veto: cfg.flow_veto ?? 10 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>SMC price-action no 15m</strong> (day-trade). A <strong>estrutura decide</strong> — entra em Order Block/FVG a favor de BOS/CHoCH, após varrer liquidez ou em discount/premium; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong> (R:R ≥ 1). O <strong>fluxo só veta</strong> (book, paredes/absorção, CVD, liquidações, gamma) quando muito contra — imbalance ignora o veto. <strong>Filtro técnico</strong> (EMA20×50 + VWAP) alinha o setup estrutural. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing (virar a mão a cada sinal era o maior ralo no backtest). Sizing por risco (% do patrimônio ÷ distância do stop), alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>

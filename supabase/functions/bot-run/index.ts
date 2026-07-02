@@ -727,10 +727,14 @@ Deno.serve(async (req) => {
         : { want: null, setup: "", stop: null, target: null, note: "sem SMC" };
       let want: "long" | "short" | null = plan.want;
       let gate = plan.note;
-      // Fluxo (sinais LIGADOS) só VETA o setup estrutural quando MUITO contra; imbalance ignora fluxo.
+      // Fluxo (sinais LIGADOS) VETA o setup estrutural quando contra além do limiar cfg.flow_veto;
+      // imbalance ignora fluxo. Era fixo ±50, mas o |flowTilt| máximo já visto foi 28 (nunca
+      // disparava); nos trades reais, fluxo contra mesmo LEVE (−5..−24) deu 19% de acerto vs
+      // 64% a favor → limiar realista (default 10, ajustável no painel; mínimo 1).
       if (want && plan.setup && !plan.setup.startsWith("imbalance")) {
-        const flowAgainst = want === "long" ? flowTilt <= -50 : flowTilt >= 50;
-        if (flowAgainst) { gate = `fluxo forte contra (${flowTilt}) — segura o setup`; want = null; }
+        const vetoAt = Math.max(1, Number(cfg.flow_veto ?? 10));
+        const flowAgainst = want === "long" ? flowTilt <= -vetoAt : flowTilt >= vetoAt;
+        if (flowAgainst) { gate = `fluxo contra (${flowTilt}, limiar ${vetoAt}) — segura o setup`; want = null; }
       }
       // FILTRO TÉCNICO (EMA20×50 + VWAP diário) — validado no backtester (90d+180d: melhorou o PF
       // em TODAS as moedas). Setup estrutural (não-imbalance) só entra ALINHADO aos dois; usa os
