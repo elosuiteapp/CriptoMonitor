@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const asset = String(body.asset ?? "BTC").toUpperCase();
-  const days = Math.max(3, Math.min(60, Number(body.days ?? 30)));
+  const days = Math.max(3, Math.min(180, Number(body.days ?? 30))); // até 180d → cobre alta/queda/lateral (fetchKlines pagina)
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -374,8 +374,8 @@ Deno.serve(async (req) => {
       if (armed) {
         let ts = pos === "long" ? peak - dist : peak + dist;
         const sl = smc15.swingLowLevel, sh = smc15.swingHighLevel;
-        if (pos === "long") { if (Number.isFinite(sl) && sl < peak) ts = Math.min(ts, sl - buf); stopPx = Math.max(stopPx, ts); }
-        else { if (Number.isFinite(sh) && sh > peak) ts = Math.max(ts, sh + buf); stopPx = Math.min(stopPx, ts); }
+        if (pos === "long") { if (Number.isFinite(sl) && sl < peak) ts = Math.min(ts, sl - buf); if (peak - entryPx >= atr) ts = Math.max(ts, entryPx); stopPx = Math.max(stopPx, ts); } // trava de breakeven (≥1×ATR) — igual bot-run
+        else { if (Number.isFinite(sh) && sh > peak) ts = Math.max(ts, sh + buf); if (entryPx - peak >= atr) ts = Math.min(ts, entryPx); stopPx = Math.min(stopPx, ts); }
       }
     }
 
