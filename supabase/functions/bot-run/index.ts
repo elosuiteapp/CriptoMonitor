@@ -452,8 +452,8 @@ Deno.serve(async (req) => {
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
-      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px").eq("asset", asset).maybeSingle();
-      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null };
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, stopped_at").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null };
     };
     const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false, peak_px: number | null = null) => {
       await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
@@ -462,6 +462,23 @@ Deno.serve(async (req) => {
       await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
       if (asset === "BTC") await admin.from("bot_config").update(patch).eq("id", 1);
     };
+
+    // ── BLINDAGEM DE RISCO: sizing por RISCO (% do patrimônio) + teto de alavancagem + circuit breakers. ──
+    let equity = 0;
+    try { const a = await bnb("GET", "/fapi/v2/account", {}, bnbCreds, true); equity = Number((a.body as { totalWalletBalance?: string })?.totalWalletBalance) || 0; } catch { /* usa fallback abaixo */ }
+    if (!(equity > 0)) equity = Math.max(1, Number(cfg.order_quote_sz ?? 10) * Number(cfg.leverage ?? 5)); // fallback conservador
+    const riskPct = Math.max(0.05, Number(cfg.risk_pct ?? 1));         // % do patrimônio arriscado por trade
+    const maxLev = Math.max(1, Number(cfg.leverage ?? 5));            // alavancagem = TETO (não mais tamanho fixo)
+    const maxPositions = Math.max(1, Number(cfg.max_positions ?? 4));
+    const cooldownMs = Math.max(0, Number(cfg.cooldown_min ?? 15)) * 60000;
+    // PnL realizado de hoje (UTC) → circuit breaker de perda diária.
+    const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+    const { data: todayCloses } = await admin.from("bot_orders").select("pnl").eq("source", "auto").eq("action", "close").gte("created_at", dayStart.toISOString());
+    const dailyPnl = (todayCloses ?? []).reduce((s: number, o: { pnl: number | null }) => s + (Number(o.pnl) || 0), 0);
+    const dayBlocked = dailyPnl <= -(equity * Number(cfg.daily_loss_pct ?? 5) / 100);
+    // Posições abertas agora (limite de simultâneas) — mutável ao longo do loop (só entradas NOVAS contam).
+    const { data: openRows } = await admin.from("bot_positions").select("asset").neq("position", "flat");
+    let openCount = (openRows ?? []).length;
 
     const processAsset = async (asset: string, instId: string) => {
       const base = asset;
@@ -584,6 +601,8 @@ Deno.serve(async (req) => {
           const trailed = !!(st.entry_px && st.stop_px && (pos === "long" ? st.stop_px >= st.entry_px : st.stop_px <= st.entry_px));
           const stopLbl = trailed ? "🛑 STOP MÓVEL (lucro travado)" : `🛑 STOP ${st.ctrend ? "curto (contra-tendência) " : ""}`;
           await savePos(asset, instId, "flat", 0, null);
+          await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown pós-stop
+          openCount = Math.max(0, openCount - 1);
           await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] ${stopLbl}@ ${st.stop_px}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
           await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${st.stop_px})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
           return { asset, decision: "flat", stopped: true, pnl };
@@ -692,11 +711,13 @@ Deno.serve(async (req) => {
 
         // ── PIRÂMIDE: adiciona à posição existente (mesma direção), SEM fechar. Preço médio ponderado. ──
         if (pyramidAdd) {
-          await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
-          const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage);
-          let qty = roundStep(notionalWanted / lastPx);
-          if (qty < minQty) qty = minQty;
-          if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
+          await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(maxLev) }, bnbCreds, true);
+          // Pirâmide arrisca METADE do risco base; respeita o teto de alavancagem no nocional TOTAL.
+          const addStopDist0 = (cfg.stop_atr_on && atrPx > 0 ? Number(cfg.stop_atr_mult ?? 4) * atrPx : lastPx * Number(cfg.stop_pct ?? 1.5) / 100) || (lastPx * 0.01);
+          let qty = roundStep((equity * (riskPct / 100) * 0.5) / addStopDist0);
+          const roomNot = equity * maxLev - st.pos_base_sz * lastPx; // espaço até o teto de alavancagem
+          if (qty * lastPx > roomNot) qty = roundStep(Math.max(0, roomNot) / lastPx);
+          if (qty < minQty || qty * lastPx < minNot) { await log("info", `[${asset}] pirâmide sem margem no teto de alavancagem — mantém posição.`, reading); return { asset, decision: "hold", bias, conviction }; }
           const qtyStr = qty.toFixed(qDec);
           const addSide = pos === "long" ? "BUY" : "SELL";
           const res = await place(addSide, qtyStr, false);
@@ -725,13 +746,28 @@ Deno.serve(async (req) => {
           await savePos(asset, instId, "flat", 0, null);
           await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
           pos = "flat";
+          openCount = Math.max(0, openCount - 1);
         }
-        // 2) Abre o alvo (se não for ficar fora). Contra-tendência entra com tamanho menor e stop curto.
+        // 2) Abre o alvo (se não for ficar fora). Sizing por RISCO; contra-tendência arrisca metade.
         if (target !== "flat") {
-          await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(Number(cfg.leverage)) }, bnbCreds, true);
+          const wasFlat = st.position === "flat"; // posição NOVA (não é flip) → passa pelos circuit breakers
+          if (wasFlat) {
+            if (dayBlocked) { await log("info", `[${asset}] 🛑 circuit breaker: perda diária no limite (${dailyPnl.toFixed(2)} ${cfg.quote_ccy}) — sem novas entradas hoje.`, reading); return { asset, decision: "flat", skipped: "perda diária" }; }
+            if (openCount >= maxPositions) { await log("info", `[${asset}] limite de ${maxPositions} posições simultâneas — não abre nova (${openCount} abertas).`, reading); return { asset, decision: "flat", skipped: "máx. posições" }; }
+            if (st.stopped_at && (Date.now() - new Date(st.stopped_at).getTime()) < cooldownMs) { await log("info", `[${asset}] cooldown pós-stop ativo — aguarda antes de reabrir.`, reading); return { asset, decision: "flat", skipped: "cooldown" }; }
+          }
+          await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(maxLev) }, bnbCreds, true);
+          // Distância até o stop (ATR ou %, contra-tendência = metade) — base do sizing por risco.
           const szMult = isCounter ? 0.5 : 1;
-          const notionalWanted = Number(cfg.order_quote_sz) * Number(cfg.leverage) * szMult;
-          let qty = roundStep(notionalWanted / lastPx);
+          const useAtrStop = !!cfg.stop_atr_on && atrPx > 0;
+          const kStop = Number(cfg.stop_atr_mult ?? 4) * szMult;
+          const stopPctUse = isCounter ? Number(cfg.ct_stop_pct ?? 0.6) : Number(cfg.stop_pct ?? 1.5);
+          const riskDist = (useAtrStop ? kStop * atrPx : lastPx * stopPctUse / 100) || (lastPx * 0.01);
+          // SIZING POR RISCO: qty = risco($) ÷ distância-até-o-stop → cada trade arrisca riskPct% do patrimônio.
+          // A alavancagem é só TETO: nunca deixa o nocional passar de equity × maxLev (não liquida antes do stop).
+          const riskDollars = equity * (riskPct / 100) * szMult;
+          let qty = roundStep(riskDollars / riskDist);
+          if (qty * lastPx > equity * maxLev) qty = roundStep((equity * maxLev) / lastPx);
           if (qty < minQty) qty = minQty;
           if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
           const qtyStr = qty.toFixed(qDec);
@@ -739,17 +775,15 @@ Deno.serve(async (req) => {
           const res = await place(openSide, qtyStr, false);
           if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
-          const stopPctUse = isCounter ? Number(cfg.ct_stop_pct ?? 0.6) : Number(cfg.stop_pct ?? 1.5);
-          // Stop de risco: por ATR (adaptativo à volatilidade do ativo; contra-tendência = metade da
-          // distância) quando ligado; senão, % fixo (fallback). Escala com a moeda em vez de nº mágico.
-          const kStop = Number(cfg.stop_atr_mult ?? 4) * (isCounter ? 0.5 : 1);
-          const useAtrStop = !!cfg.stop_atr_on && atrPx > 0;
-          const riskDist = useAtrStop ? kStop * atrPx : entryPx * stopPctUse / 100;
+          // Stop na MESMA distância usada no sizing → a perda no stop = riskPct% do patrimônio (fora slippage/taxa).
           const stopPx = target === "long" ? entryPx - riskDist : entryPx + riskDist;
+          const usedLev = equity > 0 ? realNot / equity : 0;
           const stopBasis = useAtrStop ? `${kStop.toFixed(1)}×ATR` : `${stopPctUse}%`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
-          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${cfg.leverage}x) · stop ${stopPx.toFixed(2)} (${stopBasis}) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
-          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)}${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
+          await admin.from("bot_positions").update({ stopped_at: null }).eq("asset", asset); // abriu → zera cooldown
+          openCount++;
+          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x · risco ${(riskPct * szMult).toFixed(2)}%) · stop ${stopPx.toFixed(2)} (${stopBasis}) · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x)${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)} · risco ${(equity * riskPct / 100 * szMult).toFixed(2)} ${cfg.quote_ccy} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };
         }
         await log("trade", `[${asset}] ${protExit ? "🛡️ SAÍDA DE PROTEÇÃO · " : ""}Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${gate && protExit ? ` [${gate}]` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);

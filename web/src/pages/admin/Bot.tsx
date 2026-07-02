@@ -35,6 +35,10 @@ interface Config {
   trail_atr_mult: number; // distância do trailing = k × ATR do ativo (adaptativo)
   stop_atr_on: boolean;  // stop de risco por ATR (senão, % fixo)
   stop_atr_mult: number; // distância do stop de risco = k × ATR do ativo
+  risk_pct: number;      // % do patrimônio arriscado por trade (sizing por risco)
+  daily_loss_pct: number; // circuit breaker: perda diária máx (%)
+  max_positions: number;  // máx. posições simultâneas
+  cooldown_min: number;   // cooldown pós-stop (min)
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -628,7 +632,7 @@ export default function AdminBot() {
         <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
           <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
-          <div className="text-[11px] text-muted-foreground">{cfg ? `${isFut ? `Futuros ${cfg.leverage}x` : "Spot"} · limiar ±${cfg.buy_threshold}` : ""}</div>
+          <div className="text-[11px] text-muted-foreground">{cfg ? `${isFut ? `Futuros até ${cfg.leverage}x` : "Spot"} · risco ${cfg.risk_pct ?? 1}%/trade` : ""}</div>
         </div>
         <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
@@ -678,12 +682,18 @@ export default function AdminBot() {
             <label className="text-xs text-muted-foreground">Par (instId)
               <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
             </label>
-            <label className="text-xs text-muted-foreground">{isFut ? "Margem por ordem" : "Tamanho da compra"} ({cfg.quote_ccy})
-              <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
-            </label>
+            {isFut ? (
+              <label className="text-xs text-muted-foreground">Risco por trade (% do patrimônio)
+                <input type="number" step="0.1" min="0.1" className={`${input} mt-1`} value={cfg.risk_pct ?? 1} onChange={(e) => setCfg({ ...cfg, risk_pct: Number(e.target.value) })} />
+              </label>
+            ) : (
+              <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
+                <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
+              </label>
+            )}
             {isFut && (
-              <label className="text-xs text-muted-foreground">Alavancagem (x)
-                <input type="number" min="1" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
+              <label className="text-xs text-muted-foreground">Alavancagem máx (x · teto)
+                <input type="number" min="1" max="20" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
               </label>
             )}
             <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
@@ -709,6 +719,21 @@ export default function AdminBot() {
             {isFut && (cfg.counter_trend ?? "tight") !== "block" && (
               <label className="text-xs text-muted-foreground">Stop curto (contra-tendência · %)
                 <input type="number" step="0.1" min="0" className={`${input} mt-1`} value={cfg.ct_stop_pct ?? 0.6} onChange={(e) => setCfg({ ...cfg, ct_stop_pct: Number(e.target.value) })} />
+              </label>
+            )}
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Perda diária máx (%)
+                <input type="number" step="0.5" min="0" className={`${input} mt-1`} value={cfg.daily_loss_pct ?? 5} onChange={(e) => setCfg({ ...cfg, daily_loss_pct: Number(e.target.value) })} />
+              </label>
+            )}
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Máx. posições simultâneas
+                <input type="number" min="1" max="10" className={`${input} mt-1`} value={cfg.max_positions ?? 4} onChange={(e) => setCfg({ ...cfg, max_positions: Number(e.target.value) })} />
+              </label>
+            )}
+            {isFut && (
+              <label className="text-xs text-muted-foreground">Cooldown pós-stop (min)
+                <input type="number" min="0" className={`${input} mt-1`} value={cfg.cooldown_min ?? 15} onChange={(e) => setCfg({ ...cfg, cooldown_min: Number(e.target.value) })} />
               </label>
             )}
             {isFut && (
@@ -744,7 +769,7 @@ export default function AdminBot() {
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
