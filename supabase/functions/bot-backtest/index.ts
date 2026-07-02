@@ -22,7 +22,7 @@ function json(status: number, body: unknown) {
 
 // ════════ Motor SMC — CÓPIA FIEL de bot-run (portado de web/src/lib/smc.ts) ════════
 type Bias = "bullish" | "bearish";
-interface Candle { time: number; open: number; high: number; low: number; close: number }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
 interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
@@ -227,6 +227,39 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
 }
 
 // ════════ Klines históricos REAIS — endpoint PÚBLICO de dados da Binance (geo-aberto). ════════
+// ════════ Indicadores clássicos (cópia FIEL de bot-run) — p/ o FILTRO TA opcional ════════
+function emaLast(vals: number[], len: number): number | null {
+  if (vals.length < len) return null;
+  const k = 2 / (len + 1);
+  let e = vals.slice(0, len).reduce((s, v) => s + v, 0) / len;
+  for (let i = len; i < vals.length; i++) e = vals[i] * k + e * (1 - k);
+  return e;
+}
+function adxDmi(cs: Candle[], len = 14): { adx: number; diP: number; diM: number } | null {
+  if (cs.length < len * 3) return null;
+  let trS = 0, pS = 0, mS = 0, adx = 0, dxN = 0;
+  for (let i = 1; i < cs.length; i++) {
+    const up = cs[i].high - cs[i - 1].high, dn = cs[i - 1].low - cs[i].low;
+    const pdm = up > dn && up > 0 ? up : 0, mdm = dn > up && dn > 0 ? dn : 0;
+    const tr = Math.max(cs[i].high - cs[i].low, Math.abs(cs[i].high - cs[i - 1].close), Math.abs(cs[i].low - cs[i - 1].close));
+    if (i <= len) { trS += tr; pS += pdm; mS += mdm; if (i < len) continue; }
+    else { trS += tr - trS / len; pS += pdm - pS / len; mS += mdm - mS / len; }
+    const diP = trS > 0 ? (100 * pS) / trS : 0, diM = trS > 0 ? (100 * mS) / trS : 0;
+    const dx = diP + diM > 0 ? (100 * Math.abs(diP - diM)) / (diP + diM) : 0;
+    dxN++;
+    adx = dxN === 1 ? dx : (adx * (len - 1) + dx) / len;
+    if (i === cs.length - 1) return { adx, diP, diM };
+  }
+  return null;
+}
+function dailyVwap(cs: Candle[]): number | null {
+  if (!cs.length) return null;
+  const dayStart = Math.floor(cs[cs.length - 1].time / 86400) * 86400;
+  let pv = 0, vv = 0;
+  for (const c of cs) { const v = c.volume ?? 0; if (c.time >= dayStart && v > 0) { pv += ((c.high + c.low + c.close) / 3) * v; vv += v; } }
+  return vv > 0 ? pv / vv : null;
+}
+
 // data-api.binance.vision = mercado spot, feito p/ histórico (sem auth/geo-block). Estruturalmente
 // idêntico ao perp p/ as majors (o backtest é de ESTRUTURA de preço), evitando bloqueio de futuros.
 const DATA = "https://data-api.binance.vision";
@@ -242,7 +275,7 @@ async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: n
     if (!r.ok) break;
     const rows = await r.json().catch(() => []) as (string | number)[][];
     if (!Array.isArray(rows) || rows.length === 0) break;
-    for (const x of rows) out.push({ time: Math.floor(Number(x[0]) / 1000), open: +x[1], high: +x[2], low: +x[3], close: +x[4] });
+    for (const x of rows) out.push({ time: Math.floor(Number(x[0]) / 1000), open: +x[1], high: +x[2], low: +x[3], close: +x[4], volume: +x[5] || 0 });
     const last = Number(rows[rows.length - 1][0]);
     if (rows.length < 1000) break;
     cursor = last + TF_MS[tf];
@@ -257,17 +290,29 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "metodo nao permitido" });
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  // Admin-only (mesmo padrão do bot-run).
-  const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-  const { data: userData } = await admin.auth.getUser(token);
-  const u = userData?.user;
-  if (!u) return json(401, { error: "nao autorizado" });
-  const { data: prof } = await admin.from("profiles").select("role").eq("id", u.id).maybeSingle();
-  if (prof?.role !== "admin") return json(403, { error: "somente admin" });
+  // Admin (JWT) OU x-cron-key — mesmo padrão do bot-run (permite rodar experimentos sem browser).
+  let authorized = false;
+  const cronKey = req.headers.get("x-cron-key");
+  if (cronKey) {
+    const { data: sk } = await admin.from("app_secrets").select("value").eq("key", "newsletter_cron_key").maybeSingle();
+    if (sk?.value && cronKey === sk.value) authorized = true;
+  }
+  if (!authorized) {
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data: userData } = await admin.auth.getUser(token);
+    const u = userData?.user;
+    if (!u) return json(401, { error: "nao autorizado" });
+    const { data: prof } = await admin.from("profiles").select("role").eq("id", u.id).maybeSingle();
+    if (prof?.role !== "admin") return json(403, { error: "somente admin" });
+  }
 
   const body = await req.json().catch(() => ({}));
   const asset = String(body.asset ?? "BTC").toUpperCase();
   const days = Math.max(3, Math.min(180, Number(body.days ?? 30))); // até 180d → cobre alta/queda/lateral (fetchKlines pagina)
+  // FILTRO TA opcional (experimento SMC + clássicos): gateia só setups NÃO-imbalance (mesma
+  // semântica do veto de fluxo ao vivo). Default tudo OFF = baseline intacto.
+  const ta = { vwap: !!body?.ta?.vwap, ema: !!body?.ta?.ema, adx: !!body?.ta?.adx };
+  const taOn = ta.vwap || ta.ema || ta.adx;
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -301,6 +346,7 @@ Deno.serve(async (req) => {
   const momCache: Record<string, number> = {};
 
   const LOOKBACK = 300; // casa com o bot-run (klines limit:300 por TF)
+  const taCache: { e20: number | null; e50: number | null; adx: number | null; vwap: number | null } = { e20: null, e50: null, adx: null, vwap: null };
   const recompute = (tf: string, closedIdx: number) => {
     const arr = byTf[tf];
     const lo = Math.max(0, closedIdx - LOOKBACK + 1);
@@ -308,6 +354,11 @@ Deno.serve(async (req) => {
     smcCache[tf] = computeSmc(win, SWING);
     const cl = win.map((c) => c.close);
     momCache[tf] = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
+    if (tf === "15m" && taOn) { // indicadores clássicos na MESMA janela do motor (sem lookahead)
+      taCache.e20 = emaLast(cl, 20); taCache.e50 = emaLast(cl, 50);
+      taCache.adx = adxDmi(win, 14)?.adx ?? null;
+      taCache.vwap = dailyVwap(win);
+    }
   };
 
   // Estado da simulação (uma posição por vez, como o robô por moeda).
@@ -381,8 +432,14 @@ Deno.serve(async (req) => {
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
     const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true });
-    const want = plan.want;
+    let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
+    // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
+    if (want && taOn && plan.setup && !plan.setup.startsWith("imbalance")) {
+      if (ta.ema && taCache.e20 != null && taCache.e50 != null && (want === "long" ? taCache.e20 <= taCache.e50 : taCache.e20 >= taCache.e50)) want = null;
+      if (want && ta.vwap && taCache.vwap != null && (want === "long" ? px <= taCache.vwap : px >= taCache.vwap)) want = null;
+      if (want && ta.adx && taCache.adx != null && taCache.adx < 20) want = null; // lateral/chop → segura continuação
+    }
 
     // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
     if (pos !== "flat") {
@@ -419,7 +476,8 @@ Deno.serve(async (req) => {
     reversals: trades.filter((t) => t.reason === "reversão").length,
     bars_evaluated: evalBars,
   };
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)" };
+  const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
