@@ -174,6 +174,8 @@ export default function AdminBot() {
   const [candles, setCandles] = useState<BotCandle[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
+  const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
+  const [selMonth, setSelMonth] = useState(""); // mês escolhido no card "Saldo do mês" (vazio = mês vigente)
   const [learning, setLearning] = useState<Learning | null>(null);
   const [selAsset, setSelAsset] = useState("BTC"); // moeda em foco no painel (leitura + gráfico)
   const [tab, setTab] = useState<"grafico" | "ordens" | "aprendizado" | "config">("grafico"); // aba do módulo do robô
@@ -317,6 +319,7 @@ export default function AdminBot() {
       } catch { /* silencioso */ }
       if (!active) return;
       await loadLive(); // o gráfico se atualiza sozinho no efeito dedicado (nada de selInst obsoleto aqui)
+      try { const { data: sum } = await supabase.rpc("bot_pnl_summary"); if (active && sum) setPnlSummary(sum as { day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] }); } catch { /* silencioso */ }
     };
     tick();
     const id = setInterval(tick, 20000);
@@ -577,9 +580,11 @@ export default function AdminBot() {
       const pct = entry && entry !== 0 && exit != null ? ((exit - entry) / entry) * 100 * dir : null;
       return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at };
     });
-  const realizedSum = closedTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const scored = closedTrades.filter((t) => t.pnl != null).length;
-  const wins = closedTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+  // Saldo do dia/mês (RPC bot_pnl_summary, fuso BRT): mês vigente por padrão; seletor navega meses.
+  const MONTHS_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const monthLabel = (ym: string) => { const [y, m] = ym.split("-"); return `${MONTHS_PT[Number(m) - 1] ?? m}/${y.slice(2)}`; };
+  const curMonth = selMonth || pnlSummary?.months[0]?.month || "";
+  const monthData = pnlSummary?.months.find((m) => m.month === curMonth) ?? null;
 
   // ── FILTROS (moeda / status / período) aplicados às ordens e aos trades ──
   const assetOf = (o: OrderRow) => (o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "");
@@ -939,7 +944,7 @@ export default function AdminBot() {
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Resumo da conta (demo)</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio total</div>
             <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
@@ -950,9 +955,21 @@ export default function AdminBot() {
             <div className="text-[10px] text-muted-foreground">soma das posições em aberto</div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado realizado (recente)</div>
-            <div className={`num text-2xl font-bold ${scored === 0 ? "text-muted-foreground" : realizedSum >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{scored ? `${realizedSum >= 0 ? "+" : ""}${num(realizedSum)} ${quote}` : "—"}</div>
-            <div className="text-[10px] text-muted-foreground">{scored ? `${wins}/${scored} trades no verde` : "sem trades fechados ainda"}</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Saldo do dia</div>
+            <div className={`num text-2xl font-bold ${!pnlSummary || !pnlSummary.day.trades ? "text-muted-foreground" : pnlSummary.day.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{pnlSummary && pnlSummary.day.trades ? `${pnlSummary.day.pnl >= 0 ? "+" : ""}${num(pnlSummary.day.pnl)} ${quote}` : "—"}</div>
+            <div className="text-[10px] text-muted-foreground">{pnlSummary && pnlSummary.day.trades ? `${pnlSummary.day.wins}/${pnlSummary.day.trades} no verde · hoje` : "sem trades hoje"}</div>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+            <div className="mb-0.5 flex items-center justify-between gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Saldo do mês</span>
+              {pnlSummary && pnlSummary.months.length > 0 && (
+                <select value={curMonth} onChange={(e) => setSelMonth(e.target.value)} className="rounded border border-border/70 bg-background/60 px-1 py-0.5 text-[10px] text-foreground focus:outline-none" title="escolher mês">
+                  {pnlSummary.months.map((m) => <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>)}
+                </select>
+              )}
+            </div>
+            <div className={`num text-2xl font-bold ${!monthData || !monthData.trades ? "text-muted-foreground" : monthData.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{monthData && monthData.trades ? `${monthData.pnl >= 0 ? "+" : ""}${num(monthData.pnl)} ${quote}` : "—"}</div>
+            <div className="text-[10px] text-muted-foreground">{monthData && monthData.trades ? `${monthData.wins}/${monthData.trades} no verde` : "sem trades no mês"}</div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Situação</div>
