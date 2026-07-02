@@ -153,6 +153,28 @@ export default function AdminBot() {
   const [learning, setLearning] = useState<Learning | null>(null);
   const [selAsset, setSelAsset] = useState("BTC"); // moeda em foco no painel (leitura + gráfico)
   const [tab, setTab] = useState<"grafico" | "ordens" | "aprendizado" | "config">("grafico"); // aba do módulo do robô
+  // Backtester (aba Aprendizado): mede a expectância da estratégia em candles reais.
+  const [btAsset, setBtAsset] = useState("BTC");
+  const [btDays, setBtDays] = useState(30);
+  const [btBusy, setBtBusy] = useState(false);
+  const [btResult, setBtResult] = useState<{ params: Record<string, string | number>; metrics: Record<string, number> } | null>(null);
+  useEffect(() => {
+    supabase.from("bot_backtests").select("params, metrics").eq("asset", btAsset).maybeSingle().then(({ data }) => {
+      setBtResult(data ? { params: data.params as Record<string, string | number>, metrics: data.metrics as Record<string, number> } : null);
+    });
+  }, [btAsset]);
+  const runBacktest = async () => {
+    setBtBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("bot-backtest", { body: { asset: btAsset, days: btDays } });
+      if (error) throw error;
+      setBtResult(data as { params: Record<string, string | number>; metrics: Record<string, number> });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha no backtest." });
+    } finally {
+      setBtBusy(false);
+    }
+  };
   const [learnAsset, setLearnAsset] = useState("all"); // moeda em foco no aprendizado (all = geral)
   // filtros das ordens (moeda / status / período)
   const [fAsset, setFAsset] = useState("all");
@@ -1075,8 +1097,52 @@ export default function AdminBot() {
       )}
       </>)}
 
+      {tab === "aprendizado" && (<>
+      {/* Backtester — mede a expectância da estratégia em candles reais */}
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">📈 Backtester · a estratégia dá lucro?</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
+              {["BTC", "ETH", "SOL", "BNB"].map((a) => (
+                <button key={a} onClick={() => setBtAsset(a)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${btAsset === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a}</button>
+              ))}
+            </div>
+            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">janela <input type="number" min="3" max="60" value={btDays} onChange={(e) => setBtDays(Number(e.target.value))} className="w-14 rounded border border-border bg-background px-2 py-0.5 num" /> dias</label>
+            <button onClick={runBacktest} disabled={btBusy} className="rounded-md bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-50">{btBusy ? "Rodando…" : "Rodar backtest"}</button>
+          </div>
+        </div>
+        {btResult ? (() => {
+          const m = btResult.metrics, p = btResult.params;
+          const cards: { label: string; value: string; tone: "up" | "down" | "" }[] = [
+            { label: "Expectância (R/trade)", value: `${m.expectancy_r >= 0 ? "+" : ""}${m.expectancy_r}R`, tone: m.expectancy_r > 0 ? "up" : m.expectancy_r < 0 ? "down" : "" },
+            { label: "Win rate", value: `${m.win_rate}%`, tone: "" },
+            { label: "Profit factor", value: `${m.profit_factor}`, tone: m.profit_factor >= 1 ? "up" : "down" },
+            { label: "Retorno (risco composto)", value: `${m.total_return_pct >= 0 ? "+" : ""}${m.total_return_pct}%`, tone: m.total_return_pct > 0 ? "up" : "down" },
+            { label: "Max drawdown", value: `-${m.max_drawdown_pct}%`, tone: "down" },
+            { label: "Trades", value: `${m.trades}`, tone: "" },
+            { label: "Ganho / Perda médio", value: `+${m.avg_win_r}R / ${m.avg_loss_r}R`, tone: "" },
+            { label: "Long / Short (win%)", value: `${m.longs}·${m.longs_win}% / ${m.shorts}·${m.shorts_win}%`, tone: "" },
+          ];
+          return (
+            <>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {cards.map((c) => (
+                  <div key={c.label} className="rounded-lg border border-border/70 bg-background/40 p-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{c.label}</div>
+                    <div className={`num text-lg font-bold ${c.tone === "up" ? "text-emerald-500" : c.tone === "down" ? "text-rose-500" : "text-foreground"}`}>{c.value}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-muted-foreground">{p.asset} · {p.days}d · consenso {p.min_votes}/5 · sens ±{p.sensibility} · contra-tend “{p.counter_trend}” · stop {p.stop} · trailing {p.trailing} · risco {p.risk_pct}% · taxa+slip {p.fee_pct}+{p.slip_pct}%/lado · <strong>fluxo {p.flow}</strong>. Mede o esqueleto estrutural (a camada de fluxo não é backtestável); fills no fechamento do candle. Educacional — não garante o futuro.</p>
+            </>
+          );
+        })() : (
+          <p className="text-sm text-muted-foreground">Escolha a moeda e a janela e clique <strong>Rodar backtest</strong> — o MESMO motor do robô roda sobre candles reais e mede se a estratégia teria dado lucro: <strong>expectância em R</strong>, win rate, profit factor e drawdown. Leva ~5-15s.</p>
+        )}
+      </div>
+
       {/* Aprendizado do robô · aba Aprendizado */}
-      {tab === "aprendizado" && (
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
@@ -1134,7 +1200,7 @@ export default function AdminBot() {
           <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal, separado por moeda.</p>
         )}
       </div>
-      )}
+      </>)}
 
       {/* Conexão (chaves) · aba Configuração */}
       {tab === "config" && (
