@@ -732,6 +732,24 @@ Deno.serve(async (req) => {
         const flowAgainst = want === "long" ? flowTilt <= -50 : flowTilt >= 50;
         if (flowAgainst) { gate = `fluxo forte contra (${flowTilt}) — segura o setup`; want = null; }
       }
+      // FILTRO TÉCNICO (EMA20×50 + VWAP diário) — validado no backtester (90d+180d: melhorou o PF
+      // em TODAS as moedas). Setup estrutural (não-imbalance) só entra ALINHADO aos dois; usa os
+      // scores já calculados em computeReading (sinal ausente = não bloqueia).
+      if (want && plan.setup && !plan.setup.startsWith("imbalance") && cfg.ta_gate !== false) {
+        const sEma = signals.find((s) => s.key === "ema2050"), sVw = signals.find((s) => s.key === "vwap");
+        const okDir = want === "long"
+          ? (!sEma || sEma.score > 0) && (!sVw || sVw.score > 0)
+          : (!sEma || sEma.score < 0) && (!sVw || sVw.score < 0);
+        if (!okDir) { gate = "técnico contra (EMA20×50/VWAP) — segura o setup"; want = null; }
+      }
+      // REVERSÃO COM CUIDADO (rev_mode; backtest: virar a mão a cada sinal contrário era o maior
+      // ralo — ~50% das saídas). 'off' = posição só sai por stop/alvo/trailing; 'imbalance' = só
+      // FVG fresco contra reverte; 'any' = comportamento antigo.
+      if (pos !== "flat" && want && want !== pos) {
+        const revMode = String(cfg.rev_mode ?? "off");
+        const revOk = revMode === "any" || (revMode === "imbalance" && !!plan.setup && plan.setup.startsWith("imbalance"));
+        if (!revOk) { gate = `reversão bloqueada (${revMode}) — sai só por stop/alvo/trailing`; want = null; }
+      }
       const bias = smcBias;
       const regime: "up" | "down" | "range" = smcBias >= 18 ? "up" : smcBias <= -18 ? "down" : "range";
       const isCounter = false;   // 15m puro: sem TF maior → sem contra-tendência

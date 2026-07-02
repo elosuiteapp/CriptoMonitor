@@ -313,13 +313,18 @@ Deno.serve(async (req) => {
   // semântica do veto de fluxo ao vivo). Default tudo OFF = baseline intacto.
   const ta = { vwap: !!body?.ta?.vwap, ema: !!body?.ta?.ema, adx: !!body?.ta?.adx };
   const taOn = ta.vwap || ta.ema || ta.adx;
+  // EXPERIMENTOS DE CHURN (a matriz 90d mostrou: ~50% das saídas são reversão → o problema é
+  // girar demais, não a entrada). Defaults reproduzem o comportamento atual do robô.
+  const revMode = String(body?.rev_mode ?? "any");                      // any | imbalance (só FVG fresco vira a mão) | off (nunca reverte)
+  const minHold = Math.max(0, Number(body?.min_hold_bars ?? 0));        // barras mínimas antes de poder reverter
+  const cooldownBars = Math.max(0, Number(body?.cooldown_bars ?? 0));   // barras sem entrar após STOP (live: 15min ≈ 1 barra)
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
-  // Parâmetros (do config atual) — o backtest reflete os ajustes reais do robô.
+  // Parâmetros (do config atual; body pode SOBRESCREVER p/ experimentos A/B).
   const stopMult = Number(cfg.stop_atr_mult ?? 3); // fallback do stop quando não há nível estrutural
-  const trailOn = !!cfg.trail_on, trailMult = Number(cfg.trail_atr_mult ?? 3);
-  const imbalanceOn = cfg.imbalance_on !== false, imbMinPct = Number(cfg.imbalance_min_pct ?? 0);
+  const trailOn = !!cfg.trail_on, trailMult = Number(body?.trail_atr_mult ?? cfg.trail_atr_mult ?? 3);
+  const imbalanceOn = cfg.imbalance_on !== false, imbMinPct = Number(body?.imb_min_pct ?? cfg.imbalance_min_pct ?? 0);
   const riskPct = Number(cfg.risk_pct ?? 1);
   const feePct = Number(body.fee_pct ?? 0.04), slipPct = Number(body.slip_pct ?? 0.02); // taxa taker + slippage por lado (%)
   const costFrac = (feePct + slipPct) / 100;
@@ -364,6 +369,7 @@ Deno.serve(async (req) => {
   // Estado da simulação (uma posição por vez, como o robô por moeda).
   let pos: "long" | "short" | "flat" = "flat";
   let entryPx = 0, stopPx = 0, targetPx = 0, peak = 0, riskDist0 = 0, entryTime = 0, entryIdx = 0, counter = false;
+  let lastStopIdx = -1; // barra do último STOP (cooldown de reentrada)
   const trades: Trade[] = [];
   let eq = 1; let peakEq = 1, maxDD = 0; const equity: { t: number; eq: number }[] = [];
   let barsInMarket = 0, evalBars = 0;
@@ -380,6 +386,7 @@ Deno.serve(async (req) => {
     const rNet = (grossPx - costPx) / riskDist0;
     const r = grossPx / riskDist0;
     trades.push({ side: pos as "long" | "short", entryTime, entryPx, exitTime: t, exitPx: px, stopPx, riskDist: riskDist0, reason, r, rNet, bars: idx - entryIdx, counter });
+    if (reason === "stop") lastStopIdx = idx;
     eq *= (1 + (riskPct / 100) * rNet);
     peakEq = Math.max(peakEq, eq); maxDD = Math.max(maxDD, (peakEq - eq) / peakEq);
     equity.push({ t, eq: Math.round(eq * 10000) / 10000 });
@@ -443,9 +450,12 @@ Deno.serve(async (req) => {
 
     // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
     if (pos !== "flat") {
-      if (want && want !== pos && plan.stop != null) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, plan.stop, plan.target); }
+      const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!plan.setup && plan.setup.startsWith("imbalance") : false;
+      const heldEnough = t - entryIdx >= minHold;
+      if (want && want !== pos && plan.stop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, plan.stop, plan.target); }
     } else if (want && plan.stop != null) {
-      openTrade(want, px, tsec, t, plan.stop, plan.target);
+      const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
+      if (!cooling) openTrade(want, px, tsec, t, plan.stop, plan.target);
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -477,7 +487,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

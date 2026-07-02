@@ -31,6 +31,8 @@ interface Config {
   counter_trend: string; // 'block' | 'tight'
   auto_weight: boolean;  // auto-ponderar sinais por moeda (usa o aprendizado)
   trail_on: boolean;     // stop móvel (trailing) ligado
+  rev_mode?: string;     // reversão: off (nunca vira a mão) | imbalance (só FVG fresco) | any (antigo)
+  ta_gate?: boolean;     // filtro técnico EMA20×50 + VWAP no setup estrutural
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
   trail_atr_mult: number; // distância do trailing = k × ATR do ativo (adaptativo)
   stop_atr_on: boolean;  // stop de risco por ATR (senão, % fixo)
@@ -248,7 +250,7 @@ export default function AdminBot() {
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -838,6 +840,21 @@ export default function AdminBot() {
               </label>
             )}
             {isFut && (
+              <label className="text-xs text-muted-foreground">Reversão (virar a mão)
+                <select className={`${input} mt-1`} value={cfg.rev_mode ?? "off"} onChange={(e) => setCfg({ ...cfg, rev_mode: e.target.value })}>
+                  <option value="off">Nunca — sai só por stop/alvo/trailing (recomendado)</option>
+                  <option value="imbalance">Só imbalance (FVG fresco) contra</option>
+                  <option value="any">Sempre que o sinal virar (antigo)</option>
+                </select>
+              </label>
+            )}
+            {isFut && (
+              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                <input type="checkbox" checked={cfg.ta_gate !== false} onChange={(e) => setCfg({ ...cfg, ta_gate: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                <span><strong>Filtro técnico (EMA 20×50 + VWAP diário)</strong>: setup estrutural (não-imbalance) só entra alinhado aos dois. Validado no backtester (90d+180d): melhorou o resultado em todas as moedas. Os valores aparecem plotados no gráfico acima.</span>
+              </label>
+            )}
+            {isFut && (
               <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
                 <input type="checkbox" checked={!!cfg.stop_atr_on} onChange={(e) => setCfg({ ...cfg, stop_atr_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
                 <span><strong>Stop de risco por ATR</strong>: usa a volatilidade do ativo em vez do % fixo — cada moeda ganha um stop na sua escala (a contra-tendência entra pela metade da distância). Desligado, valem os campos de % acima.</span>
@@ -866,10 +883,10 @@ export default function AdminBot() {
             )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", ta_gate: cfg.ta_gate !== false })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>SMC price-action no 15m</strong> (day-trade). A <strong>estrutura decide</strong> — entra em Order Block/FVG a favor de BOS/CHoCH, após varrer liquidez ou em discount/premium; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong> (R:R ≥ 1). O <strong>fluxo só veta</strong> (book, paredes/absorção, CVD, liquidações, gamma) quando muito contra — imbalance ignora o veto. <strong>Filtro técnico</strong> (EMA20×50 + VWAP) alinha o setup estrutural. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing (virar a mão a cada sinal era o maior ralo no backtest). Sizing por risco (% do patrimônio ÷ distância do stop), alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>
           </div>
         </div>
       )}
