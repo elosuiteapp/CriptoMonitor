@@ -1120,21 +1120,6 @@ export default function AdminBot() {
         ) : ordersTable(manualOrders)}
       </div>
 
-      {/* Diário do robô · aba Ordens */}
-      {logs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
-          <div className="space-y-1.5">
-            {logs.map((l) => (
-              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
-                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="text-foreground">{l.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       </>)}
 
       {tab === "aprendizado" && (<>
@@ -1240,6 +1225,22 @@ export default function AdminBot() {
           <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal, separado por moeda.</p>
         )}
       </div>
+
+      {/* Diário do robô — histórico de leituras/decisões (aba Aprendizado: é a matéria-prima do que o robô aprende) */}
+      {logs.length > 0 && (
+        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
+          <div className="space-y-1.5">
+            {logs.map((l) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
+                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="text-foreground">{l.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       </>)}
 
       {/* Conexão (chaves) · aba Configuração */}
