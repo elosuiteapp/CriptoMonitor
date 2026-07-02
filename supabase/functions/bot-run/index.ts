@@ -735,7 +735,7 @@ Deno.serve(async (req) => {
           // Pirâmide arrisca METADE do risco base; respeita o teto de alavancagem no nocional TOTAL.
           const addStopDist0 = (cfg.stop_atr_on && atrPx > 0 ? Number(cfg.stop_atr_mult ?? 4) * atrPx : lastPx * Number(cfg.stop_pct ?? 1.5) / 100) || (lastPx * 0.01);
           let qty = roundStep((equity * (riskPct / 100) * 0.5) / addStopDist0);
-          const roomNot = equity * maxLev - st.pos_base_sz * lastPx; // espaço até o teto de alavancagem
+          const roomNot = equity * maxLev / maxPositions - st.pos_base_sz * lastPx; // espaço no slot da posição (teto ÷ maxPositions)
           if (qty * lastPx > roomNot) qty = roundStep(Math.max(0, roomNot) / lastPx);
           if (qty < minQty || qty * lastPx < minNot) { await log("info", `[${asset}] pirâmide sem margem no teto de alavancagem — mantém posição.`, reading); return { asset, decision: "hold", bias, conviction }; }
           const qtyStr = qty.toFixed(qDec);
@@ -786,7 +786,8 @@ Deno.serve(async (req) => {
           // A alavancagem é só TETO: nunca deixa o nocional passar de equity × maxLev (não liquida antes do stop).
           const riskDollars = equity * (riskPct / 100) * szMult;
           let qty = roundStep(riskDollars / riskDist);
-          if (qty * lastPx > equity * maxLev) qty = roundStep((equity * maxLev) / lastPx);
+          const capNotional = equity * maxLev / maxPositions; // aloca a margem entre até maxPositions posições (evita 1 comer tudo)
+          if (qty * lastPx > capNotional) qty = roundStep(capNotional / lastPx);
           if (qty < minQty) qty = minQty;
           if (qty * lastPx < minNot) qty = roundStep(minNot / lastPx) + stepSz;
           const qtyStr = qty.toFixed(qDec);
