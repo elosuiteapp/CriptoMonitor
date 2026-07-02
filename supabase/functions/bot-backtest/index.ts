@@ -184,13 +184,55 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   return d ? Math.round(clamp(n / d)) : 0;
 }
 
+// ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
+interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean }): SmcPlan {
+  const price = lastPx > 0 ? lastPx : smc.price;
+  const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
+  const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
+  const bear = smc.lastSwing?.bias === "bearish" || smc.internalBias === "bearish" || smc.swingBias === "bearish";
+  const inDisc = price <= smc.discount.top, inPrem = price >= smc.premium.bottom;
+  const sweptSell = smc.liquidity.some((l) => l.side === "sell" && l.sweptRecently);
+  const sweptBuy = smc.liquidity.some((l) => l.side === "buy" && l.sweptRecently);
+  const bullOB = smc.orderBlocks.filter((b) => b.bias === "bullish" && price >= b.bottom && price <= b.top + buf).sort((a, b) => b.mid - a.mid)[0];
+  const bearOB = smc.orderBlocks.filter((b) => b.bias === "bearish" && price <= b.top && price >= b.bottom - buf).sort((a, b) => a.mid - b.mid)[0];
+  const bullFvg = smc.fvgs.filter((f) => f.bias === "bullish" && price >= f.bottom && price <= f.top + buf).sort((a, b) => b.mid - a.mid)[0];
+  const bearFvg = smc.fvgs.filter((f) => f.bias === "bearish" && price <= f.top && price >= f.bottom - buf).sort((a, b) => a.mid - b.mid)[0];
+  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * 2 && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct);
+  const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
+  const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
+  let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number } | null = null;
+  if (o.imbalanceOn && freshBull && (!freshBear || freshBull.time >= freshBear.time)) { want = "long"; setup = "imbalance ↑"; zone = freshBull; }
+  else if (o.imbalanceOn && freshBear && (!freshBull || freshBear.time >= freshBull.time)) { want = "short"; setup = "imbalance ↓"; zone = freshBear; }
+  else if (bull && (bullOB || bullFvg) && (sweptSell || inDisc)) { want = "long"; setup = "OB/FVG + estrutura ↑"; zone = bullOB ?? bullFvg; }
+  else if (bear && (bearOB || bearFvg) && (sweptBuy || inPrem)) { want = "short"; setup = "OB/FVG + estrutura ↓"; zone = bearOB ?? bearFvg; }
+  if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup" };
+  if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot" };
+  let stop: number;
+  if (want === "long") {
+    stop = (zone ? zone.bottom : (Number.isFinite(smc.swingLowLevel) ? smc.swingLowLevel : price - o.stopAtrMult * atr)) - buf;
+    if (Number.isFinite(smc.swingLowLevel) && smc.swingLowLevel < price) stop = Math.min(stop, smc.swingLowLevel - buf);
+    if (stop >= price) stop = price - o.stopAtrMult * atr;
+  } else {
+    stop = (zone ? zone.top : (Number.isFinite(smc.swingHighLevel) ? smc.swingHighLevel : price + o.stopAtrMult * atr)) + buf;
+    if (Number.isFinite(smc.swingHighLevel) && smc.swingHighLevel > price) stop = Math.max(stop, smc.swingHighLevel + buf);
+    if (stop <= price) stop = price + o.stopAtrMult * atr;
+  }
+  let target: number | null;
+  if (want === "long") { const la = smc.liquidity.filter((l) => l.side === "buy" && l.price > price).sort((a, b) => a.price - b.price)[0]; target = la ? la.price : (price < smc.premium.bottom ? smc.premium.bottom : null); }
+  else { const lb = smc.liquidity.filter((l) => l.side === "sell" && l.price < price).sort((a, b) => b.price - a.price)[0]; target = lb ? lb.price : (price > smc.discount.top ? smc.discount.top : null); }
+  const risk = Math.abs(price - stop);
+  if (target != null && risk > 0 && Math.abs(target - price) < risk) target = null;
+  return { want, setup, stop, target, note: setup };
+}
+
 // ════════ Klines históricos REAIS — endpoint PÚBLICO de dados da Binance (geo-aberto). ════════
 // data-api.binance.vision = mercado spot, feito p/ histórico (sem auth/geo-block). Estruturalmente
 // idêntico ao perp p/ as majors (o backtest é de ESTRUTURA de preço), evitando bloqueio de futuros.
 const DATA = "https://data-api.binance.vision";
 const TF_MS: Record<string, number> = { "15m": 900000, "30m": 1800000, "1H": 3600000, "4H": 14400000, "1D": 86400000 };
 const TF_INT: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
-const TFS = ["15m", "30m", "1H", "4H", "1D"];
+const TFS = ["15m"]; // day-trade: só o 15m (motor SMC price-action, igual ao bot-run)
 
 async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: number): Promise<Candle[]> {
   const out: Candle[] = []; let cursor = startMs; const int = TF_INT[tf];
@@ -229,13 +271,10 @@ Deno.serve(async (req) => {
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
-  // Parâmetros da estratégia (do config atual) — o backtest reflete os ajustes reais.
-  const buyTh = Number(cfg.buy_threshold ?? 15), sellTh = Number(cfg.sell_threshold ?? 15);
-  const minVotes = Math.max(1, Math.min(Number(cfg.min_votes ?? 3), 5));
-  const ctMode = String(cfg.counter_trend ?? "tight");
-  const useAtr = !!cfg.stop_atr_on;
-  const stopMult = Number(cfg.stop_atr_mult ?? 4), stopPct = Number(cfg.stop_pct ?? 1.5), ctStopPct = Number(cfg.ct_stop_pct ?? 0.6);
+  // Parâmetros (do config atual) — o backtest reflete os ajustes reais do robô.
+  const stopMult = Number(cfg.stop_atr_mult ?? 3); // fallback do stop quando não há nível estrutural
   const trailOn = !!cfg.trail_on, trailMult = Number(cfg.trail_atr_mult ?? 3);
+  const imbalanceOn = cfg.imbalance_on !== false, imbMinPct = Number(cfg.imbalance_min_pct ?? 0);
   const riskPct = Number(cfg.risk_pct ?? 1);
   const feePct = Number(body.fee_pct ?? 0.04), slipPct = Number(body.slip_pct ?? 0.02); // taxa taker + slippage por lado (%)
   const costFrac = (feePct + slipPct) / 100;
@@ -273,18 +312,15 @@ Deno.serve(async (req) => {
 
   // Estado da simulação (uma posição por vez, como o robô por moeda).
   let pos: "long" | "short" | "flat" = "flat";
-  let entryPx = 0, stopPx = 0, peak = 0, riskDist0 = 0, entryTime = 0, entryIdx = 0, counter = false;
+  let entryPx = 0, stopPx = 0, targetPx = 0, peak = 0, riskDist0 = 0, entryTime = 0, entryIdx = 0, counter = false;
   const trades: Trade[] = [];
   let eq = 1; let peakEq = 1, maxDD = 0; const equity: { t: number; eq: number }[] = [];
   let barsInMarket = 0, evalBars = 0;
 
-  const openTrade = (side: "long" | "short", px: number, t: number, idx: number, atr: number, isCounter: boolean) => {
-    const szMult = isCounter ? 0.5 : 1;
-    const kStop = stopMult * szMult;
-    const pctUse = isCounter ? ctStopPct : stopPct;
-    riskDist0 = (useAtr && atr > 0 ? kStop * atr : px * pctUse / 100) || (px * 0.01);
-    entryPx = px; entryTime = t; entryIdx = idx; counter = isCounter; pos = side;
-    stopPx = side === "long" ? px - riskDist0 : px + riskDist0; peak = px;
+  const openTrade = (side: "long" | "short", px: number, t: number, idx: number, stop: number, target: number | null) => {
+    riskDist0 = Math.abs(px - stop) || (px * 0.01);
+    entryPx = px; entryTime = t; entryIdx = idx; counter = false; pos = side;
+    stopPx = stop; targetPx = target ?? 0; peak = px;
   };
   const closeTrade = (px: number, t: number, idx: number, reason: string) => {
     const dir = pos === "long" ? 1 : -1;
@@ -305,11 +341,13 @@ Deno.serve(async (req) => {
     if (barCloseMs <= windowStart) continue;                    // ainda no aquecimento
     if (base[t].time * 1000 >= now) break;
 
-    // 1) Gestão da posição aberta: checa o STOP (nível do ciclo anterior) contra o range da vela.
+    // 1) Gestão da posição: checa ALVO (take-profit) e STOP contra o range da vela.
     if (pos !== "flat") {
       barsInMarket++;
+      const hitTarget = targetPx > 0 && (pos === "long" ? base[t].high >= targetPx : base[t].low <= targetPx);
       const hitStop = pos === "long" ? base[t].low <= stopPx : base[t].high >= stopPx;
-      if (hitStop) { closeTrade(stopPx, barCloseMs / 1000, t, "stop"); }
+      if (hitStop) closeTrade(stopPx, barCloseMs / 1000, t, "stop");           // conservador: se stop e alvo no mesmo candle, stop primeiro
+      else if (hitTarget) closeTrade(targetPx, barCloseMs / 1000, t, "alvo");
     }
     // 2) Trailing por ATR + piso de estrutura (atualiza para o PRÓXIMO ciclo).
     // (feito depois de reavaliar o motor, que também dá o ATR/estrutura atuais — ver abaixo)
@@ -341,39 +379,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3) DECISÃO estrutural (voto/regime/gates) — fluxo neutro (não backtestável).
-    const b = (tf: string) => structuralBias(smcCache[tf] ?? null, momCache[tf] ?? 0);
-    const per = TFS.map((tf) => b(tf));
-    const b4 = per[TFS.indexOf("4H")] ?? 0, b1d = per[TFS.indexOf("1D")] ?? 0;
-    const trendBias = Math.round(b4 * 0.7 + b1d * 0.3);
-    const regime: "up" | "down" | "range" = trendBias >= 18 ? "up" : trendBias <= -18 ? "down" : "range";
-    const regimeDir = regime === "up" ? 1 : regime === "down" ? -1 : 0;
-    const longVotes = per.filter((x) => x >= buyTh).length;
-    const shortVotes = per.filter((x) => x <= -sellTh).length;
-    let want: "long" | "short" | null = (longVotes >= minVotes && longVotes > shortVotes) ? "long" : (shortVotes >= minVotes && shortVotes > longVotes) ? "short" : null;
-    const mom15 = momCache["15m"] ?? 0;
-    if (want === "long") {
-      if (mom15 < -0.003) want = null;
-      else if (smc15.price >= smc15.premium.bottom && regime !== "up") want = null;
-    } else if (want === "short") {
-      if (mom15 > 0.003) want = null;
-      else if (smc15.price <= smc15.discount.top && regime !== "down") want = null;
-    }
-    const wantDir = want === "long" ? 1 : want === "short" ? -1 : 0;
-    const counterTrend = wantDir !== 0 && regimeDir !== 0 && wantDir !== regimeDir;
-    if (counterTrend) {
-      if (ctMode === "block") want = null;
-      else if (ctMode === "always") { /* permite */ }
-      else want = null; // 'tight' sem fluxo → não entra no backtest (fluxo não é backtestável)
-    }
-    const isCounter = counterTrend && want != null;
+    // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true });
+    const want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
 
-    // 4) Reversão / entrada (fill no fechamento da vela de 15m).
+    // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
     if (pos !== "flat") {
-      if (want && want !== pos) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, smc15.atr, isCounter); }
-    } else if (want) {
-      openTrade(want, px, tsec, t, smc15.atr, isCounter);
+      if (want && want !== pos && plan.stop != null) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, plan.stop, plan.target); }
+    } else if (want && plan.stop != null) {
+      openTrade(want, px, tsec, t, plan.stop, plan.target);
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -404,7 +419,7 @@ Deno.serve(async (req) => {
     reversals: trades.filter((t) => t.reason === "reversão").length,
     bars_evaluated: evalBars,
   };
-  const params = { asset, symbol, days, min_votes: minVotes, sensibility: buyTh, counter_trend: ctMode, stop: useAtr ? `${stopMult}×ATR` : `${stopPct}%`, trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

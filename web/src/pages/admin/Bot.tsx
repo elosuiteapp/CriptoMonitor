@@ -39,6 +39,9 @@ interface Config {
   daily_loss_pct: number; // circuit breaker: perda diária máx (%)
   max_positions: number;  // máx. posições simultâneas
   cooldown_min: number;   // cooldown pós-stop (min)
+  imbalance_on: boolean;  // override: FVG novo → entra a favor
+  imbalance_min_pct: number; // tamanho mínimo do FVG (% do preço); 0 = todo FVG
+  signal_toggles: Record<string, boolean>; // sinais de fluxo ligados/desligados (ausente = ligado)
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -91,6 +94,7 @@ interface BotPosition {
   stop_px: number | null;
   ctrend: boolean | null;
   peak_px: number | null;
+  target_px: number | null;
   last_bias: number | null;
   last_conviction: number | null;
   last_decision: string | null;
@@ -105,6 +109,26 @@ interface Learning {
 }
 
 const BARS = ["15m", "1H", "4H", "1D"];
+// Sinais de FLUXO (opcionais) que o robô pode usar como confirmação — cada um liga/desliga (signal_toggles).
+// O núcleo SMC price-action (OB/FVG/liquidez/EQH-EQL/zonas/BOS-CHoCH) é sempre usado, fora desta lista.
+const FLOW_SIGNALS: { key: string; label: string }[] = [
+  { key: "cvd_div", label: "Divergência CVD (inst × varejo)" },
+  { key: "cvd", label: "CVD agregado" },
+  { key: "book_inst", label: "Book institucional (Coinbase)" },
+  { key: "book_retail", label: "Book varejo" },
+  { key: "absorb", label: "Absorção (teste de parede)" },
+  { key: "walls", label: "Paredes de baleia" },
+  { key: "book_trend", label: "Pressão do book" },
+  { key: "liqs", label: "Liquidações" },
+  { key: "gamma", label: "Put/Call Wall" },
+  { key: "gflow", label: "Fluxo de gamma (HIRO)" },
+  { key: "etf", label: "Fluxo de ETF" },
+  { key: "cb_prem", label: "Prêmio Coinbase" },
+  { key: "funding", label: "Funding (contrário)" },
+  { key: "ls_ratio", label: "Long/Short (contrário)" },
+  { key: "feargreed", label: "Fear & Greed" },
+  { key: "stables", label: "Liquidez stablecoins" },
+];
 const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
@@ -200,7 +224,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
     const conf = (c as Config) ?? null;
@@ -223,7 +247,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
@@ -528,6 +552,7 @@ export default function AdminBot() {
     if (selPos.entry_px) priceLines.push({ price: selPos.entry_px, color: "#94a3b8", title: "Entrada", dashed: true });
     if (selPos.peak_px && selPos.peak_px !== selPos.entry_px) priceLines.push({ price: selPos.peak_px, color: "#10b981", title: "Pico", dashed: true });
     if (selPos.stop_px) priceLines.push({ price: selPos.stop_px, color: "#f43f5e", title: cfg?.trail_on ? "🛑 Stop móvel" : "🛑 Stop" });
+    if (selPos.target_px) priceLines.push({ price: selPos.target_px, color: "#eab308", title: "🎯 Alvo (liquidez)", dashed: true });
   }
 
   // Posições ABERTAS agora (net por ativo) + as que estão fora do mercado.
@@ -718,29 +743,13 @@ export default function AdminBot() {
                 <input type="number" min="1" max="20" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
               </label>
             )}
-            <label className="text-xs text-muted-foreground">Sensibilidade (limiar de viés ±)
-              <input type="number" className={`${input} mt-1`} value={cfg.buy_threshold} onChange={(e) => setCfg({ ...cfg, buy_threshold: Number(e.target.value), sell_threshold: Number(e.target.value) })} />
-            </label>
-            <label className="text-xs text-muted-foreground">Consenso mínimo (TFs p/ abrir · de 5)
-              <input type="number" min="1" max="5" className={`${input} mt-1`} value={cfg.min_votes ?? 3} onChange={(e) => setCfg({ ...cfg, min_votes: Number(e.target.value) })} />
-            </label>
             {isFut && (
-              <label className="text-xs text-muted-foreground">Stop de risco (%)
-                <input type="number" step="0.1" min="0" className={`${input} mt-1`} value={cfg.stop_pct ?? 1.5} onChange={(e) => setCfg({ ...cfg, stop_pct: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Contra a tendência (4H+1D)
-                <select className={`${input} mt-1`} value={cfg.counter_trend ?? "tight"} onChange={(e) => setCfg({ ...cfg, counter_trend: e.target.value })}>
-                  <option value="always">Permitir sempre (3 de 5 basta · day-trade)</option>
-                  <option value="tight">Permitir só com fluxo forte</option>
-                  <option value="block">Bloquear (só a favor)</option>
-                </select>
-              </label>
-            )}
-            {isFut && (cfg.counter_trend ?? "tight") !== "block" && (
-              <label className="text-xs text-muted-foreground">Stop curto (contra-tendência · %)
-                <input type="number" step="0.1" min="0" className={`${input} mt-1`} value={cfg.ct_stop_pct ?? 0.6} onChange={(e) => setCfg({ ...cfg, ct_stop_pct: Number(e.target.value) })} />
+              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
+                <input type="checkbox" checked={cfg.imbalance_on !== false} onChange={(e) => setCfg({ ...cfg, imbalance_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                <span><strong>Imbalance (FVG novo) → entra a favor</strong>: sempre que aparecer um imbalance de alta/baixa no 15m, entra na direção dele (independe dos outros indicadores). Stop e alvo vêm da estrutura.</span>
+                {cfg.imbalance_on !== false && (
+                  <span className="flex items-center gap-1">· tamanho mín <input type="number" step="0.05" min="0" value={cfg.imbalance_min_pct ?? 0} onChange={(e) => setCfg({ ...cfg, imbalance_min_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% (0 = todo FVG)</span>
+                )}
               </label>
             )}
             {isFut && (
@@ -789,9 +798,23 @@ export default function AdminBot() {
               <input type="checkbox" checked={!!cfg.auto_weight} onChange={(e) => setCfg({ ...cfg, auto_weight: e.target.checked })} className="h-4 w-4 rounded border-border" />
               <span><strong>Auto-ponderar por moeda</strong>: usa o que o robô aprendeu em CADA ativo p/ pesar os sinais (estrutura pesada onde acerta, leve onde erra). Trava anti-overfit: só age com amostra ≥20, ajuste cresce devagar e limitado. <em>Deixe desligado até o aprendizado amadurecer.</em></span>
             </label>
+            {isFut && (
+              <div className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+                <div className="mb-1.5 font-semibold text-foreground">Sinais de fluxo usados (opcionais)</div>
+                <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes só CONFIRMAM/filtram — ligue/desligue o que o robô considera.</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                  {FLOW_SIGNALS.map((s) => (
+                    <label key={s.key} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={cfg.signal_toggles?.[s.key] !== false} onChange={(e) => setCfg({ ...cfg, signal_toggles: { ...(cfg.signal_toggles ?? {}), [s.key]: e.target.checked } })} className="h-3.5 w-3.5 rounded border-border" />
+                      <span>{s.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia: <strong>Smart Money + fluxo</strong>, ciente de tendência (daytrade). Estrutura SMC em <strong>5 timeframes</strong> (15m/30m/1H/4H/1D) — swing/BOS/CHoCH, zonas, order blocks e FVG. **Gatilho: consenso ≥ {cfg.min_votes ?? 3}/5** (o 15/30/1H já dispara); o <strong>4H manda na tendência</strong> (1D só reforça). <strong>Regime de gamma</strong>: γ positivo (pinning) → estrutura pesa menos e contra-tendência/reversão fica mais fácil; γ negativo → solta o trend. Fluxo que confirma/veta, por relevância: <strong>divergência de CVD (institucional × varejo)</strong>, book institucional, paredes/absorção, gamma-wall, liquidações, ETF (book varejo, CVD agregado, prêmio Coinbase e pressão-tendência entram com peso baixo — ruidosos). Zona só vira viés com confirmação. <strong>Stop de risco</strong> em toda posição; pirâmide só no lucro e a favor.</span>
