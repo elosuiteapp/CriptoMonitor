@@ -422,7 +422,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const gex = N(g.net_gex_spot);
   if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.07, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   const cbp = N(p?.coinbase_premium);
-  if (cbp != null) add("cb_prem", "Institucional", "Prêmio Coinbase", 0.02, cbp * 100 * 60, `${cbp >= 0 ? "+" : ""}${(cbp * 100).toFixed(3)}%`);
+  if (cbp != null) add("cb_prem", "Institucional", "Prêmio Coinbase", 0, cbp * 100 * 60, `${cbp >= 0 ? "+" : ""}${(cbp * 100).toFixed(3)}%`); // peso 0: aprendizado (BTC/ETH/SOL e geral) mostrou contrário/ruído — fica no painel, fora do gatilho
   const ef = N(etf.net_flow_usd), streak = N(etf.streak_days);
   if (ef != null) add("etf", "Institucional", "Fluxo de ETF", 0.07, (ef / 300e6) * 70, `${ef >= 0 ? "entrada" : "saída"} $${Math.abs(ef / 1e6).toFixed(0)}M${streak != null ? ` · ${streak}d` : ""}`);
 
@@ -606,9 +606,13 @@ Deno.serve(async (req) => {
             // Piso de estrutura: só LEVE FROUXO — nunca deixa o stop mais justo que além do swing.
             if (pos === "long") {
               if (swingLo != null && swingLo < peak) trailStop = Math.min(trailStop, swingLo - buf);
+              // Trava de breakeven: com lucro consolidado (≥1×ATR), o piso de estrutura NÃO pode deixar o
+              // stop abaixo da entrada — protege o winner de virar perda nos runners rápidos (sem swing novo).
+              if (peak - st.entry_px >= atrPx) trailStop = Math.max(trailStop, st.entry_px);
               newStop = st.stop_px == null ? trailStop : Math.max(st.stop_px, trailStop); // ratchet: só sobe
             } else {
               if (swingHi != null && swingHi > peak) trailStop = Math.max(trailStop, swingHi + buf);
+              if (st.entry_px - peak >= atrPx) trailStop = Math.min(trailStop, st.entry_px);
               newStop = st.stop_px == null ? trailStop : Math.min(st.stop_px, trailStop); // ratchet: só desce
             }
           }
