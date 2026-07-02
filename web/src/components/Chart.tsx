@@ -88,9 +88,9 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const { isDark } = useTheme();
   const { isEn, t } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
-  // Pressão do book (±2%) por JANELA — 48h (estrutura) / 12h (médio) / 30m (liquidez do
-  // momento). Vem do orderbook_imbalance (RPC, sql/071) → funciona em TODAS as moedas
-  // (o depth/heatmap só cobre BTC/ETH/SOL/BNB). Só busca com a camada de heatmap ligada.
+  // Pressão do book (±2%) em 2 janelas — 30m (média recente, do orderbook_imbalance) e 1m
+  // (AO VIVO: último snapshot do orderbook_depth de 1 min; fallback imbalance nas moedas sem
+  // depth). RPC get_book_pressure_windows (sql/093). Só busca com a camada de heatmap ligada.
   const bookPressures = useBookPressureWindows(asset, canUseLayers && layers.bookHeatmap);
 
   // Paredes FORTES (baleias): soma só as ordens grandes do book, ponderadas pela
@@ -878,14 +878,14 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       )}
       {canUseLayers && layers.bookHeatmap && (
         <>
-          {/* Pressão do book (±2%) por janela: 48h/24h/12h/6h. Cada barra = bid×ask
-              somados na janela. Compara prazos p/ ver de que lado vem ganhando força.
+          {/* Pressão do book (±2%) em 2 janelas: 30m (média recente) e 1m (AO VIVO, snapshot
+              de 1 min do depth). Cada barra = bid×ask somados na janela; o 1m reage na hora.
               SPOOFÁVEL — inclina as chances, não é previsão (daí o title). */}
           <div
             className="absolute left-2 top-2 z-10 space-y-0.5 rounded bg-background/85 px-1.5 py-1 text-[9px] text-muted-foreground"
             title={tt(
-              "Pressão do book (bid vs ask ±2% do preço) por janela de tempo. Janela curta reage mais rápido. SPOOFÁVEL — inclina as chances, não é previsão.",
-              "Order-book pressure (bid vs ask within ±2% of price) per time window. Shorter windows react faster. SPOOFABLE — tilts the odds, not a prediction.",
+              "Pressão do book (bid vs ask ±2% do preço): 30m = média dos últimos 30 minutos; 1m = book AO VIVO (atualiza a cada minuto). SPOOFÁVEL — inclina as chances, não é previsão.",
+              "Order-book pressure (bid vs ask within ±2% of price): 30m = last 30 minutes average; 1m = LIVE book (updates every minute). SPOOFABLE — tilts the odds, not a prediction.",
             )}
           >
             <div className="font-semibold text-foreground/80">{tt("pressão do book ±2%", "book pressure ±2%")}</div>
