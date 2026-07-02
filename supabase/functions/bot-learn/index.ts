@@ -18,7 +18,7 @@ const SIG_MIN = 8;                // só conta sinal/viés com |score| >= 8 (foi
 // Só sinais que o bot-run AINDA emite (computeReading). Chaves antigas presentes em logs velhos
 // (tf_30m/tf_1H/tf_4H/tf_1D, stables, ETF, prêmio Coinbase, magnet/barrier…) são de sinais
 // REMOVIDOS do robô — ficam fora do aprendizado e do painel, em todas as moedas.
-const LIVE_KEYS = new Set(["tf_15m", "book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg", "funding", "ls_ratio", "feargreed", "swing", "bos", "ob", "sweep", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
+const LIVE_KEYS = new Set(["tf_15m", "book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg", "funding", "ls_ratio", "feargreed", "swing", "bos", "ob", "sweep", "cvd", "cvd_div", "liqs", "gamma", "gflow", "vwap", "adx", "ema2050"]);
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });

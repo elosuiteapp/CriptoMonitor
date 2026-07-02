@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { UTCTimestamp } from "lightweight-charts";
 
-import BotChart, { type BotCandle, type BotMarker, type BotPriceLine } from "../../components/admin/BotChart";
+import BotChart, { type BotCandle, type BotIndicatorLine, type BotMarker, type BotPriceLine } from "../../components/admin/BotChart";
 import Markdown from "../../components/Markdown";
 import { supabase } from "../../lib/supabase";
 
@@ -126,7 +126,7 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "ls_ratio", label: "Long/Short (contrário)" },
   { key: "feargreed", label: "Fear & Greed" },
 ];
-const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções"];
+const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Técnico"];
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
@@ -264,7 +264,7 @@ export default function AdminBot() {
       const r = await invoke("candles", { instId, bar, limit: 200 }, venue === "binance" ? "binance-bot" : "okx-bot");
       if (token !== chartReqRef.current) return; // trocou de ativo/TF em voo → descarta
       const rows = ((r?.data ?? []) as string[][]).slice().reverse();
-      const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4] }));
+      const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4], volume: +x[5] || 0 }));
       setCandles(cs);
     } catch {
       if (token === chartReqRef.current) setCandles([]);
@@ -532,6 +532,56 @@ export default function AdminBot() {
         return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", kind, text };
       });
   }, [orders, candles, selInst]);
+
+  // Indicadores clássicos plotados sobre as velas — MESMA matemática que o bot-run mede
+  // (EMA 20/50, VWAP diário ancorado em 00:00 UTC, ADX/DMI 14 p/ o chip lateral × tendência).
+  const indicators = useMemo(() => {
+    const none = { lines: [] as BotIndicatorLine[], adx: null as { adx: number; dir: number } | null };
+    if (candles.length < 30) return none;
+    const ema = (len: number) => {
+      const k = 2 / (len + 1);
+      let e = 0;
+      const out: { time: UTCTimestamp; value: number }[] = [];
+      candles.forEach((c, i) => {
+        if (i < len) { e += c.close / len; if (i === len - 1) out.push({ time: c.time, value: e }); return; }
+        e = c.close * k + e * (1 - k);
+        out.push({ time: c.time, value: e });
+      });
+      return out;
+    };
+    const vwap: { time: UTCTimestamp; value: number }[] = [];
+    let day = -1, pv = 0, vv = 0;
+    for (const c of candles) {
+      const d = Math.floor(c.time / 86400);
+      if (d !== day) { day = d; pv = 0; vv = 0; } // âncora reinicia a cada dia UTC (o degrau na virada é esperado)
+      const v = c.volume ?? 0;
+      if (v > 0) { pv += ((c.high + c.low + c.close) / 3) * v; vv += v; }
+      if (vv > 0) vwap.push({ time: c.time, value: pv / vv });
+    }
+    let adx: { adx: number; dir: number } | null = null;
+    const len = 14;
+    if (candles.length >= len * 3) {
+      let trS = 0, pS = 0, mS = 0, a = 0, dxN = 0;
+      for (let i = 1; i < candles.length; i++) {
+        const up = candles[i].high - candles[i - 1].high, dn = candles[i - 1].low - candles[i].low;
+        const pdm = up > dn && up > 0 ? up : 0, mdm = dn > up && dn > 0 ? dn : 0;
+        const tr = Math.max(candles[i].high - candles[i].low, Math.abs(candles[i].high - candles[i - 1].close), Math.abs(candles[i].low - candles[i - 1].close));
+        if (i <= len) { trS += tr; pS += pdm; mS += mdm; if (i < len) continue; }
+        else { trS += tr - trS / len; pS += pdm - pS / len; mS += mdm - mS / len; }
+        const diP = trS > 0 ? (100 * pS) / trS : 0, diM = trS > 0 ? (100 * mS) / trS : 0;
+        const dx = diP + diM > 0 ? (100 * Math.abs(diP - diM)) / (diP + diM) : 0;
+        dxN++;
+        a = dxN === 1 ? dx : (a * (len - 1) + dx) / len;
+        if (i === candles.length - 1) adx = { adx: a, dir: diP > diM ? 1 : diP < diM ? -1 : 0 };
+      }
+    }
+    const lines: BotIndicatorLine[] = [
+      { id: "ema20", title: "EMA 20", color: "#f59e0b", data: ema(20) },
+      { id: "ema50", title: "EMA 50", color: "#8b5cf6", data: ema(50) },
+    ];
+    if (cfg?.bar !== "1D" && vwap.length) lines.push({ id: "vwap", title: "VWAP", color: "#22d3ee", dashed: true, width: 2, data: vwap }); // VWAP diário não faz sentido em vela diária
+    return { lines, adx };
+  }, [candles, cfg?.bar]);
 
   // Leitura da moeda em foco (cada ativo tem a sua em bot_positions); fallback ao config (BTC legado).
   const selPos = positions.find((p) => p.asset === selAsset) ?? null;
@@ -928,11 +978,19 @@ export default function AdminBot() {
             <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
             <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
             <span className="flex items-center gap-1"><span className="text-blue-500">■</span> saída</span>
+            <span className="hidden items-center gap-1 md:flex"><span className="inline-block h-0.5 w-3 rounded bg-[#f59e0b]" /> EMA20</span>
+            <span className="hidden items-center gap-1 md:flex"><span className="inline-block h-0.5 w-3 rounded bg-[#8b5cf6]" /> EMA50</span>
+            {cfg?.bar !== "1D" && <span className="hidden items-center gap-1 md:flex"><span className="inline-block h-0.5 w-3 rounded bg-[#22d3ee]" /> VWAP</span>}
+            {indicators.adx && (
+              <span className={`rounded-md border border-border px-1.5 py-0.5 font-semibold ${indicators.adx.adx < 20 ? "text-amber-500" : indicators.adx.dir >= 0 ? "text-emerald-500" : "text-rose-500"}`} title="ADX/DMI 14 — força da tendência no timeframe do gráfico (<20 = lateral/chop, onde setup de continuação apanha)">
+                ADX {Math.round(indicators.adx.adx)}{indicators.adx.adx < 20 ? " · lateral" : indicators.adx.dir >= 0 ? " · tendência ↑" : " · tendência ↓"}
+              </span>
+            )}
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
           </div>
         </div>
         {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} priceLines={priceLines} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
+          <BotChart candles={candles} markers={markers} priceLines={priceLines} lines={indicators.lines} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}

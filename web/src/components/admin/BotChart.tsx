@@ -15,6 +15,15 @@ export interface BotCandle {
   high: number;
   low: number;
   close: number;
+  volume?: number; // usado pelos indicadores (VWAP); a série de velas ignora
+}
+export interface BotIndicatorLine {
+  id: string; // estável (ema20/ema50/vwap) — reusa a série entre atualizações ao vivo
+  title: string;
+  color: string;
+  dashed?: boolean;
+  width?: 1 | 2;
+  data: { time: UTCTimestamp; value: number }[];
 }
 export interface BotMarker {
   time: UTCTimestamp;
@@ -31,10 +40,11 @@ export interface BotPriceLine {
 
 /** Gráfico de velas (Lightweight Charts) com marcadores de compra/venda do robô.
  *  Isolado/reutilizável no /admin/robo. */
-export default function BotChart({ candles, markers, priceLines = [], decimals = 2, height = 420, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; priceLines?: BotPriceLine[]; decimals?: number; height?: number; fitKey?: string }) {
+export default function BotChart({ candles, markers, priceLines = [], lines = [], decimals = 2, height = 420, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; priceLines?: BotPriceLine[]; lines?: BotIndicatorLine[]; decimals?: number; height?: number; fitKey?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lineSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const didFitRef = useRef(false);
   const { isDark } = useTheme();
@@ -64,6 +74,7 @@ export default function BotChart({ candles, markers, priceLines = [], decimals =
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      lineSeriesRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -109,6 +120,21 @@ export default function BotChart({ candles, markers, priceLines = [], decimals =
       didFitRef.current = true;
     }
   }, [candles, markers, decimals]);
+
+  // Indicadores plotados sobre as velas (EMA 20/50, VWAP diário) — séries de linha por id estável.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const map = lineSeriesRef.current;
+    const ids = new Set(lines.map((l) => l.id));
+    for (const [id, s] of map) if (!ids.has(id)) { chart.removeSeries(s); map.delete(id); }
+    for (const l of lines) {
+      let s = map.get(l.id);
+      const opts = { color: l.color, lineWidth: (l.width ?? 1) as 1 | 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+      if (!s) { s = chart.addLineSeries(opts); map.set(l.id, s); } else s.applyOptions(opts);
+      s.setData(l.data);
+    }
+  }, [lines]);
 
   // Linhas de nível da posição aberta: Entrada (tracejada), 🛑 Stop (sólida, sobe c/ o trailing), Pico.
   useEffect(() => {

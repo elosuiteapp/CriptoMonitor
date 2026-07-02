@@ -45,7 +45,7 @@ async function bnb(method: "GET" | "POST" | "DELETE", path: string, params: Reco
 
 // ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts ════════
 type Bias = "bullish" | "bearish";
-interface Candle { time: number; open: number; high: number; low: number; close: number }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
 interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
@@ -215,6 +215,43 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   return d ? Math.round(clamp(n / d)) : 0;
 }
 
+// ════════ Indicadores CLÁSSICOS (VWAP diário, ADX/DMI, EMA 20×50) — só MEDIDOS ════════
+// Fora do gatilho e do flowTilt/veto (igual funding/F&G): entram no aprendizado por moeda e,
+// se algum provar >55% com amostra, aí sim vira gate/veto. Mesma matemática plotada no gráfico.
+function emaLast(vals: number[], len: number): number | null {
+  if (vals.length < len) return null;
+  const k = 2 / (len + 1);
+  let e = vals.slice(0, len).reduce((s, v) => s + v, 0) / len; // seed = SMA dos primeiros len
+  for (let i = len; i < vals.length; i++) e = vals[i] * k + e * (1 - k);
+  return e;
+}
+// ADX/DMI (Wilder): ADX = força da tendência (sem direção); DI+ × DI− = quem manda.
+function adxDmi(cs: Candle[], len = 14): { adx: number; diP: number; diM: number } | null {
+  if (cs.length < len * 3) return null;
+  let trS = 0, pS = 0, mS = 0, adx = 0, dxN = 0;
+  for (let i = 1; i < cs.length; i++) {
+    const up = cs[i].high - cs[i - 1].high, dn = cs[i - 1].low - cs[i].low;
+    const pdm = up > dn && up > 0 ? up : 0, mdm = dn > up && dn > 0 ? dn : 0;
+    const tr = Math.max(cs[i].high - cs[i].low, Math.abs(cs[i].high - cs[i - 1].close), Math.abs(cs[i].low - cs[i - 1].close));
+    if (i <= len) { trS += tr; pS += pdm; mS += mdm; if (i < len) continue; }
+    else { trS += tr - trS / len; pS += pdm - pS / len; mS += mdm - mS / len; }
+    const diP = trS > 0 ? (100 * pS) / trS : 0, diM = trS > 0 ? (100 * mS) / trS : 0;
+    const dx = diP + diM > 0 ? (100 * Math.abs(diP - diM)) / (diP + diM) : 0;
+    dxN++;
+    adx = dxN === 1 ? dx : (adx * (len - 1) + dx) / len;
+    if (i === cs.length - 1) return { adx, diP, diM };
+  }
+  return null;
+}
+// VWAP DIÁRIO (âncora do dia UTC): preço médio ponderado por volume desde 00:00 UTC.
+function dailyVwap(cs: Candle[]): number | null {
+  if (!cs.length) return null;
+  const dayStart = Math.floor(cs[cs.length - 1].time / 86400) * 86400;
+  let pv = 0, vv = 0;
+  for (const c of cs) { const v = c.volume ?? 0; if (c.time >= dayStart && v > 0) { pv += ((c.high + c.low + c.close) / 3) * v; vv += v; } }
+  return vv > 0 ? pv / vv : null;
+}
+
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — o robô OPERA A ESTRUTURA ════════
 // Entra em zona de origem (Order Block / FVG) e o STOP + o ALVO vêm da própria estrutura:
 //  • Setup A (imbalance): FVG novo → entra a favor (independe de outros indicadores).
@@ -299,7 +336,7 @@ function buildTune(assetLearn: { key: string; label?: string; hitRate: number; n
 
 // ════════ Confluência: estrutura POR TF (15m/30m/1H) + fluxo ════════
 interface Signal { key: string; group: string; label: string; score: number; weight: number; note: string }
-interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number }
+interface TfRead { tf: string; smc: SmcResult | null; mom: number; bias: number; candles?: Candle[] }
 const TFW: Record<string, number> = { "15m": 0.16, "30m": 0.15, "1H": 0.15, "4H": 0.16, "1D": 0.16 };
 function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spot: number, cvdRetail: number | null, cvdInst: number | null, pressWin: { label: string; bid: number; ask: number }[], tune: Tune = NEUTRAL_TUNE, toggles: Record<string, boolean> = {}) {
   const sig: Signal[] = [];
@@ -403,6 +440,32 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     const liqBelow = psmc.liquidity.filter((l) => l.price < psmc.price).sort((a, b) => b.price - a.price)[0];
     const laD = liqAbove ? (liqAbove.price - psmc.price) / at : 99, lbD = liqBelow ? (psmc.price - liqBelow.price) / at : 99;
     add("sweep", "Estrutura", "Liquidez (varredura/ímã)", 0.02, laD < lbD && laD < 2 ? 40 : lbD < laD && lbD < 2 ? -40 : 0, laD < lbD && laD < 2 ? "liquidez acima (ímã de alta)" : lbD < laD && lbD < 2 ? "liquidez abaixo (ímã de baixa)" : "sem pool perto");
+  }
+
+  // ── TÉCNICO CLÁSSICO (15m) — VWAP diário, ADX/DMI 14, EMA 20×50. Só MEDIDOS (peso simbólico,
+  //    fora do gatilho e do flowTilt/veto): o aprendizado decide por moeda se algum vira gate. ──
+  const cs15 = tfReads[0]?.candles ?? [];
+  if (cs15.length >= 60 && spot > 0) {
+    const atrT = psmc?.atr || spot * 0.01;
+    const vwap = dailyVwap(cs15);
+    if (vwap != null && atrT > 0) {
+      const d = (spot - vwap) / atrT;
+      add("vwap", "Técnico", "VWAP diário (lado do preço)", 0.02, Math.sign(d) * (35 + 45 * Math.min(Math.abs(d) / 1.5, 1)), `preço ${d >= 0 ? "ACIMA" : "ABAIXO"} do VWAP (${Math.abs(d).toFixed(1)} ATR) — dia ${d >= 0 ? "comprador" : "vendedor"}`);
+    }
+    const a = adxDmi(cs15, 14);
+    if (a) {
+      const dir = a.diP > a.diM ? 1 : a.diP < a.diM ? -1 : 0;
+      const strength = Math.min(Math.max(a.adx - 15, 0) / 25, 1); // ADX 15→0 · 40+→1 (lateral ⇒ score ~0, o aprendizado ignora)
+      add("adx", "Técnico", "ADX/DMI 14 (força da tendência)", 0.02, dir * strength * 80, `ADX ${a.adx.toFixed(0)} — ${a.adx < 20 ? "LATERAL (chop)" : a.adx < 30 ? "tendência fraca" : "tendência forte"} · DI${dir >= 0 ? "+" : "−"} manda`);
+    }
+    const closes15 = cs15.map((c) => c.close);
+    const e20 = emaLast(closes15, 20), e50 = emaLast(closes15, 50);
+    if (e20 != null && e50 != null && atrT > 0) {
+      const spread = (e20 - e50) / atrT;
+      let sc = Math.sign(spread) * (30 + 50 * Math.min(Math.abs(spread) / 1.2, 1));
+      if ((spread > 0 && spot < e20) || (spread < 0 && spot > e20)) sc *= 0.5; // preço já do lado contrário da 20 → tendência enfraquecendo
+      add("ema2050", "Técnico", "EMA 20×50 (tendência curta)", 0.02, sc, `EMA20 ${spread >= 0 ? ">" : "<"} EMA50 (${Math.abs(spread).toFixed(1)} ATR) · preço ${spot >= e20 ? "acima" : "abaixo"} da EMA20`);
+    }
   }
 
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
@@ -551,14 +614,14 @@ Deno.serve(async (req) => {
       const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: instId }, bnbCreds, false);
       const lastPx = Number(tkb.body?.price) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
       const sets = await Promise.all(TFS.map((tf) => bnb("GET", "/fapi/v1/klines", { symbol: instId, interval: BNB_INTERVAL[tf] ?? "1h", limit: 300 }, bnbCreds, false)));
-      const candleRows: string[][][] = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4])]));
+      const candleRows: string[][][] = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4]), String(r[5] ?? "0")])); // [ts,o,h,l,c,volume]
       // Estrutura por TF: cada timeframe lê a sua + momentum dele.
       const tfReads: TfRead[] = TFS.map((tf, i) => {
-        const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4] }));
+        const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0 }));
         const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
         const cl = cs.map((c) => c.close);
         const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
-        return { tf, smc, mom, bias: structuralBias(smc, mom) };
+        return { tf, smc, mom, bias: structuralBias(smc, mom), candles: cs };
       });
       const primary = tfReads[0];
 
