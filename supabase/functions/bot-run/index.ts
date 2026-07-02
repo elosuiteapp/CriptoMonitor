@@ -305,7 +305,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const sig: Signal[] = [];
   // Peso final = peso base × multiplicador aprendido daquela moeda (1× quando a auto-ponderação está off).
   const add = (key: string, group: string, label: string, weight: number, score: number, note: string) => sig.push({ key, group, label, weight: Math.round(weight * (tune.sigMult[key] ?? 1) * 1000) / 1000, score: Math.round(clamp(score)), note });
-  const der = p?.derivatives ?? {}, g = p?.gamma ?? {}, etf = p?.etf_flows ?? {};
+  const der = p?.derivatives ?? {}, g = p?.gamma ?? {};
   const mom = tfReads[0]?.mom ?? 0;
   let absScore = 0;
 
@@ -386,11 +386,10 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   if (fr != null && fr !== 0) add("funding", "Fluxo", "Funding (contrário)", 0.02, -Math.sign(fr) * Math.min(Math.abs(fr) / 0.05, 1) * 55, `funding ${fr >= 0 ? "+" : ""}${fr.toFixed(4)}% — ${fr > 0 ? "longs pagam (aperto de longs)" : "shorts pagam (aperto de shorts)"}`);
   const ls = N(der.long_short_ratio);
   if (ls != null && ls > 0) add("ls_ratio", "Fluxo", "Long/Short (contrário)", 0.02, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`);
-  // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO + pólvora seca de stablecoins.
+  // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO. (Institucional macro — stablecoins/ETF/prêmio
+  // Coinbase — REMOVIDO do robô a pedido do dono: sinal lento/diário não decide trade de 15m.)
   const fng = N(p?.sentiment?.fng_value);
   if (fng != null) add("feargreed", "Sentimento", "Fear & Greed (contrário)", 0.02, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
-  const scChg = N(p?.liquidity?.stablecoin_chg_7d_pct);
-  if (scChg != null && scChg !== 0) add("stables", "Institucional", "Liquidez stablecoins (7d)", 0.02, Math.sign(scChg) * Math.min(Math.abs(scChg) / 2, 1) * 45, `stablecoins ${scChg >= 0 ? "+" : ""}${scChg.toFixed(2)}% em 7d — ${scChg >= 0 ? "pólvora seca crescendo" : "saindo do mercado"}`);
   // Diagnóstico SMC por moeda (já entram no voto via structuralBias; aqui é só p/ MEDIR cada peça).
   if (psmc) {
     const at = psmc.atr || psmc.price * 0.01;
@@ -421,10 +420,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.05, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); }
   const gex = N(g.net_gex_spot);
   if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.07, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
-  const cbp = N(p?.coinbase_premium);
-  if (cbp != null) add("cb_prem", "Institucional", "Prêmio Coinbase", 0, cbp * 100 * 60, `${cbp >= 0 ? "+" : ""}${(cbp * 100).toFixed(3)}%`); // peso 0: aprendizado (BTC/ETH/SOL e geral) mostrou contrário/ruído — fica no painel, fora do gatilho
-  const ef = N(etf.net_flow_usd), streak = N(etf.streak_days);
-  if (ef != null) add("etf", "Institucional", "Fluxo de ETF", 0.07, (ef / 300e6) * 70, `${ef >= 0 ? "entrada" : "saída"} $${Math.abs(ef / 1e6).toFixed(0)}M${streak != null ? ` · ${streak}d` : ""}`);
+  // (Prêmio Coinbase e Fluxo de ETF — institucional macro — REMOVIDOS do robô: não decidem trade de 15m.)
 
   // ── REGIME DE GAMMA (chave de modo): positivo = dealers amortecem (pinning/reversão) → estrutura
   //    falha mais e rompimento vira fade; negativo = amplifica (tendência) → solta o trend. ──
@@ -453,7 +449,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   });
 
   // Fluxo compartilhado (tudo que é "agora", não por-TF) → confirmação/veto.
-  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow", "cb_prem", "etf"]);
+  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
   let fn = 0, fd = 0;
   for (const x of sig) if (flowKeys.has(x.key) && toggles[x.key] !== false) { fn += x.score * x.weight; fd += x.weight; }
   const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;

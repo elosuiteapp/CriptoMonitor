@@ -122,14 +122,11 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "liqs", label: "Liquidações" },
   { key: "gamma", label: "Put/Call Wall" },
   { key: "gflow", label: "Fluxo de gamma (HIRO)" },
-  { key: "etf", label: "Fluxo de ETF" },
-  { key: "cb_prem", label: "Prêmio Coinbase" },
   { key: "funding", label: "Funding (contrário)" },
   { key: "ls_ratio", label: "Long/Short (contrário)" },
   { key: "feargreed", label: "Fear & Greed" },
-  { key: "stables", label: "Liquidez stablecoins" },
 ];
-const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Institucional"];
+const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções"];
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
