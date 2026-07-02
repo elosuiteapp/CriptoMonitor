@@ -42,6 +42,20 @@ async function bnb(method: "GET" | "POST" | "DELETE", path: string, params: Reco
   const r = await fetch(BNB_BASE + path + (qs ? "?" + qs : ""), { method, headers: { "X-MBX-APIKEY": c.key } });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }
+// Ordem com RECONCILIAÇÃO de -1007 ("Timeout… execution status unknown", visto 02/jul no demo):
+// envia com newClientOrderId; no timeout, consulta a ordem pelo clientId antes de tratar como
+// falha — a ordem PODE ter executado no backend (evita posição órfã / dupla entrada no retry).
+// deno-lint-ignore no-explicit-any
+async function bnbOrder(params: Record<string, string | number | boolean>, c: BnbCreds): Promise<{ status: number; body: any }> {
+  const cid = `ov${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+  let r = await bnb("POST", "/fapi/v1/order", { ...params, newClientOrderId: cid }, c, true);
+  if (r.body?.code === -1007) {
+    await new Promise((res) => setTimeout(res, 2500));
+    const q = await bnb("GET", "/fapi/v1/order", { symbol: String(params.symbol), origClientOrderId: cid }, c, true);
+    if (q.body?.orderId) r = { status: q.status, body: q.body }; // executou apesar do timeout → segue como sucesso
+  }
+  return r;
+}
 
 // ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts ════════
 type Bias = "bullish" | "bearish";
@@ -701,7 +715,7 @@ Deno.serve(async (req) => {
           const stepS = Number(lotS.stepSize) || 0.001;
           const decS = String(stepS).includes(".") ? String(stepS).replace(/0+$/, "").split(".")[1].length : 0;
           const stopQty = (Math.floor(st.pos_base_sz / stepS) * stepS).toFixed(decS);
-          const rr = await bnb("POST", "/fapi/v1/order", { symbol: instId, side: closeSide, type: "MARKET", quantity: stopQty, reduceOnly: true, newOrderRespType: "RESULT" }, bnbCreds, true);
+          const rr = await bnbOrder({ symbol: instId, side: closeSide, type: "MARKET", quantity: stopQty, reduceOnly: true, newOrderRespType: "RESULT" }, bnbCreds);
           const okk = !!rr.body?.orderId && !rr.body?.code;
           const exitPx = (Number(rr.body?.avgPrice) || (okk && rr.body?.orderId ? await fillPxOf(rr.body.orderId) : null)) ?? lastPx;
           const pnl = st.entry_px ? (exitPx - st.entry_px) * Number(stopQty) * (pos === "long" ? 1 : -1) : null;
@@ -798,7 +812,7 @@ Deno.serve(async (req) => {
         const place = async (side: "BUY" | "SELL", qty: string, reduceOnly: boolean) => {
           const params: Record<string, string | number | boolean> = { symbol: instId, side, type: "MARKET", quantity: qty, newOrderRespType: "RESULT" };
           if (reduceOnly) params.reduceOnly = true;
-          const r = await bnb("POST", "/fapi/v1/order", params, bnbCreds, true);
+          const r = await bnbOrder(params, bnbCreds);
           const okk = !!r.body?.orderId && r.body?.status !== "REJECTED" && !r.body?.code;
           let ap = Number(r.body?.avgPrice) || null;
           const fz = Number(r.body?.executedQty) || null;
