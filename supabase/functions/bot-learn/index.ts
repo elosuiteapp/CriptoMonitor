@@ -15,6 +15,10 @@ const FWD_MIN_MS = 55 * 60_000;   // janela mínima p/ o "futuro" (~1h)
 const FWD_MAX_MS = 120 * 60_000;  // e máxima (evita casar com leitura muito distante)
 const MIN_MOVE = 0.0005;          // ignora movimentos < 0,05% (ruído)
 const SIG_MIN = 8;                // só conta sinal/viés com |score| >= 8 (foi uma opinião de fato)
+// Só sinais que o bot-run AINDA emite (computeReading). Chaves antigas presentes em logs velhos
+// (tf_30m/tf_1H/tf_4H/tf_1D, stables, ETF, prêmio Coinbase, magnet/barrier…) são de sinais
+// REMOVIDOS do robô — ficam fora do aprendizado e do painel, em todas as moedas.
+const LIVE_KEYS = new Set(["tf_15m", "book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg", "funding", "ls_ratio", "feargreed", "swing", "bos", "ob", "sweep", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -108,6 +112,7 @@ Deno.serve(async (req) => {
           const sc = Number(s.score);
           if (!Number.isFinite(sc) || Math.abs(sc) < SIG_MIN) continue;
           const k = String(s.key);
+          if (!LIVE_KEYS.has(k)) continue;
           const hit = sign(sc) === moveDir ? 1 : 0;
           const e = (perSig[k] ??= { label: String(s.label ?? k), weight: Number(s.weight ?? 0), n: 0, hits: 0 });
           e.n++; e.hits += hit;

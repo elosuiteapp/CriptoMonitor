@@ -1,13 +1,13 @@
-// Edge Function: bot-run (v9) — robô FUTUROS multi-corretora: estrutura POR TIMEFRAME + fluxo.
-// venue='binance' → Binance USDⓈ-M Futures TESTNET (long+short, BTCUSDT); a OKX bloqueia
-// derivativos p/ conta BR (geo), então o executor de futuros é a Binance testnet. venue='okx'
-// = legado (spot/swap). Opera nos DOIS lados: LONG no viés de alta, SHORT no de baixa (long/
-// short/flat, alavancagem, tamanho em USDT → quantidade). Cérebro (SMC por TF + fluxo) idêntico.
-// Cada timeframe (15m/30m/1H) lê a PRÓPRIA estrutura (SMC: swing/BOS/CHoCH, OB, premium/
-// discount + momentum daquele TF) e VOTA. O robô conta o consenso (quantos TFs de compra ×
-// venda). O fluxo (book, paredes/ímã, absorção, CVD-tendência, liquidações, gamma/HIRO,
-// ETF, prêmio Coinbase) é "agora" e CONFIRMA. Só entra com consenso de TF + fluxo a favor;
-// nunca compra no premium nem na faca caindo (salvo parede grande defendendo). Demo sempre.
+// Edge Function: bot-run (v9) — robô FUTUROS multi-corretora: SMC PRICE-ACTION 15m + veto de fluxo.
+// venue='binance' → Binance USDⓈ-M Futures TESTNET (long+short); a OKX bloqueia derivativos p/
+// conta BR (geo). venue='okx' = legado (spot/swap). Opera nos DOIS lados (long/short/flat).
+// DECISÃO: a estrutura SMC do 15m (Order Block, FVG/imbalance, liquidez/EQH-EQL, BOS/CHoCH,
+// premium/discount) dispara a entrada e define stop + alvo (smcDecision). O FLUXO (book,
+// paredes/absorção, CVD, liquidações, gamma/HIRO) NÃO dispara — só VETA o setup quando muito
+// contra (flowTilt ±50); setups de imbalance ignoram o veto. Demais sinais (funding, L/S,
+// Fear&Greed, diagnósticos SMC) são registrados só p/ o APRENDIZADO medir (peso simbólico).
+// REMOVIDOS da operação: TFs maiores (30m/1H/4H/1D — saíam ≤ cara-ou-coroa no aprendizado) e
+// institucional macro (ETF, stablecoins, prêmio Coinbase — lento demais p/ trade de 15m). Demo.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -280,7 +280,7 @@ const NEUTRAL_TUNE: Tune = { sigMult: {}, structWAdj: 0, applied: [] };
 function buildTune(assetLearn: { key: string; label?: string; hitRate: number; n: number }[] | null, on: boolean): Tune {
   if (!on || !assetLearn?.length) return NEUTRAL_TUNE;
   const MIN_N = 20, K_SHRINK = 40, GAIN = 1.2, STRUCT_GAIN = 0.5;
-  const structKeys = new Set(["tf_15m", "tf_30m", "tf_1H", "tf_4H", "tf_1D", "swing", "bos"]);
+  const structKeys = new Set(["tf_15m", "swing", "bos"]); // só TFs/estrutura VIVOS (15m)
   const sigMult: Record<string, number> = {}; const applied: Tune["applied"] = [];
   let structEdge = 0, structConf = 0;
   for (const s of assetLearn) {
