@@ -22,12 +22,15 @@ _UA = "Mozilla/5.0 (compatible; OrbeView/1.0)"
 
 
 def _num(s: str) -> float | None:
-    t = re.sub(r"[^\d.,-]", "", s.replace("mi", "").replace("−", "-")).strip()
+    # "1,2 bi" = R$ 1.200 mi — a edge b3-flow já escalava; aqui NÃO escalava e dias de
+    # bilhões entravam 1000× menores na b3_investor_flow/newsletter (auditoria 02/jul).
+    bi = "bi" in s.lower()
+    t = re.sub(r"[^\d.,-]", "", s.replace("−", "-")).strip()
     if not t:
         return None
     t = t.replace(".", "").replace(",", ".")  # pt-BR: . milhar, , decimal
     try:
-        return float(t)
+        return float(t) * (1000.0 if bi else 1.0)
     except ValueError:
         return None
 

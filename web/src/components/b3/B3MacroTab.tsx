@@ -89,8 +89,10 @@ export default function B3MacroTab() {
       setMg(g);
       setLoading(false);
     });
-    // Calendário: EUA (motor do risco global) + Brasil — eventos que mexem na B3.
-    supabase.functions.invoke("econ-calendar", { body: { countries: ["USD", "BRL"] } }).then(({ data }) => {
+    // Calendário: EUA (motor do risco global). O feed (ForexFactory) NÃO cobre o Brasil —
+    // pedir "BRL" casava zero eventos e o rodapé prometia Copom/inflação que nunca vinham
+    // (auditoria 02/jul). Textos do card ajustados p/ dizer só EUA.
+    supabase.functions.invoke("econ-calendar", { body: { countries: ["USD"] } }).then(({ data }) => {
       if (alive) setEvents(((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[]);
     });
     return () => {
@@ -188,7 +190,7 @@ export default function B3MacroTab() {
         <h3 className="mb-2 text-sm font-semibold text-foreground">Mercado global</h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {d.globals.map((g) => (
-            <Cell key={g.symbol} label={g.symbol} value={fmtNum(g.price, g.symbol === "VIX" ? 2 : 0)} sub={<span className={toneCls(g.changePct)}>{fmtPct(g.changePct)}</span>} />
+            <Cell key={g.symbol} label={g.symbol} value={fmtNum(g.price, g.symbol === "VIX" || g.symbol === "Dólar" ? 2 : 0)} sub={<span className={toneCls(g.changePct)}>{fmtPct(g.changePct)}</span>} />
           ))}
         </div>
       </div>
@@ -207,12 +209,12 @@ export default function B3MacroTab() {
         <p className="mt-2 text-[11px] text-muted-foreground">Correlação de retornos diários. +1 = anda junto · −1 = anda ao contrário. Fonte: Yahoo Finance + BCB.</p>
       </div>
 
-      {/* Calendário econômico (EUA + Brasil) — eventos, por último */}
+      {/* Calendário econômico (EUA — motor do risco global) — eventos, por último */}
       <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="flex items-baseline justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-            Calendário econômico · EUA + Brasil
-            <InfoTip text="Próximos eventos que mexem na B3 (EUA e Brasil). Estrelas = impacto (★★★ alto, ★★ médio). 'prev.' = o que o mercado espera; 'ant.' = valor anterior. Em dias de Fed/Copom/CPI/inflação o macro costuma dominar o pregão." />
+            Calendário econômico · EUA
+            <InfoTip text="Próximos eventos dos EUA — o motor do risco global que dita o tom da B3 (Fed, CPI, payroll). Estrelas = impacto (★★★ alto, ★★ médio). 'est.' = o que o mercado espera; 'ant.' = valor anterior. Em dia de evento ★★★ o macro costuma dominar o pregão." />
           </h3>
           <span className="text-[11px] text-muted-foreground">eventos que mexem na B3</span>
         </div>
@@ -241,7 +243,7 @@ export default function B3MacroTab() {
             })}
           </div>
         )}
-        <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto dos EUA (motor do risco global) e do Brasil. ★★★ alto · ★★ médio. Fonte: ForexFactory.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Alto/médio impacto dos EUA (motor do risco global). Copom/eventos do Brasil ainda não têm fonte gratuita confiável — acompanhe pelo card de macro BR acima. Fonte: ForexFactory.</p>
       </div>
     </div>
   );

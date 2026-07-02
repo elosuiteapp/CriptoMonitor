@@ -61,11 +61,13 @@ export const MODULES: MarketModule[] = [
 
 export const DEFAULT_MODULE: ModuleId = "crypto";
 
-/** Módulos que o usuário PODE acessar/abrir. Os TRÊS ficam abertos (vitrine Free
- *  em B3/Forex, igual ao BTC grátis na cripto); o gating de PROFUNDIDADE (1 ativo +
- *  abas básicas no Free × tudo no pago/admin) é feito dentro de cada módulo.
- *  QUANDO a cobrança POR MÓDULO (fase 2) entrar, trocar para ler o entitlement do
- *  usuário aqui (p/ isolar alertas/notificações por módulo contratado). */
-export function accessibleModules(_isAdmin?: boolean): ModuleId[] {
-  return ["crypto", "b3", "forex"];
+/** Módulos cujas NOTIFICAÇÕES o usuário deve receber (sino/toast) — por entitlement:
+ *  admin vê tudo; senão, os módulos do plano (legados pro/expert têm modules={crypto}).
+ *  Free (modules=[]) fica sem notificações — coerente: nenhum gerador notifica Free.
+ *  OBS: isto NÃO gateia ABRIR os módulos (o switcher mostra os três como vitrine); é só
+ *  o isolamento de notificações, que estava aberto pra todos (auditoria B3 02/jul). */
+export function accessibleModules(isAdmin?: boolean, planModules?: string[]): ModuleId[] {
+  if (isAdmin) return ["crypto", "b3", "forex"];
+  const all: ModuleId[] = ["crypto", "b3", "forex"];
+  return all.filter((m) => planModules?.includes(m));
 }

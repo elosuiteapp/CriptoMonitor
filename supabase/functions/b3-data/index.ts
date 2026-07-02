@@ -14,6 +14,26 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 
+// Entitlement dos modos PAGOS (aba Dividendos: dividends/proventos): admin OU plano com
+// módulo 'b3'. Os modos de vitrine (chart/overview/macro/fundamentals/fii-detail) seguem
+// como estavam. (Auditoria 02/jul: os dados da aba paga eram puxáveis por qualquer logado.)
+async function hasB3Access(req: Request): Promise<boolean> {
+  try {
+    const { createClient } = await import("npm:@supabase/supabase-js@2");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data } = await admin.auth.getUser(token);
+    const user = data?.user;
+    if (!user) return false;
+    const { data: prof } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
+    if (prof?.role === "admin") return true;
+    const { data: sub } = await admin.from("subscriptions").select("plan:plans(modules)").eq("user_id", user.id).eq("status", "active").maybeSingle();
+    return Boolean((sub?.plan as { modules?: string[] } | null)?.modules?.includes("b3"));
+  } catch {
+    return false;
+  }
+}
+
 const SYMS: [string, string, string][] = [
   ["IBOV", "^BVSP", "index"],
   ["USD/BRL", "USDBRL=X", "currency"],
@@ -280,7 +300,8 @@ async function brazilFng(quotes: any[]) {
     ["cambio", "Porto-seguro (câmbio)", cambio],
     ["vix", "Risco global (VIX)", vixScore],
   ];
-  const components = raw.filter(([, , s]) => s != null).map(([key, label, s]) => ({ key, label, score: Math.round(s as number) }));
+  // isFinite (não só != null): uma força NaN passava o filtro e tornava o score inteiro NaN.
+  const components = raw.filter(([, , s]) => Number.isFinite(s as number)).map(([key, label, s]) => ({ key, label, score: Math.round(s as number) }));
   if (!components.length) return null;
   const score = Math.round(components.reduce((a, c) => a + c.score, 0) / components.length);
   return { score, label: fngLabel(score), components };
@@ -593,6 +614,7 @@ Deno.serve(async (req) => {
   }
 
   if (body.mode === "dividends" && body.ticker) {
+    if (!(await hasB3Access(req))) return json({ error: "Assine o módulo B3 para ver dividendos." }, 403);
     const sym = TMAP[String(body.ticker)] ?? String(body.ticker);
     const j = await yahoo(sym, String(body.range ?? "5y"), "1d", true);
     const res = j?.chart?.result?.[0];
@@ -609,6 +631,7 @@ Deno.serve(async (req) => {
   // Fonte grátis: endpoint JSON interno do StatusInvest (data-com `ed`, pagamento
   // `pd`, tipo `et`/`etd`, valor `v`). Yahoo não distingue tipo nem traz agenda.
   if (body.mode === "proventos" && body.ticker) {
+    if (!(await hasB3Access(req))) return json({ error: "Assine o módulo B3 para ver proventos." }, 403);
     const ticker = String(body.ticker).toUpperCase().replace(/[^A-Z0-9]/g, "");
     const seg = body.kind === "fii" ? "fii" : "acao";
     const url = `https://statusinvest.com.br/${seg}/companytickerprovents?ticker=${ticker}&chartProventsType=2`;

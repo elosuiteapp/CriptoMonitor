@@ -161,7 +161,7 @@ export default function Dashboard() {
   const marketRead = useMarketRead(asset, payload ?? null, bookImbalance, market === "crypto" && canSmart);
   // Isolamento de módulos: o sino só mostra notificações dos módulos que o usuário
   // acessa (hoje crypto p/ todos; B3/Forex só admin). Ver lib/modules.accessibleModules.
-  const notifModules = useMemo(() => accessibleModules(isAdmin), [isAdmin]);
+  const notifModules = useMemo(() => accessibleModules(isAdmin, plan?.modules), [isAdmin, plan?.modules]);
 
   if (planLoading) {
     return <div className="grid h-full place-items-center text-muted-foreground">{tr.header.loadingPlan}</div>;
@@ -207,13 +207,15 @@ export default function Dashboard() {
           {market === "crypto" && (
             <AssetSelector current={asset} allowed={allowed} onChange={setAsset} />
           )}
-          {market === "b3" && isAdmin && (
+          {/* Seletores por CAPACIDADE (admin OU módulo do plano) — eram isAdmin-only, deixando
+              o assinante mod_b3/mod_forex sem como trocar de ativo pelo header (auditoria 02/jul). */}
+          {market === "b3" && (isAdmin || (plan.modules?.includes("b3") ?? false)) && (
             <div className="flex items-center gap-2">
               <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_ASSETS} label="Ações" />
               <B3AssetSelector current={b3Asset} onChange={setB3Asset} items={B3_FIIS} label="FIIs" />
             </div>
           )}
-          {market === "forex" && isAdmin && <ForexAssetSelector current={fxPair} onChange={setFxPair} />}
+          {market === "forex" && (isAdmin || (plan.modules?.includes("forex") ?? false)) && <ForexAssetSelector current={fxPair} onChange={setFxPair} />}
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -248,7 +250,7 @@ export default function Dashboard() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
         {market === "b3" ? (
-          <B3Module asset={b3Asset} onAsset={setB3Asset} full={isAdmin || (plan.modules?.includes("b3") ?? false)} />
+          <B3Module asset={b3Asset} onAsset={setB3Asset} full={isAdmin || (plan.modules?.includes("b3") ?? false)} isAdmin={isAdmin} />
         ) : market === "forex" ? (
           <ForexModule pair={fxPair} onPair={setFxPair} full={isAdmin || (plan.modules?.includes("forex") ?? false)} />
         ) : market !== "crypto" ? (

@@ -11,9 +11,11 @@ interface ReportRow {
   ts: string;
 }
 
-/** Relatórios da B3 (Gemini, admin-only). O tipo segue o ativo do header: FII →
- *  relatório do mercado de FIIs (DY × CDI, P/VP, segmentos); ação/índice → pregão. */
-export default function B3ReportsTab({ asset }: { asset: string }) {
+/** Relatórios da B3 (Gemini). Assinante LÊ os relatórios do cron (RLS por módulo);
+ *  a geração MANUAL segue admin-only no servidor — o botão só aparece pro admin
+ *  (antes ficava exposto ao assinante e devolvia 403; auditoria 02/jul). O tipo segue
+ *  o ativo do header: FII → relatório do mercado de FIIs; ação/índice → pregão. */
+export default function B3ReportsTab({ asset, isAdmin = false }: { asset: string; isAdmin?: boolean }) {
   const fii = isFii(asset);
   const kind = fii ? "fii" : "acoes";
   const [rows, setRows] = useState<ReportRow[] | null>(null);
@@ -73,13 +75,15 @@ export default function B3ReportsTab({ asset }: { asset: string }) {
               : "Gerado pela IA a partir de IBOV, dólar, macro BR, Focus, cenário externo e ADRs."}
           </p>
         </div>
-        <button
-          onClick={generate}
-          disabled={generating}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {generating ? "Gerando…" : fii ? "✨ Gerar relatório de FIIs" : "✨ Gerar relatório agora"}
-        </button>
+        {isAdmin && (
+          <button
+            onClick={generate}
+            disabled={generating}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {generating ? "Gerando…" : fii ? "✨ Gerar relatório de FIIs" : "✨ Gerar relatório agora"}
+          </button>
+        )}
       </div>
 
       {error && (

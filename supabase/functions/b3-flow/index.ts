@@ -14,10 +14,13 @@ function json(status: number, body: unknown) {
 }
 
 // "34,74 mi" / "-1.063,33 mi" / "1,2 bi" → número em R$ milhões (pt-BR: . = milhar, , = decimal).
+// GOTCHA (auditoria 02/jul): a fonte usa o MENOS UNICODE − (U+2212) nos dias de saída —
+// sem a conversão, todo fluxo NEGATIVO virava null e a tendência do estrangeiro enviesava
+// pra cima (o coletor Python já convertia; a edge não).
 function parseMi(s: string): number | null {
   if (!s) return null;
   const bi = /bi/i.test(s);
-  const cleaned = s.replace(/mi|bi/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const cleaned = s.replace(/−/g, "-").replace(/mi|bi/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
   const n = Number(cleaned);
   return Number.isFinite(n) ? (bi ? n * 1000 : n) : null;
 }

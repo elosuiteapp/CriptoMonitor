@@ -16,7 +16,7 @@ import B3TabBar, { type B3TabId } from "./B3TabBar";
 /** Plataforma B3 (admin-only) — mesmo modelo do cripto (abas), contexto B3.
  *  O ativo é compartilhado: vem do seletor do header (Dashboard). 100% isolado da cripto.
  *  Medidor de viés no cabeçalho (mesmo padrão do cripto) — espelha a Leitura. */
-export default function B3Module({ asset, onAsset, full = false }: { asset: string; onAsset: (s: string) => void; full?: boolean }) {
+export default function B3Module({ asset, onAsset, full = false, isAdmin = false }: { asset: string; onAsset: (s: string) => void; full?: boolean; isAdmin?: boolean }) {
   // Free (não-admin): vitrine travada no ativo showcase — o cockpit não troca de ativo.
   const setAsset = full ? onAsset : () => {};
   const [tab, setTab] = useState<B3TabId>("cockpit");
@@ -45,7 +45,9 @@ export default function B3Module({ asset, onAsset, full = false }: { asset: stri
           <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
             🇧🇷 B3 · Ações & FIIs
             {full
-              ? <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
+              ? (isAdmin
+                ? <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">preview admin</span>
+                : <span className="rounded-full border border-emerald-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-500">módulo ativo</span>)
               : <span className="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">prévia grátis</span>}
           </h2>
           <p className="text-xs text-muted-foreground">{full
@@ -63,7 +65,7 @@ export default function B3Module({ asset, onAsset, full = false }: { asset: stri
         {tab === "fluxo" && (full ? <B3SmartMoneyTab asset={asset} /> : <LockedTab title="Fluxo & Smart Money" plan="B3" />)}
         {tab === "leitura" && (full ? <B3LeituraTab asset={asset} /> : <LockedTab title="Leitura do Mercado" plan="B3" />)}
         {tab === "macro" && <B3MacroTab />}
-        {tab === "reports" && (full ? <B3ReportsTab asset={asset} /> : <LockedTab title="Relatórios" plan="B3" />)}
+        {tab === "reports" && (full ? <B3ReportsTab asset={asset} isAdmin={isAdmin} /> : <LockedTab title="Relatórios" plan="B3" />)}
       </ErrorBoundary>
     </section>
   );

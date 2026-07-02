@@ -70,6 +70,7 @@ export default function B3CockpitTab({ asset, onAsset }: { asset: string; onAsse
       return;
     }
     let alive = true;
+    setProventos({ past: [], upcoming: [] }); // troca de FII: zera — senão o "último rendimento" do FII anterior aparece sob o novo
     fetchB3Proventos(asset, "fii").then((p) => alive && setProventos(p));
     return () => {
       alive = false;

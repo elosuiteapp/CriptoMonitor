@@ -119,8 +119,15 @@ async function generateReport(admin: any, geminiKey: string, supaUrl: string, se
       JSON.stringify(ov?.fng ?? "indisponível"),
       "Watchlist (IBOV, dólar e ações — symbol, preço, variação% do dia, volume):",
       JSON.stringify(ov?.quotes ?? []),
-      "Macro BR (selic = % ao dia; cdi = % a.a.; ipca = % no mês; ibc_br = índice de atividade com variação mensal momPct; unemployment = desemprego %; usd_brl = PTAX):",
-      JSON.stringify(ov?.macro ?? {}),
+      "Macro BR (selic_aa = Selic ANUALIZADA % a.a. — use esta, nunca a diária; cdi = % a.a.; ipca = % no mês; ibc_br = índice de atividade com variação mensal momPct; unemployment = desemprego %; usd_brl = PTAX):",
+      JSON.stringify((() => {
+        // A série BCB 11 é % AO DIA (~0,05); anualiza (252 dias úteis) antes de mandar pro
+        // modelo — sem isso a IA reportava "Selic ~0,05%" (auditoria 02/jul).
+        const m = (ov?.macro ?? {}) as Record<string, unknown>;
+        const ad = Number(m.selic);
+        const selicAa = Number.isFinite(ad) ? Math.round((Math.pow(1 + ad / 100, 252) - 1) * 10000) / 100 : null;
+        return { ...m, selic: undefined, selic_aa: selicAa };
+      })()),
       "Commodities que movem o IBOV (symbol, preço, changePct do dia, w1 = 7 dias, impacts = ações que costuma mover):",
       JSON.stringify(ov?.commodities ?? []),
       "Expectativas do mercado — Boletim Focus (mediana para o ano):",
