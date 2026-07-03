@@ -35,6 +35,7 @@ interface Config {
   ta_gate?: boolean;     // LEGADO (v16): filtro técnico — substituído pelo voto do grupo Técnico
   flow_veto?: number;    // LEGADO (v16): veto de fluxo — substituído pelo voto do grupo Fluxo
   conf_min?: number;     // motor v17: nº mínimo de grupos (de 4) votando na direção p/ executar
+  target_on?: boolean;   // take-profit estrutural (alvo na liquidez); false = sai só por stop/trailing
   max_zone_atr?: number; // qualidade 1: entrada imbalance só a ≤ X ATR da borda do FVG (0 = off)
   opp_zone_atr?: number; // qualidade 2: bloqueia entrada com FVG/OB oposto fresco a ≤ X ATR à frente (0 = off)
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
@@ -968,6 +969,10 @@ export default function AdminBot() {
                     )}
                   </label>
                   <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={cfg.target_on !== false} onChange={(e) => setCfg({ ...cfg, target_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Alvo de lucro (take-profit) na liquidez</strong>: fecha a posição na próxima poça de liquidez do plano SMC. <strong>Desligado</strong> = a posição corre só com stop + stop móvel até sair ou ser stopada (sem teto de ganho).</span>
+                  </label>
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <input type="checkbox" checked={!!cfg.trail_on} onChange={(e) => setCfg({ ...cfg, trail_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
                     <span><strong>Stop móvel (trailing) por ATR</strong>: sobe com o pico e nunca desce — trava lucro se o preço voltar. Distância <strong>k × ATR</strong> com piso de estrutura; arma só no lucro.</span>
                     {cfg.trail_on && (
@@ -1019,7 +1024,7 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia (motor v17 — confluência): o <strong>SMC do 15m arma o setup</strong> (Order Block/FVG/imbalance a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong>, R:R ≥ 1) e <strong>4 grupos votam</strong> na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) · Sentimento (F&G, L/S). <strong>Só executa com a maioria configurada a favor — toda entrada, imbalance incluído</strong> (fim do passe livre que entrava contra fluxo/EMAs/VWAP). Sinais com acerto &lt;50% no aprendizado (absorção, paredes, pressão do book, CVD agregado, funding) <strong>saíram do placar</strong> — só medidos. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing. Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>

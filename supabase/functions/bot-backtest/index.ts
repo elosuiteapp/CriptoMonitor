@@ -352,6 +352,7 @@ Deno.serve(async (req) => {
   const htfOn = !!body?.htf_filter;                                     // estrutura do 1H como FILTRO de direção (não vota — só alinha)
   const maxZoneAtr = Math.max(0, Number(body?.max_zone_atr ?? 0));      // imbalance só a ≤ X ATR da borda do FVG (0=off)
   const oppZoneAtr = Math.max(0, Number(body?.opp_zone_atr ?? 0));      // bloqueia entrada com FVG/OB oposto a ≤ X ATR à frente (0=off)
+  const useTarget = body?.use_target !== false;                         // false = SEM take-profit (sai só por stop/trailing) — pedido do dono 03/jul
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -526,10 +527,10 @@ Deno.serve(async (req) => {
     if (pos !== "flat") {
       const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
       const heldEnough = t - entryIdx >= minHold;
-      if (want && want !== pos && eStop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, eTarget); }
+      if (want && want !== pos && eStop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); }
     } else if (want && eStop != null) {
       const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
-      if (!cooling) openTrade(want, px, tsec, t, eStop, eTarget);
+      if (!cooling) openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null);
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -561,7 +562,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: useTarget ? "liquidez" : "off (sem take-profit)", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

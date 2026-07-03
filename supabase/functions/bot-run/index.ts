@@ -929,9 +929,10 @@ Deno.serve(async (req) => {
           const res = await place(openSide, qtyStr, false);
           if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
-          // STOP = nível estrutural do plano (senão entry ∓ riskDist). ALVO = próxima liquidez (take-profit).
+          // STOP = nível estrutural do plano (senão entry ∓ riskDist). ALVO = próxima liquidez (take-profit),
+          // OPCIONAL (cfg.target_on): desligado, a posição corre só com stop + trailing até sair/stopar (dono 03/jul).
           const stopPx = plan.stop != null ? plan.stop : (target === "long" ? entryPx - riskDist : entryPx + riskDist);
-          const targetPx = plan.target;
+          const targetPx = cfg.target_on !== false ? plan.target : null;
           const usedLev = equity > 0 ? realNot / equity : 0;
           const stopBasis = plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
