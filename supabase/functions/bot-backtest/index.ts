@@ -322,6 +322,11 @@ Deno.serve(async (req) => {
   // "all" = TAMBÉM filtra o setup A (imbalance/FVG) — testa a hipótese "entrada a favor de EMA/VWAP
   // ganha mais" na porta PRINCIPAL de entrada do robô.
   const taAll = String(body?.ta_scope ?? "structural") === "all";
+  // EXPERIMENTO entry_mode: "smc" (default, atual) = só setups SMC; "ta" = SÓ entrada TA-led
+  // (pullback à EMA20 em tendência EMA20>50 + lado certo do VWAP; stop estrutural, alvo liquidez);
+  // "both" = SMC + TA-led quando o SMC não tem setup. Hipótese do dono: médias/VWAP como BASE.
+  const entryMode = String(body?.entry_mode ?? "smc");
+  const entryTa = entryMode === "ta" || entryMode === "both";
   // EXPERIMENTOS DE CHURN (a matriz 90d mostrou: ~50% das saídas são reversão → o problema é
   // girar demais, não a entrada). Defaults reproduzem o comportamento atual do robô.
   const revMode = String(body?.rev_mode ?? "any");                      // any | imbalance (só FVG fresco vira a mão) | off (nunca reverte)
@@ -375,7 +380,7 @@ Deno.serve(async (req) => {
     smcCache[tf] = computeSmc(win, SWING);
     const cl = win.map((c) => c.close);
     momCache[tf] = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
-    if (tf === "15m" && taOn) { // indicadores clássicos na MESMA janela do motor (sem lookahead)
+    if (tf === "15m" && (taOn || entryTa)) { // indicadores clássicos na MESMA janela do motor (sem lookahead)
       taCache.e20 = emaLast(cl, 20); taCache.e50 = emaLast(cl, 50);
       taCache.adx = adxDmi(win, 14)?.adx ?? null;
       taCache.vwap = dailyVwap(win);
@@ -470,14 +475,43 @@ Deno.serve(async (req) => {
       if (hb !== (want === "long" ? "bullish" : "bearish")) want = null;
     }
 
+    // ENTRADA TA-LED (experimento entry_mode): pullback à EMA20 em tendência (EMA20×50) e do lado
+    // certo do VWAP — a vela TOCA a EMA20 e fecha de volta a favor. Stop estrutural, alvo liquidez.
+    let eStop = plan.stop, eTarget = plan.target, eSetup = plan.setup;
+    if (entryTa && taCache.e20 != null && taCache.e50 != null && taCache.vwap != null) {
+      let taWant: "long" | "short" | null = null;
+      if (taCache.e20 > taCache.e50 && px > taCache.vwap && base[t].low <= taCache.e20 && px > taCache.e20) taWant = "long";
+      else if (taCache.e20 < taCache.e50 && px < taCache.vwap && base[t].high >= taCache.e20 && px < taCache.e20) taWant = "short";
+      if (taWant && (entryMode === "ta" || !want)) {
+        const atr = smc15.atr || px * 0.01, buf = 0.25 * atr;
+        let taStop: number, taTarget: number | null;
+        if (taWant === "long") {
+          taStop = Number.isFinite(smc15.swingLowLevel) && smc15.swingLowLevel < px ? smc15.swingLowLevel - buf : px - stopMult * atr;
+          const la = smc15.liquidity.filter((l) => l.side === "buy" && l.price > px).sort((a, b) => a.price - b.price)[0];
+          taTarget = la ? la.price : null;
+        } else {
+          taStop = Number.isFinite(smc15.swingHighLevel) && smc15.swingHighLevel > px ? smc15.swingHighLevel + buf : px + stopMult * atr;
+          const lb = smc15.liquidity.filter((l) => l.side === "sell" && l.price < px).sort((a, b) => b.price - a.price)[0];
+          taTarget = lb ? lb.price : null;
+        }
+        const risk = Math.abs(px - taStop);
+        if (taTarget != null && risk > 0 && Math.abs(taTarget - px) < risk) taTarget = null;
+        want = taWant; eStop = taStop; eTarget = taTarget; eSetup = `ta-pullback ${taWant === "long" ? "↑" : "↓"}`;
+      } else if (entryMode === "ta") {
+        want = null; // modo "ta" puro: setups SMC não entram
+      }
+    } else if (entryMode === "ta") {
+      want = null;
+    }
+
     // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
     if (pos !== "flat") {
-      const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!plan.setup && plan.setup.startsWith("imbalance") : false;
+      const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
       const heldEnough = t - entryIdx >= minHold;
-      if (want && want !== pos && plan.stop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, plan.stop, plan.target); }
-    } else if (want && plan.stop != null) {
+      if (want && want !== pos && eStop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, eTarget); }
+    } else if (want && eStop != null) {
       const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
-      if (!cooling) openTrade(want, px, tsec, t, plan.stop, plan.target);
+      if (!cooling) openTrade(want, px, tsec, t, eStop, eTarget);
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -509,7 +543,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
