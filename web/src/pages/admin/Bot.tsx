@@ -38,7 +38,7 @@ interface Config {
   target_on?: boolean;   // take-profit estrutural (alvo na liquidez); false = sai só por stop/trailing
   tp_partial?: boolean;  // no alvo, embolsa METADE e o resto corre no trailing (stop ≥ breakeven)
   block_hours?: number[] | null; // gate de sessão GLOBAL: horas UTC sem ENTRADAS novas (saídas normais)
-  asset_overrides?: Record<string, { conf_min?: number; block_hours?: number[]; risk_mult?: number }>; // CADA MOEDA É ÚNICA: dose por ativo (sobrepõe o global)
+  asset_overrides?: Record<string, { conf_min?: number; block_hours?: number[]; risk_mult?: number; trail_floor?: string }>; // CADA MOEDA É ÚNICA: dose por ativo (sobrepõe o global)
   max_zone_atr?: number; // qualidade 1: entrada imbalance só a ≤ X ATR da borda do FVG (0 = off)
   opp_zone_atr?: number; // qualidade 2: bloqueia entrada com FVG/OB oposto fresco a ≤ X ATR à frente (0 = off)
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
@@ -991,6 +991,12 @@ export default function AdminBot() {
                         </label>
                         <label className="mt-1 block text-[10px] text-muted-foreground">Multiplicador de risco <span title="Fração do risco por trade (0.1–1) p/ ESTA moeda. BNB em 0.5 = meio risco enquanto for a pior do backtest (candidata a pausa).">ⓘ</span>
                           <input type="number" step="0.1" min="0.1" max="1" className={`${input} mt-0.5`} value={ov.risk_mult ?? 1} onChange={(e) => setOv({ risk_mult: Number(e.target.value) })} />
+                        </label>
+                        <label className="mt-1 block text-[10px] text-muted-foreground">Piso do trailing <span title="Âncora estrutural do stop móvel: largo = último swing grande (~5h; preserva runner — validado ETH/SOL) · interno = último swing de ~1h (stop acompanha a estrutura recente — validado SÓ no BNB, PF 0,97→1,15/0,73→1,06; reprovado global: corta winners do ETH).">ⓘ</span>
+                          <select className={`${input} mt-0.5`} value={ov.trail_floor ?? "structure"} onChange={(e) => setOv({ trail_floor: e.target.value })}>
+                            <option value="structure">largo (swing ~5h)</option>
+                            <option value="internal">interno (~1h, acompanha)</option>
+                          </select>
                         </label>
                       </div>
                     );

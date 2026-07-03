@@ -68,7 +68,7 @@ interface OrderBlock { top: number; bottom: number; mid: number; time: number; b
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
 
 function atrArray(candles: Candle[], len: number): number[] {
   const tr: number[] = [];
@@ -198,7 +198,7 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     swingBias: swingTrend === 1 ? "bullish" : swingTrend === -1 ? "bearish" : null,
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
-    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, premium, equilibrium, discount,
+    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, internalLowLevel: internalLow.level, internalHighLevel: internalHigh.level, premium, equilibrium, discount,
   };
 }
 
@@ -688,12 +688,24 @@ Deno.serve(async (req) => {
       const st = await loadPos(asset);
       let pos: "long" | "short" | "flat" = st.position;
 
+      // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): definida AQUI no topo p/ valer em todo
+      //    o processamento (trailing, gates, sizing). Cada moeda é única — mesmo motor, dose própria. ──
+      const ov = (((cfg.asset_overrides ?? {}) as Record<string, Record<string, unknown>>)[asset]) ?? {};
+      const riskMult = Math.min(1, Math.max(0.1, Number(ov.risk_mult ?? 1)));
+
       // Volatilidade + estrutura do ativo (TF primário) — base dos STOPS ADAPTATIVOS POR ATR.
       // O ATR mede o "ruído típico" da moeda naquele TF → o stop escala com a volatilidade dela
       // (1% do BTC ≠ 1% de um alt). swingLo/Hi = último pivô de estrutura, p/ o piso de estrutura.
+      // PISO DO TRAILING por moeda (ov.trail_floor): "structure" (default) = swing grande (~5h,
+      // largo — preserva runner; certo p/ ETH/SOL); "internal" = swing INTERNO (~1h) — o stop
+      // acompanha a estrutura recente. Matriz 03/jul: internal REPROVADO global (ETH 1,39→0,97),
+      // APROVADO só no BNB (0,97→1,15 e 0,73→1,06 nas 2 janelas).
       const atrPx = primary?.smc?.atr && primary.smc.atr > 0 ? primary.smc.atr : lastPx * 0.01;
-      const swingLo = primary?.smc && Number.isFinite(primary.smc.swingLowLevel) ? primary.smc.swingLowLevel : null;
-      const swingHi = primary?.smc && Number.isFinite(primary.smc.swingHighLevel) ? primary.smc.swingHighLevel : null;
+      const floorInternal = String(ov.trail_floor ?? "structure") === "internal";
+      const rawLo = floorInternal ? primary?.smc?.internalLowLevel : primary?.smc?.swingLowLevel;
+      const rawHi = floorInternal ? primary?.smc?.internalHighLevel : primary?.smc?.swingHighLevel;
+      const swingLo = rawLo != null && Number.isFinite(rawLo) ? rawLo : null;
+      const swingHi = rawHi != null && Number.isFinite(rawHi) ? rawHi : null;
 
       // ── TRAILING STOP por ATR (Chandelier) + PISO DE ESTRUTURA (por ciclo). A distância é
       //    k × ATR do ativo (não % fixo) → a trilha respira na volatilidade de CADA moeda. O stop
@@ -729,6 +741,21 @@ Deno.serve(async (req) => {
           await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
           if (newStop !== st.stop_px) await log("info", `[${asset}] trailing ATR: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)} · ${kTrail}×ATR ${atrPx.toFixed(2)}).`, {});
           st.stop_px = newStop; st.peak_px = peak;
+        }
+      }
+
+      // ── RE-ARMA ALVO AUSENTE: posição aberta sem take-profit (aberta na janela "sem alvo" de
+      //    03/jul, ou plano sem R:R na entrada) ganha alvo na PRÓXIMA LIQUIDEZ da direção do lucro
+      //    — mesma regra da entrada. Sem isso, o runner depende só do trailing (caso BNB 03/jul). ──
+      if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.target_px == null && cfg.target_on !== false && primary?.smc) {
+        const liq = primary.smc.liquidity;
+        const tgt = pos === "long"
+          ? liq.filter((l) => l.side === "buy" && l.price > lastPx).sort((a, b) => a.price - b.price)[0]?.price ?? null
+          : liq.filter((l) => l.side === "sell" && l.price < lastPx).sort((a, b) => b.price - a.price)[0]?.price ?? null;
+        if (tgt != null) {
+          await admin.from("bot_positions").update({ target_px: tgt }).eq("asset", asset);
+          st.target_px = tgt;
+          await log("info", `[${asset}] alvo re-armado na próxima liquidez ${tgt.toFixed(2)} (posição estava sem take-profit).`, {});
         }
       }
 
@@ -812,12 +839,6 @@ Deno.serve(async (req) => {
       //    livre que fazia vender SOL contra estrutura+VWAP+EMAs+fluxo). Substitui o veto de
       //    fluxo (flow_veto) e o filtro técnico (ta_gate) antigos — agora fluxo e técnico VOTAM.
       //    Setup segurado fica no gate/log → o aprendizado mede o que teria acontecido (shadow).
-      // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): CADA MOEDA É ÚNICA — o motor é
-      //    idêntico, mas a dose (sessão, confluência mínima, risco) vem do que o backtest validou
-      //    POR ATIVO: BTC/BNB defensivos (sessão on; BNB ½ risco), ETH/SOL livres (SMC puro é a
-      //    edge). O aprendizado (bot_learning.byAsset + bot_trades_hist) mede cada uma separada. ──
-      const ov = (((cfg.asset_overrides ?? {}) as Record<string, Record<string, unknown>>)[asset]) ?? {};
-      const riskMult = Math.min(1, Math.max(0.1, Number(ov.risk_mult ?? 1)));
       // ── GATE DE SESSÃO (sql/102): horas UTC em que o robô NÃO abre posição nova nem piramida
       //    (saídas stop/alvo/trailing seguem normais). Estudo 03/jul: 9-12h e 18-24h UTC negativos
       //    em 7-8 de 8 janelas; bloquear = 1ª variante a melhorar o agregado nas 2 janelas.

@@ -28,7 +28,7 @@ interface OrderBlock { top: number; bottom: number; mid: number; time: number; b
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
 
 function atrArray(candles: Candle[], len: number): number[] {
   const tr: number[] = [];
@@ -157,7 +157,7 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     swingBias: swingTrend === 1 ? "bullish" : swingTrend === -1 ? "bearish" : null,
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
-    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, premium, equilibrium, discount,
+    orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, internalLowLevel: internalLow.level, internalHighLevel: internalHigh.level, premium, equilibrium, discount,
   };
 }
 function structuralBias(smc: SmcResult | null, momTf: number): number {
@@ -366,7 +366,13 @@ Deno.serve(async (req) => {
   // EXPERIMENTO trail_floor: "structure" (default, atual) = piso de estrutura sempre afrouxa até o swing;
   // "smart" (Opção B) = o piso só vale enquanto o swing PROTEGE lucro (acima da entrada no long / espelho);
   // swing velho abaixo da entrada não segura mais o chandelier em runner vertical.
-  const floorSmart = String(body?.trail_floor ?? "structure") === "smart";
+  // trail_floor: "structure" (default) = piso no último SWING (len 20 ≈ 5h — lento, prende o stop
+  // perto da entrada em runner); "smart" (REPROVADO 03/jul manhã) = piso só se protege lucro;
+  // "internal" (experimento 03/jul noite) = piso no último swing INTERNO (len 5 ≈ 1h) — o stop
+  // acompanha a estrutura recente do runner (caso BNB: subiu 8 pts e o stop ficou na entrada).
+  const floorMode = String(body?.trail_floor ?? "structure");
+  const floorSmart = floorMode === "smart";
+  const floorInternal = floorMode === "internal";
   const imbalanceOn = cfg.imbalance_on !== false, imbMinPct = Number(body?.imb_min_pct ?? cfg.imbalance_min_pct ?? 0);
   const riskPct = Number(cfg.risk_pct ?? 1);
   const feePct = Number(body.fee_pct ?? 0.04), slipPct = Number(body.slip_pct ?? 0.02); // taxa taker + slippage por lado (%)
@@ -489,7 +495,7 @@ Deno.serve(async (req) => {
       const armed = pos === "long" ? peak - entryPx >= dist : entryPx - peak >= dist;
       if (armed) {
         let ts = pos === "long" ? peak - dist : peak + dist;
-        const sl = smc15.swingLowLevel, sh = smc15.swingHighLevel;
+        const sl = floorInternal ? smc15.internalLowLevel : smc15.swingLowLevel, sh = floorInternal ? smc15.internalHighLevel : smc15.swingHighLevel;
         if (pos === "long") { if (Number.isFinite(sl) && sl < peak && (!floorSmart || sl > entryPx)) ts = Math.min(ts, sl - buf); if (peak - entryPx >= atr) ts = Math.max(ts, entryPx); stopPx = Math.max(stopPx, ts); } // trava de breakeven (≥1×ATR) — igual bot-run
         else { if (Number.isFinite(sh) && sh > peak && (!floorSmart || sh < entryPx)) ts = Math.max(ts, sh + buf); if (entryPx - peak >= atr) ts = Math.min(ts, entryPx); stopPx = Math.min(stopPx, ts); }
       }
@@ -587,7 +593,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
