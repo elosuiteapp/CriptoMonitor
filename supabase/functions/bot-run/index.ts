@@ -740,7 +740,37 @@ Deno.serve(async (req) => {
         return q > 0 ? qv / q : null;
       };
       if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.stop_px && lastPx > 0) {
-        const hitTarget = st.target_px != null && st.target_px > 0 && (pos === "long" ? lastPx >= st.target_px : lastPx <= st.target_px);
+        let hitTarget = st.target_px != null && st.target_px > 0 && (pos === "long" ? lastPx >= st.target_px : lastPx <= st.target_px);
+        // ── TP PARCIAL (cfg.tp_partial): no alvo, embolsa METADE e o resto corre no trailing com
+        //    stop travado ≥ breakeven; alvo some (parcial 1×). Meia posição abaixo de minQty/
+        //    minNotional → cai no fechamento CHEIO normal (não deixa resto inexecutável). ──
+        if (hitTarget && cfg.tp_partial && st.entry_px) {
+          const infoP = await bnb("GET", "/fapi/v1/exchangeInfo", {}, bnbCreds, false);
+          const symP = (((infoP.body?.symbols as any[]) ?? []).find((s) => s.symbol === instId) ?? {});
+          const lotP = (((symP.filters as any[]) ?? []).find((f) => f.filterType === "LOT_SIZE")) ?? {};
+          const notPf = (((symP.filters as any[]) ?? []).find((f) => f.filterType === "MIN_NOTIONAL")) ?? {};
+          const stepP = Number(lotP.stepSize) || 0.001, minQtyP = Number(lotP.minQty) || 0.001, minNotP = Number(notPf.notional) || 100;
+          const decP = String(stepP).includes(".") ? String(stepP).replace(/0+$/, "").split(".")[1].length : 0;
+          const halfQty = Math.floor((st.pos_base_sz / 2) / stepP) * stepP;
+          if (halfQty >= minQtyP && halfQty * lastPx >= minNotP && st.pos_base_sz - halfQty >= minQtyP) {
+            const closeSide = pos === "long" ? "SELL" : "BUY";
+            const qtyStr = halfQty.toFixed(decP);
+            const rr = await bnbOrder({ symbol: instId, side: closeSide, type: "MARKET", quantity: qtyStr, reduceOnly: true, newOrderRespType: "RESULT" }, bnbCreds);
+            const okk = !!rr.body?.orderId && !rr.body?.code;
+            if (okk) {
+              const exitPx = (Number(rr.body?.avgPrice) || (rr.body?.orderId ? await fillPxOf(rr.body.orderId) : null)) ?? lastPx;
+              const pnl = (exitPx - st.entry_px) * halfQty * (pos === "long" ? 1 : -1);
+              const rest = Number((st.pos_base_sz - halfQty).toFixed(decP));
+              const beStop = pos === "long" ? Math.max(st.stop_px, st.entry_px) : Math.min(st.stop_px, st.entry_px);
+              await savePos(asset, instId, pos, rest, st.entry_px, st.adds, beStop, st.ctrend, st.peak_px);
+              await admin.from("bot_positions").update({ target_px: null }).eq("asset", asset);
+              await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: true, result: rr.body, pnl, note: `[${asset}] 🎯 ALVO PARCIAL (50%) @ ${st.target_px} · resto ${rest} corre no trailing (stop ≥ breakeven ${beStop.toFixed(2)}) · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` });
+              await log("trade", `[${asset}] 🎯 ALVO PARCIAL: embolsou metade (${qtyStr}) @ ${exitPx} · resto ${rest} segue no trailing com stop ${beStop.toFixed(2)} (≥ breakeven) · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}.`, {});
+              st.pos_base_sz = rest; st.stop_px = beStop; st.target_px = null;
+              hitTarget = false; // resto sem alvo — o ciclo segue normal (trailing gere a metade restante)
+            }
+          }
+        }
         const breached = hitTarget || (pos === "long" ? lastPx <= st.stop_px : lastPx >= st.stop_px);
         if (breached) {
           const closeSide = pos === "long" ? "SELL" : "BUY";

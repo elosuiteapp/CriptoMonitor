@@ -352,7 +352,8 @@ Deno.serve(async (req) => {
   const htfOn = !!body?.htf_filter;                                     // estrutura do 1H como FILTRO de direção (não vota — só alinha)
   const maxZoneAtr = Math.max(0, Number(body?.max_zone_atr ?? 0));      // imbalance só a ≤ X ATR da borda do FVG (0=off)
   const oppZoneAtr = Math.max(0, Number(body?.opp_zone_atr ?? 0));      // bloqueia entrada com FVG/OB oposto a ≤ X ATR à frente (0=off)
-  const useTarget = body?.use_target !== false;                         // false = SEM take-profit (sai só por stop/trailing) — pedido do dono 03/jul
+  const useTarget = body?.use_target !== false;                         // false = SEM take-profit (sai só por stop/trailing) — REPROVADO 03/jul (pior em 7/8 janelas)
+  const tpPartial = String(body?.tp_mode ?? "full") === "partial";      // partial = embolsa METADE no alvo, o resto corre no trailing com stop ≥ breakeven
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -409,6 +410,7 @@ Deno.serve(async (req) => {
   // Estado da simulação (uma posição por vez, como o robô por moeda).
   let pos: "long" | "short" | "flat" = "flat";
   let entryPx = 0, stopPx = 0, targetPx = 0, peak = 0, riskDist0 = 0, entryTime = 0, entryIdx = 0, counter = false;
+  let partialDone = false, partialR = 0; // TP parcial: metade já embolsada no alvo (R líquido da perna)
   let lastStopIdx = -1; // barra do último STOP (cooldown de reentrada)
   const trades: Trade[] = [];
   let eq = 1; let peakEq = 1, maxDD = 0; const equity: { t: number; eq: number }[] = [];
@@ -418,13 +420,15 @@ Deno.serve(async (req) => {
     riskDist0 = Math.abs(px - stop) || (px * 0.01);
     entryPx = px; entryTime = t; entryIdx = idx; counter = false; pos = side;
     stopPx = stop; targetPx = target ?? 0; peak = px;
+    partialDone = false; partialR = 0;
   };
   const closeTrade = (px: number, t: number, idx: number, reason: string) => {
     const dir = pos === "long" ? 1 : -1;
     const grossPx = (px - entryPx) * dir;
     const costPx = (entryPx + px) * costFrac;         // taxa+slippage nos dois lados
-    const rNet = (grossPx - costPx) / riskDist0;
-    const r = grossPx / riskDist0;
+    let rNet = (grossPx - costPx) / riskDist0;
+    let r = grossPx / riskDist0;
+    if (partialDone) { rNet = 0.5 * partialR + 0.5 * rNet; r = 0.5 * partialR + 0.5 * r; reason = `${reason}+parcial`; } // metade saiu no alvo; blend do R
     trades.push({ side: pos as "long" | "short", entryTime, entryPx, exitTime: t, exitPx: px, stopPx, riskDist: riskDist0, reason, r, rNet, bars: idx - entryIdx, counter });
     if (reason === "stop") lastStopIdx = idx;
     eq *= (1 + (riskPct / 100) * rNet);
@@ -445,7 +449,18 @@ Deno.serve(async (req) => {
       const hitTarget = targetPx > 0 && (pos === "long" ? base[t].high >= targetPx : base[t].low <= targetPx);
       const hitStop = pos === "long" ? base[t].low <= stopPx : base[t].high >= stopPx;
       if (hitStop) closeTrade(stopPx, barCloseMs / 1000, t, "stop");           // conservador: se stop e alvo no mesmo candle, stop primeiro
-      else if (hitTarget) closeTrade(targetPx, barCloseMs / 1000, t, "alvo");
+      else if (hitTarget) {
+        if (!tpPartial) closeTrade(targetPx, barCloseMs / 1000, t, "alvo");
+        else {
+          // TP PARCIAL: embolsa METADE no alvo (R líquido da perna); o resto corre no trailing,
+          // com o stop travado no mínimo em breakeven (winner não vira perda). Parcial só 1×.
+          const dir = pos === "long" ? 1 : -1;
+          partialR = ((targetPx - entryPx) * dir - (entryPx + targetPx) * costFrac) / riskDist0;
+          partialDone = true;
+          targetPx = 0;
+          stopPx = pos === "long" ? Math.max(stopPx, entryPx) : Math.min(stopPx, entryPx);
+        }
+      }
     }
     // 2) Trailing por ATR + piso de estrutura (atualiza para o PRÓXIMO ciclo).
     // (feito depois de reavaliar o motor, que também dá o ATR/estrutura atuais — ver abaixo)
@@ -562,7 +577,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: useTarget ? "liquidez" : "off (sem take-profit)", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
