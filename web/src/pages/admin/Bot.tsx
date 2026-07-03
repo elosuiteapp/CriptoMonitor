@@ -88,6 +88,7 @@ interface OrderRow {
   pnl: number | null;
   ok: boolean;
   result: { msg?: string; data?: { sMsg?: string; ordId?: string }[] } | null;
+  note: string | null;
   created_at: string;
 }
 interface LogRow {
@@ -226,9 +227,11 @@ export default function AdminBot() {
     }
   };
   const [learnAsset, setLearnAsset] = useState("all"); // moeda em foco no aprendizado (all = geral)
-  // filtros das ordens (moeda / status / período)
+  // filtros das ordens (moeda / status / origem / resultado / período)
   const [fAsset, setFAsset] = useState("all");
   const [fStatus, setFStatus] = useState("all"); // all | ok | erro
+  const [fSource, setFSource] = useState("all"); // all | auto | manual
+  const [fResult, setFResult] = useState("all"); // all | win | loss (só trades encerrados)
   const [fFrom, setFFrom] = useState("");
   const [fTo, setFTo] = useState("");
 
@@ -248,7 +251,7 @@ export default function AdminBot() {
     const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
@@ -271,7 +274,7 @@ export default function AdminBot() {
   const loadLive = useCallback(async () => {
     const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at").order("created_at", { ascending: false }).limit(30),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
@@ -657,19 +660,42 @@ export default function AdminBot() {
 
   // TRADES ENCERRADOS: cada ordem de fechamento (action='close', ok) é um round-trip fechado.
   // O PnL realizado já vem salvo; a entrada média é reconstruída: entry = saída − PnL/(tam·direção).
+  // Quando o fill não voltou (demo atrasa e salva sem preço/PnL), PAREIA com as aberturas do CICLO
+  // (mesma moeda, entre o fechamento anterior e este) → recupera entrada, duração e PnL estimado (≈).
+  // O motivo do fechamento vem da nota da ordem (stop / alvo / trailing / manual / reversão).
+  const tms = (iso: string) => new Date(iso).getTime();
   const closedTrades = orders
     .filter((o) => o.action === "close" && o.ok)
     .map((o) => {
       const asset = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "—";
       const wasLong = o.side === "sell"; // fechou LONG vendendo; SHORT comprando
       const dir = wasLong ? 1 : -1;
-      const exit = o.avg_px != null ? Number(o.avg_px) : null;
+      let exit = o.avg_px != null ? Number(o.avg_px) : null;
       const sz = o.sz != null && o.sz !== "" ? Number(o.sz) : null;
-      const pnl = o.pnl != null ? Number(o.pnl) : null;
-      const entry = exit != null && sz && pnl != null && sz !== 0 ? exit - pnl / (sz * dir) : null;
+      let pnl = o.pnl != null ? Number(o.pnl) : null;
+      // Aberturas do ciclo: mesma moeda, depois do close anterior e antes deste, no lado da posição.
+      const prevCloseT = orders.reduce((m, x) => (x.inst_id === o.inst_id && x.action === "close" && x.ok && tms(x.created_at) < tms(o.created_at) && tms(x.created_at) > m ? tms(x.created_at) : m), 0);
+      const cycleOpens = orders
+        .filter((x) => x.inst_id === o.inst_id && x.ok && x.action !== "close" && x.side !== o.side && tms(x.created_at) < tms(o.created_at) && tms(x.created_at) > prevCloseT)
+        .sort((a, b) => tms(a.created_at) - tms(b.created_at));
+      const openAt = cycleOpens[0]?.created_at ?? null;
+      let entry = exit != null && sz && pnl != null && sz !== 0 ? exit - pnl / (sz * dir) : null;
+      let estimated = false;
+      if (entry == null && cycleOpens.length) {
+        // fallback: entrada = média ponderada das aberturas do ciclo (fill do close não voltou)
+        let q = 0, qv = 0;
+        for (const x of cycleOpens) { const p = x.avg_px != null ? Number(x.avg_px) : null; const xs = x.sz ? Number(x.sz) : null; if (p && xs) { q += xs; qv += p * xs; } }
+        if (q > 0) { entry = qv / q; estimated = true; }
+      }
+      if (exit == null && entry != null && pnl != null && sz) { exit = entry + pnl / (sz * dir); estimated = true; }
+      if (pnl == null && entry != null && exit != null && sz) { pnl = (exit - entry) * sz * dir; estimated = true; }
       const pct = entry && entry !== 0 && exit != null ? ((exit - entry) / entry) * 100 * dir : null;
-      return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at };
+      const durMin = openAt ? Math.max(0, Math.round((tms(o.created_at) - tms(openAt)) / 60000)) : null;
+      const note = o.note ?? "";
+      const reason = /ALVO/i.test(note) ? "🎯 alvo" : /STOP MÓVEL/i.test(note) ? "🛡️ trailing" : /STOP/i.test(note) ? "🛑 stop" : /manual/i.test(note) ? "✋ manual" : o.source === "auto" ? "↩ reversão" : "✋ manual";
+      return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at, openAt, durMin, reason, estimated, note };
     });
+  const durLabel = (m: number | null) => (m == null ? "—" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`);
   // Saldo do dia/mês (RPC bot_pnl_summary, fuso BRT): mês vigente por padrão; seletor navega meses.
   const MONTHS_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
   const monthLabel = (ym: string) => { const [y, m] = ym.split("-"); return `${MONTHS_PT[Number(m) - 1] ?? m}/${y.slice(2)}`; };
@@ -685,28 +711,43 @@ export default function AdminBot() {
     if (fTo && t > new Date(fTo + "T23:59:59").getTime()) return false;
     return true;
   };
+  const matchSource = (src: string) => fSource === "all" || (fSource === "auto" ? src === "auto" : src !== "auto");
   const matchOrder = (o: OrderRow) =>
     (fAsset === "all" || assetOf(o) === fAsset) &&
     (fStatus === "all" || (fStatus === "ok" ? o.ok : !o.ok)) &&
+    matchSource(o.source) &&
     inPeriod(o.created_at);
   const filtered = orders.filter(matchOrder);
   const botOrders = filtered.filter((o) => o.source === "auto");
   const manualOrders = filtered.filter((o) => o.source !== "auto");
-  const sumPnl = (rows: OrderRow[]) => rows.reduce((s, o) => s + (o.pnl ?? 0), 0);
-  const hasPnl = (rows: OrderRow[]) => rows.some((o) => o.pnl != null);
-  const fClosedTrades = closedTrades.filter((t) => (fAsset === "all" || t.asset === fAsset) && inPeriod(t.at));
-  const fRealized = fClosedTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const fWins = fClosedTrades.filter((t) => (t.pnl ?? 0) > 0).length;
-  const fScored = fClosedTrades.filter((t) => t.pnl != null).length;
-  const filtersOn = fAsset !== "all" || fStatus !== "all" || !!fFrom || !!fTo;
-  const clearFilters = () => { setFAsset("all"); setFStatus("all"); setFFrom(""); setFTo(""); };
+  const fClosedTrades = closedTrades.filter((t) =>
+    (fAsset === "all" || t.asset === fAsset) && matchSource(t.source) && inPeriod(t.at) &&
+    (fResult === "all" || (t.pnl != null && (fResult === "win" ? t.pnl > 0 : t.pnl < 0))));
+  // Estatísticas do filtro atual (só trades com resultado): win rate, profit factor, extremos, por moeda.
+  const scored = fClosedTrades.filter((t) => t.pnl != null);
+  const fRealized = scored.reduce((s, t) => s + (t.pnl as number), 0);
+  const fWins = scored.filter((t) => (t.pnl as number) > 0).length;
+  const fScored = scored.length;
+  const grossWin = scored.reduce((s, t) => s + Math.max(0, t.pnl as number), 0);
+  const grossLoss = scored.reduce((s, t) => s + Math.max(0, -(t.pnl as number)), 0);
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : null;
+  const avgWin = fWins > 0 ? grossWin / fWins : null;
+  const avgLoss = fScored - fWins > 0 ? grossLoss / (fScored - fWins) : null;
+  const bestTrade = scored.length ? scored.reduce((a, b) => ((a.pnl as number) >= (b.pnl as number) ? a : b)) : null;
+  const worstTrade = scored.length ? scored.reduce((a, b) => ((a.pnl as number) <= (b.pnl as number) ? a : b)) : null;
+  const pnlByAsset = [...scored.reduce((m, t) => m.set(t.asset, (m.get(t.asset) ?? 0) + (t.pnl as number)), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
+  const filtersOn = fAsset !== "all" || fStatus !== "all" || fSource !== "all" || fResult !== "all" || !!fFrom || !!fTo;
+  const clearFilters = () => { setFAsset("all"); setFStatus("all"); setFSource("all"); setFResult("all"); setFFrom(""); setFTo(""); };
+  // Períodos rápidos (hoje / 7d / 30d) — datas locais no formato do input date.
+  const dstr = (d: Date) => d.toLocaleDateString("en-CA");
+  const quickRange = (days: number) => { const to = new Date(); const from = new Date(); from.setDate(to.getDate() - (days - 1)); setFFrom(dstr(from)); setFTo(dstr(to)); };
 
   // Tabela de execuções reusável (mesmo layout p/ robô e manual).
   const ordersTable = (rows: OrderRow[]) => (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-          <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Tipo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Situação</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
+          <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Tipo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Situação</th><th className="px-4 py-2 font-medium">Por</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
         </thead>
         <tbody>
           {rows.map((o) => {
@@ -717,7 +758,7 @@ export default function AdminBot() {
               <tr key={o.id} className="border-b border-border last:border-0">
                 <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                 <td className="px-4 py-2 font-semibold text-foreground">{a ?? "—"}</td>
-                <td className="px-4 py-2 text-[11px] text-muted-foreground">{tipo}</td>
+                <td className="px-4 py-2 text-[11px] text-muted-foreground" title={o.note ?? undefined}>{tipo}{o.note ? " ℹ️" : ""}</td>
                 <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
                 <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
                 <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, pxDec(o.avg_px)) : "—"}</td>
@@ -734,6 +775,7 @@ export default function AdminBot() {
                       : <span className="text-[10px] text-muted-foreground">encerrada</span>;
                   })()}
                 </td>
+                <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{o.source === "auto" ? "robô" : "manual"}</span></td>
                 <td className="whitespace-nowrap px-4 py-2 text-right">
                   {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
                     <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
@@ -1168,9 +1210,9 @@ export default function AdminBot() {
       )}
       </>)}
 
-      {/* Ordens (trades, robô, manuais, diário) · aba Ordens */}
+      {/* Ordens (trades, execuções, diário) · aba Ordens */}
       {tab === "ordens" && (<>
-      {/* Filtros das ordens — moeda / status / período (valem p/ trades e p/ as ordens abaixo). */}
+      {/* Filtros — moeda / origem / resultado / status / período (valem p/ KPIs, trades e execuções). */}
       <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
         <div className="flex flex-wrap items-end gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Filtros</span>
@@ -1178,6 +1220,20 @@ export default function AdminBot() {
             <select value={fAsset} onChange={(e) => setFAsset(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
               <option value="all">Todas</option>
               {orderAssets.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Origem
+            <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+              <option value="all">Todas</option>
+              <option value="auto">Robô</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado
+            <select value={fResult} onChange={(e) => setFResult(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+              <option value="all">Todos</option>
+              <option value="win">No verde</option>
+              <option value="loss">No vermelho</option>
             </select>
           </label>
           <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Status
@@ -1193,10 +1249,40 @@ export default function AdminBot() {
           <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Até
             <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
           </label>
+          <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
+            <button onClick={() => quickRange(1)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">Hoje</button>
+            <button onClick={() => quickRange(7)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">7d</button>
+            <button onClick={() => quickRange(30)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">30d</button>
+            <button onClick={() => { setFFrom(""); setFTo(""); }} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">Tudo</button>
+          </div>
           {filtersOn && (
             <button onClick={clearFilters} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Limpar filtros</button>
           )}
-          <span className="ml-auto text-[11px] text-muted-foreground">{filtered.length} de {orders.length} ordens{filtersOn ? " (filtradas)" : ""}</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">{fClosedTrades.length} trades · {filtered.length} ordens{filtersOn ? " (filtradas)" : ""}</span>
+        </div>
+      </div>
+
+      {/* KPIs do período filtrado — desempenho REALIZADO (trades que já fecharam) */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado (período)</div>
+          <div className={`num text-lg font-bold ${fRealized >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fRealized >= 0 ? "+" : ""}{num(fRealized)} {quote}</div>
+          <div className="text-[11px] text-muted-foreground">{fScored} trades com resultado</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Acerto</div>
+          <div className="num text-lg font-bold text-foreground">{fScored > 0 ? `${Math.round((fWins / fScored) * 100)}%` : "—"}</div>
+          <div className="text-[11px] text-muted-foreground">{fWins} verdes · {fScored - fWins} vermelhos</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Soma dos ganhos ÷ soma das perdas. Acima de 1 = estratégia lucrativa no período.">Profit factor</div>
+          <div className={`num text-lg font-bold ${profitFactor == null ? "text-foreground" : profitFactor >= 1 ? "text-emerald-500" : "text-rose-500"}`}>{profitFactor != null ? profitFactor.toFixed(2) : fScored > 0 ? "∞" : "—"}</div>
+          <div className="text-[11px] text-muted-foreground">{avgWin != null || avgLoss != null ? <>ganho médio {avgWin != null ? `+${num(avgWin)}` : "—"} · perda média {avgLoss != null ? `−${num(avgLoss)}` : "—"}</> : "sem trades no período"}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Melhor · pior trade</div>
+          <div className="num text-lg font-bold"><span className="text-emerald-500">{bestTrade?.pnl != null ? `+${num(bestTrade.pnl)}` : "—"}</span> <span className="text-muted-foreground">·</span> <span className="text-rose-500">{worstTrade?.pnl != null && worstTrade.pnl < 0 ? num(worstTrade.pnl) : "—"}</span></div>
+          <div className="text-[11px] text-muted-foreground">{bestTrade ? `${bestTrade.asset} ${bestTrade.wasLong ? "long" : "short"}` : "—"} · {worstTrade && worstTrade.pnl != null && worstTrade.pnl < 0 ? `${worstTrade.asset} ${worstTrade.wasLong ? "long" : "short"}` : "—"}</div>
         </div>
       </div>
 
@@ -1204,8 +1290,12 @@ export default function AdminBot() {
       <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">Trades encerrados <span className="text-xs font-normal text-muted-foreground">· receita realizada</span></h2>
-          {fScored > 0 && (
-            <span className="text-[11px] text-muted-foreground">{fWins}/{fScored} no verde · resultado <span className={`num font-semibold ${fRealized >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fRealized >= 0 ? "+" : ""}{num(fRealized)} {quote}</span></span>
+          {pnlByAsset.length > 0 && (
+            <span className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              {pnlByAsset.map(([a, v]) => (
+                <span key={a} className={`num rounded px-1.5 py-0.5 font-semibold ${v >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400"}`}>{a} {v >= 0 ? "+" : ""}{num(v)}</span>
+              ))}
+            </span>
           )}
         </div>
         {fClosedTrades.length === 0 ? (
@@ -1214,51 +1304,42 @@ export default function AdminBot() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Fechado</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Direção</th><th className="px-4 py-2 text-right font-medium">Entrada → Saída</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Por</th></tr>
+                <tr><th className="px-4 py-2 font-medium">Fechado</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Direção</th><th className="px-4 py-2 text-right font-medium">Entrada → Saída</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Duração</th><th className="px-4 py-2 font-medium">Motivo</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Por</th></tr>
               </thead>
               <tbody>
                 {fClosedTrades.map((t) => {
-                  const pdec = pxDec(t.exit);
+                  const pdec = pxDec(t.exit ?? t.entry);
                   return (
                     <tr key={t.id} className="border-b border-border last:border-0">
                       <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(t.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="px-4 py-2 font-semibold text-foreground">{t.asset}</td>
                       <td className="px-4 py-2"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.wasLong ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{t.wasLong ? "long" : "short"}</span></td>
-                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground">{t.entry != null ? num(t.entry, pdec) : "—"} <span className="text-muted-foreground/50">→</span> <span className="text-foreground">{t.exit != null ? num(t.exit, pdec) : "—"}</span></td>
+                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground" title={t.estimated ? "≈ reconstruído da ordem de abertura (o fill do fechamento não retornou da corretora)" : undefined}>{t.estimated ? "≈ " : ""}{t.entry != null ? num(t.entry, pdec) : "—"} <span className="text-muted-foreground/50">→</span> <span className="text-foreground">{t.exit != null ? num(t.exit, pdec) : "—"}</span></td>
                       <td className="num px-4 py-2 text-right text-foreground">{t.sz != null ? num(t.sz, 6) : "—"}</td>
-                      <td className="num whitespace-nowrap px-4 py-2 text-right">{t.pnl != null ? <span className={`font-semibold ${t.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{t.pnl >= 0 ? "+" : ""}{num(t.pnl)} {quote}{t.pct != null && <span className="ml-1 text-[11px] font-normal">({t.pct >= 0 ? "+" : ""}{t.pct.toFixed(2)}%)</span>}</span> : <span className="text-muted-foreground">—</span>}</td>
+                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground" title={t.openAt ? `aberto ${new Date(t.openAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : undefined}>{durLabel(t.durMin)}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-[11px] text-muted-foreground" title={t.note || undefined}>{t.reason}</td>
+                      <td className="num whitespace-nowrap px-4 py-2 text-right">{t.pnl != null ? <span className={`font-semibold ${t.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`} title={t.estimated ? "≈ estimado (reconstruído da abertura)" : undefined}>{t.estimated ? "≈ " : ""}{t.pnl >= 0 ? "+" : ""}{num(t.pnl)} {quote}{t.pct != null && <span className="ml-1 text-[11px] font-normal">({t.pct >= 0 ? "+" : ""}{t.pct.toFixed(2)}%)</span>}</span> : <span className="text-muted-foreground" title="sem preço de entrada nem PnL salvos — não deu pra reconstruir">—</span>}</td>
                       <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${t.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{t.source === "auto" ? "robô" : "manual"}</span></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <p className="px-4 py-2 text-[10px] text-muted-foreground">Cada linha é um trade que <strong>já fechou</strong> (abriu → fechou). Entrada = preço médio reconstruído do resultado; % = variação do preço a favor da posição.</p>
+            <p className="px-4 py-2 text-[10px] text-muted-foreground">Cada linha é um trade que <strong>já fechou</strong> (abriu → fechou). Entrada = preço médio (reconstruído do PnL; com <strong>≈</strong> = recuperado da ordem de abertura quando a corretora não devolveu o fill). <strong>Motivo</strong>: 🎯 alvo na liquidez · 🛡️ trailing (lucro travado) · 🛑 stop · ↩ reversão do robô · ✋ manual.</p>
           </div>
         )}
       </div>
 
-      {/* Ordens do robô — só as execuções automáticas (source=auto). */}
+      {/* Execuções — TODAS as ordens enviadas (robô + manuais numa tabela só; use o filtro Origem). */}
       <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">robô</span>Ordens do robô</h2>
-          <span className="text-[11px] text-muted-foreground">{botOrders.length} ordens{hasPnl(botOrders) ? <> · receita realizada <span className={`num font-semibold ${sumPnl(botOrders) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{sumPnl(botOrders) >= 0 ? "+" : ""}{num(sumPnl(botOrders))} {quote}</span></> : null}</span>
+          <h2 className="text-sm font-semibold text-foreground">Execuções <span className="text-xs font-normal text-muted-foreground">· toda ordem enviada à corretora</span></h2>
+          <span className="text-[11px] text-muted-foreground">{botOrders.length} do robô · {manualOrders.length} manuais</span>
         </div>
-        {botOrders.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.some((o) => o.source === "auto") ? "Nenhuma ordem do robô no filtro atual." : "O robô ainda não enviou ordens."}</p>
-        ) : ordersTable(botOrders)}
-        <p className="px-4 py-2 text-[10px] text-muted-foreground"><strong>Receita</strong> só aparece na <strong>Saída</strong> (o lucro/prejuízo é do trade inteiro, não de cada compra/venda). PnL ao vivo das posições abertas está em “Posições abertas”.</p>
-      </div>
-
-      {/* Ordens manuais — só as que você enviou à mão (source=manual). */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">manual</span>Ordens manuais</h2>
-          <span className="text-[11px] text-muted-foreground">{manualOrders.length} ordens{hasPnl(manualOrders) ? <> · receita realizada <span className={`num font-semibold ${sumPnl(manualOrders) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{sumPnl(manualOrders) >= 0 ? "+" : ""}{num(sumPnl(manualOrders))} {quote}</span></> : null}</span>
-        </div>
-        {manualOrders.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.some((o) => o.source !== "auto") ? "Nenhuma ordem manual no filtro atual." : "Você ainda não enviou nenhuma ordem manual (use “Ordem manual (avançado)” no fim da página)."}</p>
-        ) : ordersTable(manualOrders)}
+        {filtered.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.length ? "Nenhuma ordem no filtro atual." : "Nenhuma ordem enviada ainda."}</p>
+        ) : ordersTable(filtered)}
+        <p className="px-4 py-2 text-[10px] text-muted-foreground"><strong>Resultado</strong> só aparece na <strong>Saída</strong> (o lucro/prejuízo é do trade inteiro, não de cada compra/venda) — o consolidado está em “Trades encerrados” acima. Passe o mouse no <strong>Tipo</strong> pra ver a nota da ordem. PnL ao vivo das posições abertas está em “Posições abertas”.</p>
       </div>
 
       </>)}
