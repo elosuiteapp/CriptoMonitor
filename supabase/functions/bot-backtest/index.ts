@@ -354,6 +354,9 @@ Deno.serve(async (req) => {
   const oppZoneAtr = Math.max(0, Number(body?.opp_zone_atr ?? 0));      // bloqueia entrada com FVG/OB oposto a ≤ X ATR à frente (0=off)
   const useTarget = body?.use_target !== false;                         // false = SEM take-profit (sai só por stop/trailing) — REPROVADO 03/jul (pior em 7/8 janelas)
   const tpPartial = String(body?.tp_mode ?? "full") === "partial";      // partial = embolsa METADE no alvo, o resto corre no trailing com stop ≥ breakeven
+  // FILTRO DE SESSÃO (experimento): horas UTC em que o robô NÃO ABRE posição nova (saídas seguem
+  // normais). Ex.: [0,1,2,3] = sem entradas na madrugada UTC. Vazio = sem filtro (baseline).
+  const blockHours = new Set<number>(Array.isArray(body?.block_hours) ? (body.block_hours as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : []);
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -539,13 +542,14 @@ Deno.serve(async (req) => {
     }
 
     // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
+    const hourBlocked = blockHours.size > 0 && blockHours.has(new Date(barCloseMs).getUTCHours());
     if (pos !== "flat") {
       const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
       const heldEnough = t - entryIdx >= minHold;
-      if (want && want !== pos && eStop != null && canRev && heldEnough) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); }
+      if (want && want !== pos && eStop != null && canRev && heldEnough && !hourBlocked) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); }
     } else if (want && eStop != null) {
       const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
-      if (!cooling) openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null);
+      if (!cooling && !hourBlocked) openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null);
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -575,9 +579,15 @@ Deno.serve(async (req) => {
     stops: trades.filter((t) => t.reason === "stop").length,
     reversals: trades.filter((t) => t.reason === "reversão").length,
     bars_evaluated: evalBars,
+    // Estudo de sessão: desempenho por bloco de 3h UTC da ENTRADA (n, win%, soma de R líquido).
+    by_hour3: Array.from({ length: 8 }, (_, b) => {
+      const inB = trades.filter((t) => Math.floor(new Date(t.entryTime * 1000).getUTCHours() / 3) === b);
+      const w = inB.filter((t) => t.rNet > 0).length;
+      return { h: `${b * 3}-${b * 3 + 3}`, n: inB.length, win: inB.length ? Math.round((w / inB.length) * 100) : 0, sum_r: Math.round(inB.reduce((s, t) => s + t.rNet, 0) * 100) / 100 };
+    }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

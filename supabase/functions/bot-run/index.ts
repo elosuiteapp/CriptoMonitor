@@ -812,6 +812,15 @@ Deno.serve(async (req) => {
       //    livre que fazia vender SOL contra estrutura+VWAP+EMAs+fluxo). Substitui o veto de
       //    fluxo (flow_veto) e o filtro técnico (ta_gate) antigos — agora fluxo e técnico VOTAM.
       //    Setup segurado fica no gate/log → o aprendizado mede o que teria acontecido (shadow).
+      // ── GATE DE SESSÃO (sql/102): horas UTC em que o robô NÃO abre posição nova nem piramida
+      //    (saídas stop/alvo/trailing seguem normais). Estudo 03/jul: 9-12h e 18-24h UTC negativos
+      //    em 7-8 de 8 janelas; bloquear = 1ª variante a melhorar o agregado nas 2 janelas. ──
+      const blockHours: number[] = Array.isArray(cfg.block_hours) ? (cfg.block_hours as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : [];
+      const hourNow = new Date().getUTCHours();
+      if (want && blockHours.includes(hourNow)) {
+        gate = `sessão bloqueada (${hourNow}h UTC — janela historicamente negativa) — segura o setup`;
+        want = null;
+      }
       const confMin = Math.min(4, Math.max(1, Number(cfg.conf_min ?? 3)));
       let confVotes: { for: number; against: number } | null = null;
       if (want) {
