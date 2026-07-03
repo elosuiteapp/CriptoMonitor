@@ -172,6 +172,9 @@ export default function AdminBot() {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [totalEq, setTotalEq] = useState<string | null>(null);
   const [candles, setCandles] = useState<BotCandle[]>([]);
+  // Ordens SÓ pro gráfico: por moeda em foco + janela das velas (a lista `orders` da aba Ordens
+  // é limit(30) misturando as 4 moedas → a entrada da posição atual some dos markers).
+  const [chartOrders, setChartOrders] = useState<OrderRow[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
@@ -269,8 +272,23 @@ export default function AdminBot() {
       const rows = ((r?.data ?? []) as string[][]).slice().reverse();
       const cs: BotCandle[] = rows.map((x) => ({ time: Math.floor(Number(x[0]) / 1000) as UTCTimestamp, open: +x[1], high: +x[2], low: +x[3], close: +x[4], volume: +x[5] || 0 }));
       setCandles(cs);
+      // Ordens da moeda em foco dentro da janela do gráfico (a lista geral limit(30) não cobre).
+      if (cs.length) {
+        const sinceIso = new Date(cs[0].time * 1000).toISOString();
+        const { data: ord } = await supabase
+          .from("bot_orders")
+          .select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, created_at")
+          .eq("inst_id", instId)
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: true })
+          .limit(300);
+        if (token !== chartReqRef.current) return; // trocou em voo → descarta
+        setChartOrders((ord as OrderRow[] | null) ?? []);
+      } else {
+        setChartOrders([]);
+      }
     } catch {
-      if (token === chartReqRef.current) setCandles([]);
+      if (token === chartReqRef.current) { setCandles([]); setChartOrders([]); }
     }
   }, []);
 
@@ -283,6 +301,7 @@ export default function AdminBot() {
   useEffect(() => {
     if (!cfg || !connected) return;
     setCandles([]);
+    setChartOrders([]);
     loadChart(selInst, cfg.bar, cfg.venue);
     const id = setInterval(() => loadChart(selInst, cfg.bar, cfg.venue), 20000);
     return () => clearInterval(id);
@@ -524,7 +543,7 @@ export default function AdminBot() {
   const markers = useMemo<BotMarker[]>(() => {
     if (!candles.length) return [];
     const times = candles.map((c) => c.time);
-    return orders
+    return chartOrders
       .filter((o) => o.ok && o.side && o.inst_id === selInst)
       .map((o) => {
         const t = Math.floor(new Date(o.created_at).getTime() / 1000);
@@ -534,7 +553,7 @@ export default function AdminBot() {
         const text = kind === "exit" ? "Saída" : kind === "add" ? "+" : o.side === "buy" ? "C" : "V";
         return { time: bar as UTCTimestamp, side: o.side as "buy" | "sell", kind, text };
       });
-  }, [orders, candles, selInst]);
+  }, [chartOrders, candles, selInst]);
 
   // Indicadores clássicos plotados sobre as velas — MESMA matemática que o bot-run mede
   // (EMA 20/50, VWAP diário ancorado em 00:00 UTC, ADX/DMI 14 p/ o chip lateral × tendência).

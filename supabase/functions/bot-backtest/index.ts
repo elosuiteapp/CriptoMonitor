@@ -331,6 +331,10 @@ Deno.serve(async (req) => {
   // Parâmetros (do config atual; body pode SOBRESCREVER p/ experimentos A/B).
   const stopMult = Number(cfg.stop_atr_mult ?? 3); // fallback do stop quando não há nível estrutural
   const trailOn = !!cfg.trail_on, trailMult = Number(body?.trail_atr_mult ?? cfg.trail_atr_mult ?? 3);
+  // EXPERIMENTO trail_floor: "structure" (default, atual) = piso de estrutura sempre afrouxa até o swing;
+  // "smart" (Opção B) = o piso só vale enquanto o swing PROTEGE lucro (acima da entrada no long / espelho);
+  // swing velho abaixo da entrada não segura mais o chandelier em runner vertical.
+  const floorSmart = String(body?.trail_floor ?? "structure") === "smart";
   const imbalanceOn = cfg.imbalance_on !== false, imbMinPct = Number(body?.imb_min_pct ?? cfg.imbalance_min_pct ?? 0);
   const riskPct = Number(cfg.risk_pct ?? 1);
   const feePct = Number(body.fee_pct ?? 0.04), slipPct = Number(body.slip_pct ?? 0.02); // taxa taker + slippage por lado (%)
@@ -440,8 +444,8 @@ Deno.serve(async (req) => {
       if (armed) {
         let ts = pos === "long" ? peak - dist : peak + dist;
         const sl = smc15.swingLowLevel, sh = smc15.swingHighLevel;
-        if (pos === "long") { if (Number.isFinite(sl) && sl < peak) ts = Math.min(ts, sl - buf); if (peak - entryPx >= atr) ts = Math.max(ts, entryPx); stopPx = Math.max(stopPx, ts); } // trava de breakeven (≥1×ATR) — igual bot-run
-        else { if (Number.isFinite(sh) && sh > peak) ts = Math.max(ts, sh + buf); if (entryPx - peak >= atr) ts = Math.min(ts, entryPx); stopPx = Math.min(stopPx, ts); }
+        if (pos === "long") { if (Number.isFinite(sl) && sl < peak && (!floorSmart || sl > entryPx)) ts = Math.min(ts, sl - buf); if (peak - entryPx >= atr) ts = Math.max(ts, entryPx); stopPx = Math.max(stopPx, ts); } // trava de breakeven (≥1×ATR) — igual bot-run
+        else { if (Number.isFinite(sh) && sh > peak && (!floorSmart || sh < entryPx)) ts = Math.max(ts, sh + buf); if (entryPx - peak >= atr) ts = Math.min(ts, entryPx); stopPx = Math.min(stopPx, ts); }
       }
     }
 
@@ -501,7 +505,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
