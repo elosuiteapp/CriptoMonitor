@@ -13,7 +13,9 @@ function summarizeOne(smc: SmcResult | null) {
   const liqAbove = smc.liquidity.filter((l) => !l.swept && l.price > p).sort((a, b) => a.price - b.price)[0];
   const liqBelow = smc.liquidity.filter((l) => !l.swept && l.price < p).sort((a, b) => b.price - a.price)[0];
   const sweep = smc.liquidity.find((l) => l.sweptRecently);
-  const zone = p >= smc.premium.bottom ? "premium" : p <= smc.discount.top ? "discount" : "equilibrium";
+  // Zona pela banda de equilíbrio (47,5–52,5%) — MESMO critério da UI (gauge/narrativa,
+  // auditoria 02/jul). Antes usava as bordas 95%/5% e a IA recebia zona divergente da tela.
+  const zone = p > smc.equilibrium.top ? "premium" : p < smc.equilibrium.bottom ? "discount" : "equilibrium";
   return {
     bias: smc.swingBias,
     internal_bias: smc.internalBias,
@@ -25,6 +27,9 @@ function summarizeOne(smc: SmcResult | null) {
     liquidity_above: liqAbove ? Math.round(liqAbove.price) : null,
     liquidity_below: liqBelow ? Math.round(liqBelow.price) : null,
     recent_sweep: sweep ? { side: sweep.side, price: Math.round(sweep.price) } : null,
+    prev_day_high: smc.prevLevels.pdh != null ? Math.round(smc.prevLevels.pdh) : null,
+    prev_day_low: smc.prevLevels.pdl != null ? Math.round(smc.prevLevels.pdl) : null,
+    range_extremes: smc.extremes, // strong/weak high-low (à la LuxAlgo)
   };
 }
 

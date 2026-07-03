@@ -5,7 +5,7 @@
 
 import { getLocale } from "../hooks/useLocale";
 
-export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq" | "htf";
+export type ConfluenceKind = "gamma" | "wall" | "vp" | "liq" | "htf" | "prev";
 
 export interface ConfluenceSource {
   kind: ConfluenceKind;
@@ -73,4 +73,20 @@ export function buildConfluenceSources(
     });
   }
   return sources;
+}
+
+/** Fontes de confluência dos níveis do período anterior (PDH/PDL/PWH/PWL/PMH/PML) — regra
+ *  do indicador de referência: zona SMC colada num nível desses = alvo/reação mais forte. */
+export function prevLevelSources(prev: { pdh: number | null; pdl: number | null; pwh: number | null; pwl: number | null; pmh: number | null; pml: number | null }): ConfluenceSource[] {
+  const out: ConfluenceSource[] = [];
+  const add = (price: number | null, label: string) => {
+    if (price != null && Number.isFinite(price)) out.push({ kind: "prev", label, price });
+  };
+  add(prev.pdh, "PDH");
+  add(prev.pdl, "PDL");
+  add(prev.pwh, "PWH");
+  add(prev.pwl, "PWL");
+  add(prev.pmh, "PMH");
+  add(prev.pml, "PML");
+  return out;
 }

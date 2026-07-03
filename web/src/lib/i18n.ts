@@ -182,6 +182,11 @@ export interface Dict {
     obUp: string; // marcador do gráfico "OB alta"
     obDown: string;
     heatmapTitle: string;
+    strongHigh: string; // topo forte (defendido) — LuxAlgo strong/weak
+    weakHigh: string;
+    strongLow: string;
+    weakLow: string;
+    sweptTag: string; // tag "varrida" no sweep de liquidez
     heatWeak: string;
     heatStrong: string;
     heatLongs: string;
@@ -199,6 +204,8 @@ export interface Dict {
       zones: { label: string; help: string };
       equal: { label: string; help: string };
       structure: { label: string; help: string };
+      swings: { label: string; help: string };
+      prevLevels: { label: string; help: string };
       volumeProfile: { label: string; help: string };
       cvd: { label: string; help: string };
       liquidations: { label: string; help: string };
@@ -680,6 +687,11 @@ const PT: Dict = {
     obUp: "alta",
     obDown: "baixa",
     heatmapTitle: "Heatmap de liquidações · estimativa (modelo de alavancagem)",
+    strongHigh: "Strong High (defendido)",
+    weakHigh: "Weak High (tende a romper)",
+    strongLow: "Strong Low (defendido)",
+    weakLow: "Weak Low (tende a romper)",
+    sweptTag: "varrida",
     heatWeak: "fraco",
     heatStrong: "forte",
     heatLongs: "longs ↓",
@@ -697,6 +709,8 @@ const PT: Dict = {
       zones: { label: "Zonas", help: "Premium/Discount — metade cara (premium, zona de venda) e barata (discount, zona de compra) do range, com o equilíbrio no meio." },
       equal: { label: "EQH/EQL", help: "EQH/EQL — topos iguais (Equal Highs) e fundos iguais (Equal Lows): regiões com liquidez acumulada logo acima/abaixo." },
       structure: { label: "BOS/CHoCH", help: "BOS = rompimento de estrutura (continuação da tendência); CHoCH = mudança de caráter (possível reversão)." },
+      swings: { label: "HH/HL/LH/LL", help: "Rótulos dos pivôs de swing: HH topo mais alto · HL fundo mais alto (alta) · LH topo mais baixo · LL fundo mais baixo (baixa). Deixam a estrutura legível no gráfico." },
+      prevLevels: { label: "Máx/Mín D-S-M", help: "Máxima e mínima do dia (PDH/PDL, azul), semana (PWH/PWL, índigo) e mês (PMH/PML, teal) ANTERIORES — ímãs clássicos de liquidez: o preço costuma buscá-los e reagir neles. Zona SMC colada num desses níveis fica mais forte (aparece na confluência)." },
       volumeProfile: { label: "Volume Profile", help: "POC (preço com mais volume negociado) e Value Area (faixa de 70% do volume) — ímãs e suporte/resistência, calculados do volume das velas." },
       cvd: { label: "CVD / Volume Delta", help: "Volume delta acumulado (comprador agressor − vendedor) das velas da Binance, em painel abaixo do gráfico. Subindo = compradores no comando; divergir do preço é o sinal mais valioso." },
       liquidations: { label: "Liquidações", help: "Heatmap estimado de bolsões de liquidação (modelo de alavancagem sobre as velas). Zonas quentes funcionam como ímãs de preço." },
@@ -1195,6 +1209,11 @@ const EN: Dict = {
     obUp: "up",
     obDown: "down",
     heatmapTitle: "Liquidation heatmap · estimate (leverage model)",
+    strongHigh: "Strong High (defended)",
+    weakHigh: "Weak High (likely to break)",
+    strongLow: "Strong Low (defended)",
+    weakLow: "Weak Low (likely to break)",
+    sweptTag: "swept",
     heatWeak: "weak",
     heatStrong: "strong",
     heatLongs: "longs ↓",
@@ -1212,6 +1231,8 @@ const EN: Dict = {
       zones: { label: "Zones", help: "Premium/Discount — the expensive half (premium, sell zone) and the cheap half (discount, buy zone) of the range, with equilibrium in the middle." },
       equal: { label: "EQH/EQL", help: "EQH/EQL — equal highs and equal lows: regions with liquidity stacked just above/below." },
       structure: { label: "BOS/CHoCH", help: "BOS = break of structure (trend continuation); CHoCH = change of character (possible reversal)." },
+      swings: { label: "HH/HL/LH/LL", help: "Swing pivot labels: HH higher high · HL higher low (uptrend) · LH lower high · LL lower low (downtrend). They make structure readable on the chart." },
+      prevLevels: { label: "Prev D-W-M H/L", help: "PREVIOUS day (PDH/PDL, blue), week (PWH/PWL, indigo) and month (PMH/PML, teal) highs and lows — classic liquidity magnets: price tends to seek and react at them. An SMC zone sitting on one of these levels is stronger (shows up in confluence)." },
       volumeProfile: { label: "Volume Profile", help: "POC (price with the most traded volume) and Value Area (the 70%-of-volume band) — magnets and support/resistance, computed from candle volume." },
       cvd: { label: "CVD / Volume Delta", help: "Cumulative volume delta (aggressive buyer − seller) from Binance candles, in a panel below the chart. Rising = buyers in control; diverging from price is the most valuable signal." },
       liquidations: { label: "Liquidations", help: "Estimated heatmap of liquidation pockets (leverage model over the candles). Hot zones act as price magnets." },

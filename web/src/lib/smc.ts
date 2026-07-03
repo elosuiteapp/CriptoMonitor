@@ -65,6 +65,17 @@ export interface Zone {
   bottom: number;
 }
 
+/** Máx/mín do período ANTERIOR completo (dia/semana/mês UTC) — ímãs clássicos de liquidez
+ *  (PDH/PDL/PWH/PWL/PMH/PML). null quando a janela de velas não cobre o período inteiro. */
+export interface PrevLevels {
+  pdh: number | null;
+  pdl: number | null;
+  pwh: number | null;
+  pwl: number | null;
+  pmh: number | null;
+  pml: number | null;
+}
+
 export interface SmcResult {
   price: number;
   atr: number;
@@ -83,6 +94,11 @@ export interface SmcResult {
   premium: Zone;
   equilibrium: Zone;
   discount: Zone;
+  prevLevels: PrevLevels;
+  /** Topo/fundo do range classificados à la LuxAlgo: em tendência de BAIXA o topo é FORTE
+   *  (origem defendida do movimento) e o fundo é FRACO (esperado romper); espelho na alta.
+   *  null quando a estrutura de swing ainda não definiu tendência. */
+  extremes: { high: "strong" | "weak"; low: "strong" | "weak" } | null;
 }
 
 // ─── ATR rolling (média simples do True Range) ───────────────────────────────
@@ -117,6 +133,39 @@ interface Pivot {
 }
 
 const newPivot = (): Pivot => ({ level: NaN, lastLevel: NaN, crossed: false, index: 0, time: 0 });
+
+// ─── Máx/mín do período anterior (dia/semana/mês UTC) — PDH/PDL/PWH/PWL/PMH/PML ─────────
+function prevPeriodLevels(candles: Candle[]): PrevLevels {
+  const DAY = 86400;
+  const last = candles[candles.length - 1].time;
+  const first = candles[0].time;
+  // hi/lo do intervalo [start, end); null se a janela de velas não cobre o INÍCIO do período
+  // (senão o máx/mín sairia truncado e viraria nível falso).
+  const range = (start: number, end: number): { hi: number | null; lo: number | null } => {
+    if (first > start) return { hi: null, lo: null };
+    let hi = -Infinity, lo = Infinity, seen = false;
+    for (const c of candles) {
+      if (c.time >= start && c.time < end) {
+        seen = true;
+        if (c.high > hi) hi = c.high;
+        if (c.low < lo) lo = c.low;
+      }
+    }
+    return seen ? { hi, lo } : { hi: null, lo: null };
+  };
+  const dayStart = Math.floor(last / DAY) * DAY;
+  const d = range(dayStart - DAY, dayStart);
+  // Semana começando na SEGUNDA 00:00 UTC (epoch 01/jan/1970 = quinta → dow 0=domingo via +4).
+  const dayIdx = Math.floor(last / DAY);
+  const dow = (dayIdx + 4) % 7;
+  const weekStart = (dayIdx - ((dow + 6) % 7)) * DAY;
+  const w = range(weekStart - 7 * DAY, weekStart);
+  const dt = new Date(last * 1000);
+  const monthStart = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1) / 1000;
+  const prevMonthStart = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() - 1, 1) / 1000;
+  const m = range(prevMonthStart, monthStart);
+  return { pdh: d.hi, pdl: d.lo, pwh: w.hi, pwl: w.lo, pmh: m.hi, pml: m.lo };
+}
 
 /** Estado do detector de "perna" (leg) para um dado tamanho. 0 = baixa, 1 = alta. */
 function makeLegUpdater(candles: Candle[], size: number) {
@@ -426,5 +475,9 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
     premium,
     equilibrium,
     discount,
+    prevLevels: prevPeriodLevels(candles),
+    // Strong/Weak (LuxAlgo): baixa → topo FORTE (origem defendida) + fundo FRACO (deve romper);
+    // alta → espelho. Sem tendência de swing definida → null.
+    extremes: swingTrend === -1 ? { high: "strong", low: "weak" } : swingTrend === 1 ? { high: "weak", low: "strong" } : null,
   };
 }

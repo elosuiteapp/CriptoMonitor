@@ -14,7 +14,7 @@ import { fmtCompact, fmtPct, fmtPrice, fmtUsd } from "../lib/format";
 import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, DEEP_HISTORY_BARS, ANALYSIS_BARS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
-import { buildConfluenceSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
+import { buildConfluenceSources, prevLevelSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
 import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
 import { useGlossary } from "../lib/glossary";
 import { useT } from "../lib/i18n";
@@ -54,7 +54,7 @@ const biasDot = (b: "bullish" | "bearish" | "neutral") =>
 // Camadas SMC e camadas de mercado (labels/help vêm do dicionário via t.smart.layers).
 // Camadas de mercado = indicadores calculados das velas da Binance (sem dados do
 // coletor; funcionam em qualquer das 100 moedas). Mesmo esquema de toggle.
-const LAYER_KEYS: (keyof SmcLayers)[] = ["orderBlocks", "fvg", "liquidity", "zones", "equal", "structure"];
+const LAYER_KEYS: (keyof SmcLayers)[] = ["orderBlocks", "fvg", "liquidity", "zones", "equal", "structure", "swings", "prevLevels"];
 // CVD / Volume Delta fica SÓ no cockpit (decisão do dono) — fora das camadas do Smart Money.
 const MARKET_KEYS: (keyof SmcLayers)[] = ["volumeProfile", "liquidations", "htf"];
 
@@ -64,6 +64,7 @@ const CONF_STYLE: Record<string, string> = {
   vp: "border-sky-500/40 text-sky-400",
   liq: "border-amber-500/40 text-amber-400",
   htf: "border-fuchsia-500/40 text-fuchsia-400",
+  prev: "border-sky-500/40 text-sky-500 dark:text-sky-300", // PDH/PDL/PWH/PWL/PMH/PML
 };
 
 // Cores do banner do radar de eventos SMC, por tom.
@@ -283,8 +284,10 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
       );
     }
     htfLevels.forEach((l) => extra.push({ kind: "htf", label: l.label, price: l.price }));
+    // Níveis do período anterior (PDH/PDL/PWH/PWL/PMH/PML): zona SMC colada num deles = mais forte.
+    if (smc) extra.push(...prevLevelSources(smc.prevLevels));
     return [...sources, ...extra];
-  }, [sources, analysisCandles, oiSeries, vp, htfLevels, t]);
+  }, [sources, analysisCandles, oiSeries, vp, htfLevels, smc, t]);
 
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];

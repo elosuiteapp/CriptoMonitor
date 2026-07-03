@@ -29,9 +29,11 @@ export interface SmcLayers {
   orderBlocks: boolean;
   fvg: boolean;
   liquidity: boolean;
-  zones: boolean; // premium/discount/equilibrium + topo/fundo
+  zones: boolean; // premium/discount/equilibrium + topo/fundo (com strong/weak)
   equal: boolean; // EQH/EQL
   structure: boolean; // marcadores BOS/CHoCH
+  swings: boolean; // labels HH/HL/LH/LL nos pivôs de swing
+  prevLevels: boolean; // máx/mín do dia/semana/mês anterior (PDH/PDL/PWH/PWL/PMH/PML)
   volumeProfile: boolean; // POC / Value Area (price lines)
   liquidations: boolean; // heatmap estimado (canvas atrás das velas)
   cvd: boolean; // painel de Volume Delta / CVD abaixo do gráfico (em SmartMoneyTab)
@@ -45,6 +47,8 @@ export const DEFAULT_LAYERS: SmcLayers = {
   zones: true,
   equal: true,
   structure: true,
+  swings: true,
+  prevLevels: true,
   volumeProfile: false,
   liquidations: false,
   cvd: false,
@@ -340,7 +344,7 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         ctx.setLineDash([]);
       };
 
-      // 1) Faixas premium / equilibrium / discount
+      // 1) Faixas premium / equilibrium / discount + topo/fundo com strong/weak (LuxAlgo)
       if (layers.zones) {
         softBand(smc.premium.top, smc.premium.bottom, "rgba(239,68,68,0.05)");
         softBand(smc.equilibrium.top, smc.equilibrium.bottom, "rgba(148,163,184,0.05)");
@@ -350,6 +354,31 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         faintLabel(smc.discount.top, "Discount", "rgba(34,197,94,0.7)");
         dashed(smc.trailingTop, "rgba(148,163,184,0.3)");
         dashed(smc.trailingBottom, "rgba(148,163,184,0.3)");
+        if (smc.extremes) {
+          const hiStrong = smc.extremes.high === "strong";
+          const loStrong = smc.extremes.low === "strong";
+          faintLabel(smc.trailingTop, hiStrong ? t.smart.strongHigh : t.smart.weakHigh, hiStrong ? "rgba(239,68,68,0.85)" : "rgba(148,163,184,0.75)");
+          faintLabel(smc.trailingBottom, loStrong ? t.smart.strongLow : t.smart.weakLow, loStrong ? "rgba(34,197,94,0.85)" : "rgba(148,163,184,0.75)");
+        }
+      }
+
+      // 1b) Máx/mín do período anterior — PDH/PDL (azul), PWH/PWL (índigo), PMH/PML (teal).
+      // Ímãs clássicos de liquidez (referência Strong D&S: linhas D/S/M) + alvos de sweep.
+      if (layers.prevLevels) {
+        const P = smc.prevLevels;
+        const items: [number | null, string, string][] = [
+          [P.pdh, "PDH", "rgba(56,189,248,0.9)"],
+          [P.pdl, "PDL", "rgba(56,189,248,0.9)"],
+          [P.pwh, "PWH", "rgba(129,140,248,0.9)"],
+          [P.pwl, "PWL", "rgba(129,140,248,0.9)"],
+          [P.pmh, "PMH", "rgba(45,212,191,0.9)"],
+          [P.pml, "PML", "rgba(45,212,191,0.9)"],
+        ];
+        for (const [price, label, color] of items) {
+          if (price == null || !Number.isFinite(price)) continue;
+          dashed(price, color.replace("0.9", "0.45"), [6, 4]);
+          queueTag(price, `${label} ${kfmt(price)}`, color, INK);
+        }
       }
 
       // 2) Imbalances / FVG
@@ -418,13 +447,33 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         });
       }
 
-      // 5) Liquidez — até 2 acima e 2 abaixo (não varridas)
+      // 5) Liquidez — até 2 acima e 2 abaixo (não varridas) + VARRIDAS RECENTES marcadas
+      //    (stop hunt: o nível foi tomado — possível reversão; antes o sweep era invisível).
       if (layers.liquidity) {
         const above = smc.liquidity.filter((l) => !l.swept && l.price > smc.price).sort((a, b) => a.price - b.price).slice(0, 2);
         const below = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price).slice(0, 2);
         [...above, ...below].forEach((l) => {
           dashed(l.price, "rgba(245,158,11,0.7)");
           queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER, INK);
+        });
+        smc.liquidity.filter((l) => l.sweptRecently).slice(0, 2).forEach((l) => {
+          dashed(l.price, "rgba(244,63,94,0.5)", [2, 3]);
+          queueTag(l.price, `✕ ${t.smart.sweptTag} ${kfmt(l.price)}`, "rgba(244,63,94,0.92)", "#fff");
+        });
+      }
+
+      // 5b) Labels HH/HL/LH/LL nos pivôs de swing (estrutura legível à la LuxAlgo)
+      if (layers.swings) {
+        ctx.font = "600 9px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        smc.swings.slice(-8).forEach((sp) => {
+          const x = xRaw(sp.time);
+          if (x == null || x < 0 || x > right) return;
+          const y = yOf(sp.price, H);
+          const bull = sp.kind === "HH" || sp.kind === "HL";
+          ctx.fillStyle = bull ? "rgba(34,197,94,0.85)" : "rgba(239,68,68,0.85)";
+          ctx.textBaseline = sp.isHigh ? "bottom" : "top";
+          ctx.fillText(sp.kind, x, sp.isHigh ? y - 4 : y + 4);
         });
       }
 

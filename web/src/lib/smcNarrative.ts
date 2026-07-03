@@ -14,7 +14,7 @@ const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
 
 export interface KeyLevel {
   label: string;
-  category: "liquidity" | "orderblock" | "fvg" | "equal" | "zone" | "extreme";
+  category: "liquidity" | "orderblock" | "fvg" | "equal" | "zone" | "extreme" | "prev";
   price: number;
   bias: "bullish" | "bearish" | "neutral";
   note?: string;
@@ -84,10 +84,38 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
       bias: eq.kind === "EQH" ? "bearish" : "bullish",
     });
   }
-  add({ label: tl("Topo do range (Strong/Weak High)", "Range high (Strong/Weak High)"), category: "extreme", price: smc.trailingTop, bias: "bearish" });
-  add({ label: tl("Fundo do range (Strong/Weak Low)", "Range low (Strong/Weak Low)"), category: "extreme", price: smc.trailingBottom, bias: "bullish" });
+  // Topo/fundo com a classificação REAL strong/weak (à la LuxAlgo): forte = defendido pela
+  // estrutura (difícil romper); fraco = lado que a tendência tende a varrer.
+  const hs = smc.extremes?.high;
+  const ls = smc.extremes?.low;
+  add({
+    label: hs === "strong" ? tl("Topo do range — Strong High (defendido)", "Range high — Strong High (defended)")
+      : hs === "weak" ? tl("Topo do range — Weak High (tende a romper)", "Range high — Weak High (likely to break)")
+      : tl("Topo do range (Strong/Weak High)", "Range high (Strong/Weak High)"),
+    category: "extreme", price: smc.trailingTop, bias: "bearish",
+  });
+  add({
+    label: ls === "strong" ? tl("Fundo do range — Strong Low (defendido)", "Range low — Strong Low (defended)")
+      : ls === "weak" ? tl("Fundo do range — Weak Low (tende a romper)", "Range low — Weak Low (likely to break)")
+      : tl("Fundo do range (Strong/Weak Low)", "Range low (Strong/Weak Low)"),
+    category: "extreme", price: smc.trailingBottom, bias: "bullish",
+  });
   add({ label: tl("Início da zona Premium (caro)", "Premium zone start (expensive)"), category: "zone", price: smc.premium.bottom, bias: "bearish" });
   add({ label: tl("Início da zona Discount (barato)", "Discount zone start (cheap)"), category: "zone", price: smc.discount.top, bias: "bullish" });
+  // Máx/mín do período anterior — ímãs clássicos de liquidez (referência: linhas D/S/M).
+  const prev: [number | null, string, string][] = [
+    [smc.prevLevels.pdh, tl("Máxima do dia anterior (PDH)", "Previous day high (PDH)"), "PDH"],
+    [smc.prevLevels.pdl, tl("Mínima do dia anterior (PDL)", "Previous day low (PDL)"), "PDL"],
+    [smc.prevLevels.pwh, tl("Máxima da semana anterior (PWH)", "Previous week high (PWH)"), "PWH"],
+    [smc.prevLevels.pwl, tl("Mínima da semana anterior (PWL)", "Previous week low (PWL)"), "PWL"],
+    [smc.prevLevels.pmh, tl("Máxima do mês anterior (PMH)", "Previous month high (PMH)"), "PMH"],
+    [smc.prevLevels.pml, tl("Mínima do mês anterior (PML)", "Previous month low (PML)"), "PML"],
+  ];
+  for (const [price, label] of prev) {
+    if (price == null || !Number.isFinite(price)) continue;
+    // sem auto-confluência: um PDH não deve "confluir" consigo mesmo nas fontes 'prev'
+    out.push({ label, category: "prev", price, bias: "neutral", confluence: conf(price).filter((h) => h.source.kind !== "prev"), distancePct: pct(price, smc.price) });
+  }
 
   return out.sort((a, b) => Math.abs(a.distancePct) - Math.abs(b.distancePct));
 }
