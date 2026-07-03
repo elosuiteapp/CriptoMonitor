@@ -120,6 +120,7 @@ interface Learning {
   ai_report: string | null;
   updated_at: string;
 }
+interface BtTrade { side: string; at: number; r: number; reason: string; counter?: boolean; bars: number }
 
 const BARS = ["15m", "1H", "4H", "1D"];
 // Sinais de FLUXO (opcionais) que o robô pode usar como confirmação — cada um liga/desliga (signal_toggles).
@@ -208,18 +209,20 @@ export default function AdminBot() {
   const [btAsset, setBtAsset] = useState("BTC");
   const [btDays, setBtDays] = useState(30);
   const [btBusy, setBtBusy] = useState(false);
-  const [btResult, setBtResult] = useState<{ params: Record<string, string | number>; metrics: Record<string, number> } | null>(null);
-  useEffect(() => {
-    supabase.from("bot_backtests").select("params, metrics").eq("asset", btAsset).maybeSingle().then(({ data }) => {
-      setBtResult(data ? { params: data.params as Record<string, string | number>, metrics: data.metrics as Record<string, number> } : null);
-    });
-  }, [btAsset]);
+  const [btResult, setBtResult] = useState<{ params: Record<string, string | number>; metrics: Record<string, number>; trades?: BtTrade[]; equity?: number[] } | null>(null);
+  // Busca também a amostra de trades e a curva de capital que o backtester SALVA no banco
+  // (o retorno da function traz só params+metrics).
+  const loadBt = useCallback(async (asset: string) => {
+    const { data } = await supabase.from("bot_backtests").select("params, metrics, trades, equity").eq("asset", asset).maybeSingle();
+    setBtResult(data ? { params: data.params as Record<string, string | number>, metrics: data.metrics as Record<string, number>, trades: (data.trades as BtTrade[] | null) ?? [], equity: (data.equity as number[] | null) ?? [] } : null);
+  }, []);
+  useEffect(() => { loadBt(btAsset); }, [btAsset, loadBt]);
   const runBacktest = async () => {
     setBtBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("bot-backtest", { body: { asset: btAsset, days: btDays } });
+      const { error } = await supabase.functions.invoke("bot-backtest", { body: { asset: btAsset, days: btDays } });
       if (error) throw error;
-      setBtResult(data as { params: Record<string, string | number>; metrics: Record<string, number> });
+      await loadBt(btAsset); // relê do banco com trades+equity persistidos
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Falha no backtest." });
     } finally {
@@ -227,6 +230,9 @@ export default function AdminBot() {
     }
   };
   const [learnAsset, setLearnAsset] = useState("all"); // moeda em foco no aprendizado (all = geral)
+  // filtros do Diário do robô (nível / moeda)
+  const [dLevel, setDLevel] = useState("all"); // all | trade | info | warn | error
+  const [dAssetF, setDAssetF] = useState("all");
   // filtros das ordens (moeda / status / origem / resultado / período)
   const [fAsset, setFAsset] = useState("all");
   const [fStatus, setFStatus] = useState("all"); // all | ok | erro
@@ -252,7 +258,7 @@ export default function AdminBot() {
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
-      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
     ]);
@@ -275,7 +281,7 @@ export default function AdminBot() {
     const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
-      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
@@ -862,114 +868,137 @@ export default function AdminBot() {
               {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
             </button>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-xs text-muted-foreground">Par (instId)
-              <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
-            </label>
-            {isFut ? (
-              <label className="text-xs text-muted-foreground">Risco por trade (% do patrimônio)
-                <input type="number" step="0.1" min="0.1" className={`${input} mt-1`} value={cfg.risk_pct ?? 1} onChange={(e) => setCfg({ ...cfg, risk_pct: Number(e.target.value) })} />
-              </label>
-            ) : (
-              <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
-                <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Alavancagem máx (x · teto)
-                <input type="number" min="1" max="20" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
-                <input type="checkbox" checked={cfg.imbalance_on !== false} onChange={(e) => setCfg({ ...cfg, imbalance_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Imbalance (FVG novo) → entra a favor</strong>: sempre que aparecer um imbalance de alta/baixa no 15m, entra na direção dele (independe dos outros indicadores). Stop e alvo vêm da estrutura.</span>
-                {cfg.imbalance_on !== false && (
-                  <span className="flex items-center gap-1">· tamanho mín <input type="number" step="0.05" min="0" value={cfg.imbalance_min_pct ?? 0} onChange={(e) => setCfg({ ...cfg, imbalance_min_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% (0 = todo FVG)</span>
+          <div className="mt-3 space-y-4">
+            {/* ── 1 · Execução & risco — quanto arrisca e os freios de segurança ── */}
+            <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">💰 1 · Execução & risco <span className="font-normal normal-case">— quanto arrisca por trade e os freios de segurança</span></div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="text-xs text-muted-foreground">Par (instId)
+                  <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
+                  {isBinance && <span className="mt-0.5 block text-[10px]">na Binance o robô opera <strong>BTC · ETH · SOL · BNB</strong> (este campo vale só p/ OKX/spot)</span>}
+                </label>
+                {isFut ? (
+                  <label className="text-xs text-muted-foreground">Risco por trade (% do patrimônio)
+                    <input type="number" step="0.1" min="0.1" className={`${input} mt-1`} value={cfg.risk_pct ?? 1} onChange={(e) => setCfg({ ...cfg, risk_pct: Number(e.target.value) })} />
+                    <span className="mt-0.5 block text-[10px]">tamanho = risco ÷ distância do stop (stop longe → posição menor)</span>
+                  </label>
+                ) : (
+                  <label className="text-xs text-muted-foreground">Tamanho da compra ({cfg.quote_ccy})
+                    <input type="number" className={`${input} mt-1`} value={cfg.order_quote_sz} onChange={(e) => setCfg({ ...cfg, order_quote_sz: Number(e.target.value) })} />
+                  </label>
                 )}
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Perda diária máx (%)
-                <input type="number" step="0.5" min="0" className={`${input} mt-1`} value={cfg.daily_loss_pct ?? 5} onChange={(e) => setCfg({ ...cfg, daily_loss_pct: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Máx. posições simultâneas
-                <input type="number" min="1" max="10" className={`${input} mt-1`} value={cfg.max_positions ?? 4} onChange={(e) => setCfg({ ...cfg, max_positions: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Cooldown pós-stop (min)
-                <input type="number" min="0" className={`${input} mt-1`} value={cfg.cooldown_min ?? 15} onChange={(e) => setCfg({ ...cfg, cooldown_min: Number(e.target.value) })} />
-              </label>
-            )}
-            {isFut && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-                <input type="checkbox" checked={!!cfg.pyramid} onChange={(e) => setCfg({ ...cfg, pyramid: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Pirâmide</strong>: adicionar à posição quando vier novo sinal na MESMA direção</span>
-                {cfg.pyramid && (
-                  <span className="flex items-center gap-1">· máx <input type="number" min="1" max="10" value={cfg.pyramid_max ?? 2} onChange={(e) => setCfg({ ...cfg, pyramid_max: Number(e.target.value) })} className="w-14 rounded border border-border bg-background px-2 py-0.5 num" /> adições</span>
+                {isFut && (
+                  <label className="text-xs text-muted-foreground">Alavancagem máx (x · teto)
+                    <input type="number" min="1" max="20" className={`${input} mt-1`} value={cfg.leverage} onChange={(e) => setCfg({ ...cfg, leverage: Number(e.target.value) })} />
+                    <span className="mt-0.5 block text-[10px]">teto de nocional, não multiplicador do tamanho</span>
+                  </label>
                 )}
-              </label>
-            )}
-            {isFut && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-                <input type="checkbox" checked={!!cfg.trail_on} onChange={(e) => setCfg({ ...cfg, trail_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Stop móvel (trailing) por ATR</strong>: o stop sobe junto com o maior preço desde a entrada e nunca desce — trava o lucro se o preço voltar. A distância é <strong>k × ATR</strong> (a volatilidade do próprio ativo), com piso de estrutura — assim cada moeda tem a trilha na sua escala (1% do BTC ≠ 1% de um alt). Arma só no lucro.</span>
-                {cfg.trail_on && (
-                  <span className="flex items-center gap-1">· trava <input type="number" step="0.5" min="0.5" value={cfg.trail_atr_mult ?? 3} onChange={(e) => setCfg({ ...cfg, trail_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR abaixo do pico</span>
+                {isFut && (
+                  <label className="text-xs text-muted-foreground">Perda diária máx (%) <span title="Circuit breaker: bateu a perda no dia, o robô para de abrir posição até o dia virar.">ⓘ</span>
+                    <input type="number" step="0.5" min="0" className={`${input} mt-1`} value={cfg.daily_loss_pct ?? 5} onChange={(e) => setCfg({ ...cfg, daily_loss_pct: Number(e.target.value) })} />
+                  </label>
                 )}
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Veto de fluxo (força mínima contra)
-                <input type="number" min="1" max="100" className={`${input} mt-1`} value={cfg.flow_veto ?? 10} onChange={(e) => setCfg({ ...cfg, flow_veto: Number(e.target.value) })} />
-                <span className="mt-0.5 block text-[10px]">Segura o setup estrutural quando o fluxo está contra além disso. O |fluxo| real fica em ~0-30 (o antigo 50 nunca disparava); nos trades, fluxo contra = 19% de acerto.</span>
-              </label>
-            )}
-            {isFut && (
-              <label className="text-xs text-muted-foreground">Reversão (virar a mão)
-                <select className={`${input} mt-1`} value={cfg.rev_mode ?? "off"} onChange={(e) => setCfg({ ...cfg, rev_mode: e.target.value })}>
-                  <option value="off">Nunca — sai só por stop/alvo/trailing (recomendado)</option>
-                  <option value="imbalance">Só imbalance (FVG fresco) contra</option>
-                  <option value="any">Sempre que o sinal virar (antigo)</option>
-                </select>
-              </label>
-            )}
-            {isFut && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-                <input type="checkbox" checked={cfg.ta_gate !== false} onChange={(e) => setCfg({ ...cfg, ta_gate: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Filtro técnico (EMA 20×50 + VWAP diário)</strong>: setup estrutural (não-imbalance) só entra alinhado aos dois. Validado no backtester (90d+180d): melhorou o resultado em todas as moedas. Os valores aparecem plotados no gráfico acima.</span>
-              </label>
-            )}
-            {isFut && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-                <input type="checkbox" checked={!!cfg.stop_atr_on} onChange={(e) => setCfg({ ...cfg, stop_atr_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                <span><strong>Stop de risco por ATR</strong>: usa a volatilidade do ativo em vez do % fixo — cada moeda ganha um stop na sua escala (a contra-tendência entra pela metade da distância). Desligado, valem os campos de % acima.</span>
-                {cfg.stop_atr_on && (
-                  <span className="flex items-center gap-1">· distância <input type="number" step="0.5" min="0.5" value={cfg.stop_atr_mult ?? 4} onChange={(e) => setCfg({ ...cfg, stop_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR</span>
+                {isFut && (
+                  <label className="text-xs text-muted-foreground">Máx. posições simultâneas
+                    <input type="number" min="1" max="10" className={`${input} mt-1`} value={cfg.max_positions ?? 4} onChange={(e) => setCfg({ ...cfg, max_positions: Number(e.target.value) })} />
+                  </label>
                 )}
-              </label>
-            )}
-            <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-              <input type="checkbox" checked={!!cfg.auto_weight} onChange={(e) => setCfg({ ...cfg, auto_weight: e.target.checked })} className="h-4 w-4 rounded border-border" />
-              <span><strong>Auto-ponderar por moeda</strong>: usa o que o robô aprendeu em CADA ativo p/ pesar os sinais (estrutura pesada onde acerta, leve onde erra). Trava anti-overfit: só age com amostra ≥20, ajuste cresce devagar e limitado. <em>Deixe desligado até o aprendizado amadurecer.</em></span>
-            </label>
+                {isFut && (
+                  <label className="text-xs text-muted-foreground">Cooldown pós-stop (min) <span title="Depois de um stop, a moeda fica de castigo esse tempo antes de reabrir (evita revenge trade no mesmo ruído).">ⓘ</span>
+                    <input type="number" min="0" className={`${input} mt-1`} value={cfg.cooldown_min ?? 15} onChange={(e) => setCfg({ ...cfg, cooldown_min: Number(e.target.value) })} />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* ── 2 · Entrada — os gatilhos SMC e os filtros que seguram entrada ruim ── */}
             {isFut && (
-              <div className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
-                <div className="mb-1.5 font-semibold text-foreground">Sinais de fluxo usados (opcionais)</div>
-                <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes só CONFIRMAM/filtram — ligue/desligue o que o robô considera.</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
-                  {FLOW_SIGNALS.map((s) => (
-                    <label key={s.key} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={cfg.signal_toggles?.[s.key] !== false} onChange={(e) => setCfg({ ...cfg, signal_toggles: { ...(cfg.signal_toggles ?? {}), [s.key]: e.target.checked } })} className="h-3.5 w-3.5 rounded border-border" />
-                      <span>{s.label}</span>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">🎯 2 · Entrada <span className="font-normal normal-case">— gatilhos SMC e filtros (espelha o pipeline da aba Gráfico)</span></div>
+                <div className="space-y-2">
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={cfg.imbalance_on !== false} onChange={(e) => setCfg({ ...cfg, imbalance_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Imbalance (FVG novo) → entra a favor</strong>: FVG fresco no 15m entra na direção dele, ignorando o veto de fluxo e o filtro técnico. Stop e alvo vêm da estrutura.</span>
+                    {cfg.imbalance_on !== false && (
+                      <span className="flex items-center gap-1">· tamanho mín <input type="number" step="0.05" min="0" value={cfg.imbalance_min_pct ?? 0} onChange={(e) => setCfg({ ...cfg, imbalance_min_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% (0 = todo FVG)</span>
+                    )}
+                  </label>
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={cfg.ta_gate !== false} onChange={(e) => setCfg({ ...cfg, ta_gate: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Filtro técnico (EMA 20×50 + VWAP diário)</strong>: setup estrutural (não-imbalance) só entra alinhado aos dois. Validado no backtester (90d+180d): melhorou o resultado em todas as moedas. Plotados no gráfico.</span>
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <label className="text-xs text-muted-foreground">Veto de fluxo (força mínima contra)
+                      <input type="number" min="1" max="100" className={`${input} mt-1`} value={cfg.flow_veto ?? 10} onChange={(e) => setCfg({ ...cfg, flow_veto: Number(e.target.value) })} />
+                      <span className="mt-0.5 block text-[10px]">Segura o setup estrutural quando o fluxo está contra além disso. O |fluxo| real fica em ~0-30 (o antigo 50 nunca disparava); nos trades, fluxo contra = 19% de acerto.</span>
                     </label>
-                  ))}
+                  </div>
                 </div>
               </div>
             )}
+
+            {/* ── 3 · Saída & gestão — como a posição é protegida e encerrada ── */}
+            {isFut && (
+              <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">🚪 3 · Saída & gestão da posição <span className="font-normal normal-case">— stop, trailing, reversão e pirâmide</span></div>
+                <div className="space-y-2">
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={!!cfg.stop_atr_on} onChange={(e) => setCfg({ ...cfg, stop_atr_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Stop de risco por ATR</strong> (fallback): quando o setup não traz stop estrutural, usa a volatilidade do ativo — cada moeda ganha um stop na sua escala. Desligado, o fallback é % fixo (config legada).</span>
+                    {cfg.stop_atr_on && (
+                      <span className="flex items-center gap-1">· distância <input type="number" step="0.5" min="0.5" value={cfg.stop_atr_mult ?? 4} onChange={(e) => setCfg({ ...cfg, stop_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR</span>
+                    )}
+                  </label>
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={!!cfg.trail_on} onChange={(e) => setCfg({ ...cfg, trail_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Stop móvel (trailing) por ATR</strong>: sobe com o pico e nunca desce — trava lucro se o preço voltar. Distância <strong>k × ATR</strong> com piso de estrutura; arma só no lucro.</span>
+                    {cfg.trail_on && (
+                      <span className="flex items-center gap-1">· trava <input type="number" step="0.5" min="0.5" value={cfg.trail_atr_mult ?? 3} onChange={(e) => setCfg({ ...cfg, trail_atr_mult: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />× ATR abaixo do pico</span>
+                    )}
+                  </label>
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={!!cfg.pyramid} onChange={(e) => setCfg({ ...cfg, pyramid: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                    <span><strong>Pirâmide</strong>: adiciona à posição em novo sinal na MESMA direção — só no lucro, com metade do risco</span>
+                    {cfg.pyramid && (
+                      <span className="flex items-center gap-1">· máx <input type="number" min="1" max="10" value={cfg.pyramid_max ?? 2} onChange={(e) => setCfg({ ...cfg, pyramid_max: Number(e.target.value) })} className="w-14 rounded border border-border bg-background px-2 py-0.5 num" /> adições</span>
+                    )}
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <label className="text-xs text-muted-foreground">Reversão (virar a mão)
+                      <select className={`${input} mt-1`} value={cfg.rev_mode ?? "off"} onChange={(e) => setCfg({ ...cfg, rev_mode: e.target.value })}>
+                        <option value="off">Nunca — sai só por stop/alvo/trailing (recomendado)</option>
+                        <option value="imbalance">Só imbalance (FVG fresco) contra</option>
+                        <option value="any">Sempre que o sinal virar (antigo)</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── 4 · Aprendizado & sinais de fluxo ── */}
+            <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">🧠 4 · Aprendizado & sinais de fluxo <span className="font-normal normal-case">— o que alimenta o veto e a auto-ponderação</span></div>
+              <div className="space-y-2">
+                <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={!!cfg.auto_weight} onChange={(e) => setCfg({ ...cfg, auto_weight: e.target.checked })} className="h-4 w-4 rounded border-border" />
+                  <span><strong>Auto-ponderar por moeda</strong>: usa o que o robô aprendeu em CADA ativo p/ pesar os sinais (estrutura pesada onde acerta, leve onde erra). Trava anti-overfit: só age com amostra ≥20, ajuste cresce devagar e limitado. <em>Deixe desligado até o aprendizado amadurecer.</em></span>
+                </label>
+                {isFut && (
+                  <div className="text-xs text-muted-foreground">
+                    <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes só entram no <strong>veto de fluxo</strong>/aprendizado — ligue/desligue o que o robô considera.</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                      {FLOW_SIGNALS.map((s) => (
+                        <label key={s.key} className="flex items-center gap-1.5">
+                          <input type="checkbox" checked={cfg.signal_toggles?.[s.key] !== false} onChange={(e) => setCfg({ ...cfg, signal_toggles: { ...(cfg.signal_toggles ?? {}), [s.key]: e.target.checked } })} className="h-3.5 w-3.5 rounded border-border" />
+                          <span>{s.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", ta_gate: cfg.ta_gate !== false, flow_veto: cfg.flow_veto ?? 10 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
@@ -1361,27 +1390,66 @@ export default function AdminBot() {
         </div>
         {btResult ? (() => {
           const m = btResult.metrics, p = btResult.params;
-          const cards: { label: string; value: string; tone: "up" | "down" | "" }[] = [
-            { label: "Expectância (R/trade)", value: `${m.expectancy_r >= 0 ? "+" : ""}${m.expectancy_r}R`, tone: m.expectancy_r > 0 ? "up" : m.expectancy_r < 0 ? "down" : "" },
+          const hrs = m.avg_bars != null ? (m.avg_bars * 15) / 60 : null; // barras de 15m → horas
+          const cards: { label: string; value: string; tone: "up" | "down" | ""; title?: string }[] = [
+            { label: "Expectância (R/trade)", value: `${m.expectancy_r >= 0 ? "+" : ""}${m.expectancy_r}R`, tone: m.expectancy_r > 0 ? "up" : m.expectancy_r < 0 ? "down" : "", title: "R líquido médio por trade (1R = distância da entrada ao stop). Positivo = estratégia com edge no período." },
             { label: "Win rate", value: `${m.win_rate}%`, tone: "" },
-            { label: "Profit factor", value: `${m.profit_factor}`, tone: m.profit_factor >= 1 ? "up" : "down" },
+            { label: "Profit factor", value: `${m.profit_factor}`, tone: m.profit_factor >= 1 ? "up" : "down", title: "Soma dos ganhos ÷ soma das perdas (em R). Acima de 1 = lucrativo." },
             { label: "Retorno (risco composto)", value: `${m.total_return_pct >= 0 ? "+" : ""}${m.total_return_pct}%`, tone: m.total_return_pct > 0 ? "up" : "down" },
             { label: "Max drawdown", value: `-${m.max_drawdown_pct}%`, tone: "down" },
             { label: "Trades", value: `${m.trades}`, tone: "" },
             { label: "Ganho / Perda médio", value: `+${m.avg_win_r}R / ${m.avg_loss_r}R`, tone: "" },
             { label: "Long / Short (win%)", value: `${m.longs}·${m.longs_win}% / ${m.shorts}·${m.shorts_win}%`, tone: "" },
+            { label: "Exposição", value: m.exposure_pct != null ? `${m.exposure_pct}%` : "—", tone: "", title: "% do tempo com posição aberta. Baixa exposição com boa expectância = estratégia seletiva (bom)." },
+            { label: "Duração média", value: hrs != null ? (hrs < 24 ? `${hrs.toFixed(1)}h` : `${(hrs / 24).toFixed(1)}d`) : "—", tone: "", title: "Tempo médio de cada trade (barras de 15m)." },
           ];
+          // Curva de capital + saídas por motivo (amostra dos últimos 60 trades salvos pelo backtester)
+          const eqs = btResult.equity ?? [];
+          const sample = btResult.trades ?? [];
+          const byReason = ["alvo", "stop", "reversão", "fim"].map((rz) => {
+            const g = sample.filter((t) => t.reason === rz);
+            return g.length ? { rz, n: g.length, win: Math.round((g.filter((t) => t.r > 0).length / g.length) * 100), r: Math.round(g.reduce((s, t) => s + t.r, 0) * 10) / 10 } : null;
+          }).filter(Boolean) as { rz: string; n: number; win: number; r: number }[];
+          const RZ_ICON: Record<string, string> = { alvo: "🎯", stop: "🛑", "reversão": "↩", fim: "🏁" };
           return (
             <>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 {cards.map((c) => (
-                  <div key={c.label} className="rounded-lg border border-border/70 bg-background/40 p-2.5">
+                  <div key={c.label} className="rounded-lg border border-border/70 bg-background/40 p-2.5" title={c.title}>
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{c.label}</div>
                     <div className={`num text-lg font-bold ${c.tone === "up" ? "text-emerald-500" : c.tone === "down" ? "text-rose-500" : "text-foreground"}`}>{c.value}</div>
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">{p.asset} · {p.days}d · consenso {p.min_votes}/5 · sens ±{p.sensibility} · contra-tend “{p.counter_trend}” · stop {p.stop} · trailing {p.trailing} · risco {p.risk_pct}% · taxa+slip {p.fee_pct}+{p.slip_pct}%/lado · <strong>fluxo {p.flow}</strong>. Mede o esqueleto estrutural (a camada de fluxo não é backtestável); fills no fechamento do candle. Educacional — não garante o futuro.</p>
+              {eqs.length > 1 && (() => {
+                const min = Math.min(...eqs, 1), max = Math.max(...eqs, 1);
+                const W = 600, H = 64, span = max - min || 1;
+                const pts = eqs.map((v, i) => `${((i / (eqs.length - 1)) * W).toFixed(1)},${(H - ((v - min) / span) * H).toFixed(1)}`).join(" ");
+                const fin = eqs[eqs.length - 1];
+                const y1 = H - ((1 - min) / span) * H; // linha do capital inicial (1.0)
+                return (
+                  <div className="mt-3 rounded-lg border border-border/70 bg-background/40 p-2.5">
+                    <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span>Curva de capital (risco composto, trade a trade)</span>
+                      <span className={`num font-bold normal-case ${fin >= 1 ? "text-emerald-500" : "text-rose-500"}`}>{fin >= 1 ? "+" : ""}{((fin - 1) * 100).toFixed(1)}%</span>
+                    </div>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" preserveAspectRatio="none">
+                      <line x1="0" y1={y1} x2={W} y2={y1} stroke="currentColor" className="text-border" strokeDasharray="4 4" strokeWidth="1" />
+                      <polyline points={pts} fill="none" stroke={fin >= 1 ? "#10b981" : "#f43f5e"} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    </svg>
+                  </div>
+                );
+              })()}
+              {byReason.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="font-semibold uppercase tracking-wide text-muted-foreground">Saídas</span>
+                  {byReason.map((b) => (
+                    <span key={b.rz} className={`num rounded px-1.5 py-0.5 font-semibold ${b.r >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400"}`} title={`${b.n} trades fechados por ${b.rz} · ${b.win}% no verde · soma ${b.r >= 0 ? "+" : ""}${b.r}R`}>{RZ_ICON[b.rz]} {b.rz} {b.n} · {b.win}% · {b.r >= 0 ? "+" : ""}{b.r}R</span>
+                  ))}
+                  <span className="text-muted-foreground">(últimos {sample.length} trades)</span>
+                </div>
+              )}
+              <p className="mt-2 text-[10px] text-muted-foreground">{p.asset} · {p.days}d · motor <strong>{p.engine ?? "SMC 15m"}</strong> · entrada {p.entry_mode ?? "smc"} · imbalance {p.imbalance}{p.imb_mode ? ` (${p.imb_mode})` : ""} · stop {p.stop} · alvo {p.target} · trailing {p.trailing}{p.trail_floor ? ` (piso ${p.trail_floor})` : ""} · técnico {p.ta_filter ?? "off"}{p.ta_scope ? `/${p.ta_scope}` : ""} · reversão {p.rev_mode ?? "off"} · risco {p.risk_pct}% · taxa+slip {p.fee_pct}+{p.slip_pct}%/lado · <strong>fluxo neutro (não backtestável)</strong>; fills no fechamento do candle. Educacional — não garante o futuro.</p>
             </>
           );
         })() : (
@@ -1401,7 +1469,8 @@ export default function AdminBot() {
           const cur = learnAsset === "all" ? null : d.byAsset?.[learnAsset];
           // Geral usa overall + perSignal global; por-moeda usa o breakdown do ativo.
           const stat = learnAsset === "all" ? { hitRate: d.overall.hitRate, n: d.overall.n } : cur ? { hitRate: cur.hitRate, n: cur.n } : null;
-          const sigs = learnAsset === "all" ? d.perSignal : cur?.perSignal ?? [];
+          // Ordena do que mais ajuda pro que mais atrapalha (desempate: mais amostras primeiro).
+          const sigs = (learnAsset === "all" ? d.perSignal : cur?.perSignal ?? []).slice().sort((a, b) => b.hitRate - a.hitRate || b.n - a.n);
           const report = learnAsset === "all" ? learning.ai_report : cur?.ai_report ?? null;
           return (
             <>
@@ -1427,7 +1496,7 @@ export default function AdminBot() {
                           <span className={`absolute inset-y-0 left-0 ${good ? "bg-emerald-500" : bad ? "bg-rose-500" : "bg-muted-foreground/50"}`} style={{ width: `${s.hitRate}%` }} />
                         </span>
                         <span className={`num w-9 text-right font-semibold ${good ? "text-emerald-500" : bad ? "text-rose-500" : "text-muted-foreground"}`}>{s.hitRate}%</span>
-                        <span className="num w-14 text-right text-muted-foreground/70">n{s.n}·{s.weight}</span>
+                        <span className="num w-16 text-right text-muted-foreground/70" title={`${s.n} amostras rotuladas · peso ${s.weight} no viés${s.edge != null ? ` · edge ${s.edge >= 0 ? "+" : ""}${s.edge} (acerto − 50%)` : ""}`}>n{s.n} · p{s.weight}</span>
                       </div>
                     );
                   })}
@@ -1449,20 +1518,46 @@ export default function AdminBot() {
       </div>
 
       {/* Diário do robô — histórico de leituras/decisões (aba Aprendizado: é a matéria-prima do que o robô aprende) */}
-      {logs.length > 0 && (
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Diário do robô</h2>
-          <div className="space-y-1.5">
-            {logs.map((l) => (
-              <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
-                <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="text-foreground">{l.message}</span>
+      {logs.length > 0 && (() => {
+        const dAssets = [...new Set(logs.map((l) => l.message.match(/^\[(\w+)\]/)?.[1]).filter(Boolean))].sort() as string[];
+        const rows = logs.filter((l) => (dLevel === "all" || l.level === dLevel) && (dAssetF === "all" || l.message.startsWith(`[${dAssetF}]`)));
+        return (
+          <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-foreground">Diário do robô</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                  {["all", "trade", "info", "warn", "error"].map((lv) => (
+                    <button key={lv} onClick={() => setDLevel(lv)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${dLevel === lv ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{lv === "all" ? "todos" : lv}</button>
+                  ))}
+                </div>
+                {dAssets.length > 1 && (
+                  <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                    <button onClick={() => setDAssetF("all")} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${dAssetF === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>todas</button>
+                    {dAssets.map((a) => (
+                      <button key={a} onClick={() => setDAssetF(a)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${dAssetF === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a}</button>
+                    ))}
+                  </div>
+                )}
+                <span className="text-[11px] text-muted-foreground">{rows.length} de {logs.length}</span>
               </div>
-            ))}
+            </div>
+            {rows.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">Nada no filtro atual (o diário guarda as últimas {logs.length} entradas carregadas).</p>
+            ) : (
+              <div className="space-y-1.5">
+                {rows.map((l) => (
+                  <div key={l.id} className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className={`rounded-full px-2 py-0.5 font-semibold ${LOG_TONE[l.level] ?? LOG_TONE.info}`}>{l.level}</span>
+                    <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="text-foreground">{l.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
       </>)}
 
       {/* Conexão (chaves) · aba Configuração */}
