@@ -60,12 +60,21 @@ interface ReadingSig {
   note: string;
 }
 interface Reading {
-  bias: number;
-  conviction: number;
+  bias: number;              // viés estrutural SMC do 15m (quem decide)
+  conviction: number;        // legado: |bias| (fica no payload, não é mais exibido)
   signals: ReadingSig[];
   spot?: number;
-  desired?: string;
-  structure?: { consensus?: { bull: number; bear: number; total: number }; perTf?: { tf: string; bias: number; structure?: number; pressure?: number; swing: string | null }[]; flowTilt?: number; zone?: string | null; regime?: string; trendBias?: number; gammaRegime?: string; counter?: boolean } | null;
+  flowTilt?: number;         // placar de fluxo compartilhado (só VETA, não dispara)
+  setup?: string | null;     // gatilho SMC armado ("imbalance ↑", "OB/FVG + estrutura ↓"…)
+  planStop?: number | null;  // stop estrutural do plano
+  planTarget?: number | null;// alvo (próxima liquidez) do plano
+  want?: string;             // alvo final após vetos (long/short/flat)
+  position?: string;
+  adds?: number;
+  leverage?: number;
+  gate?: string | null;      // por que segurou / nota do plano
+  ts?: string;
+  structure?: { smcBias?: number; setup?: string | null; planStop?: number | null; planTarget?: number | null; flowBias?: number; gammaRegime?: string; zone?: string | null; autoWeight?: { on: boolean; structWAdj?: number } } | null;
 }
 interface OrderRow {
   id: string;
@@ -129,7 +138,19 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "ls_ratio", label: "Long/Short (contrário)" },
   { key: "feargreed", label: "Fear & Greed" },
 ];
-const SIG_GROUPS = ["Estrutura por TF", "Microestrutura", "Fluxo", "Opções", "Técnico"];
+const SIG_GROUPS = ["Estrutura por TF", "Estrutura", "Microestrutura", "Fluxo", "Sentimento", "Opções", "Técnico"];
+// Papel REAL de cada sinal na decisão do robô (espelha o bot-run):
+// decide = estrutura SMC 15m (única que abre trade) · veta = entra no placar de fluxo (flowTilt)
+// que segura o setup quando contra · filtro = gate técnico EMA20×50+VWAP · medido = só alimenta o aprendizado.
+const VETO_KEYS = new Set(["book_inst", "book_retail", "absorb", "walls", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
+const sigRole = (key: string): { tag: string; cls: string; title: string } =>
+  key.startsWith("tf_")
+    ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — a ÚNICA que abre trade: define entrada (OB/FVG/imbalance), stop estrutural e alvo na liquidez" }
+    : VETO_KEYS.has(key)
+    ? { tag: "veta", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400", title: "Entra no placar de fluxo (média ponderada): se ficar contra o setup além do limiar, o robô SEGURA a entrada (imbalance ignora o veto)" }
+    : key === "vwap" || key === "ema2050"
+    ? { tag: "filtro", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: "Filtro técnico de entrada: setup estrutural (não-imbalance) só entra ALINHADO à EMA20×50 e ao VWAP diário" }
+    : { tag: "medido", cls: "bg-muted text-muted-foreground", title: "Só medido — não influencia a decisão; alimenta o aprendizado por moeda (pode virar gate se provar edge)" };
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
@@ -923,55 +944,76 @@ export default function AdminBot() {
       {selReading && (() => {
         const r = selReading;
         const bias = r.bias;
-        const bc = bias >= 15 ? "text-emerald-500" : bias <= -15 ? "text-rose-500" : "text-muted-foreground";
+        // ±18 = limiar de regime do bot-run (up/down/range) — mesma régua do backend.
+        const bc = bias >= 18 ? "text-emerald-500" : bias <= -18 ? "text-rose-500" : "text-muted-foreground";
+        const flow = r.flowTilt ?? r.structure?.flowBias ?? 0;
+        const vetoAt = Math.max(1, Number(cfg?.flow_veto ?? 10));
+        const revMode = String(cfg?.rev_mode ?? "off");
+        const setup = r.setup ?? r.structure?.setup ?? null;
+        const planStop = r.planStop ?? r.structure?.planStop ?? null;
+        const planTarget = r.planTarget ?? r.structure?.planTarget ?? null;
+        const gate = r.gate ?? null;
+        const held = !!gate && /contra|bloqueada|segura|não faz short/i.test(gate);
+        const posNow = selPos?.position ?? r.position ?? "flat";
+        const setupUp = !!setup && setup.includes("↑");
         return (
           <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · {selAsset} · Smart Money + fluxo</h2>
+              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · {selAsset} · SMC price-action 15m</h2>
               <span className="text-[11px] text-muted-foreground">{cfg?.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
             </div>
-            {r.structure && (
-              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
-                <span className="font-semibold uppercase tracking-wide text-muted-foreground">Por timeframe</span>
-                {r.structure.regime && (
-                  <span className={`rounded px-1.5 py-0.5 font-bold ${r.structure.regime === "up" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : r.structure.regime === "down" ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Tendência — o 4H manda (o 1D só reforça). Define o lado a favor/contra.">tendência: {r.structure.regime === "up" ? "ALTA" : r.structure.regime === "down" ? "BAIXA" : "range"}{typeof r.structure.trendBias === "number" ? ` (${r.structure.trendBias >= 0 ? "+" : ""}${r.structure.trendBias})` : ""}</span>
-                )}
-                {r.structure.gammaRegime && r.structure.gammaRegime !== "neutral" && (
-                  <span className={`rounded px-1.5 py-0.5 font-semibold ${r.structure.gammaRegime === "negative" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400"}`} title={r.structure.gammaRegime === "positive" ? "Gamma positivo: dealers amortecem (pinning/reversão) — estrutura pesa menos, contra-tendência mais fácil" : "Gamma negativo: amplifica (tendência) — estrutura pesa mais, breakout solto"}>γ {r.structure.gammaRegime === "positive" ? "positivo (reversão)" : "negativo (tendência)"}</span>
-                )}
-                {r.structure.consensus && (
-                  <span className="text-muted-foreground">consenso: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{r.structure.consensus.bull}↑</span> · <span className="font-semibold text-rose-600 dark:text-rose-400">{r.structure.consensus.bear}↓</span> de {r.structure.consensus.total}</span>
-                )}
-                {r.structure.perTf?.map((t) => (
-                  <span key={t.tf} title={t.structure != null && t.pressure != null ? `placar = estrutura ${t.structure} + pressão do book ${t.pressure >= 0 ? "+" : ""}${t.pressure}` : undefined} className={`num rounded px-1.5 py-0.5 font-semibold ${t.bias >= 12 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : t.bias <= -12 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`}>{t.tf} {t.bias >= 0 ? "+" : ""}{t.bias}</span>
-                ))}
-                {typeof r.structure.flowTilt === "number" && (
-                  <span className="text-muted-foreground" title="Fluxo compartilhado (CVD, gamma, ETF, paredes, absorção). Não dispara sozinho — CONFIRMA e veta a entrada se estiver forte contra.">confirmação (fluxo): <span className={`num font-semibold ${r.structure.flowTilt > 8 ? "text-emerald-600 dark:text-emerald-400" : r.structure.flowTilt < -8 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{r.structure.flowTilt >= 0 ? "+" : ""}{r.structure.flowTilt}</span></span>
-                )}
-                {r.structure.zone && <span className="text-muted-foreground">zona: <span className="text-foreground">{r.structure.zone}</span></span>}
-                {r.structure.counter && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400" title="Entrada contra a tendência do 4H/1D: stop curto e tamanho reduzido">⚠ contra-tendência</span>}
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-3">
+            {/* Contexto — regime estrutural, zona, gamma, posição e auto-peso */}
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
+              <span className="font-semibold uppercase tracking-wide text-muted-foreground">Contexto</span>
+              <span className={`rounded px-1.5 py-0.5 font-bold ${bias >= 18 ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : bias <= -18 ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Regime pela estrutura SMC do 15m (BOS/CHoCH + swings): ±18 = tendência; entre eles = range.">estrutura 15m: {bias >= 18 ? "ALTA" : bias <= -18 ? "BAIXA" : "range"}</span>
+              {r.structure?.zone && (
+                <span className="text-muted-foreground" title="Zona do range entre swing low e swing high: discount = barato (favorece compra) · premium = caro (favorece venda) · equilíbrio = meio.">zona: <span className="text-foreground">{r.structure.zone}</span></span>
+              )}
+              {r.structure?.gammaRegime && r.structure.gammaRegime !== "neutral" && (
+                <span className={`rounded px-1.5 py-0.5 font-semibold ${r.structure.gammaRegime === "negative" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400"}`} title={r.structure.gammaRegime === "positive" ? "Gamma positivo: dealers amortecem o preço (pinning/reversão) — rompimento tende a falhar" : "Gamma negativo: dealers amplificam (tendência) — rompimento anda mais"}>γ {r.structure.gammaRegime === "positive" ? "positivo (reversão)" : "negativo (tendência)"}</span>
+              )}
+              <span className={`rounded px-1.5 py-0.5 font-semibold ${posNow === "long" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : posNow === "short" ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Posição atual do robô nesta moeda (pirâmide = adições no lucro).">posição: {posNow === "long" ? "LONG" : posNow === "short" ? "SHORT" : "fora"}{posNow !== "flat" && (selPos?.adds ?? r.adds ?? 0) > 0 ? ` +${selPos?.adds ?? r.adds}` : ""}{posNow !== "flat" && r.leverage ? ` · ${r.leverage}x` : ""}</span>
+              {r.structure?.autoWeight?.on && (
+                <span className="rounded bg-violet-500/15 px-1.5 py-0.5 font-semibold text-violet-600 dark:text-violet-400" title="Auto-ponderação ligada: o aprendizado desta moeda ajusta o peso dos sinais (o que acerta pesa mais).">auto-peso on</span>
+              )}
+            </div>
+            {/* Pipeline de decisão: estrutura decide → gatilho arma → fluxo/técnico vetam → decisão */}
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Viés líquido</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Viés da estrutura SMC do 15m — a ÚNICA leitura que abre trade.">1 · Estrutura 15m</div>
                 <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
                 <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
                   <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
                   <div className={`absolute top-0 h-full rounded-full ${bias >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={bias >= 0 ? { left: "50%", width: `${Math.abs(bias) / 2}%` } : { right: "50%", width: `${Math.abs(bias) / 2}%` }} />
                 </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">decide entrada, stop e alvo</div>
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Convicção</div>
-                <div className="num text-2xl font-bold text-foreground">{r.conviction}%</div>
-                <div className="text-[10px] text-muted-foreground">forças no mesmo lado</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Setup SMC armado agora: imbalance (FVG fresco) ou OB/FVG a favor de BOS/CHoCH após varrer liquidez ou em discount/premium.">2 · Gatilho (setup)</div>
+                <div className={`truncate text-lg font-bold leading-8 ${setup ? (setupUp ? "text-emerald-500" : "text-rose-500") : "text-muted-foreground"}`} title={setup ?? undefined}>{setup ?? "nenhum"}</div>
+                <div className="text-[10px] text-muted-foreground">{setup ? `stop ${num(planStop)} · alvo ${num(planTarget)}` : "aguarda OB/FVG ou imbalance"}</div>
+              </div>
+              <div className={`rounded-lg border p-3 text-center ${held && gate!.includes("fluxo") ? "border-amber-500/40 bg-amber-500/5" : "border-border/70 bg-background/40"}`}>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Placar de fluxo (book, paredes, CVD, liquidações, gamma). NÃO dispara trade — só veta o setup quando contra além do limiar.">3 · Fluxo (veto)</div>
+                <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
+                <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
+                  <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                  <div className={`absolute top-0 h-full rounded-full ${flow >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={flow >= 0 ? { left: "50%", width: `${Math.abs(flow) / 2}%` } : { right: "50%", width: `${Math.abs(flow) / 2}%` }} />
+                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">veta contra além de ±{vetoAt} · técnico {cfg?.ta_gate !== false ? "EMA+VWAP on" : "off"}</div>
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Decisão</div>
-                {(() => { const d = selPos?.last_decision ?? cfg?.last_decision; return <div className={`text-2xl font-bold ${d === "buy" || d === "long" ? "text-emerald-500" : d === "sell" || d === "short" ? "text-rose-500" : "text-foreground"}`}>{decisionLabel(d)}</div>; })()}
-                <div className="text-[10px] text-muted-foreground">limiar ±{cfg?.buy_threshold ?? 15} · consenso {cfg?.min_votes ?? 3}/{selReading.structure?.consensus?.total ?? 4}</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">4 · Decisão</div>
+                {(() => { const d = selPos?.last_decision ?? cfg?.last_decision; return <div className={`text-2xl font-bold ${d === "buy" || d === "long" || d === "add" ? "text-emerald-500" : d === "sell" || d === "short" ? "text-rose-500" : "text-foreground"}`}>{d === "add" ? "Pirâmide" : decisionLabel(d)}</div>; })()}
+                <div className="text-[10px] text-muted-foreground">{revMode === "off" ? "sai só por stop/alvo/trailing" : revMode === "imbalance" ? "reverte só com FVG fresco contra" : "reverte a cada sinal contrário"}</div>
               </div>
             </div>
+            {/* Motivo — o porquê da decisão deste ciclo (gate de veto ou nota do plano) */}
+            {gate && (
+              <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] ${held ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : gate.startsWith("sem") ? "border-border/70 bg-background/40 text-muted-foreground" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
+                {held ? <>⏸ <strong>Segurou:</strong> {gate}</> : gate.startsWith("sem") ? <>Sem gatilho neste ciclo: {gate} — o robô aguarda um setup SMC a favor da estrutura.</> : <>🎯 <strong>Gatilho armado:</strong> {gate}</>}
+              </div>
+            )}
             <div className="mt-3 space-y-3">
               {SIG_GROUPS.map((grp) => {
                 const items = r.signals.filter((s) => s.group === grp);
@@ -980,10 +1022,11 @@ export default function AdminBot() {
                   <div key={grp}>
                     <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{grp}</div>
                     <div className="space-y-1">
-                      {items.map((s) => (
+                      {items.map((s) => { const role = sigRole(s.key); return (
                         <div key={s.key} className="flex items-center gap-2 text-xs">
                           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.score > 8 ? "bg-emerald-500" : s.score < -8 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
                           <span className="w-40 shrink-0 truncate text-foreground" title={s.label}>{s.label}</span>
+                          <span className={`hidden w-12 shrink-0 rounded px-1 py-px text-center text-[9px] font-semibold uppercase sm:inline-block ${role.cls}`} title={role.title}>{role.tag}</span>
                           <span className="hidden min-w-0 flex-1 truncate text-muted-foreground sm:block" title={s.note}>{s.note}</span>
                           <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
                             <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
@@ -991,13 +1034,13 @@ export default function AdminBot() {
                           </div>
                           <span className={`num w-8 shrink-0 text-right ${s.score >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{s.score >= 0 ? "+" : ""}{s.score}</span>
                         </div>
-                      ))}
+                      ); })}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">Cada sinal pontua −100 (baixa) a +100 (alta) com peso; o viés é a média ponderada. Dados coletados pela plataforma, atualizados a cada ~5 min. Educacional — não é recomendação.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide: a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) é a única que abre trade — entra em OB/FVG/imbalance a favor de BOS/CHoCH, stop na invalidação estrutural, alvo na próxima liquidez. Os sinais <em>veta</em> formam o placar de fluxo que segura o setup quando contra (±{vetoAt}); os <em>filtro</em> exigem EMA20×50 e VWAP alinhados; os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
           </div>
         );
       })()}
