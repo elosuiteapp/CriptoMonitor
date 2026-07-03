@@ -186,7 +186,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
@@ -203,7 +203,11 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   // na FORMAÇÃO do gap (janela 2 velas), comprando o esticado do impulso.
   const freshWin = o.imbRetest ? 16 : 2;
   const inZone = (f: FVG) => price >= f.bottom - buf && price <= f.top + buf;
-  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)));
+  // EXPERIMENTO max_zone_atr: entrada imbalance só com o preço a ≤ X ATR da borda do FVG
+  // (mata o "chase esticado" — comprar longe da zona de origem depois do impulso). 0 = off.
+  const nearZone = (f: FVG) => !o.maxZoneAtr || o.maxZoneAtr <= 0 ? true
+    : (f.bias === "bullish" ? (price - f.top) / atr <= o.maxZoneAtr : (f.bottom - price) / atr <= o.maxZoneAtr);
+  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)) && nearZone(f));
   const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
   const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
   let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number } | null = null;
@@ -213,6 +217,18 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   else if (bear && (bearOB || bearFvg) && (sweptBuy || inPrem)) { want = "short"; setup = "OB/FVG + estrutura ↓"; zone = bearOB ?? bearFvg; }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot" };
+  // EXPERIMENTO opp_zone_atr: bloqueia a entrada quando há FVG/OB OPOSTO não-preenchido a ≤ X ATR
+  // à frente (estaria entrando direto numa oferta/demanda fresca — o alvo morre nela). 0 = off.
+  if (o.oppZoneAtr && o.oppZoneAtr > 0) {
+    const ahead = o.oppZoneAtr * atr;
+    const oppFvg = want === "long"
+      ? smc.fvgs.some((f) => f.bias === "bearish" && f.bottom > price - buf && f.bottom - price <= ahead)
+      : smc.fvgs.some((f) => f.bias === "bullish" && f.top < price + buf && price - f.top <= ahead);
+    const oppOb = want === "long"
+      ? smc.orderBlocks.some((b) => b.bias === "bearish" && b.bottom > price - buf && b.bottom - price <= ahead)
+      : smc.orderBlocks.some((b) => b.bias === "bullish" && b.top < price + buf && price - b.top <= ahead);
+    if (oppFvg || oppOb) return { want: null, setup: "", stop: null, target: null, note: "zona oposta fresca à frente" };
+  }
   let stop: number;
   if (want === "long") {
     stop = (zone ? zone.bottom : (Number.isFinite(smc.swingLowLevel) ? smc.swingLowLevel : price - o.stopAtrMult * atr)) - buf;
@@ -334,6 +350,8 @@ Deno.serve(async (req) => {
   const cooldownBars = Math.max(0, Number(body?.cooldown_bars ?? 0));   // barras sem entrar após STOP (live: 15min ≈ 1 barra)
   const imbRetest = String(body?.imb_mode ?? "chase") === "retest";     // retest = entra na VOLTA à zona do FVG (igual módulo Smart Money); chase = na formação
   const htfOn = !!body?.htf_filter;                                     // estrutura do 1H como FILTRO de direção (não vota — só alinha)
+  const maxZoneAtr = Math.max(0, Number(body?.max_zone_atr ?? 0));      // imbalance só a ≤ X ATR da borda do FVG (0=off)
+  const oppZoneAtr = Math.max(0, Number(body?.opp_zone_atr ?? 0));      // bloqueia entrada com FVG/OB oposto a ≤ X ATR à frente (0=off)
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -459,7 +477,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.

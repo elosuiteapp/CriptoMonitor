@@ -1,13 +1,16 @@
-// Edge Function: bot-run (v9) — robô FUTUROS multi-corretora: SMC PRICE-ACTION 15m + veto de fluxo.
-// venue='binance' → Binance USDⓈ-M Futures TESTNET (long+short); a OKX bloqueia derivativos p/
-// conta BR (geo). venue='okx' = legado (spot/swap). Opera nos DOIS lados (long/short/flat).
-// DECISÃO: a estrutura SMC do 15m (Order Block, FVG/imbalance, liquidez/EQH-EQL, BOS/CHoCH,
-// premium/discount) dispara a entrada e define stop + alvo (smcDecision). O FLUXO (book,
-// paredes/absorção, CVD, liquidações, gamma/HIRO) NÃO dispara — só VETA o setup quando muito
-// contra (flowTilt ±50); setups de imbalance ignoram o veto. Demais sinais (funding, L/S,
-// Fear&Greed, diagnósticos SMC) são registrados só p/ o APRENDIZADO medir (peso simbólico).
-// REMOVIDOS da operação: TFs maiores (30m/1H/4H/1D — saíam ≤ cara-ou-coroa no aprendizado) e
-// institucional macro (ETF, stablecoins, prêmio Coinbase — lento demais p/ trade de 15m). Demo.
+// Edge Function: bot-run (v17 — MOTOR DE CONFLUÊNCIA) — robô FUTUROS Binance testnet (demo).
+// Redesenho do dono (03/jul): "confluência de tudo — deu maioria, o robô executa".
+// PIPELINE: (1) o SMC 15m ARMA o setup (FVG/imbalance ou OB+estrutura) e dá zona, STOP e ALVO
+// estruturais, com 2 regras de QUALIDADE: entrada só perto da zona de origem (max_zone_atr,
+// mata o chase esticado) e nunca contra FVG/OB oposto fresco colado à frente (opp_zone_atr).
+// (2) 4 GRUPOS VOTAM na direção do setup: Estrutura (bias SMC 15m) · Fluxo (placar LIMPO:
+// book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) ·
+// Sentimento (Fear&Greed, Long/Short). (3) MAIORIA DECIDE (cfg.conf_min, default 3-de-4) —
+// vale p/ TODA entrada, imbalance incluído (fim do passe livre). Setup segurado fica logado
+// com o placar (gate) → o aprendizado mede o que teria acontecido.
+// FORA DO PLACAR (só medidos p/ aprendizado): absorção 47%, paredes 49%, pressão do book 48%,
+// CVD agregado 50%, funding 41% (invertido), ADX — hit-rates n≥600 do bot_learning em 03/jul.
+// Saídas (stop estrutural, alvo liquidez, trailing 4×ATR, rev_mode) e risco: INTOCADOS (validados).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -275,7 +278,7 @@ function dailyVwap(cs: Candle[]): number | null {
 //  • ALVO = próxima poça de LIQUIDEZ (EQH/EQL) / zona oposta — R:R vindo do gráfico.
 // Usa só: Order Blocks, Imbalance(FVG), Liquidez/EQH-EQL, Zonas, BOS/CHoCH. (VP/liq-heatmap/HTF fora.)
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
@@ -287,7 +290,11 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   const bearOB = smc.orderBlocks.filter((b) => b.bias === "bearish" && price <= b.top && price >= b.bottom - buf).sort((a, b) => a.mid - b.mid)[0];
   const bullFvg = smc.fvgs.filter((f) => f.bias === "bullish" && price >= f.bottom && price <= f.top + buf).sort((a, b) => b.mid - a.mid)[0];
   const bearFvg = smc.fvgs.filter((f) => f.bias === "bearish" && price <= f.top && price >= f.bottom - buf).sort((a, b) => a.mid - b.mid)[0];
-  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * 2 && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct);
+  // QUALIDADE 1 (max_zone_atr): entrada imbalance só com o preço a ≤ X ATR da borda do FVG —
+  // mata o "chase esticado" (comprar longe da zona de origem depois do impulso). 0 = off.
+  const nearZone = (f: FVG) => !o.maxZoneAtr || o.maxZoneAtr <= 0 ? true
+    : (f.bias === "bullish" ? (price - f.top) / atr <= o.maxZoneAtr : (f.bottom - price) / atr <= o.maxZoneAtr);
+  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * 2 && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && nearZone(f));
   const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
   const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
 
@@ -298,6 +305,18 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   else if (bear && (bearOB || bearFvg) && (sweptBuy || inPrem)) { want = "short"; setup = "OB/FVG + estrutura ↓"; zone = bearOB ?? bearFvg; }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup SMC" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot não faz short" };
+  // QUALIDADE 2 (opp_zone_atr): não entrar com FVG/OB OPOSTO não-preenchido a ≤ X ATR à frente —
+  // estaria entrando direto numa oferta/demanda fresca (o alvo morre nela). 0 = off.
+  if (o.oppZoneAtr && o.oppZoneAtr > 0) {
+    const ahead = o.oppZoneAtr * atr;
+    const oppFvg = want === "long"
+      ? smc.fvgs.some((f) => f.bias === "bearish" && f.bottom > price - buf && f.bottom - price <= ahead)
+      : smc.fvgs.some((f) => f.bias === "bullish" && f.top < price + buf && price - f.top <= ahead);
+    const oppOb = want === "long"
+      ? smc.orderBlocks.some((b) => b.bias === "bearish" && b.bottom > price - buf && b.bottom - price <= ahead)
+      : smc.orderBlocks.some((b) => b.bias === "bullish" && b.top < price + buf && price - b.top <= ahead);
+    if (oppFvg || oppOb) return { want: null, setup: "", stop: null, target: null, note: "zona oposta fresca à frente — segura" };
+  }
 
   // STOP estrutural (invalidação): abaixo do OB/FVG e da mínima varrida (long); espelho no short.
   let stop: number;
@@ -369,11 +388,14 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // ── MICROESTRUTURA: book + paredes/ímã + ABSORÇÃO (estado atual do mercado) ──
   const byEx: Record<string, any> = {};
   for (const r of imb) if (!byEx[r.exchange]) byEx[r.exchange] = r;
+  // Pesos recalibrados pelo bot_learning 03/jul (n≥600): book varejo 56% e institucional 54% são
+  // os fluxos PREDITIVOS → voz de verdade no placar; absorção 47%/paredes 49%/pressão 48%/CVD 50%
+  // saíram do placar (peso simbólico, só medidos — eram os MAIORES pesos do veto antigo).
   const cb = byEx["coinbase"];
-  if (cb) { const bid = Number(cb.bid_wide_usd || cb.bid_near_usd || 0), ask = Number(cb.ask_wide_usd || cb.ask_near_usd || 0); if (bid + ask > 0) { const r = (bid - ask) / (bid + ask); add("book_inst", "Microestrutura", "Book institucional (Coinbase)", 0.09, r * 150, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((bid / (bid + ask)) * 100)}% bid`); } }
+  if (cb) { const bid = Number(cb.bid_wide_usd || cb.bid_near_usd || 0), ask = Number(cb.ask_wide_usd || cb.ask_near_usd || 0); if (bid + ask > 0) { const r = (bid - ask) / (bid + ask); add("book_inst", "Microestrutura", "Book institucional (Coinbase)", 0.10, r * 150, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((bid / (bid + ask)) * 100)}% bid`); } }
   let rbid = 0, rask = 0;
   for (const ex of ["binance", "okx"]) { const r = byEx[ex]; if (r) { rbid += Number(r.bid_near_usd || 0); rask += Number(r.ask_near_usd || 0); } }
-  if (rbid + rask > 0) { const r = (rbid - rask) / (rbid + rask); add("book_retail", "Microestrutura", "Book varejo (Binance+OKX)", 0.02, r * 140, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((rbid / (rbid + rask)) * 100)}% bid`); }
+  if (rbid + rask > 0) { const r = (rbid - rask) / (rbid + rask); add("book_retail", "Microestrutura", "Book varejo (Binance+OKX)", 0.10, r * 140, `${r >= 0 ? "comprador" : "vendedor"} · ${Math.round((rbid / (rbid + rask)) * 100)}% bid`); }
   if (spot > 0 && walls.length) {
     // Absorção: a MAIOR parede colada no preço (±0,7%) sendo testada agora.
     // Paredes de baleia: MESMO medidor do gráfico — suporte (ABAIXO do preço) × resistência (ACIMA).
@@ -398,9 +420,9 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
       if (bestSide === "bid") { absScore = strength; absNote = `parede de COMPRA $${(bestN / 1e6).toFixed(1)}M defendendo ~$${Math.round(bestPx / 1000)}k → bounce provável`; }
       else { absScore = -strength; absNote = `parede de VENDA $${(bestN / 1e6).toFixed(1)}M barrando ~$${Math.round(bestPx / 1000)}k → rejeição provável`; }
     }
-    add("absorb", "Microestrutura", "Teste de parede (absorção)", 0.13, absScore, absNote);
+    add("absorb", "Microestrutura", "Teste de parede (absorção)", 0.02, absScore, absNote); // 47% n739 → fora do placar, só medido
     const wTot = wSup + wRes;
-    if (wTot > 0) { const r = (wSup - wRes) / wTot; add("walls", "Microestrutura", "Paredes de baleia (suporte × resistência)", 0.11, r * 120, `${r >= 0 ? "suporte" : "resistência"} ${Math.round((r >= 0 ? wSup : wRes) / wTot * 100)}% · $${(wSup / 1e6).toFixed(1)}M sup × $${(wRes / 1e6).toFixed(1)}M res`); }
+    if (wTot > 0) { const r = (wSup - wRes) / wTot; add("walls", "Microestrutura", "Paredes de baleia (suporte × resistência)", 0.02, r * 120, `${r >= 0 ? "suporte" : "resistência"} ${Math.round((r >= 0 ? wSup : wRes) / wTot * 100)}% · $${(wSup / 1e6).toFixed(1)}M sup × $${(wRes / 1e6).toFixed(1)}M res`); } // 49% n2326 → só medido
   }
 
   // ── PRESSÃO DO BOOK (±2%): TENDÊNCIA recente (agora vs início da janela coletada) — o
@@ -434,13 +456,12 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   //    agora BTC/ETH/SOL/BNB registram o MESMO conjunto → análise por moeda fica completa/comparável). ──
   // Derivativos (por moeda): funding e long/short são CONTRÁRIOS (extremo = multidão no lado errado).
   const fr = N(der.funding_rate); // Coinalyze CEX = PERCENT (0,01 = 0,01%); normaliza por 0,05%.
-  if (fr != null && fr !== 0) add("funding", "Fluxo", "Funding (contrário)", 0.02, -Math.sign(fr) * Math.min(Math.abs(fr) / 0.05, 1) * 55, `funding ${fr >= 0 ? "+" : ""}${fr.toFixed(4)}% — ${fr > 0 ? "longs pagam (aperto de longs)" : "shorts pagam (aperto de shorts)"}`);
+  if (fr != null && fr !== 0) add("funding", "Fluxo", "Funding (contrário)", 0.02, -Math.sign(fr) * Math.min(Math.abs(fr) / 0.05, 1) * 55, `funding ${fr >= 0 ? "+" : ""}${fr.toFixed(4)}% — ${fr > 0 ? "longs pagam (aperto de longs)" : "shorts pagam (aperto de shorts)"}`); // 41% n832 (invertido) → fora de tudo, só medido
   const ls = N(der.long_short_ratio);
-  if (ls != null && ls > 0) add("ls_ratio", "Fluxo", "Long/Short (contrário)", 0.02, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`);
-  // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO. (Institucional macro — stablecoins/ETF/prêmio
-  // Coinbase — REMOVIDO do robô a pedido do dono: sinal lento/diário não decide trade de 15m.)
+  if (ls != null && ls > 0) add("ls_ratio", "Sentimento", "Long/Short (contrário)", 0.04, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`); // 53% n1958 → vota no grupo Sentimento
+  // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO — 56% n1958, o medido mais preditivo.
   const fng = N(p?.sentiment?.fng_value);
-  if (fng != null) add("feargreed", "Sentimento", "Fear & Greed (contrário)", 0.02, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
+  if (fng != null) add("feargreed", "Sentimento", "Fear & Greed (contrário)", 0.04, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
   // Diagnóstico SMC por moeda (já entram no voto via structuralBias; aqui é só p/ MEDIR cada peça).
   if (psmc) {
     const at = psmc.atr || psmc.price * 0.01;
@@ -486,17 +507,17 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // CVD agregado é ruído (~50% no aprendizado) → peso baixo. O valor está na DIVERGÊNCIA
   // institucional (Coinbase, mão forte) × varejo (Binance+OKX, mão fraca): seguir o institucional.
   const cvdAgg = (cvdRetail ?? 0) + (cvdInst ?? 0);
-  if (cvdRetail != null || cvdInst != null) add("cvd", "Fluxo", "CVD agregado (~30 min)", 0.03, (cvdAgg / 2500000) * 70, `${cvdAgg >= 0 ? "compra" : "venda"} líquida $${Math.abs(cvdAgg / 1e6).toFixed(1)}M`);
+  if (cvdRetail != null || cvdInst != null) add("cvd", "Fluxo", "CVD agregado (~30 min)", 0.02, (cvdAgg / 2500000) * 70, `${cvdAgg >= 0 ? "compra" : "venda"} líquida $${Math.abs(cvdAgg / 1e6).toFixed(1)}M`); // 50% n2099 → só medido
   if (cvdInst != null && cvdRetail != null && Math.sign(cvdInst) !== 0 && Math.sign(cvdRetail) !== 0 && Math.sign(cvdInst) !== Math.sign(cvdRetail)) {
     const sc = Math.sign(cvdInst) * (55 + 30 * Math.min(Math.abs(cvdInst) / 300000, 1));
-    add("cvd_div", "Fluxo", "Divergência CVD (institucional × varejo)", 0.11, sc, cvdInst > 0 ? "institucional COMPRA e varejo vende — acumulação (tell de alta)" : "institucional VENDE e varejo compra — distribuição (tell de baixa)");
+    add("cvd_div", "Fluxo", "Divergência CVD (institucional × varejo)", 0.06, sc, cvdInst > 0 ? "institucional COMPRA e varejo vende — acumulação (tell de alta)" : "institucional VENDE e varejo compra — distribuição (tell de baixa)"); // 50% direção-1h, mas 75%/2.17R nos trades reais (n4) → segue no placar, peso menor
   }
   const llq = N(der.liq_long_usd) ?? 0, lshq = N(der.liq_short_usd) ?? 0;
   if (llq + lshq > 0) add("liqs", "Fluxo", "Liquidações", 0.06, ((lshq - llq) / (llq + lshq)) * 85, llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`);
   const pw = N(g.put_wall), cw = N(g.call_wall);
   if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.05, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); }
   const gex = N(g.net_gex_spot);
-  if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.07, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
+  if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.05, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   // (Prêmio Coinbase e Fluxo de ETF — institucional macro — REMOVIDOS do robô: não decidem trade de 15m.)
 
   // ── REGIME DE GAMMA (chave de modo): positivo = dealers amortecem (pinning/reversão) → estrutura
@@ -525,16 +546,30 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
   });
 
-  // Fluxo compartilhado (tudo que é "agora", não por-TF) → confirmação/veto.
-  const flowKeys = new Set(["book_inst", "book_retail", "absorb", "walls", "magnet", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
+  // FLUXO LIMPO: só os sinais que o aprendizado validou (book 56%/54%, liqs 53%, gamma 52%,
+  // gflow 51%, cvd_div). Absorção/paredes/pressão/CVD-agregado SAÍRAM do placar (47-50%).
+  const flowKeys = new Set(["book_inst", "book_retail", "cvd_div", "liqs", "gamma", "gflow"]);
   let fn = 0, fd = 0;
   for (const x of sig) if (flowKeys.has(x.key) && toggles[x.key] !== false) { fn += x.score * x.weight; fd += x.weight; }
   const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;
 
-  // Placar-resumo (média dos TFs) só p/ exibição; o VOTO 2-de-3 é decidido no handler
-  // com os limiares configuráveis (buy_threshold/sell_threshold).
+  // ── PLACAR DE CONFLUÊNCIA (motor v17): 4 grupos votam na direção; a MAIORIA decide no handler.
+  //    Voto por grupo = média ponderada dos sinais LIGADOS dele; |score| ≥ 10 vira voto (senão 0). ──
+  const groupDefs: { key: string; label: string; keys: string[] }[] = [
+    { key: "estrutura", label: "Estrutura (SMC 15m)", keys: ["tf_15m"] },
+    { key: "fluxo", label: "Fluxo", keys: [...flowKeys] },
+    { key: "tecnico", label: "Técnico (EMA20×50 + VWAP)", keys: ["ema2050", "vwap"] },
+    { key: "sentimento", label: "Sentimento (F&G + L/S)", keys: ["feargreed", "ls_ratio"] },
+  ];
+  const confluence = groupDefs.map((g) => {
+    let n = 0, d = 0;
+    for (const x of sig) if (g.keys.includes(x.key) && toggles[x.key] !== false) { n += x.score * x.weight; d += x.weight; }
+    const score = d ? Math.round(clamp(n / d)) : 0;
+    return { key: g.key, label: g.label, score, vote: (score >= 10 ? 1 : score <= -10 ? -1 : 0) as 1 | 0 | -1 };
+  });
+
   const bias = perTf.length ? Math.round(perTf.reduce((s, t) => s + t.bias, 0) / perTf.length) : 0;
-  return { bias, signals: sig, absScore: Math.round(absScore), perTf, flowTilt, gammaPos, gammaNeg };
+  return { bias, signals: sig, absScore: Math.round(absScore), perTf, flowTilt, gammaPos, gammaNeg, confluence };
 }
 
 Deno.serve(async (req) => {
@@ -642,7 +677,7 @@ Deno.serve(async (req) => {
       const walls = (wallRows ?? []).filter((w) => w.ts === (wallRows ?? [])[0]?.ts);
       const tune = buildTune(learnByAsset[asset]?.perSignal ?? null, autoWeightOn);
       const signalToggles = (cfg.signal_toggles ?? {}) as Record<string, boolean>;
-      const { signals, flowTilt, gammaPos, gammaNeg } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdRetail, cvdInst, (pressRows as { label: string; bid: number; ask: number }[]) ?? [], tune, signalToggles);
+      const { signals, flowTilt, gammaPos, gammaNeg, confluence } = computeReading(tfReads, snap.payload, imbRows ?? [], walls, lastPx, cvdRetail, cvdInst, (pressRows as { label: string; bid: number; ask: number }[]) ?? [], tune, signalToggles);
 
       // ── SMC PRICE-ACTION 15m: a decisão vem da ESTRUTURA (não de voto/regime multi-TF). ──
       const smcBias = Math.round(tfReads[0]?.bias ?? 0);   // viés estrutural do 15m (só p/ exibir/medir)
@@ -737,28 +772,28 @@ Deno.serve(async (req) => {
       const c15 = candleRows[0] ?? [];
       const lastT = c15.length ? Math.floor(Number(c15[c15.length - 1][0]) / 1000) : Math.floor(Date.now() / 1000);
       const plan: SmcPlan = primary?.smc
-        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut })
+        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0) })
         : { want: null, setup: "", stop: null, target: null, note: "sem SMC" };
       let want: "long" | "short" | null = plan.want;
       let gate = plan.note;
-      // Fluxo (sinais LIGADOS) VETA o setup estrutural quando contra além do limiar cfg.flow_veto;
-      // imbalance ignora fluxo. Era fixo ±50, mas o |flowTilt| máximo já visto foi 28 (nunca
-      // disparava); nos trades reais, fluxo contra mesmo LEVE (−5..−24) deu 19% de acerto vs
-      // 64% a favor → limiar realista (default 10, ajustável no painel; mínimo 1).
-      if (want && plan.setup && !plan.setup.startsWith("imbalance")) {
-        const vetoAt = Math.max(1, Number(cfg.flow_veto ?? 10));
-        const flowAgainst = want === "long" ? flowTilt <= -vetoAt : flowTilt >= vetoAt;
-        if (flowAgainst) { gate = `fluxo contra (${flowTilt}, limiar ${vetoAt}) — segura o setup`; want = null; }
-      }
-      // FILTRO TÉCNICO (EMA20×50 + VWAP diário) — validado no backtester (90d+180d: melhorou o PF
-      // em TODAS as moedas). Setup estrutural (não-imbalance) só entra ALINHADO aos dois; usa os
-      // scores já calculados em computeReading (sinal ausente = não bloqueia).
-      if (want && plan.setup && !plan.setup.startsWith("imbalance") && cfg.ta_gate !== false) {
-        const sEma = signals.find((s) => s.key === "ema2050"), sVw = signals.find((s) => s.key === "vwap");
-        const okDir = want === "long"
-          ? (!sEma || sEma.score > 0) && (!sVw || sVw.score > 0)
-          : (!sEma || sEma.score < 0) && (!sVw || sVw.score < 0);
-        if (!okDir) { gate = "técnico contra (EMA20×50/VWAP) — segura o setup"; want = null; }
+      // ── GATE DE CONFLUÊNCIA (motor v17, pedido do dono): os 4 grupos (Estrutura/Fluxo/Técnico/
+      //    Sentimento) votam na direção do setup; só executa com MAIORIA (cfg.conf_min, default
+      //    3-de-4) e sem empate contra. Vale p/ TODA entrada, IMBALANCE INCLUÍDO (era o passe
+      //    livre que fazia vender SOL contra estrutura+VWAP+EMAs+fluxo). Substitui o veto de
+      //    fluxo (flow_veto) e o filtro técnico (ta_gate) antigos — agora fluxo e técnico VOTAM.
+      //    Setup segurado fica no gate/log → o aprendizado mede o que teria acontecido (shadow).
+      const confMin = Math.min(4, Math.max(1, Number(cfg.conf_min ?? 3)));
+      let confVotes: { for: number; against: number } | null = null;
+      if (want) {
+        const dir = want === "long" ? 1 : -1;
+        const votesFor = confluence.filter((g) => g.vote === dir).length;
+        const votesAgainst = confluence.filter((g) => g.vote === -dir).length;
+        confVotes = { for: votesFor, against: votesAgainst };
+        if (votesFor < confMin || votesAgainst >= votesFor) {
+          const contra = confluence.filter((g) => g.vote === -dir).map((g) => g.label).join(", ");
+          gate = `confluência ${votesFor}/${confluence.length} a favor (precisa ${confMin}${votesAgainst ? `; contra: ${contra}` : ""}) — segura o setup`;
+          want = null;
+        }
       }
       // REVERSÃO COM CUIDADO (rev_mode; backtest: virar a mão a cada sinal contrário era o maior
       // ralo — ~50% das saídas). 'off' = posição só sai por stop/alvo/trailing; 'imbalance' = só
@@ -784,7 +819,7 @@ Deno.serve(async (req) => {
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
       const zone = primary?.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null;
       const structure = { smcBias, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, flowBias: flowTilt, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", zone, autoWeight: autoWeightOn ? { on: true, structWAdj: Math.round(tune.structWAdj * 100) / 100, top: tune.applied.slice(0, 6) } : { on: false } };
-      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, confluence, confMin, confVotes, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
       const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");

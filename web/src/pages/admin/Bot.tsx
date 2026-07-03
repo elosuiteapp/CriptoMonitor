@@ -32,8 +32,11 @@ interface Config {
   auto_weight: boolean;  // auto-ponderar sinais por moeda (usa o aprendizado)
   trail_on: boolean;     // stop móvel (trailing) ligado
   rev_mode?: string;     // reversão: off (nunca vira a mão) | imbalance (só FVG fresco) | any (antigo)
-  ta_gate?: boolean;     // filtro técnico EMA20×50 + VWAP no setup estrutural
-  flow_veto?: number;    // força mínima do fluxo CONTRA p/ vetar o setup (era 50 fixo — nunca disparava)
+  ta_gate?: boolean;     // LEGADO (v16): filtro técnico — substituído pelo voto do grupo Técnico
+  flow_veto?: number;    // LEGADO (v16): veto de fluxo — substituído pelo voto do grupo Fluxo
+  conf_min?: number;     // motor v17: nº mínimo de grupos (de 4) votando na direção p/ executar
+  max_zone_atr?: number; // qualidade 1: entrada imbalance só a ≤ X ATR da borda do FVG (0 = off)
+  opp_zone_atr?: number; // qualidade 2: bloqueia entrada com FVG/OB oposto fresco a ≤ X ATR à frente (0 = off)
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
   trail_atr_mult: number; // distância do trailing = k × ATR do ativo (adaptativo)
   stop_atr_on: boolean;  // stop de risco por ATR (senão, % fixo)
@@ -59,12 +62,16 @@ interface ReadingSig {
   weight: number;
   note: string;
 }
+interface ConfGroup { key: string; label: string; score: number; vote: 1 | 0 | -1 }
 interface Reading {
   bias: number;              // viés estrutural SMC do 15m (quem decide)
   conviction: number;        // legado: |bias| (fica no payload, não é mais exibido)
   signals: ReadingSig[];
   spot?: number;
-  flowTilt?: number;         // placar de fluxo compartilhado (só VETA, não dispara)
+  flowTilt?: number;         // placar do grupo Fluxo (limpo, v17)
+  confluence?: ConfGroup[];  // motor v17: os 4 grupos (Estrutura/Fluxo/Técnico/Sentimento) e o voto de cada
+  confMin?: number;          // grupos necessários p/ executar
+  confVotes?: { for: number; against: number } | null; // votos na direção do setup deste ciclo
   setup?: string | null;     // gatilho SMC armado ("imbalance ↑", "OB/FVG + estrutura ↓"…)
   planStop?: number | null;  // stop estrutural do plano
   planTarget?: number | null;// alvo (próxima liquidez) do plano
@@ -141,18 +148,21 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "feargreed", label: "Fear & Greed" },
 ];
 const SIG_GROUPS = ["Estrutura por TF", "Estrutura", "Microestrutura", "Fluxo", "Sentimento", "Opções", "Técnico"];
-// Papel REAL de cada sinal na decisão do robô (espelha o bot-run):
-// decide = estrutura SMC 15m (única que abre trade) · veta = entra no placar de fluxo (flowTilt)
-// que segura o setup quando contra · filtro = gate técnico EMA20×50+VWAP · medido = só alimenta o aprendizado.
-const VETO_KEYS = new Set(["book_inst", "book_retail", "absorb", "walls", "book_trend", "cvd", "cvd_div", "liqs", "gamma", "gflow"]);
+// Papel REAL de cada sinal no MOTOR v17 (confluência — espelha o bot-run):
+// decide = estrutura SMC 15m (arma o setup + vota no grupo Estrutura) · vota = compõe um dos 4
+// grupos do placar (Fluxo limpo / Técnico / Sentimento) — a MAIORIA dos grupos libera a entrada ·
+// medido = só alimenta o aprendizado (absorção/paredes/pressão/CVD/funding saíram do placar por hit-rate <50%).
+const VOTE_GROUP: Record<string, string> = {
+  book_inst: "Fluxo", book_retail: "Fluxo", cvd_div: "Fluxo", liqs: "Fluxo", gamma: "Fluxo", gflow: "Fluxo",
+  ema2050: "Técnico", vwap: "Técnico",
+  feargreed: "Sentimento", ls_ratio: "Sentimento",
+};
 const sigRole = (key: string): { tag: string; cls: string; title: string } =>
   key.startsWith("tf_")
-    ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — a ÚNICA que abre trade: define entrada (OB/FVG/imbalance), stop estrutural e alvo na liquidez" }
-    : VETO_KEYS.has(key)
-    ? { tag: "veta", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400", title: "Entra no placar de fluxo (média ponderada): se ficar contra o setup além do limiar, o robô SEGURA a entrada (imbalance ignora o veto)" }
-    : key === "vwap" || key === "ema2050"
-    ? { tag: "filtro", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: "Filtro técnico de entrada: setup estrutural (não-imbalance) só entra ALINHADO à EMA20×50 e ao VWAP diário" }
-    : { tag: "medido", cls: "bg-muted text-muted-foreground", title: "Só medido — não influencia a decisão; alimenta o aprendizado por moeda (pode virar gate se provar edge)" };
+    ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — arma o setup (entrada/stop/alvo estruturais) e vota como grupo Estrutura no placar de confluência" }
+    : VOTE_GROUP[key]
+    ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: `Compõe o grupo ${VOTE_GROUP[key]} do placar de confluência: a maioria dos grupos (padrão 3 de 4) precisa votar na direção do setup pra entrada executar` }
+    : { tag: "medido", cls: "bg-muted text-muted-foreground", title: "Só medido — não influencia a decisão; alimenta o aprendizado por moeda (pode voltar ao placar se provar edge)" };
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
   trade: "bg-primary/15 text-primary",
@@ -918,19 +928,27 @@ export default function AdminBot() {
                 <div className="space-y-2">
                   <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <input type="checkbox" checked={cfg.imbalance_on !== false} onChange={(e) => setCfg({ ...cfg, imbalance_on: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                    <span><strong>Imbalance (FVG novo) → entra a favor</strong>: FVG fresco no 15m entra na direção dele, ignorando o veto de fluxo e o filtro técnico. Stop e alvo vêm da estrutura.</span>
+                    <span><strong>Imbalance (FVG novo) → arma o setup</strong>: FVG fresco no 15m arma entrada na direção dele; stop e alvo vêm da estrutura. <strong>Não tem mais passe livre</strong>: passa pelo mesmo placar de confluência abaixo.</span>
                     {cfg.imbalance_on !== false && (
                       <span className="flex items-center gap-1">· tamanho mín <input type="number" step="0.05" min="0" value={cfg.imbalance_min_pct ?? 0} onChange={(e) => setCfg({ ...cfg, imbalance_min_pct: Number(e.target.value) })} className="w-16 rounded border border-border bg-background px-2 py-0.5 num" />% (0 = todo FVG)</span>
                     )}
                   </label>
-                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={cfg.ta_gate !== false} onChange={(e) => setCfg({ ...cfg, ta_gate: e.target.checked })} className="h-4 w-4 rounded border-border" />
-                    <span><strong>Filtro técnico (EMA 20×50 + VWAP diário)</strong>: setup estrutural (não-imbalance) só entra alinhado aos dois. Validado no backtester (90d+180d): melhorou o resultado em todas as moedas. Plotados no gráfico.</span>
-                  </label>
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <label className="text-xs text-muted-foreground">Veto de fluxo (força mínima contra)
-                      <input type="number" min="1" max="100" className={`${input} mt-1`} value={cfg.flow_veto ?? 10} onChange={(e) => setCfg({ ...cfg, flow_veto: Number(e.target.value) })} />
-                      <span className="mt-0.5 block text-[10px]">Segura o setup estrutural quando o fluxo está contra além disso. O |fluxo| real fica em ~0-30 (o antigo 50 nunca disparava); nos trades, fluxo contra = 19% de acerto.</span>
+                    <label className="text-xs text-muted-foreground">Confluência mínima (grupos a favor) <span title="Os 4 grupos — Estrutura SMC · Fluxo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50+VWAP) · Sentimento (F&G, L/S) — votam na direção do setup. Só executa com essa maioria a favor e sem empate contra. Vale pra TODA entrada, imbalance incluído.">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.conf_min ?? 3} onChange={(e) => setCfg({ ...cfg, conf_min: Number(e.target.value) })}>
+                        <option value={2}>2 de 4 — maioria simples (mais trades)</option>
+                        <option value={3}>3 de 4 — confluência forte (recomendado)</option>
+                        <option value={4}>4 de 4 — unanimidade (raro, pouquíssimos trades)</option>
+                      </select>
+                      <span className="mt-0.5 block text-[10px]">Nos trades reais: fluxo a favor = 60% de acerto (+683) × contra = 20% (−152). Setup segurado fica no Diário com o placar.</span>
+                    </label>
+                    <label className="text-xs text-muted-foreground">Entrada perto da zona (× ATR) <span title="Qualidade 1: entrada imbalance só com o preço a até X ATR da borda do FVG (0 = desligado). REPROVADA no backtest de 03/jul (mata ETH/SOL — o chase é o que paga lá); fica disponível p/ experimento.">ⓘ</span>
+                      <input type="number" step="0.25" min="0" className={`${input} mt-1`} value={cfg.max_zone_atr ?? 0} onChange={(e) => setCfg({ ...cfg, max_zone_atr: Number(e.target.value) })} />
+                      <span className="mt-0.5 block text-[10px]">0 = desligado (validado). Backtest 90+180d: ligar piora ETH/SOL.</span>
+                    </label>
+                    <label className="text-xs text-muted-foreground">Bloqueio por zona oposta (× ATR) <span title="Qualidade 2: segura a entrada quando há FVG/OB oposto fresco a até X ATR à frente (0 = desligado). REPROVADA no backtest de 03/jul junto com a regra 1; fica disponível p/ experimento.">ⓘ</span>
+                      <input type="number" step="0.25" min="0" className={`${input} mt-1`} value={cfg.opp_zone_atr ?? 0} onChange={(e) => setCfg({ ...cfg, opp_zone_atr: Number(e.target.value) })} />
+                      <span className="mt-0.5 block text-[10px]">0 = desligado (validado). Idem: reprovada em ETH/SOL.</span>
                     </label>
                   </div>
                 </div>
@@ -986,7 +1004,7 @@ export default function AdminBot() {
                 </label>
                 {isFut && (
                   <div className="text-xs text-muted-foreground">
-                    <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes só entram no <strong>veto de fluxo</strong>/aprendizado — ligue/desligue o que o robô considera.</p>
+                    <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes compõem os grupos do <strong>placar de confluência</strong> (Fluxo/Técnico/Sentimento) e o aprendizado — desligar um sinal tira ele do grupo dele. Absorção, paredes, pressão, CVD agregado e funding já estão fora do placar (acerto &lt;50% no aprendizado; seguem medidos).</p>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
                       {FLOW_SIGNALS.map((s) => (
                         <label key={s.key} className="flex items-center gap-1.5">
@@ -1001,10 +1019,10 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", ta_gate: cfg.ta_gate !== false, flow_veto: cfg.flow_veto ?? 10 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia: <strong>SMC price-action no 15m</strong> (day-trade). A <strong>estrutura decide</strong> — entra em Order Block/FVG a favor de BOS/CHoCH, após varrer liquidez ou em discount/premium; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong> (R:R ≥ 1). O <strong>fluxo só veta</strong> (book, paredes/absorção, CVD, liquidações, gamma) quando muito contra — imbalance ignora o veto. <strong>Filtro técnico</strong> (EMA20×50 + VWAP) alinha o setup estrutural. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing (virar a mão a cada sinal era o maior ralo no backtest). Sizing por risco (% do patrimônio ÷ distância do stop), alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia (motor v17 — confluência): o <strong>SMC do 15m arma o setup</strong> (Order Block/FVG/imbalance a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong>, R:R ≥ 1) e <strong>4 grupos votam</strong> na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) · Sentimento (F&G, L/S). <strong>Só executa com a maioria configurada a favor — toda entrada, imbalance incluído</strong> (fim do passe livre que entrava contra fluxo/EMAs/VWAP). Sinais com acerto &lt;50% no aprendizado (absorção, paredes, pressão do book, CVD agregado, funding) <strong>saíram do placar</strong> — só medidos. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing. Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>
           </div>
         </div>
       )}
@@ -1064,14 +1082,20 @@ export default function AdminBot() {
                 <div className={`truncate text-lg font-bold leading-8 ${setup ? (setupUp ? "text-emerald-500" : "text-rose-500") : "text-muted-foreground"}`} title={setup ?? undefined}>{setup ?? "nenhum"}</div>
                 <div className="text-[10px] text-muted-foreground">{setup ? `stop ${num(planStop)} · alvo ${num(planTarget)}` : "aguarda OB/FVG ou imbalance"}</div>
               </div>
-              <div className={`rounded-lg border p-3 text-center ${held && gate!.includes("fluxo") ? "border-amber-500/40 bg-amber-500/5" : "border-border/70 bg-background/40"}`}>
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Placar de fluxo (book, paredes, CVD, liquidações, gamma). NÃO dispara trade — só veta o setup quando contra além do limiar.">3 · Fluxo (veto)</div>
-                <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
-                <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
-                  <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                  <div className={`absolute top-0 h-full rounded-full ${flow >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={flow >= 0 ? { left: "50%", width: `${Math.abs(flow) / 2}%` } : { right: "50%", width: `${Math.abs(flow) / 2}%` }} />
-                </div>
-                <div className="mt-1 text-[10px] text-muted-foreground">veta contra além de ±{vetoAt} · técnico {cfg?.ta_gate !== false ? "EMA+VWAP on" : "off"}</div>
+              <div className={`rounded-lg border p-3 text-center ${held && gate!.includes("confluência") ? "border-amber-500/40 bg-amber-500/5" : "border-border/70 bg-background/40"}`}>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Placar de confluência: 4 grupos (Estrutura SMC · Fluxo limpo · Técnico EMA/VWAP · Sentimento) votam na direção do setup. Só executa com a maioria configurada a favor — vale pra TODA entrada, imbalance incluído.">3 · Confluência (maioria)</div>
+                {r.confluence?.length ? (<>
+                  <div className="num text-2xl font-bold text-foreground" title={r.confVotes ? `${r.confVotes.for} a favor × ${r.confVotes.against} contra` : undefined}>{r.confVotes ? `${r.confVotes.for}/${r.confluence.length}` : "—"}</div>
+                  <div className="mt-1 flex items-center justify-center gap-1">
+                    {r.confluence.map((g) => (
+                      <span key={g.key} title={`${g.label}: ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
+                    ))}
+                  </div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">precisa {r.confMin ?? cfg?.conf_min ?? 3} de {r.confluence.length} · fluxo {flow >= 0 ? "+" : ""}{flow}</div>
+                </>) : (<>
+                  <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">aguardando 1º ciclo do motor v17…</div>
+                </>)}
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">4 · Decisão</div>
@@ -1111,7 +1135,7 @@ export default function AdminBot() {
                 );
               })}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide: a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) é a única que abre trade — entra em OB/FVG/imbalance a favor de BOS/CHoCH, stop na invalidação estrutural, alvo na próxima liquidez. Os sinais <em>veta</em> formam o placar de fluxo que segura o setup quando contra (±{vetoAt}); os <em>filtro</em> exigem EMA20×50 e VWAP alinhados; os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v17): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — OB/FVG/imbalance a favor de BOS/CHoCH, stop na invalidação estrutural, alvo na próxima liquidez. Os sinais <em>vota</em> formam os 4 grupos do placar de confluência (Estrutura · Fluxo · Técnico · Sentimento); a entrada — <strong>imbalance incluído</strong> — só executa com a maioria dos grupos a favor ({r.confMin ?? cfg?.conf_min ?? 3} de 4). Os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
           </div>
         );
       })()}
