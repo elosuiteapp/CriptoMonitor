@@ -37,7 +37,8 @@ interface Config {
   conf_min?: number;     // motor v17: nº mínimo de grupos (de 4) votando na direção p/ executar
   target_on?: boolean;   // take-profit estrutural (alvo na liquidez); false = sai só por stop/trailing
   tp_partial?: boolean;  // no alvo, embolsa METADE e o resto corre no trailing (stop ≥ breakeven)
-  block_hours?: number[] | null; // gate de sessão: horas UTC sem ENTRADAS novas (saídas normais)
+  block_hours?: number[] | null; // gate de sessão GLOBAL: horas UTC sem ENTRADAS novas (saídas normais)
+  asset_overrides?: Record<string, { conf_min?: number; block_hours?: number[]; risk_mult?: number }>; // CADA MOEDA É ÚNICA: dose por ativo (sobrepõe o global)
   max_zone_atr?: number; // qualidade 1: entrada imbalance só a ≤ X ATR da borda do FVG (0 = off)
   opp_zone_atr?: number; // qualidade 2: bloqueia entrada com FVG/OB oposto fresco a ≤ X ATR à frente (0 = off)
   trail_pct: number;     // distância do trailing (%) — fallback quando não há ATR
@@ -955,9 +956,45 @@ export default function AdminBot() {
                     </label>
                     <label className="text-xs text-muted-foreground">Sessão bloqueada (horas UTC, vírgula) <span title="Gate de sessão: nessas horas UTC o robô NÃO abre posição nova nem piramida — saídas (stop/alvo/trailing) seguem normais. Estudo 03/jul (28 backtests): 9-12h e 18-24h UTC negativas em 7-8 de 8 janelas; bloquear melhorou o agregado nas 2 janelas (180d: −6,5%→+42,1%). Em Brasília: 6-9h e 15-21h. Vazio = sem filtro.">ⓘ</span>
                       <input type="text" className={`${input} mt-1`} value={(cfg.block_hours ?? []).join(",")} onChange={(e) => setCfg({ ...cfg, block_hours: e.target.value.split(",").map((s) => Number(s.trim())).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) })} placeholder="ex.: 9,10,11,18,19,20,21,22,23" />
-                      <span className="mt-0.5 block text-[10px]">Validado 03/jul: 9,10,11,18,19,20,21,22,23 (chop EUA/pré-NY). Só entradas — posição aberta segue gerida.</span>
+                      <span className="mt-0.5 block text-[10px]">GLOBAL (fallback) — a config POR MOEDA abaixo sobrepõe. Só entradas; posição aberta segue gerida.</span>
                     </label>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── 2b · CONFIG POR MOEDA — cada moeda é única (motor idêntico, dose diferente) ── */}
+            {isFut && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground">🪙 2b · Configuração por moeda <span className="font-normal normal-case text-muted-foreground">— CADA MOEDA É ÚNICA: o motor é o mesmo, a dose é a que o backtest validou POR ATIVO</span></div>
+                <p className="mb-2 text-[11px] text-muted-foreground">O <strong>aprendizado é individual por moeda</strong> (aba Aprendizado mede acerto por sinal em cada ativo; o dataset <code>bot_trades_hist</code> arquiva cada trade por moeda) — as melhorias são testadas e aplicadas <strong>separadamente</strong> em cada uma. Regra anti-overfit: parâmetro só muda com melhora nas DUAS janelas (90d+180d) do backtester. Base validada 03/jul: <strong>BTC/BNB defensivos</strong> (sessão bloqueada; BNB meio risco — candidato a pausa), <strong>ETH/SOL livres</strong> (SMC puro é a edge).</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {["BTC", "ETH", "SOL", "BNB"].map((a) => {
+                    const ov = cfg.asset_overrides?.[a] ?? {};
+                    const setOv = (patch: Record<string, unknown>) => setCfg({ ...cfg, asset_overrides: { ...(cfg.asset_overrides ?? {}), [a]: { ...ov, ...patch } } });
+                    return (
+                      <div key={a} className="rounded-lg border border-border/70 bg-background/60 p-2">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground">{a}</span>
+                          <span className="text-[9px] text-muted-foreground">{(ov.block_hours ?? []).length ? "🛡 defensiva" : "🟢 livre"}{(ov.risk_mult ?? 1) < 1 ? ` · ${Math.round((ov.risk_mult ?? 1) * 100)}% risco` : ""}</span>
+                        </div>
+                        <label className="block text-[10px] text-muted-foreground">Sessão bloqueada (h UTC) <span title="Horas UTC em que ESTA moeda não abre posição nem piramida (saídas normais). Vazio = livre 24h. Validado: BTC/BNB [9-11,18-23]; ETH/SOL livres.">ⓘ</span>
+                          <input type="text" className={`${input} mt-0.5`} value={(ov.block_hours ?? []).join(",")} onChange={(e) => setOv({ block_hours: e.target.value.split(",").map((s) => Number(s.trim())).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) })} placeholder="vazio = livre 24h" />
+                        </label>
+                        <label className="mt-1 block text-[10px] text-muted-foreground">Confluência mínima <span title="Grupos (de 4) votando na direção p/ ESTA moeda executar. Vazio = usa o global.">ⓘ</span>
+                          <select className={`${input} mt-0.5`} value={ov.conf_min ?? ""} onChange={(e) => setOv({ conf_min: e.target.value === "" ? undefined : Number(e.target.value) })}>
+                            <option value="">global ({cfg.conf_min ?? 3} de 4)</option>
+                            <option value={2}>2 de 4</option>
+                            <option value={3}>3 de 4</option>
+                            <option value={4}>4 de 4</option>
+                          </select>
+                        </label>
+                        <label className="mt-1 block text-[10px] text-muted-foreground">Multiplicador de risco <span title="Fração do risco por trade (0.1–1) p/ ESTA moeda. BNB em 0.5 = meio risco enquanto for a pior do backtest (candidata a pausa).">ⓘ</span>
+                          <input type="number" step="0.1" min="0.1" max="1" className={`${input} mt-0.5`} value={ov.risk_mult ?? 1} onChange={(e) => setOv({ risk_mult: Number(e.target.value) })} />
+                        </label>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1036,10 +1073,10 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [] })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {} })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
-            <span className="text-[11px] text-muted-foreground">Estratégia (motor v17 — confluência): o <strong>SMC do 15m arma o setup</strong> (Order Block/FVG/imbalance a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong>, R:R ≥ 1) e <strong>4 grupos votam</strong> na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) · Sentimento (F&G, L/S). <strong>Só executa com a maioria configurada a favor — toda entrada, imbalance incluído</strong> (fim do passe livre que entrava contra fluxo/EMAs/VWAP). Sinais com acerto &lt;50% no aprendizado (absorção, paredes, pressão do book, CVD agregado, funding) <strong>saíram do placar</strong> — só medidos. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing. Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor.</span>
+            <span className="text-[11px] text-muted-foreground">Estratégia (motor v17 — confluência): o <strong>SMC do 15m arma o setup</strong> (Order Block/FVG/imbalance a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong>, R:R ≥ 1) e <strong>4 grupos votam</strong> na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) · Sentimento (F&G, L/S). <strong>Só executa com a maioria configurada a favor — toda entrada, imbalance incluído</strong> (fim do passe livre que entrava contra fluxo/EMAs/VWAP). Sinais com acerto &lt;50% no aprendizado (absorção, paredes, pressão do book, CVD agregado, funding) <strong>saíram do placar</strong> — só medidos. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing. Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor. <strong>CADA MOEDA É ÚNICA</strong> (seção 2b): mesmo motor, dose validada por ativo — BTC/BNB defensivos, ETH/SOL livres; aprendizado e melhorias individuais por moeda.</span>
           </div>
         </div>
       )}

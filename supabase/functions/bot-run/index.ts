@@ -812,16 +812,24 @@ Deno.serve(async (req) => {
       //    livre que fazia vender SOL contra estrutura+VWAP+EMAs+fluxo). Substitui o veto de
       //    fluxo (flow_veto) e o filtro técnico (ta_gate) antigos — agora fluxo e técnico VOTAM.
       //    Setup segurado fica no gate/log → o aprendizado mede o que teria acontecido (shadow).
+      // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): CADA MOEDA É ÚNICA — o motor é
+      //    idêntico, mas a dose (sessão, confluência mínima, risco) vem do que o backtest validou
+      //    POR ATIVO: BTC/BNB defensivos (sessão on; BNB ½ risco), ETH/SOL livres (SMC puro é a
+      //    edge). O aprendizado (bot_learning.byAsset + bot_trades_hist) mede cada uma separada. ──
+      const ov = (((cfg.asset_overrides ?? {}) as Record<string, Record<string, unknown>>)[asset]) ?? {};
+      const riskMult = Math.min(1, Math.max(0.1, Number(ov.risk_mult ?? 1)));
       // ── GATE DE SESSÃO (sql/102): horas UTC em que o robô NÃO abre posição nova nem piramida
       //    (saídas stop/alvo/trailing seguem normais). Estudo 03/jul: 9-12h e 18-24h UTC negativos
-      //    em 7-8 de 8 janelas; bloquear = 1ª variante a melhorar o agregado nas 2 janelas. ──
-      const blockHours: number[] = Array.isArray(cfg.block_hours) ? (cfg.block_hours as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : [];
+      //    em 7-8 de 8 janelas; bloquear = 1ª variante a melhorar o agregado nas 2 janelas.
+      //    Por-moeda: ov.block_hours sobrepõe o global (ETH/SOL ficam livres — o gate os taxava). ──
+      const bhSrc = Array.isArray(ov.block_hours) ? ov.block_hours : cfg.block_hours;
+      const blockHours: number[] = Array.isArray(bhSrc) ? (bhSrc as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : [];
       const hourNow = new Date().getUTCHours();
       if (want && blockHours.includes(hourNow)) {
         gate = `sessão bloqueada (${hourNow}h UTC — janela historicamente negativa) — segura o setup`;
         want = null;
       }
-      const confMin = Math.min(4, Math.max(1, Number(cfg.conf_min ?? 3)));
+      const confMin = Math.min(4, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
       let confVotes: { for: number; against: number } | null = null;
       if (want) {
         const dir = want === "long" ? 1 : -1;
@@ -858,7 +866,7 @@ Deno.serve(async (req) => {
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
       const zone = primary?.smc ? (primary.smc.price <= primary.smc.discount.top ? "discount" : primary.smc.price >= primary.smc.premium.bottom ? "premium" : "equilíbrio") : null;
       const structure = { smcBias, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, flowBias: flowTilt, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", zone, autoWeight: autoWeightOn ? { on: true, structWAdj: Math.round(tune.structWAdj * 100) / 100, top: tune.applied.slice(0, 6) } : { on: false } };
-      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, confluence, confMin, confVotes, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, confluence, confMin, confVotes, overrides: Object.keys(ov).length ? ov : null, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
       const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
@@ -907,7 +915,7 @@ Deno.serve(async (req) => {
           await bnb("POST", "/fapi/v1/leverage", { symbol: instId, leverage: Math.round(maxLev) }, bnbCreds, true);
           // Pirâmide arrisca METADE do risco base; respeita o teto de alavancagem no nocional TOTAL.
           const addStopDist0 = (cfg.stop_atr_on && atrPx > 0 ? Number(cfg.stop_atr_mult ?? 4) * atrPx : lastPx * Number(cfg.stop_pct ?? 1.5) / 100) || (lastPx * 0.01);
-          let qty = roundStep((equity * (riskPct / 100) * 0.5) / addStopDist0);
+          let qty = roundStep((equity * (riskPct / 100) * riskMult * 0.5) / addStopDist0);
           const roomNot = equity * maxLev / maxPositions - st.pos_base_sz * lastPx; // espaço no slot da posição (teto ÷ maxPositions)
           if (qty * lastPx > roomNot) qty = roundStep(Math.max(0, roomNot) / lastPx);
           if (qty < minQty || qty * lastPx < minNot) { await log("info", `[${asset}] pirâmide sem margem no teto de alavancagem — mantém posição.`, reading); return { asset, decision: "hold", bias, conviction }; }
@@ -957,7 +965,7 @@ Deno.serve(async (req) => {
           const riskDist = (plan.stop != null ? Math.abs(lastPx - plan.stop) : kStopFb * atrPx) || (lastPx * 0.01);
           // SIZING POR RISCO: qty = risco($) ÷ distância-até-o-stop → cada trade arrisca riskPct% do patrimônio.
           // A alavancagem é só TETO: nunca deixa o nocional passar de equity × maxLev (não liquida antes do stop).
-          const riskDollars = equity * (riskPct / 100) * szMult;
+          const riskDollars = equity * (riskPct / 100) * szMult * riskMult; // riskMult = dose por moeda (BNB ½ até decisão de pausa)
           let qty = roundStep(riskDollars / riskDist);
           const capNotional = equity * maxLev / maxPositions; // aloca a margem entre até maxPositions posições (evita 1 comer tudo)
           if (qty * lastPx > capNotional) qty = roundStep(capNotional / lastPx);
