@@ -318,6 +318,10 @@ Deno.serve(async (req) => {
   // semântica do veto de fluxo ao vivo). Default tudo OFF = baseline intacto.
   const ta = { vwap: !!body?.ta?.vwap, ema: !!body?.ta?.ema, adx: !!body?.ta?.adx };
   const taOn = ta.vwap || ta.ema || ta.adx;
+  // EXPERIMENTO ta_scope: "structural" (default, atual) = filtro técnico só nos setups não-imbalance;
+  // "all" = TAMBÉM filtra o setup A (imbalance/FVG) — testa a hipótese "entrada a favor de EMA/VWAP
+  // ganha mais" na porta PRINCIPAL de entrada do robô.
+  const taAll = String(body?.ta_scope ?? "structural") === "all";
   // EXPERIMENTOS DE CHURN (a matriz 90d mostrou: ~50% das saídas são reversão → o problema é
   // girar demais, não a entrada). Defaults reproduzem o comportamento atual do robô.
   const revMode = String(body?.rev_mode ?? "any");                      // any | imbalance (só FVG fresco vira a mão) | off (nunca reverte)
@@ -454,7 +458,7 @@ Deno.serve(async (req) => {
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
-    if (want && taOn && plan.setup && !plan.setup.startsWith("imbalance")) {
+    if (want && taOn && plan.setup && (taAll || !plan.setup.startsWith("imbalance"))) {
       if (ta.ema && taCache.e20 != null && taCache.e50 != null && (want === "long" ? taCache.e20 <= taCache.e50 : taCache.e20 >= taCache.e50)) want = null;
       if (want && ta.vwap && taCache.vwap != null && (want === "long" ? px <= taCache.vwap : px >= taCache.vwap)) want = null;
       if (want && ta.adx && taCache.adx != null && taCache.adx < 20) want = null; // lateral/chop → segura continuação
@@ -505,7 +509,7 @@ Deno.serve(async (req) => {
     bars_evaluated: evalBars,
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
+  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorSmart ? "smart" : "structure", ta_scope: taAll ? "all" : "structural", risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

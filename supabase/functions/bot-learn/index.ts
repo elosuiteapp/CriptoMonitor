@@ -63,10 +63,19 @@ Deno.serve(async (req) => {
 
   try {
     // 1) Leituras logadas. ASC p/ processar a sequência de cada ativo (filtramos as que têm signals no código).
-    const { data: rows } = await admin
-      .from("bot_logs").select("detail, created_at")
-      .order("created_at", { ascending: true }).limit(5000);
-    const logs = (rows as { detail: any; created_at: string }[] | null) ?? [];
+    // PAGINADO com .range(): o PostgREST corta a resposta em 1000 linhas por padrão — o .limit(5000)
+    // antigo devolvia só as 1000 mais VELHAS e o aprendizado CONGELAVA quando a tabela passava de 1000
+    // (ficou preso em 01/jul 15:40; sinais novos como vwap/adx/ema2050 nunca entravam).
+    const logs: { detail: any; created_at: string }[] = [];
+    for (let page = 0; page < 20; page++) {
+      const from = page * 1000;
+      const { data: rows } = await admin
+        .from("bot_logs").select("detail, created_at")
+        .order("created_at", { ascending: true }).range(from, from + 999);
+      const batch = (rows as { detail: any; created_at: string }[] | null) ?? [];
+      logs.push(...batch);
+      if (batch.length < 1000) break;
+    }
 
     // 2) Agrupa por ativo.
     type R = { tsMs: number; spot: number; bias: number; signals: { key: string; label: string; score: number; weight: number }[] };
