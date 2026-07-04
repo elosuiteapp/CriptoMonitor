@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import BiasGauge from "../BiasGauge";
 import { type AxisSignal, type LiquidityTarget, type MarketRead, type TfLean } from "../../lib/indicators/confluence";
@@ -53,8 +53,18 @@ function AxisRow({ a }: { a: AxisSignal }) {
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-sm font-medium text-foreground">{a.label}</span>
           {votes ? (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground" title={isEn ? "weight in the bias" : "peso no viés"}>
-              {isEn ? "weight" : "peso"} {Math.round((a.weight ?? 0) * 100)}%
+            <span className="flex shrink-0 items-center gap-1">
+              {a.hitRate != null && (
+                <span
+                  className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-500"
+                  title={isEn ? `Measured directional hit rate for this signal family (robot learning, n≥600 labeled readings). Weights are calibrated by it.` : `Acerto direcional medido desta família de sinal (aprendizado do robô, n≥600 leituras rotuladas). Os pesos são calibrados por ele.`}
+                >
+                  {isEn ? "hit" : "acerto"} {a.hitRate}%
+                </span>
+              )}
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground" title={isEn ? "weight in the bias" : "peso no viés"}>
+                {isEn ? "weight" : "peso"} {Math.round((a.weight ?? 0) * 100)}%
+              </span>
             </span>
           ) : (
             <span className="text-[11px] text-muted-foreground">{a.group}</span>
@@ -189,6 +199,29 @@ function ScenarioRow({ side, name, price, pct }: { side: "up" | "down"; name: st
   );
 }
 
+// Tom do medidor a partir do viés (mesma régua do regime: ±12 = neutro).
+const toneOf = (b: number): "bull" | "bear" | "neutral" => (b >= 12 ? "bull" : b <= -12 ? "bear" : "neutral");
+
+/** Medidor nomeado (Fundo/Hoje) — gauge + número + rótulo do horizonte. */
+function HorizonGauge({ title, sub, value }: { title: string; sub: string; value: number }) {
+  const tone = toneOf(value);
+  return (
+    <div className="flex flex-col items-center rounded-xl border border-border/70 bg-background/40 px-3 pb-2 pt-2">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+      <div className="relative">
+        <BiasGauge value={value} tone={tone} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-1 text-center">
+          <span className={`text-xl font-bold ${toneText(tone)}`}>
+            {value > 0 ? "+" : ""}
+            {value}
+          </span>
+        </div>
+      </div>
+      <span className="max-w-[180px] text-center text-[9px] leading-tight text-muted-foreground">{sub}</span>
+    </div>
+  );
+}
+
 /** Aba "Leitura do Mercado" (Expert) — leitura sintetizada e multi-timeframe. */
 export default function IndicatorsTab({ asset, read, leans, biasHist, loading }: Props) {
   const { isEn } = useT();
@@ -197,6 +230,21 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
   const aligned = leans.length > 0 && (leans.every((l) => l.dir > 0) || leans.every((l) => l.dir < 0));
   const sortedTargets = useMemo(() => (read ? [...read.targets].sort((a, b) => b.price - a.price) : []), [read]);
   const firstBelow = sortedTargets.findIndex((t) => read?.price != null && t.price < read.price);
+
+  // "Leitura virou": detecta a troca de lado do viés geral com a aba aberta (chip no herói).
+  const prevSignRef = useRef<number | null>(null);
+  const [flippedAt, setFlippedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!read?.hasData) return;
+    const s = read.bias >= 12 ? 1 : read.bias <= -12 ? -1 : 0;
+    const prev = prevSignRef.current;
+    if (prev != null && prev !== 0 && s !== 0 && s !== prev)
+      setFlippedAt(new Date().toLocaleTimeString(isEn ? "en-US" : "pt-BR", { hour: "2-digit", minute: "2-digit" }));
+    if (s !== 0 || prev == null) prevSignRef.current = s;
+  }, [read?.bias, read?.hasData, isEn]);
+
+  // Divergência de horizontes: fundo e dia apontando pra lados opostos (informação, não defeito).
+  const horizonsDiverge = !!read && toneOf(read.structural.bias) !== "neutral" && toneOf(read.daily.bias) !== "neutral" && Math.sign(read.structural.bias) !== Math.sign(read.daily.bias);
 
   return (
     <section className="space-y-4">
@@ -221,22 +269,38 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
           {/* Hero — gauge + viés + convicção + regime + multi-timeframe */}
           <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-5 shadow-card backdrop-blur-md dark:bg-card/60 dark:shadow-glow">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <BiasGauge value={read.bias} tone={read.regime.tone} />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-1 text-center">
-                    <span className={`text-2xl font-bold ${toneText(read.regime.tone)}`}>
-                      {read.bias > 0 ? "+" : ""}
-                      {read.bias}
-                    </span>
-                  </div>
-                </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* DOIS MEDIDORES: o fundo (estrutural, 1D) e o hoje (tático, 4H+micro). Um ponteiro
+                    por horizonte — resolve o velho "estrutura de alta mas ponteiro de baixa". */}
+                <HorizonGauge
+                  title={tt("🧭 Fundo (estrutural)", "🧭 Backdrop (structural)")}
+                  sub={tt("1D · tendência + estrutura + momento + fluxo institucional", "1D · trend + structure + momentum + institutional flow")}
+                  value={read.structural.bias}
+                />
+                <HorizonGauge
+                  title={tt("⚡ Hoje (tático)", "⚡ Today (tactical)")}
+                  sub={tt("4H + book, sentimento, posição, opções e níveis de ontem", "4H + book, sentiment, positioning, options and yesterday's levels")}
+                  value={read.daily.bias}
+                />
                 <div className="min-w-0">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{tt("Viés do mercado", "Market bias")}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{tt("Leitura combinada", "Combined read")}</span>
                   <p className={`text-base font-bold ${toneText(read.regime.tone)}`}>
                     {[tt("Forte baixa", "Strong down"), tt("Baixa", "Down"), tt("Neutro", "Neutral"), tt("Alta", "Up"), tt("Forte alta", "Strong up")][biasZoneIdx(read.bias)]}
+                    <span className="num ml-1.5 text-sm font-semibold text-muted-foreground">({read.bias > 0 ? "+" : ""}{read.bias})</span>
                   </p>
                   <p className="mt-0.5 max-w-xs text-sm font-medium text-foreground">{read.regime.label}</p>
+                  {horizonsDiverge && (
+                    <p className="mt-1 max-w-xs rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
+                      {read.structural.bias > 0
+                        ? tt("Fundo de alta com o dia vendedor — pullback/transição, não necessariamente reversão.", "Bullish backdrop with a selling day — pullback/transition, not necessarily reversal.")
+                        : tt("Fundo de baixa com o dia comprador — repique/transição, não necessariamente reversão.", "Bearish backdrop with a buying day — bounce/transition, not necessarily reversal.")}
+                    </p>
+                  )}
+                  {flippedAt && (
+                    <span className="mt-1 inline-block rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                      ↺ {tt("leitura virou às", "read flipped at")} {flippedAt}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -315,10 +379,17 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
             <h3 className="mb-2 text-sm font-semibold text-foreground">{tt("As forças por trás da leitura", "The forces behind the read")}</h3>
             <TugOfWar axes={read.axes} />
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">{tt("Forças que votam", "Voting forces")}</span>
-              <span className="text-[11px] text-muted-foreground">{read.agree} {tt("de", "of")} {read.voting} {tt("alinhadas", "aligned")}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">🧭 {tt("Fundo (estrutural)", "Backdrop (structural)")}</span>
+              <span className={`num text-[11px] font-semibold ${dirText(read.structural.bias)}`}>{read.structural.bias > 0 ? "+" : ""}{read.structural.bias}</span>
+              <span className="text-[11px] text-muted-foreground">· {read.structural.agree} {tt("de", "of")} {read.structural.voting} {tt("alinhadas", "aligned")}</span>
             </div>
-            <div>{read.axes.filter((a) => a.weight != null).map((a) => <AxisRow key={a.key} a={a} />)}</div>
+            <div>{read.axes.filter((a) => a.weight != null && a.horizon === "structural").map((a) => <AxisRow key={a.key} a={a} />)}</div>
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">⚡ {tt("Hoje (tático)", "Today (tactical)")}</span>
+              <span className={`num text-[11px] font-semibold ${dirText(read.daily.bias)}`}>{read.daily.bias > 0 ? "+" : ""}{read.daily.bias}</span>
+              <span className="text-[11px] text-muted-foreground">· {read.daily.agree} {tt("de", "of")} {read.daily.voting} {tt("alinhadas", "aligned")}</span>
+            </div>
+            <div>{read.axes.filter((a) => a.weight != null && a.horizon === "daily").map((a) => <AxisRow key={a.key} a={a} />)}</div>
             {read.axes.some((a) => a.weight == null) && (
               <>
                 <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
@@ -330,8 +401,8 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
             )}
             <p className="mt-2 text-[11px] text-muted-foreground">
               {tt(
-                "O viés é a média ponderada das forças que votam (peso × força); o contexto não vota, mas calibra a leitura e dispara divergências. A convicção é o quanto as votantes concordam — não a intensidade.",
-                "The bias is the weighted average of the voting forces (weight × strength); context doesn't vote, but it calibrates the read and triggers divergences. Conviction is how much the voting forces agree — not their intensity.",
+                "Dois medidores: o FUNDO (estrutural, velas diárias) e o HOJE (tático, 4H + microestrutura) — cada força vota no seu horizonte, e a leitura combinada mistura os dois (55/45). Os pesos são CALIBRADOS pelo acerto direcional medido no aprendizado do robô (chip azul; n≥600 leituras por sinal) — sinais comprovadamente invertidos (ex.: funding) viram contexto e não votam. A convicção é o quanto as votantes concordam — não a intensidade.",
+                "Two gauges: the BACKDROP (structural, daily candles) and TODAY (tactical, 4H + microstructure) — each force votes on its own horizon, and the combined read blends both (55/45). Weights are CALIBRATED by the directional hit rate measured in the bot's learning (blue chip; n≥600 labeled readings per signal) — signals proven inverted (e.g., funding) become context and don't vote. Conviction is how much the voting forces agree — not their intensity.",
               )}
             </p>
           </div>

@@ -35,6 +35,8 @@ export interface AxisSignal {
   detail: string;
   available: boolean;
   weight?: number; // peso no viés — presente só nas forças que VOTAM (ausente = contexto)
+  horizon?: "structural" | "daily"; // qual medidor a força alimenta (ausente = contexto)
+  hitRate?: number | null; // acerto direcional medido pelo robô (bot_learning 03/jul, n≥600); null = ainda não medido
 }
 
 export interface TfLean {
@@ -69,8 +71,12 @@ export interface LiquidityTarget {
 }
 
 export interface MarketRead {
-  bias: number; // -100..+100
+  bias: number; // -100..+100 (mistura 55% estrutural + 45% do dia)
   conviction: number; // 0..100 (% das forças direcionais que concordam com o viés)
+  /** Medidor ESTRUTURAL (o fundo do mercado: 1D — tendência, estrutura, momento, fluxo inst.). */
+  structural: { bias: number; conviction: number; agree: number; voting: number };
+  /** Medidor DO DIA (tático: 4H + microestrutura — intradiário, book, sentimento, posição, opções, níveis de ontem). */
+  daily: { bias: number; conviction: number; agree: number; voting: number };
   agree: number;
   voting: number;
   character: string; // rótulo traduzido (tendência/range/comprimido/—)
@@ -149,6 +155,9 @@ export function computeMarketRead(
   let liqTilt: number | null = null;
   let fng: number | null = null;
   let zoneKey: "premium" | "discount" | "equilibrium" | null = null;
+  let sentDir: Dir = 0;
+  let sentStr = 0;
+  let haveSent = false;
   let relVsBtc: number | null = null; // força relativa vs BTC (pp, 7d) — alts
 
   // ── Eixo TENDÊNCIA (EMA50/200) ──────────────────────────────────────────
@@ -229,6 +238,35 @@ export function computeMarketRead(
     axes.push({ key: "momentum", label: tl("Momento", "Momentum"), group: tl("momento", "momentum"), dir: 0, strength: 0, available: false, detail: tl("Histórico insuficiente", "Not enough history") });
   }
 
+  // ── Eixo INTRADIÁRIO (4H) — o "hoje" nas velas intraday (EMA20×50 + MACD) — VOTA no DIA ──
+  let intraDir: Dir = 0;
+  let intraStr = 0;
+  const haveIntra = !!(intra && intra.length >= 60);
+  if (intra && haveIntra) {
+    const ic = intra.map((c) => c.close);
+    const ie20 = last(ema(ic, 20));
+    const ie50 = last(ema(ic, 50));
+    const ip = ic[ic.length - 1];
+    const ih = last(macd(ic).hist);
+    let v = 0;
+    v += ip > ie50 ? 1 : -1;
+    v += ie20 > ie50 ? 1 : -1;
+    v += ih > 0 ? 1 : -1;
+    intraDir = v >= 2 ? 1 : v <= -2 ? -1 : 0;
+    intraStr = clamp01(Math.abs(v) / 3);
+    axes.push({
+      key: "intraday",
+      label: tl("Tendência intradiária (4H)", "Intraday trend (4H)"),
+      group: tl("momento", "momentum"),
+      dir: intraDir,
+      strength: intraStr,
+      available: true,
+      detail: `4H: ${tl("preço", "price")} ${ip > ie50 ? ">" : "<"} EMA50 · EMA20 ${ie20 > ie50 ? ">" : "<"} EMA50 · MACD ${ih >= 0 ? tl("positivo", "positive") : tl("negativo", "negative")}`,
+    });
+  } else {
+    axes.push({ key: "intraday", label: tl("Tendência intradiária (4H)", "Intraday trend (4H)"), group: tl("momento", "momentum"), dir: 0, strength: 0, available: false, detail: tl("Histórico intraday insuficiente", "Not enough intraday history") });
+  }
+
   // ── Eixo FLUXO (institucional × varejo) ─────────────────────────────────
   const premium = payload?.coinbase_premium ?? null;
   const cbCvd = payload?.price?.coinbase?.cvd ?? null;
@@ -269,20 +307,36 @@ export function computeMarketRead(
   // compradora alavancada, mas em extremo vira risco de squeeze (vai p/ divergência).
   const funding = payload?.derivatives?.funding_rate ?? null;
   const ls = payload?.derivatives?.long_short_ratio ?? null;
-  const havePos = funding != null;
+  // POSICIONAMENTO (CONTRÁRIO) — a multidão lotada de um lado tende a errar. Calibração do robô
+  // (bot_learning n≈1958): L/S CONTRÁRIO acerta 53%; seguir o FUNDING acerta só 41% (sinal
+  // historicamente INVERTIDO) → funding foi rebaixado a contexto e o voto é o L/S contrário.
+  const havePos = ls != null && ls > 0;
   let posDir: Dir = 0;
   let posStr = 0;
-  if (havePos && funding != null) {
-    posDir = sign(funding);
-    posStr = clamp01(Math.abs(funding) / 0.05);
+  if (havePos && ls != null) {
+    posDir = ls > 1.1 ? -1 : ls < 0.9 ? 1 : 0;
+    posStr = clamp01(Math.abs(ls - 1) / 0.8);
     axes.push({
       key: "position",
-      label: tl("Posição alavancada", "Leveraged positioning"),
+      label: tl("Posicionamento (contrário)", "Positioning (contrarian)"),
       group: tl("posição", "position"),
       dir: posDir,
       strength: posStr,
       available: true,
-      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(4)}% (${funding >= 0 ? tl("longs pagam", "longs pay") : tl("shorts pagam", "shorts pay")})${ls != null ? ` · L/S ${ls.toFixed(2)}` : ""}`,
+      detail: `L/S ${ls.toFixed(2)} — ${ls > 1.1 ? tl("maioria comprada (contrário: baixa)", "crowd long (contrarian: down)") : ls < 0.9 ? tl("maioria vendida (contrário: alta)", "crowd short (contrarian: up)") : tl("equilibrado", "balanced")}`,
+    });
+  } else {
+    axes.push({ key: "position", label: tl("Posicionamento (contrário)", "Positioning (contrarian)"), group: tl("posição", "position"), dir: 0, strength: 0, available: false, detail: tl("Indisponível", "Not available") });
+  }
+  if (funding != null) {
+    axes.push({
+      key: "funding",
+      label: "Funding",
+      group: tl("posição", "position"),
+      dir: 0,
+      strength: clamp01(Math.abs(funding) / 0.05),
+      available: true,
+      detail: `Funding ${funding >= 0 ? "+" : ""}${funding.toFixed(4)}% (${funding >= 0 ? tl("longs pagam", "longs pay") : tl("shorts pagam", "shorts pay")}) — ${tl("não vota: seguir o funding acertou só 41% no robô (sinal invertido)", "doesn't vote: following funding hit only 41% in the bot (inverted signal)")}`,
     });
     if (Math.abs(funding) > 0.03)
       divergences.push(
@@ -296,8 +350,6 @@ export function computeMarketRead(
               "Negative funding — shorts crowded, fuel for a short squeeze (reversal up).",
             ),
       );
-  } else {
-    axes.push({ key: "position", label: tl("Posição alavancada", "Leveraged positioning"), group: tl("posição", "position"), dir: 0, strength: 0, available: false, detail: tl("Indisponível", "Not available") });
   }
 
   // ── Eixo OPÇÕES (put/call + skew) — expectativa do desk de opções ───────
@@ -376,15 +428,21 @@ export function computeMarketRead(
     });
   }
 
-  // ── Contexto: PRESSÃO DO BOOK (liquidez passiva ±2%; não vota no viés) ──────
+  // ── PRESSÃO DO BOOK (liquidez passiva ±2%) — VOTA no DIA (robô: book 54-56%, o fluxo
+  //    mais preditivo medido). Equilíbrio (|imb|<5%) = voto neutro. ──
+  const haveBook = bookImbalance != null && Number.isFinite(bookImbalance);
+  let bookDir: Dir = 0;
+  let bookStr = 0;
   if (bookImbalance != null && Number.isFinite(bookImbalance)) {
     const buy = bookImbalance > 0;
+    bookDir = Math.abs(bookImbalance) >= 0.05 ? sign(bookImbalance) : 0;
+    bookStr = clamp01(Math.abs(bookImbalance) / 0.4);
     axes.push({
       key: "book",
       label: tl("Pressão do book", "Book pressure"),
       group: tl("fluxo", "flow"),
-      dir: 0,
-      strength: clamp01(Math.abs(bookImbalance) / 0.4),
+      dir: bookDir,
+      strength: bookStr,
       available: true,
       detail: `Book ${Math.abs(bookImbalance) < 0.05 ? tl("equilibrado", "balanced") : buy ? tl("comprador", "buy-side") : tl("vendedor", "sell-side")} (${bookImbalance >= 0 ? "+" : ""}${(bookImbalance * 100).toFixed(0)}% ±2%) — ${tl("liquidez parada", "resting liquidity")}`,
     });
@@ -481,12 +539,15 @@ export function computeMarketRead(
     const cls =
       fng <= 25 ? tl("medo extremo", "extreme fear") : fng < 45 ? tl("medo", "fear") : fng <= 55 ? tl("neutro", "neutral") : fng < 75 ? tl("ganância", "greed") : tl("ganância extrema", "extreme greed");
     const contr = fng <= 25 ? tl(" · contrarian de alta", " · contrarian bullish") : fng >= 75 ? tl(" · contrarian de baixa", " · contrarian bearish") : "";
+    sentDir = Math.abs(fng - 50) >= 10 ? (sign(50 - fng) as Dir) : 0; // CONTRÁRIO: medo → alta, ganância → baixa
+    sentStr = clamp01(Math.abs(fng - 50) / 50);
+    haveSent = true;
     axes.push({
       key: "sentiment",
-      label: tl("Sentimento (Fear & Greed)", "Sentiment (Fear & Greed)"),
+      label: tl("Sentimento (F&G, contrário)", "Sentiment (F&G, contrarian)"),
       group: tl("caráter", "character"),
-      dir: 0,
-      strength: clamp01(Math.abs(fng - 50) / 50),
+      dir: sentDir,
+      strength: sentStr,
       available: true,
       detail: `F&G ${fng.toFixed(0)} — ${cls}${contr}`,
     });
@@ -498,7 +559,7 @@ export function computeMarketRead(
   if (smc && price != null) {
     const range = smc.trailingTop - smc.trailingBottom;
     const posPct = range > 0 ? clamp01((price - smc.trailingBottom) / range) : 0.5;
-    zoneKey = price >= smc.premium.bottom ? "premium" : price <= smc.discount.top ? "discount" : "equilibrium";
+    zoneKey = price > smc.equilibrium.top ? "premium" : price < smc.equilibrium.bottom ? "discount" : "equilibrium"; // banda de equilíbrio (47,5–52,5%) — mesmo critério da UI (auditoria 02/jul)
     const zlabel =
       zoneKey === "premium"
         ? tl("zona premium (caro) — favorece venda/realização", "premium zone (expensive) — favors selling/profit-taking")
@@ -513,6 +574,42 @@ export function computeMarketRead(
       strength: clamp01(Math.abs(posPct - 0.5) * 2),
       available: true,
       detail: `${tl("Preço a", "Price at")} ${(posPct * 100).toFixed(0)}% ${tl("do range", "of range")} — ${zlabel}`,
+    });
+  }
+
+  // ── Eixo NÍVEIS DE ONTEM (PDH/PDL) — VOTA no DIA: acima da máxima de ontem = dia
+  //    comprador; abaixo da mínima = vendedor; dentro do range de ontem = posição relativa. ──
+  let prevDir: Dir = 0;
+  let prevStr = 0;
+  let havePrev = false;
+  const pdhL = smc?.prevLevels?.pdh ?? null;
+  const pdlL = smc?.prevLevels?.pdl ?? null;
+  if (price != null && pdhL != null && pdlL != null && pdhL > pdlL) {
+    havePrev = true;
+    if (price > pdhL) {
+      prevDir = 1;
+      prevStr = 0.8;
+    } else if (price < pdlL) {
+      prevDir = -1;
+      prevStr = 0.8;
+    } else {
+      const pp = (price - pdlL) / (pdhL - pdlL);
+      prevDir = pp > 0.6 ? 1 : pp < 0.4 ? -1 : 0;
+      prevStr = clamp01(Math.abs(pp - 0.5) * 1.2);
+    }
+    axes.push({
+      key: "prevlevels",
+      label: tl("Dia vs níveis de ontem", "Day vs yesterday's levels"),
+      group: tl("posição", "position"),
+      dir: prevDir,
+      strength: prevStr,
+      available: true,
+      detail:
+        price > pdhL
+          ? tl("Preço ACIMA da máxima de ontem (PDH) — dia comprador", "Price ABOVE yesterday's high (PDH) — buyers' day")
+          : price < pdlL
+            ? tl("Preço ABAIXO da mínima de ontem (PDL) — dia vendedor", "Price BELOW yesterday's low (PDL) — sellers' day")
+            : `${tl("Dentro do range de ontem", "Inside yesterday's range")} (${(((price - pdlL) / (pdhL - pdlL)) * 100).toFixed(0)}% PDL→PDH)`,
     });
   }
 
@@ -537,38 +634,67 @@ export function computeMarketRead(
     }
   }
 
-  // ── VIÉS agregado (média ponderada das forças direcionais disponíveis) ───
-  // Pesos reponderados ao incluir a Estrutura (SMC). Tendência (EMA) e Estrutura
-  // (price action) são da mesma família direcional → divididas (0,22 + 0,18) p/ não
-  // dobrar a contagem; fluxo institucional segue alto (0,25). Normalizado por wsum.
-  const VW = { trend: 0.22, structure: 0.18, momentum: 0.18, flow: 0.25, position: 0.12, options: 0.1 };
-  const directional = [
-    { dir: trendDir, str: trendStr, w: VW.trend, avail: haveTrend },
-    { dir: structDir, str: structStr, w: VW.structure, avail: haveStruct },
-    { dir: momDir, str: momStr, w: VW.momentum, avail: haveMom },
-    { dir: flowDir, str: flowStr, w: VW.flow, avail: haveFlow },
-    { dir: posDir, str: posStr, w: VW.position, avail: havePos },
-    { dir: optDir, str: optStr, w: VW.options, avail: haveOpt },
-  ];
-  // Anexa o peso às forças que VOTAM (a UI usa p/ o cabo de guerra + contribuição
-  // ponderada + separar votantes×contexto). Contexto fica sem weight.
-  const WMAP: Record<string, number> = {
-    trend: VW.trend, structure: VW.structure, momentum: VW.momentum,
-    flow: VW.flow, position: VW.position, options: VW.options,
+  // ── DOIS MEDIDORES (03/jul): ESTRUTURAL (o fundo — 1D) × DO DIA (tático — 4H + micro).
+  // Antes era UM ponteiro misturando horizontes (média de opostos → "baixa −50" com estrutura
+  // de alta). Pesos CALIBRADOS pelo aprendizado do robô (bot_learning, n≥600 por sinal):
+  // acerto medido >52% aumenta o peso, <52% reduz; funding (41%, invertido) virou contexto.
+  const HIT: Record<string, number | null> = {
+    trend: 53, structure: 52, momentum: null, flow: 54,          // estrutural
+    intraday: 53, book: 56, sentiment: 56, position: 53, options: 52, prevlevels: null, // do dia
   };
-  for (const ax of axes) if (WMAP[ax.key] != null) ax.weight = WMAP[ax.key];
-  let num = 0;
-  let wsum = 0;
-  for (const d of directional)
-    if (d.avail) {
-      num += d.dir * d.str * d.w;
-      wsum += d.w;
+  const mAdj = (hit: number | null) => (hit == null ? 1 : Math.max(0.7, Math.min(1.3, 1 + (hit - 52) * 0.05)));
+  interface Force { key: string; dir: Dir; str: number; w: number; avail: boolean }
+  const structuralForces: Force[] = [
+    { key: "trend", dir: trendDir, str: trendStr, w: 0.30, avail: haveTrend },
+    { key: "structure", dir: structDir, str: structStr, w: 0.28, avail: haveStruct },
+    { key: "momentum", dir: momDir, str: momStr, w: 0.20, avail: haveMom },
+    { key: "flow", dir: flowDir, str: flowStr, w: 0.22, avail: haveFlow },
+  ];
+  const dailyForces: Force[] = [
+    { key: "intraday", dir: intraDir, str: intraStr, w: 0.26, avail: haveIntra },
+    { key: "book", dir: bookDir, str: bookStr, w: 0.22, avail: haveBook },
+    { key: "sentiment", dir: sentDir, str: sentStr, w: 0.16, avail: haveSent },
+    { key: "position", dir: posDir, str: posStr, w: 0.12, avail: havePos },
+    { key: "options", dir: optDir, str: optStr, w: 0.12, avail: haveOpt },
+    { key: "prevlevels", dir: prevDir, str: prevStr, w: 0.12, avail: havePrev },
+  ];
+  const aggregate = (forces: Force[]) => {
+    let n = 0;
+    let ws = 0;
+    for (const d of forces)
+      if (d.avail) {
+        const w = d.w * mAdj(HIT[d.key] ?? null);
+        n += d.dir * d.str * w;
+        ws += w;
+      }
+    const b = ws ? Math.round((n / ws) * 100) : 0;
+    const bs = sign(b);
+    const va = forces.filter((d) => d.avail && d.dir !== 0);
+    const ag = va.filter((d) => d.dir === bs).length;
+    return { bias: b, wsum: ws, agree: ag, voting: va.length, conviction: va.length ? Math.round((ag / va.length) * 100) : 0 };
+  };
+  const structuralRead = aggregate(structuralForces);
+  const dailyRead = aggregate(dailyForces);
+  // Peso efetivo + horizonte + acerto medido nas axes (UI: cabo de guerra, seções, badges).
+  const HZ: Record<string, "structural" | "daily"> = {
+    trend: "structural", structure: "structural", momentum: "structural", flow: "structural",
+    intraday: "daily", book: "daily", sentiment: "daily", position: "daily", options: "daily", prevlevels: "daily",
+  };
+  for (const f of [...structuralForces, ...dailyForces]) {
+    const ax = axes.find((a) => a.key === f.key);
+    if (ax && f.avail) {
+      ax.weight = Math.round(f.w * mAdj(HIT[f.key] ?? null) * 1000) / 1000;
+      ax.horizon = HZ[f.key];
+      ax.hitRate = HIT[f.key] ?? null;
     }
-  const bias = wsum ? Math.round((num / wsum) * 100) : 0;
-  const biasSign = sign(bias);
-  const votingArr = directional.filter((d) => d.avail && d.dir !== 0);
-  const agree = votingArr.filter((d) => d.dir === biasSign).length;
-  const voting = votingArr.length;
+  }
+  // Viés geral = mistura dos dois horizontes (o fundo pesa um pouco mais que o dia).
+  const bias = structuralRead.wsum || dailyRead.wsum
+    ? Math.round((0.55 * structuralRead.bias * (structuralRead.wsum ? 1 : 0) + 0.45 * dailyRead.bias * (dailyRead.wsum ? 1 : 0)) / (0.55 * (structuralRead.wsum ? 1 : 0) + 0.45 * (dailyRead.wsum ? 1 : 0)))
+    : 0;
+  const wsum = structuralRead.wsum + dailyRead.wsum;
+  const agree = structuralRead.agree + dailyRead.agree;
+  const voting = structuralRead.voting + dailyRead.voting;
   const conviction = voting ? Math.round((agree / voting) * 100) : 0;
 
   // Divergência fluxo × tendência (o "ouro": preço numa direção, smart money na outra)
@@ -855,6 +981,12 @@ export function computeMarketRead(
       pushT(fv.mid, fv.bias === "bullish" ? tl("FVG (alta)", "FVG (bullish)") : tl("FVG (baixa)", "FVG (bearish)"));
     for (const eq of nearAB(smc.equals, (e) => e.price))
       pushT(eq.price, eq.kind === "EQH" ? tl("Topos iguais (liquidez)", "Equal highs (liquidity)") : tl("Fundos iguais (liquidez)", "Equal lows (liquidity)"));
+    // Níveis do período anterior — ímãs clássicos (PDH/PDL/PWH/PWL), iguais à aba Smart Money.
+    const P = smc.prevLevels;
+    pushT(P.pdh, tl("Máx. de ontem (PDH)", "Prev day high (PDH)"));
+    pushT(P.pdl, tl("Mín. de ontem (PDL)", "Prev day low (PDL)"));
+    pushT(P.pwh, tl("Máx. da semana passada (PWH)", "Prev week high (PWH)"));
+    pushT(P.pwl, tl("Mín. da semana passada (PWL)", "Prev week low (PWL)"));
   }
 
   for (const t of targets) t.strength = clamp01(1 - Math.abs(t.distPct) / 15);
@@ -894,12 +1026,14 @@ export function computeMarketRead(
     conviction,
     agree,
     voting,
+    structural: { bias: structuralRead.bias, conviction: structuralRead.conviction, agree: structuralRead.agree, voting: structuralRead.voting },
+    daily: { bias: dailyRead.bias, conviction: dailyRead.conviction, agree: dailyRead.agree, voting: dailyRead.voting },
     character,
     gammaNote,
     regime,
     axes,
     divergences,
-    targets: targets.slice(0, 6),
+    targets: targets.slice(0, 8),
     falsifier,
     scenarios,
     levels: { ema50: Number.isFinite(e50) ? e50 : null, ema200: Number.isFinite(e200) ? e200 : null },
