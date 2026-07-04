@@ -128,12 +128,16 @@ async function generateReport(admin: any, geminiKey: string, ativo: string): Pro
   // deno-lint-ignore no-explicit-any
   let aiData: any = {};
   let lastErr = "";
-  for (const model of [PRIMARY_MODEL, FALLBACK_MODEL]) {
+  // pro → flash → (se 429) espera 30s e tenta o flash de novo: o 429 do free tier costuma ser
+  // limite POR MINUTO — a espera resolve; cota DIÁRIA estourada continua falhando (repescagem
+  // via cron das 15h UTC cobre esse caso).
+  for (const model of [PRIMARY_MODEL, FALLBACK_MODEL, FALLBACK_MODEL]) {
     usedModel = model;
     const aiResp = await callGemini(model, geminiKey, SYSTEM_PROMPT, userMsg);
     if (!aiResp.ok) {
       lastErr = `gemini ${aiResp.status}`;
       console.error(`[cockpit-report] ${ativo} ${model}: HTTP ${aiResp.status} — ${(await aiResp.text().catch(() => "")).slice(0, 300)}`);
+      if (aiResp.status === 429) await new Promise((r) => setTimeout(r, 30000));
       continue;
     }
     aiData = await aiResp.json();
@@ -169,8 +173,19 @@ Deno.serve(async (req) => {
   // Modo CRON: gera BTC/ETH/SOL em lote (sem usuario), protegido pelo dispatch secret.
   const dispatch = Deno.env.get("DISPATCH_SECRET");
   if (dispatch && req.headers.get("x-dispatch-secret") === dispatch) {
-    // Gera os 3 em PARALELO (antes era sequencial → 3× mais lento + risco de timeout).
-    const results = await Promise.all(["BTC", "ETH", "SOL"].map((a) => generateReport(admin, geminiKey, a)));
+    // IDEMPOTENTE por dia (UTC): pula ativo que já tem relatório de hoje — permite crons de
+    // repescagem (15h UTC) sem duplicar quando o das 11h funcionou.
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const { data: existing } = await admin
+      .from("ai_analysis").select("asset")
+      .eq("report_type", "daily").eq("auto_generated", true)
+      .gte("created_at", today.toISOString());
+    const done = new Set(((existing as { asset: string }[]) ?? []).map((r) => r.asset));
+    const targets = ["BTC", "ETH", "SOL"].filter((a) => !done.has(a));
+    if (!targets.length) return json(200, { mode: "cron", results: [], note: "relatorios de hoje ja existem" });
+    // Gera em PARALELO (sequencial era 3× mais lento + risco de timeout).
+    const results = await Promise.all(targets.map((a) => generateReport(admin, geminiKey, a)));
     return json(200, { mode: "cron", results });
   }
 
@@ -185,6 +200,14 @@ Deno.serve(async (req) => {
   const { data: sub } = await admin.from("subscriptions").select("plan:plans(*)").eq("user_id", user.id).eq("status", "active").maybeSingle();
   const plan = (sub?.plan as Record<string, unknown> | undefined) ?? undefined;
   if (!plan || !(plan.advanced_metrics as boolean)) return json(403, { error: "Relatorios diarios sao um recurso dos planos Pro e Expert." });
+
+  // Cooldown 30 min por ativo: clique repetido não queima cota/custo do Gemini à toa.
+  const { data: recent } = await admin
+    .from("ai_analysis").select("id")
+    .eq("report_type", "daily").eq("asset", ativo)
+    .gte("created_at", new Date(Date.now() - 30 * 60000).toISOString())
+    .limit(1);
+  if (recent?.length) return json(429, { error: "Ja existe um relatorio recente deste ativo (menos de 30 min) — recarregue a lista para ve-lo." });
 
   const r = await generateReport(admin, geminiKey, ativo);
   if (!r.ok) return json(502, { error: "Falha ao gerar relatorio", detail: r.error });
