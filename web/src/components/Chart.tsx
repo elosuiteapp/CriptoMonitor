@@ -12,6 +12,7 @@ import {
   type Time,
 } from "lightweight-charts";
 
+import { getLocale } from "../hooks/useLocale";
 import { useTheme } from "../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../lib/chartTheme";
 import { useT } from "../lib/i18n";
@@ -40,6 +41,7 @@ export interface ActiveLayers {
   zeroGamma: boolean;
   maxPain: boolean;
   volumeProfile: boolean; // POC + value area (calculado dos candles)
+  vwap: boolean; // VWAP ancorado (dia/semana/mês, conforme o timeframe) — benchmark institucional
   orderbookWalls: boolean; // paredes do book (Binance + Coinbase)
   funding: boolean; // faixa de funding (renderizada abaixo do gráfico)
   cvd: boolean; // sub-gráfico de CVD (renderizado abaixo do gráfico)
@@ -85,6 +87,8 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
   const [error, setError] = useState<string | null>(null);
   const [vp, setVp] = useState<VolumeProfile | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [deepCandles, setDeepCandles] = useState<Candle[]>([]); // histórico profundo (p/ VWAP ancorado)
+  const vwapSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const { isDark } = useTheme();
   const { isEn, t } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
@@ -221,6 +225,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         const recent = total > ANALYSIS_BARS ? display.slice(-ANALYSIS_BARS) : display;
         setVp(computeVolumeProfile(recent));
         setCandles(recent);
+        setDeepCandles(display);
         emitPrice(display[display.length - 1]?.close, true); // topo já casa com o gráfico
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
@@ -279,6 +284,83 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
     // Paredes do book NÃO são mais price lines — viram BARRAS de liquidez (canvas,
     // efeito próprio abaixo) para não poluir o eixo e mostrar o tamanho visualmente.
   }, [gamma, layers, canUseLayers, chartType, vp]);
+
+  // ─── VWAP ANCORADO (dia/semana/mês UTC, conforme o timeframe) ────────────────
+  // Benchmark institucional: preço médio ponderado por volume desde a âncora — as mesas
+  // medem execução contra ele, então o nível atrai/reage. Curva reinicia em cada âncora
+  // (gap de whitespace); o 1º período PARCIAL da janela não é desenhado (VWAP truncado
+  // seria um nível falso). Dado nosso: como PREVISOR direcional 1h ele é fraco (43% no
+  // aprendizado do robô) — aqui é NÍVEL DE REFERÊNCIA visual, papel em que ele brilha.
+  useEffect(() => {
+    const series = seriesRef.current;
+    const chart = chartRef.current;
+    if (!chart || !series) return;
+    for (const sv of vwapSeriesRef.current) chart.removeSeries(sv);
+    vwapSeriesRef.current = [];
+    if (!layers.vwap || !canUseLayers || deepCandles.length < 10) return;
+
+    const en = getLocale() === "en";
+    const ANCHORS: Partial<Record<Timeframe, ("D" | "W" | "M")[]>> = {
+      "15m": ["D", "W"], "1h": ["D", "W"], "4h": ["D", "W", "M"], "1d": ["W", "M"], "1w": ["M"],
+    };
+    const DAY = 86400;
+    const bucketOf = (t: number, a: "D" | "W" | "M"): number => {
+      if (a === "D") return Math.floor(t / DAY);
+      if (a === "W") {
+        const dayIdx = Math.floor(t / DAY);
+        return Math.floor((dayIdx - (((dayIdx + 4) % 7) + 6) % 7) / 7); // semanas ancoradas na segunda
+      }
+      const d = new Date(t * 1000);
+      return d.getUTCFullYear() * 12 + d.getUTCMonth();
+    };
+    const STYLE: Record<"D" | "W" | "M", { color: string; title: string }> = {
+      D: { color: "#22d3ee", title: "VWAP D" },
+      W: { color: "#818cf8", title: en ? "VWAP W" : "VWAP S" },
+      M: { color: "#2dd4bf", title: "VWAP M" },
+    };
+
+    for (const a of ANCHORS[timeframe] ?? []) {
+      const pts: ({ time: number; value: number } | { time: number })[] = [];
+      let pv = 0;
+      let vv = 0;
+      let bucket: number | null = null;
+      let started = false; // só desenha a partir da 1ª âncora completa dentro da janela
+      for (const c of deepCandles) {
+        const b = bucketOf(c.time as number, a);
+        if (bucket === null) bucket = b;
+        if (b !== bucket) {
+          bucket = b;
+          pv = 0;
+          vv = 0;
+          if (started) pts.push({ time: c.time as number }); // whitespace = quebra visual na âncora
+          started = true;
+        }
+        const vol = c.volume ?? 0;
+        if (vol > 0) {
+          pv += ((c.high + c.low + c.close) / 3) * vol;
+          vv += vol;
+        }
+        if (started && vv > 0) pts.push({ time: c.time as number, value: pv / vv });
+      }
+      if (pts.filter((p) => "value" in p).length < 2) continue;
+      const sv = chart.addLineSeries({
+        color: STYLE[a].color,
+        lineWidth: 1,
+        priceScaleId: "right",
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: STYLE[a].title,
+        crosshairMarkerVisible: false,
+      });
+      sv.setData(pts as never);
+      vwapSeriesRef.current.push(sv);
+    }
+    return () => {
+      const ch = chartRef.current;
+      if (ch) for (const sv of vwapSeriesRef.current) try { ch.removeSeries(sv); } catch { /* já removida */ }
+      vwapSeriesRef.current = [];
+    };
+  }, [deepCandles, layers.vwap, canUseLayers, timeframe]);
 
   // ─── Heatmap de liquidações (estimativa: modelo de alavancagem) ──────────────
   // Desenha numa <canvas> ATRÁS das velas (o fundo do chart é transparente, então

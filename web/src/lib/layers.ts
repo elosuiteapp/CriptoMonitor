@@ -8,6 +8,7 @@ export const LAYER_KEYS: LayerKey[] = [
   "zeroGamma",
   "maxPain",
   "volumeProfile",
+  "vwap",
   "orderbookWalls",
   "funding",
   "cvd",

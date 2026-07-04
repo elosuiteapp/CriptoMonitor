@@ -232,6 +232,7 @@ export interface Dict {
       zeroGamma: { label: string; desc: string };
       maxPain: { label: string; desc: string };
       volumeProfile: { label: string; desc: string };
+      vwap: { label: string; desc: string };
       orderbookWalls: { label: string; desc: string };
       funding: { label: string; desc: string };
       cvd: { label: string; desc: string };
@@ -737,6 +738,7 @@ const PT: Dict = {
       zeroGamma: { label: "Zero Gamma", desc: "Nível onde o gama dos dealers vira de positivo para negativo. Acima: dealers amortecem (mercado mais calmo). Abaixo: amplificam (mais volátil)." },
       maxPain: { label: "Max Pain", desc: "Preço onde o maior volume de opções expira sem valor. Perto do vencimento o preço tende a gravitar para cá (efeito ímã)." },
       volumeProfile: { label: "Volume Profile (POC)", desc: "POC = preço com maior volume negociado no período (ímã de liquidez); VA High/Low delimitam 70% do volume." },
+      vwap: { label: "VWAP D-S-M", desc: "VWAP ancorado (preço médio ponderado por volume) do dia, semana e mês — o benchmark que as mesas institucionais usam pra medir execução. Preço acima = compradores no controle desde a âncora; o nível atrai reteste e reação. As âncoras mudam com o timeframe (intraday: dia+semana; diário: semana+mês)." },
       orderbookWalls: { label: "Paredes do book", desc: "Grandes ordens no livro (Binance+Coinbase): paredes de compra = suporte, de venda = resistência." },
       funding: { label: "Funding", desc: "Taxa de financiamento dos perpétuos: positiva = comprados pagam (otimismo alavancado), negativa = vendidos pagam." },
       cvd: { label: "CVD", desc: "Cumulative Volume Delta: fluxo agressor líquido (compras a mercado − vendas a mercado). Varejo (Binance+OKX) × institucional (Coinbase)." },
@@ -1259,6 +1261,7 @@ const EN: Dict = {
       zeroGamma: { label: "Zero Gamma", desc: "Level where dealer gamma flips from positive to negative. Above: dealers dampen (calmer market). Below: they amplify (more volatile)." },
       maxPain: { label: "Max Pain", desc: "Price where the most options expire worthless. Near expiry, price tends to gravitate here (magnet effect)." },
       volumeProfile: { label: "Volume Profile (POC)", desc: "POC = price with the most traded volume in the period (liquidity magnet); VA High/Low bound 70% of volume." },
+      vwap: { label: "VWAP D-W-M", desc: "Anchored VWAP (volume-weighted average price) for the day, week, and month — the benchmark institutional desks measure execution against. Price above = buyers in control since the anchor; the level attracts retests and reactions. Anchors adapt to the timeframe (intraday: day+week; daily: week+month)." },
       orderbookWalls: { label: "Order-book walls", desc: "Large resting orders (Binance+Coinbase): buy walls = support, sell walls = resistance." },
       funding: { label: "Funding", desc: "Perpetuals funding rate: positive = longs pay (leveraged optimism), negative = shorts pay." },
       cvd: { label: "CVD", desc: "Cumulative Volume Delta: net aggressive flow (market buys − market sells). Retail (Binance+OKX) vs institutional (Coinbase)." },

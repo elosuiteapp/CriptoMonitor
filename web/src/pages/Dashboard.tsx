@@ -100,6 +100,7 @@ export default function Dashboard() {
     zeroGamma: true,
     maxPain: false,
     volumeProfile: false,
+    vwap: false,
     orderbookWalls: false,
     funding: false,
     cvd: false,

@@ -20,6 +20,7 @@ const ITEMS: { key: keyof ActiveLayers; color: string; tier: "pro" | "expert" }[
   { key: "zeroGamma", color: "bg-purple-500", tier: "pro" },
   { key: "maxPain", color: "bg-amber-500", tier: "pro" },
   { key: "volumeProfile", color: "bg-sky-400", tier: "pro" },
+  { key: "vwap", color: "bg-cyan-500", tier: "pro" },
   { key: "orderbookWalls", color: "bg-teal-400", tier: "pro" },
   { key: "funding", color: "bg-indigo-400", tier: "expert" },
   { key: "cvd", color: "bg-cyan-400", tier: "expert" },
