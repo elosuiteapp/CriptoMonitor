@@ -126,7 +126,9 @@ export default function Dashboard() {
   const imbalance = useOrderbookImbalance(asset, plan);
   const oiSeries = useOpenInterest(asset, plan);
   const advanced = plan?.advanced_metrics ?? false;
-  const isExpert = plan?.slug === "expert";
+  // Expert por CAPACIDADE (smart_money) — slug legado só como fallback; slug-only trancava o
+  // grupo institucional e o CVD Coinbase p/ assinantes de mod_crypto/complete (pagantes!).
+  const isExpert = (plan?.smart_money ?? false) || plan?.slug === "expert";
   const canSmart = plan?.smart_money ?? false;
   const canUseLayers = plan?.chart_layers ?? false;
   // Quais camadas o plano pode LIGAR (fonte única em lib/layers.ts):

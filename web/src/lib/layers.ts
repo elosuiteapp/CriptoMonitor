@@ -31,7 +31,10 @@ const EXPERT_TIER: LayerKey[] = ["funding", "cvd", "bookPressure", "liquidations
  */
 export function layerAccess(plan: Plan | null): Record<LayerKey, boolean> {
   const advanced = plan?.advanced_metrics ?? false;
-  const isExpert = plan?.slug === "expert";
+  // "Expert" por CAPACIDADE (smart_money), não pelo slug legado: os planos vendidos desde a
+  // sql/078 (mod_crypto/complete) têm smart_money=true mas slug ≠ "expert" — o gate por slug
+  // trancava as camadas de fluxo pra quem pagou o módulo completo (família do bug da auditoria 02/jul).
+  const isExpert = (plan?.smart_money ?? false) || plan?.slug === "expert";
   const preview = new Set(plan?.preview_layers ?? []);
 
   const out = {} as Record<LayerKey, boolean>;

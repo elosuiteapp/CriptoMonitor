@@ -22,12 +22,14 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
   const [items, setItems] = useState<NewsRow[]>([]);
   const [general, setGeneral] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(false);
   const limit = plan?.advanced_metrics ? 8 : 3;
   const lang = isEn ? "en" : "pt"; // manchetes no idioma selecionado (link → fonte original)
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setErr(false);
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
 
     (async () => {
@@ -51,7 +53,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       }
 
       // 2. Fallback: notícias gerais recentes (sem filtro de ativo)
-      const { data: gen } = await supabase
+      const { data: gen, error: gerr } = await supabase
         .from("news_feed")
         .select(COLS)
         .eq("market", "crypto")
@@ -62,6 +64,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       if (!active) return;
       setItems((gen as NewsRow[]) ?? []);
       setGeneral(true);
+      setErr(!!gerr && ((gen as NewsRow[] | null)?.length ?? 0) === 0); // falha de rede não pode virar "sem notícias" mudo
       setLoading(false);
     })();
 
@@ -77,7 +80,10 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
       </h2>
       <div className="space-y-2">
         {loading && <p className="text-sm text-muted-foreground">{t.common.loading}</p>}
-        {!loading && items.length === 0 && (
+        {!loading && err && (
+          <p className="text-sm text-amber-600 dark:text-amber-400">{isEn ? "Couldn't load the news right now — reload the page to try again." : "Não foi possível carregar as notícias agora — recarregue a página para tentar de novo."}</p>
+        )}
+        {!loading && !err && items.length === 0 && (
           <p className="text-sm text-muted-foreground">{t.news.none}</p>
         )}
         {items.map((n, i) => (
@@ -86,7 +92,7 @@ export default function NewsBlock({ asset, plan }: { asset: string; plan: Plan |
             href={n.url}
             target="_blank"
             rel="noreferrer"
-            className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 px-4 py-3 transition hover:border-border"
+            className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60"
           >
             <span className="text-sm text-foreground">{n.title}</span>
             <span className="shrink-0 text-right text-[10px] leading-tight text-muted-foreground">

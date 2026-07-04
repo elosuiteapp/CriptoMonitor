@@ -44,7 +44,7 @@ export default function VolatilityPanel({ asset }: { asset: string }) {
     };
   }, [asset]);
 
-  if (rows == null) return null;
+  if (rows == null) return <div className="h-28 animate-pulse rounded-xl border border-border bg-card dark:bg-card/60" />;
   const latest = rows[0];
   if (!latest) {
     return (
