@@ -69,6 +69,10 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
   const [w, setW] = useState(900);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [days, setDays] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -82,14 +86,32 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setErr(false);
+    setHover(null);
     (async () => {
-      const { data } = await supabase.rpc("gamma_levels_history", { p_asset: asset, p_days: days });
-      if (!cancelled) setRows((data as Row[]) ?? []);
+      // Antes: `const { data } = await rpc(...)` ENGOLIA o erro → qualquer falha de rede/refresh
+      // de sessão virava [] e caía na mensagem ERRADA ("acumulando histórico"), sem retry.
+      // Agora: 1 retry automático; em falha mantém os dados anteriores e mostra erro de verdade.
+      for (let attempt = 0; attempt < 2 && !cancelled; attempt++) {
+        const { data, error } = await supabase.rpc("gamma_levels_history", { p_asset: asset, p_days: days });
+        if (cancelled) return;
+        if (!error && data) {
+          setRows(data as Row[]);
+          setLoading(false);
+          return;
+        }
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
+      }
+      if (!cancelled) {
+        setErr(true); // NÃO zera rows: se havia gráfico bom, continua visível
+        setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [asset, days]);
+  }, [asset, days, reload]);
 
   const data = (() => {
     if (!rows) return null;
@@ -137,7 +159,24 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
         </div>
       </div>
 
-      {data == null || data.length < 2 ? (
+      {err && data != null && data.length >= 2 && (
+        <div className="mb-1 rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-500">
+          {isEn ? "Update failed — showing the last loaded data." : "Falha ao atualizar — mostrando os últimos dados carregados."}
+          <button onClick={() => setReload((r) => r + 1)} className="ml-2 underline">{isEn ? "retry" : "tentar de novo"}</button>
+        </div>
+      )}
+      {loading && (data == null || data.length < 2) ? (
+        <div className="h-[300px] animate-pulse rounded-lg bg-muted/40" />
+      ) : err && (data == null || data.length < 2) ? (
+        <div className="grid h-[300px] place-items-center">
+          <div className="text-center text-xs text-muted-foreground">
+            <p>{isEn ? "Couldn't load the levels history right now." : "Não foi possível carregar o histórico de níveis agora."}</p>
+            <button onClick={() => setReload((r) => r + 1)} className="mt-2 rounded-md border border-border px-3 py-1 text-xs text-foreground hover:bg-muted">
+              {isEn ? "Try again" : "Tentar de novo"}
+            </button>
+          </div>
+        </div>
+      ) : data == null || data.length < 2 ? (
         <div className="grid h-[300px] place-items-center text-xs text-muted-foreground">
           {t.gammaChart.accumulating.replace("{days}", String(days))}
         </div>
@@ -276,6 +315,68 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
                   </text>
                 </g>
               ))}
+
+              {/* Crosshair interativo: valores REAIS do ponto sob o mouse (o gráfico era mudo). */}
+              {hover != null && data[hover] && (() => {
+                const hr = data[hover];
+                const hx = xAt[hover];
+                const lines: { name: string; v: number | null; color: string }[] = SERIES.map((s2) => ({ name: s2.name, v: hr[s2.key] != null ? Number(hr[s2.key]) : null, color: s2.color }));
+                const gex = hr.net_gex_spot != null ? Number(hr.net_gex_spot) : null;
+                const boxW = 128;
+                const rowsN = lines.filter((l2) => l2.v != null).length + (gex != null ? 1 : 0) + 1;
+                const boxH = 14 + rowsN * 12;
+                const bx = hx + 10 + boxW > w - padR ? hx - 10 - boxW : hx + 10;
+                const loc = getLocale() === "en" ? "en-US" : "pt-BR";
+                const when = new Date(hr.ts).toLocaleString(loc, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+                let ly = 0;
+                return (
+                  <g pointerEvents="none">
+                    <line x1={hx} y1={padT} x2={hx} y2={padT + plotH} stroke="rgba(148,163,184,0.5)" strokeWidth="1" strokeDasharray="3 3" />
+                    {SERIES.map((s2) => (hr[s2.key] != null ? <circle key={s2.key} cx={hx} cy={yFor(clamp(Number(hr[s2.key])))} r={2.6} fill={s2.color} stroke="#0b0f17" strokeWidth="1" /> : null))}
+                    <rect x={bx} y={padT + 4} width={boxW} height={boxH} rx={5} fill="rgba(15,23,42,0.93)" stroke="rgba(148,163,184,0.35)" strokeWidth="1" />
+                    <text x={bx + 8} y={padT + 4 + 12} fontSize="8.5" fill="#94a3b8">{when}{hr.regime ? ` · γ ${hr.regime === "positive" ? "+" : hr.regime === "negative" ? "−" : "·"}` : ""}</text>
+                    {lines.map((l2) => {
+                      if (l2.v == null) return null;
+                      ly += 12;
+                      return (
+                        <text key={l2.name} x={bx + 8} y={padT + 4 + 12 + ly} fontSize="9" fontWeight="600" fill={l2.color}>
+                          {l2.name} <tspan fill="#e2e8f0">{fmtK(l2.v)}</tspan>
+                        </text>
+                      );
+                    })}
+                    {gex != null && (() => { ly += 12; return (
+                      <text x={bx + 8} y={padT + 4 + 12 + ly} fontSize="9" fontWeight="600" fill={gex < 0 ? "#f87171" : "#34d399"}>
+                        GEX <tspan fill="#e2e8f0">{`${gex < 0 ? "−" : ""}$${Math.abs(gex) >= 1e9 ? (Math.abs(gex) / 1e9).toFixed(1) + "b" : (Math.abs(gex) / 1e6).toFixed(0) + "m"}`}</tspan>
+                      </text>
+                    ); })()}
+                  </g>
+                );
+              })()}
+
+              <rect
+                x={padL}
+                y={padT}
+                width={plotW}
+                height={plotH}
+                fill="transparent"
+                onMouseMove={(e) => {
+                  const svg = (e.target as SVGRectElement).ownerSVGElement;
+                  if (!svg) return;
+                  const rect = svg.getBoundingClientRect();
+                  const mx = e.clientX - rect.left;
+                  let best = 0;
+                  let bd = Infinity;
+                  xAt.forEach((x2, i2) => {
+                    const dd = Math.abs(x2 - mx);
+                    if (dd < bd) {
+                      bd = dd;
+                      best = i2;
+                    }
+                  });
+                  setHover(best);
+                }}
+                onMouseLeave={() => setHover(null)}
+              />
             </svg>
           );
         })()
@@ -297,6 +398,11 @@ export default function GammaLevelsChart({ asset }: { asset: string }) {
           {t.gammaChart.regimeNeg}
         </span>
         <span className="text-muted-foreground">{t.gammaChart.legendNote}</span>
+        {data != null && data.length >= 2 && (
+          <span className="ml-auto text-muted-foreground/70">
+            {(isEn ? "updated " : "atualizado ") + new Date(data[data.length - 1].ts).toLocaleTimeString(getLocale() === "en" ? "en-US" : "pt-BR", { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
       </div>
     </div>
   );

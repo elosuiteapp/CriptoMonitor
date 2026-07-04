@@ -36,24 +36,43 @@ export default function GammaOiProfile({
 }) {
   const { t } = useT();
   const [rows, setRows] = useState<OiRow[] | null>(null);
+  const [err, setErr] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setErr(false);
     (async () => {
-      const { data } = await supabase
-        .from("options_oi")
-        .select("strike, type, oi, ts, expiry")
-        .eq("asset", asset)
-        .order("ts", { ascending: false })
-        .limit(120);
-      if (active) setRows((data as OiRow[]) ?? []);
+      // Falha de rede não pode virar "sem OI" mudo: 1 retry + estado de erro explícito.
+      for (let attempt = 0; attempt < 2 && active; attempt++) {
+        const { data, error } = await supabase
+          .from("options_oi")
+          .select("strike, type, oi, ts, expiry")
+          .eq("asset", asset)
+          .order("ts", { ascending: false })
+          .limit(120);
+        if (!active) return;
+        if (!error && data) {
+          setRows(data as OiRow[]);
+          return;
+        }
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
+      }
+      if (active) setErr(true);
     })();
     return () => {
       active = false;
     };
-  }, [asset]);
+  }, [asset, reload]);
 
-  if (rows == null) return <div className="text-xs text-muted-foreground">{t.gammaChart.loadingOi}</div>;
+  if (err && rows == null)
+    return (
+      <div className="text-xs text-muted-foreground">
+        {t.smart.loadError}{" "}
+        <button onClick={() => setReload((r) => r + 1)} className="underline">{t.common.retry}</button>
+      </div>
+    );
+  if (rows == null) return <div className="h-40 animate-pulse rounded-lg bg-muted/40" />;
   if (rows.length === 0)
     return <div className="text-xs text-muted-foreground">{t.gammaChart.noOi}</div>;
 
