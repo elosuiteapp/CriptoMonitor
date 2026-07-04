@@ -55,6 +55,21 @@ const biasDot = (b: "bullish" | "bearish" | "neutral") =>
 // Camadas de mercado = indicadores calculados das velas da Binance (sem dados do
 // coletor; funcionam em qualquer das 100 moedas). Mesmo esquema de toggle.
 const LAYER_KEYS: (keyof SmcLayers)[] = ["orderBlocks", "fvg", "liquidity", "zones", "equal", "structure", "swings", "prevLevels"];
+// Cor-assinatura de cada camada (mesma paleta do desenho no gráfico) — o dot na pílula
+// ensina o vocabulário visual: pílula âmbar = linhas âmbar no gráfico.
+const LAYER_DOT: Record<string, string> = {
+  orderBlocks: "bg-emerald-500",
+  fvg: "bg-purple-400",
+  liquidity: "bg-amber-500",
+  zones: "bg-slate-400",
+  equal: "bg-rose-400",
+  structure: "bg-sky-400",
+  swings: "bg-emerald-300",
+  prevLevels: "bg-sky-500",
+  volumeProfile: "bg-cyan-400",
+  liquidations: "bg-red-500",
+  htf: "bg-fuchsia-500",
+};
 // CVD / Volume Delta fica SÓ no cockpit (decisão do dono) — fora das camadas do Smart Money.
 const MARKET_KEYS: (keyof SmcLayers)[] = ["volumeProfile", "liquidations", "htf"];
 
@@ -626,6 +641,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                 layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
               }`}
             >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LAYER_DOT[key] ?? "bg-muted-foreground/50"} ${layers[key] ? "" : "opacity-35"}`} aria-hidden />
               <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
                 {t.smart.layers[key].label}
               </button>
@@ -640,6 +656,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                 layers[key] ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground"
               }`}
             >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LAYER_DOT[key] ?? "bg-muted-foreground/50"} ${layers[key] ? "" : "opacity-35"}`} aria-hidden />
               <button type="button" onClick={() => toggleLayer(key)} className="hover:opacity-80">
                 {t.smart.layers[key].label}
               </button>

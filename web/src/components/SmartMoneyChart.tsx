@@ -23,7 +23,6 @@ import type { SmcResult } from "../lib/smc";
 const UP = "#22c55e";
 const DOWN = "#ef4444";
 const AMBER = "#f59e0b";
-const INK = "#0a0e17";
 
 export interface SmcLayers {
   orderBlocks: boolean;
@@ -316,8 +315,8 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
 
-      const tags: { y: number; text: string; bg: string; fg: string }[] = [];
-      const queueTag = (price: number, text: string, bg: string, fg: string) => tags.push({ y: yOf(price, H), text, bg, fg });
+      const tags: { y: number; price: number; text: string; accent: string }[] = [];
+      const queueTag = (price: number, text: string, accent: string) => tags.push({ y: yOf(price, H), price, text, accent });
 
       const softBand = (top: number, bottom: number, fill: string) => {
         const yt = yOf(top, H);
@@ -376,8 +375,8 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         ];
         for (const [price, label, color] of items) {
           if (price == null || !Number.isFinite(price)) continue;
-          dashed(price, color.replace("0.9", "0.45"), [6, 4]);
-          queueTag(price, `${label} ${kfmt(price)}`, color, INK);
+          dashed(price, color.replace("0.9", "0.28"), [6, 5]);
+          queueTag(price, `${label} ${kfmt(price)}`, color);
         }
       }
 
@@ -390,8 +389,11 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
           const yt = yOf(g.top, H);
           const yb = yOf(g.bottom, H);
           rr(x1, Math.min(yt, yb), x2 - x1, Math.max(Math.abs(yb - yt), 2), 2);
-          ctx.fillStyle = "rgba(192,132,252,0.16)";
+          ctx.fillStyle = "rgba(192,132,252,0.14)";
           ctx.fill();
+          ctx.strokeStyle = "rgba(192,132,252,0.35)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
         });
         if (smc.fvgs.length) {
           const g = smc.fvgs[smc.fvgs.length - 1];
@@ -416,12 +418,15 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
           const y = Math.min(yt, yb);
           const h = Math.max(Math.abs(yb - yt), 3);
           rr(x1, y, right - x1, h, 4);
-          ctx.fillStyle = bull ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)";
+          const obGrad = ctx.createLinearGradient(x1, 0, right, 0);
+          obGrad.addColorStop(0, bull ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)");
+          obGrad.addColorStop(1, bull ? "rgba(34,197,94,0.02)" : "rgba(239,68,68,0.02)");
+          ctx.fillStyle = obGrad;
           ctx.fill();
-          ctx.strokeStyle = bull ? "rgba(34,197,94,0.40)" : "rgba(239,68,68,0.40)";
+          ctx.strokeStyle = bull ? "rgba(34,197,94,0.28)" : "rgba(239,68,68,0.28)";
           ctx.lineWidth = 1;
           ctx.stroke();
-          queueTag(ob.mid, `OB ${bull ? t.smart.obUp : t.smart.obDown} ${kfmt(ob.mid)}`, bull ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)", bull ? INK : "#fff");
+          queueTag(ob.mid, `OB ${bull ? "↑" : "↓"} ${kfmt(ob.mid)}`, bull ? UP : DOWN);
         });
       }
 
@@ -454,11 +459,11 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         const below = smc.liquidity.filter((l) => !l.swept && l.price < smc.price).sort((a, b) => b.price - a.price).slice(0, 2);
         [...above, ...below].forEach((l) => {
           dashed(l.price, "rgba(245,158,11,0.7)");
-          queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER, INK);
+          queueTag(l.price, `Liq ${kfmt(l.price)}`, AMBER);
         });
         smc.liquidity.filter((l) => l.sweptRecently).slice(0, 2).forEach((l) => {
           dashed(l.price, "rgba(244,63,94,0.5)", [2, 3]);
-          queueTag(l.price, `✕ ${t.smart.sweptTag} ${kfmt(l.price)}`, "rgba(244,63,94,0.92)", "#fff");
+          queueTag(l.price, `✕ ${t.smart.sweptTag} ${kfmt(l.price)}`, "#f43f5e");
         });
       }
 
@@ -477,26 +482,46 @@ export default function SmartMoneyChart({ candles, analysisCandles, smc, layers 
         });
       }
 
-      // 6) Etiquetas à direita, descolididas
+      // 6) Etiquetas à direita — estilo GLASS: funde níveis quase iguais (ex.: PWL·PML no
+      //    mesmo preço), mostra só as 12 mais próximas do spot e usa pílula translúcida com
+      //    barra de cor da camada (antes: 15+ pílulas sólidas brigando entre si e com o eixo).
       tags.sort((a, b) => a.y - b.y);
-      const GAP = 15;
-      for (let i = 1; i < tags.length; i++) {
-        if (tags[i].y - tags[i - 1].y < GAP) tags[i].y = tags[i - 1].y + GAP;
+      const mergedTags: typeof tags = [];
+      for (const tg of tags) {
+        const last = mergedTags[mergedTags.length - 1];
+        if (last && Math.abs(tg.y - last.y) < 5) last.text = `${last.text} · ${tg.text}`;
+        else mergedTags.push({ ...tg });
       }
-      ctx.font = "600 10px system-ui, sans-serif";
-      for (const t of tags) {
+      const spotRef = smc.price;
+      const shownTags = mergedTags
+        .sort((a, b) => Math.abs(a.price - spotRef) - Math.abs(b.price - spotRef))
+        .slice(0, 12)
+        .sort((a, b) => a.y - b.y);
+      const GAP = 16;
+      for (let i = 1; i < shownTags.length; i++) {
+        if (shownTags[i].y - shownTags[i - 1].y < GAP) shownTags[i].y = shownTags[i - 1].y + GAP;
+      }
+      ctx.font = "600 9px system-ui, sans-serif";
+      for (const tg of shownTags) {
         const padX = 5;
-        const h = 15;
-        const w = ctx.measureText(t.text).width + padX * 2;
-        const x = right - w - 3;
-        const yc = Math.max(h / 2, Math.min(t.y, H - h / 2));
-        rr(x, yc - h / 2, w, h, 3);
-        ctx.fillStyle = t.bg;
+        const h = 14;
+        const wTag = ctx.measureText(tg.text).width + padX * 2 + 3;
+        const x = right - wTag - 3;
+        const yc = Math.max(h / 2, Math.min(tg.y, H - h / 2));
+        rr(x, yc - h / 2, wTag, h, 3.5);
+        ctx.fillStyle = "rgba(10,14,23,0.74)";
         ctx.fill();
-        ctx.fillStyle = t.fg;
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = tg.accent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = tg.accent;
+        ctx.fillRect(x + 1, yc - h / 2 + 2.5, 2.5, h - 5);
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        ctx.fillText(t.text, x + padX, yc + 0.5);
+        ctx.fillText(tg.text, x + padX + 3.5, yc + 0.5);
       }
     };
 
