@@ -20,12 +20,12 @@ const ITEMS: { key: keyof ActiveLayers; color: string; tier: "pro" | "expert" }[
   { key: "zeroGamma", color: "bg-purple-500", tier: "pro" },
   { key: "maxPain", color: "bg-amber-500", tier: "pro" },
   { key: "volumeProfile", color: "bg-sky-400", tier: "pro" },
-  { key: "orderbookWalls", color: "bg-amber-500", tier: "pro" },
-  { key: "funding", color: "bg-sky-500", tier: "expert" },
-  { key: "cvd", color: "bg-emerald-500", tier: "expert" },
-  { key: "bookPressure", color: "bg-teal-500", tier: "expert" },
+  { key: "orderbookWalls", color: "bg-teal-400", tier: "pro" },
+  { key: "funding", color: "bg-indigo-400", tier: "expert" },
+  { key: "cvd", color: "bg-cyan-400", tier: "expert" },
+  { key: "bookPressure", color: "bg-violet-400", tier: "expert" },
   { key: "liquidations", color: "bg-rose-500", tier: "expert" },
-  { key: "bookHeatmap", color: "bg-emerald-500", tier: "pro" },
+  { key: "bookHeatmap", color: "bg-blue-500", tier: "pro" },
 ];
 
 export default function LayerToggles({ layers, onToggle, access, showUpsell }: Props) {
@@ -73,7 +73,7 @@ export default function LayerToggles({ layers, onToggle, access, showUpsell }: P
               onClick={() => onToggle(item.key)}
               className="flex items-center gap-1.5"
             >
-              <span className={`h-2 w-2 rounded-full ${active ? item.color : "bg-muted"}`} />
+              <span className={`h-2 w-2 rounded-full ${item.color} ${active ? "" : "opacity-35"}`} />
               {meta.label}
             </button>
             <InfoTip text={meta.desc} />

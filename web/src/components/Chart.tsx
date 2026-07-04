@@ -257,7 +257,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       const line = series.createPriceLine({
         price,
         color,
-        lineWidth: 2,
+        lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title,
@@ -766,6 +766,16 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       }
 
       const labelX = plotRight - MAX_BAR - 12; // coluna fixa dos rótulos, à esquerda das barras
+      const rrPill = (x: number, y: number, w2: number, h2: number, r: number) => {
+        const rad = Math.min(r, h2 / 2, w2 / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rad, y);
+        ctx.arcTo(x + w2, y, x + w2, y + h2, rad);
+        ctx.arcTo(x + w2, y + h2, x, y + h2, rad);
+        ctx.arcTo(x, y + h2, x, y, rad);
+        ctx.arcTo(x, y, x + w2, y, rad);
+        ctx.closePath();
+      };
 
       for (let i = 0; i < items.length; i++) {
         const { z, y } = items[i];
@@ -801,12 +811,24 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         ctx.lineTo(labelX + 5, ly);
         ctx.stroke();
 
-        // rótulo: notional total da zona (multi-corretora é sinalizado pelo contorno)
+        // rótulo GLASS: pílula translúcida + barra/contorno na cor do lado (padrão do app)
         const txt = fmtUsd(z.notional);
         const tw = ctx.measureText(txt).width;
         const padX = 5;
-        ctx.fillStyle = isDark ? "rgba(10,11,16,0.82)" : "rgba(255,255,255,0.92)";
-        ctx.fillRect(labelX - tw - padX * 2, ly - 8, tw + padX * 2, 16);
+        const bx = labelX - tw - padX * 2 - 4;
+        const bw = tw + padX * 2 + 4;
+        const accent = isSupport ? "rgba(34,197,94,0.9)" : "rgba(239,68,68,0.9)";
+        rrPill(bx, ly - 8, bw, 16, 4);
+        ctx.fillStyle = isDark ? "rgba(10,14,23,0.78)" : "rgba(255,255,255,0.94)";
+        ctx.fill();
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = accent;
+        ctx.fillRect(bx + 1.5, ly - 5.5, 2.5, 11);
         ctx.fillStyle = isSupport ? labelBid : labelAsk;
         ctx.textAlign = "right";
         ctx.fillText(txt, labelX - padX, ly);
