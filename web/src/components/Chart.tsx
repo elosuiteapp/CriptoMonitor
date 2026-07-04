@@ -220,7 +220,14 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         // Abre focado nos últimos candles (momento atual); o histórico fica no zoom-out.
         const total = display.length;
         if (total > 0) {
-          chart.timeScale().setVisibleLogicalRange({ from: total - Math.min(total, DEFAULT_VISIBLE_BARS), to: total + 4 });
+          const focusRecent = () =>
+            chart.timeScale().setVisibleLogicalRange({ from: total - Math.min(total, DEFAULT_VISIBLE_BARS), to: total + 4 });
+          focusRecent();
+          // Reafirma no próximo frame: efeitos de camada (VWAP/heatmaps) e reflows rodam depois
+          // do setData e podiam deixar o gráfico ancorado no passado em alguns timeframes.
+          requestAnimationFrame(() => {
+            if (!cancelled) focusRecent();
+          });
         }
         const recent = total > ANALYSIS_BARS ? display.slice(-ANALYSIS_BARS) : display;
         setVp(computeVolumeProfile(recent));
@@ -229,10 +236,14 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         emitPrice(display[display.length - 1]?.close, true); // topo já casa com o gráfico
 
         cleanupWs = subscribeKline(asset, timeframe, (bar) => {
-          if (chartType === "line" || chartType === "area") {
-            series.update({ time: bar.time as never, value: bar.close } as never);
-          } else {
-            series.update(bar as never);
+          try {
+            if (chartType === "line" || chartType === "area") {
+              series.update({ time: bar.time as never, value: bar.close } as never);
+            } else {
+              series.update(bar as never);
+            }
+          } catch {
+            return; // update fora de ordem (troca de timeframe): ignora
           }
           emitPrice(bar.close); // mantém o topo em sincronia, ao vivo
         });
@@ -325,14 +336,19 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
       let vv = 0;
       let bucket: number | null = null;
       let started = false; // só desenha a partir da 1ª âncora completa dentro da janela
+      let gapAt: number | null = null; // vela da quebra: só whitespace (tempo duplicado quebra a série)
       for (const c of deepCandles) {
-        const b = bucketOf(c.time as number, a);
+        const tSec = c.time as number;
+        const b = bucketOf(tSec, a);
         if (bucket === null) bucket = b;
         if (b !== bucket) {
           bucket = b;
           pv = 0;
           vv = 0;
-          if (started) pts.push({ time: c.time as number }); // whitespace = quebra visual na âncora
+          if (started) {
+            pts.push({ time: tSec }); // whitespace = quebra visual na âncora
+            gapAt = tSec;
+          }
           started = true;
         }
         const vol = c.volume ?? 0;
@@ -340,9 +356,10 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
           pv += ((c.high + c.low + c.close) / 3) * vol;
           vv += vol;
         }
-        if (started && vv > 0) pts.push({ time: c.time as number, value: pv / vv });
+        if (started && vv > 0 && gapAt !== tSec) pts.push({ time: tSec, value: pv / vv });
       }
       if (pts.filter((p) => "value" in p).length < 2) continue;
+      const keepView = chart.timeScale().getVisibleLogicalRange(); // adicionar série NÃO move a vista
       const sv = chart.addLineSeries({
         color: STYLE[a].color,
         lineWidth: 1,
@@ -353,6 +370,7 @@ export default function Chart({ asset, timeframe, chartType, gamma, layers, canU
         crosshairMarkerVisible: false,
       });
       sv.setData(pts as never);
+      if (keepView) chart.timeScale().setVisibleLogicalRange(keepView);
       vwapSeriesRef.current.push(sv);
     }
     return () => {
