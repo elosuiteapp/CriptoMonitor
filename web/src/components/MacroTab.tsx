@@ -11,7 +11,9 @@ import FearGreedHistoryPanel from "./FearGreedHistoryPanel";
 import InfoTip from "./InfoTip";
 import LiquidityDirectionPanel from "./LiquidityDirectionPanel";
 import MacroGlobalPanel from "./MacroGlobalPanel";
+import MarketPulseCard from "./MarketPulseCard";
 import OnchainPanel from "./OnchainPanel";
+import SeasonalityCard from "./SeasonalityCard";
 
 /** Seletor PT/EN para os helpers de módulo (o componente re-renderiza via useT). */
 const tl = (pt: string, en: string): string => (getLocale() === "en" ? en : pt);
@@ -65,7 +67,7 @@ function CorrGauge({ corr }: { corr: CorrVal | null }) {
       >
         {c90 != null && (
           <div
-            className="absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40"
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground/70 bg-background/70"
             style={{ left: `${clampPos(c90) * 100}%` }}
             title={`90d ${fmtCorr(c90)}`}
           />
@@ -123,17 +125,17 @@ function buildSynthesis(corr: Record<string, CorrVal>, asset: string): string | 
   );
 }
 
-function countdown(iso: string): string {
+function countdown(iso: string): { label: string; today: boolean } | null {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
+  if (Number.isNaN(d.getTime())) return null;
   const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const n = new Date();
   const today = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
   const days = Math.round((a - today) / 86400000);
-  if (days < 0) return "";
-  if (days === 0) return tl("hoje", "today");
-  if (days === 1) return tl("amanhã", "tomorrow");
-  return tl(`em ${days} dias`, `in ${days} days`);
+  if (days < 0) return null;
+  if (days === 0) return { label: tl("hoje", "today"), today: true };
+  if (days === 1) return { label: tl("amanhã", "tomorrow"), today: false };
+  return { label: tl(`em ${days} dias`, `in ${days} days`), today: false };
 }
 
 function fmtEvtDate(iso: string): string {
@@ -149,7 +151,7 @@ const impactLabel = (impact: string) => (impact === "High" ? tl("alto", "high") 
 
 function Stars({ impact }: { impact: string }) {
   const n = impactStars(impact);
-  const color = impact === "High" ? "text-rose-500" : "text-amber-500";
+  const color = impact === "High" ? "text-rose-500" : impact === "Medium" ? "text-amber-500" : "text-slate-400";
   return (
     <span className="shrink-0 tracking-tighter" title={`${tl("Impacto", "Impact")} ${impactLabel(impact)}`}>
       {[1, 2, 3].map((i) => (
@@ -193,6 +195,19 @@ const macroHelp = (symbol: string): string => (getLocale() === "en" ? MACRO_HELP
 
 const KEY_FREE = ["NASDAQ", "DXY", "VIX", "USDJPY"]; // "vento macro" no Free: risco, dólar, medo, carry (iene)
 
+/** Cabeçalho de seção temática — agrupa painéis afins pra página contar uma história
+ *  de cima pra baixo (pedido do dono 03/jul: "informações próximas do que cada uma faz"). */
+function Section({ icon, title, sub }: { icon: string; title: string; sub: string }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-baseline gap-x-2 border-b border-border/60 pb-1.5">
+      <h3 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+        {icon} {title}
+      </h3>
+      <span className="text-[11px] text-muted-foreground">{sub}</span>
+    </div>
+  );
+}
+
 /** Camada institucional do Macro — vitrine de upgrade para o Free. */
 function MacroUpgradeCard() {
   return (
@@ -224,6 +239,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
   const [macro, setMacro] = useState<MacroAssetRow[]>([]);
   const [corr, setCorr] = useState<Record<string, CorrVal>>({});
   const [events, setEvents] = useState<EconEvent[] | null>(null);
+  const [evErr, setEvErr] = useState(false);
   const [liquidity, setLiquidity] = useState<MarketLiquidityData | null>(null);
   const [liqTs, setLiqTs] = useState<string | null>(null);
   const [macroRow, setMacroRow] = useState<MacroData | null>(null);
@@ -311,23 +327,34 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
     let active = true;
     // EUA (high/medium) + Japão/Euro/China (só high) — igual ao que o rodapé do calendário
     // promete. (Antes chamava sem `countries` → só EUA; auditoria 02/jul.)
-    supabase.functions.invoke("econ-calendar", { body: { countries: ["USD", "JPY", "EUR", "CNY"] } }).then(({ data }) => {
-      const evs = (((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[])
-        .filter((e) => e.country === "USD" || e.impact === "High");
-      if (active) setEvents(evs);
-    });
+    supabase.functions
+      .invoke("econ-calendar", { body: { countries: ["USD", "JPY", "EUR", "CNY"] } })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error || !data) {
+          setEvents([]);
+          setEvErr(true);
+          return;
+        }
+        const evs = (((data as { events?: EconEvent[] })?.events ?? []) as EconEvent[])
+          .filter((e) => e.country === "USD" || e.impact === "High");
+        setEvents(evs);
+      })
+      .catch(() => {
+        if (active) {
+          setEvents([]);
+          setEvErr(true);
+        }
+      });
     return () => {
       active = false;
     };
   }, []);
 
-  if (!macro.length) {
-    return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-6 text-sm text-muted-foreground">
-        {tt("Dados macro indisponíveis — aguardando coleta (a cada 30 min).", "Macro data unavailable — waiting for collection (every 30 min).")}
-      </div>
-    );
-  }
+  // Antes um `return` cedo aqui escondia a aba INTEIRA (inclusive Fear&Greed e calendário,
+  // que têm fontes independentes) quando a coleta macro atrasava. Agora só a seção de
+  // correlações mostra o aviso de coleta.
+  const macroReady = macro.length > 0;
 
   const synthesis = buildSynthesis(corr, asset);
   const showBtc = asset !== "BTC" && corr["BTC"] != null;
@@ -352,23 +379,34 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
         </div>
       )}
 
-      {/* Medo & Ganância (histórico + overlay de preço) — sentimento do mercado, livre p/ todos */}
+      {/* ── 1 · SENTIMENTO & CICLO ── */}
+      <Section icon="🧠" title={tt("Sentimento & ciclo", "Sentiment & cycle")} sub={tt("a emoção do mercado e onde estamos no ciclo", "the market's mood and where we are in the cycle")} />
       <FearGreedHistoryPanel />
-
-      {/* Maré de liquidez macro (FRED): net liquidity do Fed + condições financeiras — Pro */}
-      {pro && <MacroGlobalPanel />}
-
-      {/* On-chain valuation (MVRV-Z, SOPR, NUPL, Puell) + posição no ciclo — bitcoin-data.com (grátis), Pro */}
+      <SeasonalityCard asset={asset} />
       {pro && <OnchainPanel />}
 
-      {/* Pano de fundo do mercado: liquidez/direção (DeFi) + posicionamento institucional CME — Pro */}
-      {pro && (liquidity || cot) && (
-        <div className="space-y-3">
-          {liquidity && <LiquidityDirectionPanel liquidity={liquidity} macro={macroRow} updatedAt={liqTs} />}
-          {cot && <CotCard cot={cot} />}
-        </div>
+      {/* ── 2 · LIQUIDEZ & CAPITAL ── */}
+      <Section icon="💧" title={tt("Liquidez & capital", "Liquidity & capital")} sub={tt("o combustível: dinheiro entrando ou saindo do mercado", "the fuel: money flowing in or out of the market")} />
+      <MarketPulseCard />
+      {pro && <MacroGlobalPanel />}
+      {pro && liquidity && <LiquidityDirectionPanel liquidity={liquidity} macro={macroRow} updatedAt={liqTs} />}
+
+      {/* ── 3 · POSICIONAMENTO INSTITUCIONAL (CME/CFTC — só BTC/ETH têm futuros CME) ── */}
+      {pro && cot && (
+        <>
+          <Section icon="🏛" title={tt("Posicionamento institucional", "Institutional positioning")} sub={tt("quem está comprado/vendido nos futuros da CME (CFTC, semanal)", "who's long/short CME futures (CFTC, weekly)")} />
+          <CotCard cot={cot} />
+        </>
       )}
 
+      {/* ── 4 · CORRELAÇÕES COM MERCADOS TRADICIONAIS ── */}
+      <Section icon="🌐" title={tt("Correlações com mercados tradicionais", "Correlations with traditional markets")} sub={tt(`como ${asset} dança com bolsa, dólar, ouro e medo`, `how ${asset} dances with equities, the dollar, gold, and fear`)} />
+      {!macroReady && (
+        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground dark:bg-card/60">
+          {tt("Dados macro indisponíveis — aguardando coleta (a cada 30 min).", "Macro data unavailable — waiting for collection (every 30 min).")}
+        </div>
+      )}
+      {macroReady && (
       <div className="grid gap-3 sm:grid-cols-2">
         {/* Card de referência cripto: correlação com o BTC (o maior driver das alts) */}
         {showBtc && (
@@ -400,6 +438,7 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           </div>
         ))}
       </div>
+      )}
 
       {!pro && <MacroUpgradeCard />}
 
@@ -421,6 +460,15 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
         </ul>
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        {tt(
+          `Correlação de Pearson dos retornos diários entre ${asset} e cada referência (marcador cheio = 30d, fantasma = 90d). Cotações via Yahoo Finance.`,
+          `Pearson correlation of daily returns between ${asset} and each benchmark (filled marker = 30d, ghost = 90d). Quotes via Yahoo Finance.`,
+        )}
+      </p>
+
+      {/* ── 5 · AGENDA MACRO ── */}
+      <Section icon="📅" title={tt("Agenda macro", "Macro calendar")} sub={tt("os eventos que podem dominar o preço no dia (CPI, FOMC, payroll…)", "the events that can dominate price action (CPI, FOMC, payrolls…)")} />
       {/* Calendário econômico */}
       <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-4">
         <div className="flex items-baseline justify-between">
@@ -428,7 +476,10 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
           <span className="text-[11px] text-muted-foreground">{tt("eventos que mexem com o macro", "events that move the macro")}</span>
         </div>
         {events == null && <p className="mt-3 text-xs text-muted-foreground">{tt("Carregando…", "Loading…")}</p>}
-        {events && events.length === 0 && (
+        {evErr && (
+          <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">{tt("Não foi possível carregar o calendário agora — recarregue a página para tentar de novo.", "Couldn't load the calendar right now — reload the page to try again.")}</p>
+        )}
+        {events && events.length === 0 && !evErr && (
           <p className="mt-3 text-xs text-muted-foreground">{tt("Sem eventos de alto/médio impacto nos próximos dias.", "No high/medium-impact events in the coming days.")}</p>
         )}
         <div className="mt-3 space-y-2">
@@ -441,8 +492,8 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
                   <Stars impact={e.impact} />
                   <span className="truncate text-foreground">{e.title}</span>
                   {cd && (
-                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd === "hoje" || cd === "today" ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
-                      {cd}
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${cd.today ? "border-rose-500/40 text-rose-600 dark:text-rose-400" : "border-border text-muted-foreground"}`}>
+                      {cd.label}
                     </span>
                   )}
                 </span>
@@ -463,12 +514,6 @@ export default function MacroTab({ asset, pro }: { asset: string; pro: boolean }
         </p>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {tt(
-          `Correlação de Pearson dos retornos diários entre ${asset} e cada referência (marcador cheio = 30d, fantasma = 90d). Cotações via Yahoo Finance.`,
-          `Pearson correlation of daily returns between ${asset} and each benchmark (filled marker = 30d, ghost = 90d). Quotes via Yahoo Finance.`,
-        )}
-      </p>
     </section>
   );
 }
