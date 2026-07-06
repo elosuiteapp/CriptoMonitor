@@ -591,9 +591,15 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     add("cvd_div", "Fluxo", "Divergência CVD (institucional × varejo)", 0.06, sc, cvdInst > 0 ? "institucional COMPRA e varejo vende — acumulação (tell de alta)" : "institucional VENDE e varejo compra — distribuição (tell de baixa)"); // 50% direção-1h, mas 75%/2.17R nos trades reais (n4) → segue no placar, peso menor
   }
   const llq = N(der.liq_long_usd) ?? 0, lshq = N(der.liq_short_usd) ?? 0;
-  if (llq + lshq > 0) add("liqs", "Fluxo", "Liquidações", 0.06, ((lshq - llq) / (llq + lshq)) * 85, llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`);
+  // PISO DE POEIRA (caso BNB 06/jul: "$0.0M liquidado" votava -68 e travava a confluência):
+  // abaixo de $250k no total, liquidação é ruído — score 0 (segue logado pro aprendizado).
+  if (llq + lshq > 0) {
+    const liqTot = llq + lshq;
+    const liqScore = liqTot >= 250000 ? ((lshq - llq) / liqTot) * 85 : 0;
+    add("liqs", "Fluxo", "Liquidações", 0.06, liqScore, `${llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`}${liqTot < 250000 ? " (poeira <$250k — sem voto)" : ""}`);
+  }
   const pw = N(g.put_wall), cw = N(g.call_wall);
-  if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.05, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); }
+  if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.02, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); } // INVERTIDO na régua forte (32% concordou × 56% discordou, n19+32) → fora do placar, só medido
   const gex = N(g.net_gex_spot);
   if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.05, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   // (Prêmio Coinbase e Fluxo de ETF — institucional macro — REMOVIDOS do robô: não decidem trade de 15m.)
@@ -624,9 +630,10 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     return { tf: t.tf, bias: composite, structure: Math.round(t.bias), pressure, swing: t.smc?.swingBias ?? null };
   });
 
-  // FLUXO LIMPO: só os sinais que o aprendizado validou (book 56%/54%, liqs 53%, gamma 52%,
-  // gflow 51%, cvd_div). Absorção/paredes/pressão/CVD-agregado SAÍRAM do placar (47-50%).
-  const flowKeys = new Set(["book_inst", "book_retail", "cvd_div", "liqs", "gamma", "gflow"]);
+  // FLUXO LIMPO: só os sinais que o aprendizado validou (book 56%/54%, liqs 53%, gflow 51%,
+  // cvd_div 67%/+0.85R na régua forte). Absorção/paredes/pressão/CVD-agregado saíram (47-50%);
+  // Put/Call Wall ('gamma') REMOVIDO 06/jul — INVERTIDO na régua forte (trades reais).
+  const flowKeys = new Set(["book_inst", "book_retail", "cvd_div", "liqs", "gflow"]);
   let fn = 0, fd = 0;
   for (const x of sig) if (flowKeys.has(x.key) && toggles[x.key] !== false) { fn += x.score * x.weight; fd += x.weight; }
   const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;
@@ -956,8 +963,10 @@ Deno.serve(async (req) => {
         gate = `sessão bloqueada (${hourNow}h UTC — janela historicamente negativa) — segura o setup`;
         want = null;
       }
-      // CONF_SCOPE (sql/107, decisão do dono 06/jul): 'smc_flow' = só ESTRUTURA + FLUXO decidem
-      // ("SMC com pressão"); Técnico/Sentimento seguem medidos (estudo), fora do gate.
+      // CONF_SCOPE (sql/107 + ajuste 06/jul noite, caso BNB): 'smc_flow' = "SMC com pressão" na
+      // forma BÁSICA que o dono definiu — a ESTRUTURA precisa votar na direção e o FLUXO só
+      // precisa NÃO VOTAR CONTRA (neutro passa; exigir voto ativo dos dois segurava entrada boa
+      // com fluxo ~0). 'all' = regra antiga (maioria conf_min dos 4 grupos).
       const confScope = String(cfg.conf_scope ?? "smc_flow");
       const confGroups = confScope === "smc_flow" ? confluence.filter((g) => g.key === "estrutura" || g.key === "fluxo") : confluence;
       const confMin = Math.min(confGroups.length, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
@@ -967,7 +976,12 @@ Deno.serve(async (req) => {
         const votesFor = confGroups.filter((g) => g.vote === dir).length;
         const votesAgainst = confGroups.filter((g) => g.vote === -dir).length;
         confVotes = { for: votesFor, against: votesAgainst };
-        if (votesFor < confMin || votesAgainst >= votesFor) {
+        if (confScope === "smc_flow") {
+          const estr = confGroups.find((g) => g.key === "estrutura");
+          const flx = confGroups.find((g) => g.key === "fluxo");
+          if ((estr?.vote ?? 0) !== dir) { gate = `estrutura não confirma a direção do setup (voto ${estr?.score ?? 0}) — segura`; want = null; }
+          else if ((flx?.vote ?? 0) === -dir) { gate = `pressão/fluxo CONTRA o setup (${flx?.score ?? 0}) — segura`; want = null; }
+        } else if (votesFor < confMin || votesAgainst >= votesFor) {
           const contra = confGroups.filter((g) => g.vote === -dir).map((g) => g.label).join(", ");
           gate = `confluência ${votesFor}/${confGroups.length} a favor (precisa ${confMin}${votesAgainst ? `; contra: ${contra}` : ""}) — segura o setup`;
           want = null;
