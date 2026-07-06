@@ -9,8 +9,6 @@ import type { PlanRow } from "../../lib/adminTypes";
 const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC", "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE"];
 const ALL_CHANNELS = ["inapp", "email"];
 const ALL_MODULES = [{ key: "crypto", label: "Cripto" }, { key: "b3", label: "B3" }, { key: "forex", label: "Forex" }];
-// Planos mantidos SÓ para assinantes antigos (sql/078) — não são vendidos no checkout.
-const LEGACY_SLUGS = ["pro", "expert"];
 
 export default function Plans() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
@@ -64,12 +62,11 @@ function PlanEditor({ plan, open, onToggle, onSaved }: { plan: PlanRow; open: bo
   const [aiModel, setAiModel] = useState(plan.ai_model);
   const [channels, setChannels] = useState<string[]>(plan.alert_channels);
   const [historyDays, setHistoryDays] = useState(plan.history_days == null ? "" : plan.history_days.toString());
+  const [sellable, setSellable] = useState(plan.sellable ?? false);
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  const isLegacy = LEGACY_SLUGS.includes(plan.slug);
   const mensal = Math.round(parseFloat(priceReais || "0") * 100);
   const mensalUsd = Math.round(parseFloat(priceUsd || "0") * 100);
   const anual = Math.round(parseFloat(annualReais || "0") * 100);
@@ -103,6 +100,7 @@ function PlanEditor({ plan, open, onToggle, onSaved }: { plan: PlanRow; open: bo
       p_ai_model: aiModel,
       p_alert_channels: channels,
       p_history_days: historyDays === "" ? null : parseInt(historyDays, 10),
+      p_sellable: sellable,
     });
     setBusy(false);
     if (error) setErr(error.message);
@@ -126,7 +124,7 @@ function PlanEditor({ plan, open, onToggle, onSaved }: { plan: PlanRow; open: bo
           <span className={`text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
           <span className="text-sm font-semibold text-foreground">{plan.name}</span>
           <span className="num text-[10px] text-muted-foreground">{plan.slug}</span>
-          {isLegacy && <Badge tone="yellow">legado · não vendável</Badge>}
+          {!plan.sellable && <Badge tone="yellow">legado · não vendável</Badge>}
           {(plan.modules ?? []).map((m) => (
             <Badge key={m} tone="accent">{ALL_MODULES.find((x) => x.key === m)?.label ?? m}</Badge>
           ))}
@@ -174,6 +172,9 @@ function PlanEditor({ plan, open, onToggle, onSaved }: { plan: PlanRow; open: bo
                   <span>Anual sai por <b className={`num ${descAnual > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>{descAnual}% {descAnual > 0 ? "de desconto" : "MAIS CARO"}</b> vs 12× o mensal.</span>
                 </div>
               )}
+              <div className="flex items-end pb-2 sm:col-span-2">
+                <Check label="Vendável (aparece no checkout e na página de preços)" checked={sellable} onChange={setSellable} />
+              </div>
             </div>
           </div>
 

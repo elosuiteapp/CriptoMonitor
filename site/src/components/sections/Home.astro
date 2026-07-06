@@ -7,7 +7,7 @@ import T from "../T.astro";
 import { SIGNUP_URL, PRICING, MARKETS } from "../../consts";
 import { PRICING_EN, MARKETS_EN } from "../../consts.en";
 
-const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
 // Acento de cor por mercado (indigo/verde/âmbar). Classes LITERAIS aqui p/ o Tailwind
 // detectar — não montar dinamicamente com template string.
@@ -228,9 +228,9 @@ const CANDLES = [
 <section id="precos" class="mx-auto max-w-6xl px-4 py-20">
   <div class="mx-auto max-w-2xl text-center">
     <h2 class="text-3xl font-bold tracking-tight"><T pt="Planos" en="Plans" /></h2>
-    <p class="mt-3 text-muted"><T pt="Comece grátis. Assine um módulo ou leve os três no Completo. O anual sai mais barato." en="Start free. Subscribe to one module or get all three in Complete. Annual is cheaper." /></p>
+    <p class="mt-3 text-muted"><T pt="Simples assim: Free pra acompanhar ao vivo, Pro pra operar com tudo liberado. O anual sai mais barato." en="Simple: Free to follow live, Pro to trade with everything unlocked. Annual is cheaper." /></p>
   </div>
-  <div class="mt-12 grid gap-5 lg:grid-cols-3">
+  <div class="mx-auto mt-12 grid max-w-3xl gap-5 sm:grid-cols-2">
     {PRICING.plans.map((p, i) => (
       <div class={`card-lift rounded-2xl border p-6 ${p.highlight ? "border-primary bg-card shadow-2xl ring-1 ring-primary/30" : "border-line bg-card"}`}>
         {p.highlight && <span class="mb-3 inline-block rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary"><T pt="Mais popular" en="Most popular" /></span>}

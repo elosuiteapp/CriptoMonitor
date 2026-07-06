@@ -175,4 +175,5 @@ export interface PlanRow {
   price_annual_cents: number;
   price_usd_annual_cents: number;
   preview_layers: string[];
+  sellable: boolean;
 }

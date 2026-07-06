@@ -5,9 +5,9 @@ export const SITE_URL = "https://orbeview.com";
 export const SIGNUP_URL = `${APP_URL}/login`;
 export const LOGIN_URL = `${APP_URL}/login`;
 
-// Preços de lançamento (BRL). Modelo POR MÓDULO: um mercado completo, ou os três no Completo.
-// Fonte da verdade é a tabela `plans` no Supabase; aqui é vitrine — manter em sincronia.
-// `annual` = preço POR MÊS quando cobrado no plano anual (mais barato que o mensal).
+// Preços (BRL). Modelo FREE + PRO (decisão 06/jul, sql/110): Free = vitrine AO VIVO dos 3
+// mercados; Pro = tudo liberado. Fonte da verdade é a tabela `plans` no Supabase; aqui é
+// vitrine — manter em sincronia. `annual` = preço POR MÊS quando cobrado no plano anual.
 export const PRICING = {
   plans: [
     {
@@ -15,10 +15,11 @@ export const PRICING = {
       name: "Free",
       monthly: 0,
       annual: 0,
-      tagline: "Conheça os 3 mercados",
+      tagline: "Os 3 mercados, ao vivo",
       features: [
-        "Vitrine ao vivo dos 3 módulos: Cripto, B3 e Forex",
-        "Cripto: cockpit do BTC + camadas (gamma, VP, CVD do varejo)",
+        "Dados AO VIVO, sem delay",
+        "Cripto: cockpit do BTC em tempo real + camadas (gamma, VP, CVD do varejo)",
+        "Básico de cada mercado: Cripto, B3 e Forex",
         "Notícias, Fear & Greed e calendário econômico",
         "Newsletter semanal completa",
       ],
@@ -26,35 +27,19 @@ export const PRICING = {
       highlight: false,
     },
     {
-      slug: "module",
-      name: "1 Módulo",
-      monthly: 79,
-      annual: 59,
-      tagline: "Um mercado, completo e sem travas",
-      features: [
-        "Escolha 1 módulo: Cripto, B3 ou Forex",
-        "Cockpit completo do mercado, dados a cada 5 min",
-        "Gamma/opções, fluxo, Smart Money e macro",
-        "Leitura do Mercado: viés, convicção e alvos",
-        "IA + alertas (in-app, push e e-mail)",
-      ],
-      cta: "Assinar 1 módulo",
-      highlight: false,
-    },
-    {
-      slug: "complete",
-      name: "OrbeView Completo",
-      monthly: 159,
-      annual: 129,
+      slug: "pro",
+      name: "Pro",
+      monthly: 99,
+      annual: 82.5,
       tagline: "Cripto + B3 + Forex, tudo liberado",
       features: [
-        "Os 3 módulos completos, sem limites",
-        "3 mercados pelo preço de 2",
-        "Toda a profundidade em cada mercado",
-        "IA + alertas em todos os módulos",
-        "Prioridade nos próximos módulos",
+        "Os 3 mercados completos, sem limites",
+        "20 ativos cripto + gamma, opções e fluxo completo",
+        "Smart Money & On-chain (SMC) nos 3 mercados",
+        "Leitura do Mercado: viés, convicção e alvos",
+        "30 análises de IA por dia + relatórios e alertas",
       ],
-      cta: "Assinar Completo",
+      cta: "Assinar o Pro",
       highlight: true,
     },
   ],
@@ -133,37 +118,36 @@ export const MARKETS = [
   },
 ];
 
-// Matriz de comparação (Free × 1 Módulo × Completo) para a página /precos.
+// Matriz de comparação (Free × Pro) para a página /precos.
 // Em cada célula: true = ✓ incluído, false = — não incluído, string = detalhe/limite.
-// module e complete têm a MESMA profundidade; o que muda é quantos mercados.
 export const COMPARISON = [
   {
     group: "Mercados",
     rows: [
-      { label: "Mercados incluídos", free: "Vitrine dos 3", module: "1 à escolha", complete: "Cripto + B3 + Forex" },
-      { label: "Cockpit completo, sem travas", free: false, module: true, complete: true },
-      { label: "Atualização dos dados", free: "A cada 1h", module: "Tempo real (5 min)", complete: "Tempo real (5 min)" },
+      { label: "Mercados incluídos", free: "Básico dos 3, ao vivo", pro: "Cripto + B3 + Forex completos" },
+      { label: "Cockpit completo, sem travas", free: "BTC (vitrine)", pro: true },
+      { label: "Atualização dos dados", free: "Tempo real, sem delay", pro: "Tempo real, sem delay" },
     ],
   },
   {
-    group: "O que vem em cada módulo",
+    group: "O que o Pro libera",
     rows: [
-      { label: "Gamma, opções e níveis institucionais", free: false, module: true, complete: true },
-      { label: "Fluxo: funding, CVD, long/short e liquidações", free: false, module: true, complete: true },
-      { label: "Smart Money: estrutura, order blocks, liquidez e FVG", free: false, module: true, complete: true },
-      { label: "Institucional × varejo (mãos fortes vs alavancado)", free: false, module: true, complete: true },
-      { label: "Leitura do Mercado: viés, convicção e alvos", free: false, module: true, complete: true },
-      { label: "Camadas avançadas no gráfico (CVD, book, heatmap)", free: false, module: true, complete: true },
+      { label: "Gamma, opções e níveis institucionais", free: "Só no BTC", pro: true },
+      { label: "Fluxo: funding, CVD, long/short e liquidações", free: false, pro: true },
+      { label: "Smart Money: estrutura, order blocks, liquidez e FVG", free: false, pro: true },
+      { label: "Institucional × varejo (mãos fortes vs alavancado)", free: false, pro: true },
+      { label: "Leitura do Mercado: viés, convicção e alvos", free: false, pro: true },
+      { label: "Camadas avançadas no gráfico (CVD, book, heatmap)", free: "Só no BTC", pro: true },
     ],
   },
   {
     group: "Macro, IA e alertas",
     rows: [
-      { label: "Macro & Correlações", free: "Prévia", module: "Completo", complete: "Completo" },
-      { label: "Calendário econômico e notícias", free: true, module: true, complete: true },
-      { label: "Relatórios e análises por IA", free: "Limitado", module: "Completo", complete: "Completo" },
-      { label: "Alertas in-app, push e e-mail", free: false, module: true, complete: true },
-      { label: "Newsletter semanal completa", free: true, module: true, complete: true },
+      { label: "Macro & Correlações", free: "Prévia", pro: "Completo" },
+      { label: "Calendário econômico e notícias", free: true, pro: true },
+      { label: "Relatórios e análises por IA", free: "1 por dia", pro: "30 por dia" },
+      { label: "Alertas in-app, push e e-mail", free: false, pro: true },
+      { label: "Newsletter semanal completa", free: true, pro: true },
     ],
   },
 ];

@@ -18,8 +18,9 @@ interface DbPlan {
   paddle_price_id: string | null;
 }
 
-// Planos vendáveis (Free não tem checkout). Modelo POR MÓDULO.
-const ORDER = ["free", "mod_crypto", "mod_b3", "mod_forex", "complete"] as const;
+// Modelo FREE + PRO (decisão 06/jul, sql/110): Free = vitrine AO VIVO dos 3 mercados;
+// Pro = tudo liberado. Planos-módulo/Expert viraram legado (sellable=false, fora daqui).
+const ORDER = ["free", "pro"] as const;
 type Slug = (typeof ORDER)[number];
 
 const COPY: Record<Locale, {
@@ -32,7 +33,7 @@ const COPY: Record<Locale, {
 }> = {
   pt: {
     title: "Planos",
-    subtitle: "Escolha um mercado ou leve os três no Completo.",
+    subtitle: "Simples assim: Free pra acompanhar ao vivo, Pro pra operar com tudo.",
     back: "← Voltar",
     perMonth: "/mês", perYear: "/ano", freePrice: "Grátis",
     monthly: "Mensal", annual: "Anual", annualBadge: "mais barato", save: "economize", perMonthEq: "equivale a",
@@ -41,16 +42,13 @@ const COPY: Record<Locale, {
     freeBtn: "Plano atual", subscribe: "Assinar", redirecting: "Redirecionando…",
     usdSoon: "Pagamento em dólar (Paddle) em breve.", payNote: "Pagamento via Pix e cartão (Asaas)",
     plans: {
-      free: { name: "Free", features: ["Vitrine ao vivo dos 3 módulos", "Cripto: cockpit do BTC + camadas (gamma, VP, CVD varejo)", "1 análise de IA por dia", "Newsletter semanal completa"] },
-      mod_crypto: { name: "Cripto", features: ["20 ativos em tempo real", "Gamma, opções, volatilidade e Macro", "Fluxo: funding, CVD, long/short e liquidações", "Smart Money & On-chain + institucional × varejo", "Alertas e relatórios de IA"] },
-      mod_b3: { name: "B3 · Ações", features: ["Ações e FIIs (IBOV, PETR, VALE…)", "Cockpit, dividendos e fluxo por investidor", "Smart Money (estrutura, zonas, liquidez)", "Leitura do mercado + relatórios de IA"] },
-      mod_forex: { name: "Forex", features: ["Pares principais + força de moedas (DXY)", "Smart Money e leitura top-down", "COT/CFTC, carry e sessões", "Macro & correlações + relatórios de IA"] },
-      complete: { name: "OrbeView Completo", tag: "Melhor valor", features: ["Cripto + B3 + Forex, tudo liberado", "3 mercados pelo preço de 2", "Toda a profundidade em cada mercado", "IA e alertas em todos os módulos"] },
+      free: { name: "Free", features: ["Dados AO VIVO, sem delay", "Cripto: cockpit do BTC em tempo real + camadas (gamma, VP, CVD varejo)", "Básico de cada mercado (Cripto, B3, Forex)", "1 análise de IA por dia", "Newsletter semanal completa"] },
+      pro: { name: "Pro", tag: "Tudo liberado", features: ["Cripto + B3 + Forex, tudo liberado", "20 ativos cripto em tempo real + gamma, opções e fluxo completo", "Smart Money & On-chain (SMC) nos 3 mercados", "Leitura do mercado, Macro e institucional × varejo", "30 análises de IA por dia + relatórios e alertas"] },
     },
   },
   en: {
     title: "Pricing",
-    subtitle: "Pick one market or get all three in Complete.",
+    subtitle: "Simple: Free to follow live, Pro to trade with everything.",
     back: "← Back",
     perMonth: "/mo", perYear: "/yr", freePrice: "Free",
     monthly: "Monthly", annual: "Annual", annualBadge: "cheaper", save: "save", perMonthEq: "that's",
@@ -59,11 +57,8 @@ const COPY: Record<Locale, {
     freeBtn: "Current plan", subscribe: "Subscribe", redirecting: "Redirecting…",
     usdSoon: "USD checkout (Paddle) coming soon.", payNote: "Billed in USD via Paddle",
     plans: {
-      free: { name: "Free", features: ["Live showcase of all 3 modules", "Crypto: BTC cockpit + layers (gamma, VP, retail CVD)", "1 AI analysis per day", "Full weekly newsletter"] },
-      mod_crypto: { name: "Crypto", features: ["20 assets in real time", "Gamma, options, volatility & Macro", "Flow: funding, CVD, long/short & liquidations", "Smart Money & On-chain + institutional vs retail", "Alerts and AI reports"] },
-      mod_b3: { name: "B3 · Stocks", features: ["Stocks and REITs (IBOV, PETR, VALE…)", "Cockpit, dividends and investor flow", "Smart Money (structure, zones, liquidity)", "Market read + AI reports"] },
-      mod_forex: { name: "Forex", features: ["Major pairs + currency strength (DXY)", "Smart Money and top-down read", "COT/CFTC, carry and sessions", "Macro & correlations + AI reports"] },
-      complete: { name: "OrbeView Complete", tag: "Best value", features: ["Crypto + B3 + Forex, all unlocked", "3 markets for the price of 2", "The full depth in every market", "AI and alerts across all modules"] },
+      free: { name: "Free", features: ["LIVE data, no delay", "Crypto: real-time BTC cockpit + layers (gamma, VP, retail CVD)", "Basics of every market (Crypto, B3, Forex)", "1 AI analysis per day", "Full weekly newsletter"] },
+      pro: { name: "Pro", tag: "Everything unlocked", features: ["Crypto + B3 + Forex, all unlocked", "20 crypto assets in real time + gamma, options and full flow", "Smart Money & On-chain (SMC) across all 3 markets", "Market read, Macro and institutional vs retail", "30 AI analyses per day + reports and alerts"] },
     },
   },
 };
@@ -160,10 +155,10 @@ export default function Pricing() {
       </div>
 
       {/* Cards */}
-      <div className="mt-8 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mx-auto mt-8 grid max-w-3xl items-start gap-5 sm:grid-cols-2">
         {ORDER.map((slug) => {
           const c = t.plans[slug];
-          const highlight = slug === "complete";
+          const highlight = slug === "pro";
           const pb = priceBlock(slug);
           return (
             <div
