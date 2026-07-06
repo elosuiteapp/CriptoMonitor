@@ -5,14 +5,15 @@ import { useAdminRpc } from "../../hooks/useAdminRpc";
 import { fmtBRL, fmtInt, fmtPct1, fmtUSD, GATEWAY_COLOR, gatewayLabel } from "../../lib/adminFormat";
 import type { AdminOverview, SignupPoint, UsagePoint } from "../../lib/adminTypes";
 
-const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e" };
+const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e", mod_crypto: "#6366f1", mod_b3: "#10b981", mod_forex: "#f59e0b", complete: "#d946ef" };
 // Abaixo desta base paga, churn/LTV viram ruído (cancelamentos de teste) → mostramos "—".
 const MIN_PAID_BASE = 10;
 
 export default function Overview() {
   const { data: o, loading, error } = useAdminRpc<AdminOverview>("admin_overview");
-  const { data: signups } = useAdminRpc<SignupPoint[]>("admin_signups_timeseries", { p_days: 30 });
-  const { data: usage } = useAdminRpc<UsagePoint[]>("admin_usage_timeseries", { p_days: 30 });
+  // erros das séries NÃO podem ser engolidos: gráfico vazio em erro parecia "sem atividade".
+  const { data: signups, error: errSignups } = useAdminRpc<SignupPoint[]>("admin_signups_timeseries", { p_days: 30 });
+  const { data: usage, error: errUsage } = useAdminRpc<UsagePoint[]>("admin_usage_timeseries", { p_days: 30 });
 
   if (error) return <ErrorBox message={error} />;
   if (loading || !o) return <Empty>Carregando métricas…</Empty>;
@@ -62,13 +63,13 @@ export default function Overview() {
         <Card className="p-4">
           <SectionTitle hint="últimos 30 dias">Base de usuários (acumulado)</SectionTitle>
           <div className="mt-3">
-            <LineChart values={(signups ?? []).map((p) => p.cumulative)} id="cum" />
+            {errSignups ? <ErrorBox message={errSignups} /> : <LineChart values={(signups ?? []).map((p) => p.cumulative)} id="cum" />}
           </div>
         </Card>
         <Card className="p-4">
           <SectionTitle hint="últimos 30 dias">Novos cadastros / dia</SectionTitle>
           <div className="mt-3">
-            <BarChart values={(signups ?? []).map((p) => p.signups)} color="#6366f1" />
+            {errSignups ? <ErrorBox message={errSignups} /> : <BarChart values={(signups ?? []).map((p) => p.signups)} color="#6366f1" />}
           </div>
         </Card>
       </div>
@@ -76,7 +77,7 @@ export default function Overview() {
       <Card className="p-4">
         <SectionTitle hint="últimos 30 dias">Análises de IA geradas / dia</SectionTitle>
         <div className="mt-3">
-          <BarChart values={(usage ?? []).map((p) => p.analyses)} color="#22c55e" />
+          {errUsage ? <ErrorBox message={errUsage} /> : <BarChart values={(usage ?? []).map((p) => p.analyses)} color="#22c55e" />}
         </div>
       </Card>
 
@@ -108,10 +109,11 @@ export default function Overview() {
             ) : (
               <Donut
                 centerValue={fmtBRL(o.mrr_cents)}
-                centerLabel="MRR total"
+                centerLabel={gw.some((x) => x.mrr_cents > 0) ? "MRR total" : "Assinaturas"}
                 data={gw.map((g) => ({
                   label: `${gatewayLabel(g.gateway)} (${fmtInt(g.count)})`,
-                  value: g.mrr_cents || g.count,
+                  // unidade ÚNICA por gráfico: MRR em centavos, ou (se ninguém tem MRR) contagem — nunca misturar
+                  value: gw.some((x) => x.mrr_cents > 0) ? g.mrr_cents : g.count,
                   color: GATEWAY_COLOR[g.gateway] ?? "#64748b",
                 }))}
               />

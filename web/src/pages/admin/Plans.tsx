@@ -6,8 +6,9 @@ import { supabase } from "../../lib/supabase";
 import { fmtBRL, fmtUSD } from "../../lib/adminFormat";
 import type { PlanRow } from "../../lib/adminTypes";
 
-const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC"];
+const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC", "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE"];
 const ALL_CHANNELS = ["inapp", "email"];
+const ALL_MODULES = [{ key: "crypto", label: "Cripto" }, { key: "b3", label: "B3" }, { key: "forex", label: "Forex" }];
 
 export default function Plans() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
@@ -35,7 +36,7 @@ export default function Plans() {
         <b className="text-foreground">EN → Paddle (dólar)</b> usa o preço em US$ e o <i>Paddle price id</i> do plano.
       </div>
       {error && <ErrorBox message={error} />}
-      {!plans && <Empty>Carregando…</Empty>}
+      {!plans && !error && <Empty>Carregando…</Empty>}
       {plans?.map((p) => (
         <PlanEditor key={p.id} plan={p} onSaved={load} />
       ))}
@@ -47,6 +48,9 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
   const [name, setName] = useState(plan.name);
   const [priceReais, setPriceReais] = useState((plan.price_cents / 100).toString());
   const [priceUsd, setPriceUsd] = useState((plan.price_usd_cents / 100).toString());
+  const [annualReais, setAnnualReais] = useState(((plan.price_annual_cents ?? 0) / 100).toString());
+  const [annualUsd, setAnnualUsd] = useState(((plan.price_usd_annual_cents ?? 0) / 100).toString());
+  const [modules, setModules] = useState<string[]>(plan.modules ?? []);
   const [paddleId, setPaddleId] = useState(plan.paddle_price_id ?? "");
   const [assets, setAssets] = useState<string[]>(plan.assets);
   const [snapMin, setSnapMin] = useState(plan.snapshot_interval_min.toString());
@@ -77,7 +81,11 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
       p_name: name,
       p_price_cents: Math.round(parseFloat(priceReais || "0") * 100),
       p_price_usd_cents: Math.round(parseFloat(priceUsd || "0") * 100),
+      p_price_annual_cents: Math.round(parseFloat(annualReais || "0") * 100),
+      p_price_usd_annual_cents: Math.round(parseFloat(annualUsd || "0") * 100),
       p_paddle_price_id: paddleId.trim() || null,
+      p_modules: modules,
+      p_preview_layers: plan.preview_layers ?? [],
       p_assets: assets,
       p_snapshot_interval_min: parseInt(snapMin || "30", 10),
       p_advanced: advanced,
@@ -127,7 +135,15 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
         </label>
         <label className={labelCls}>
           Preço mensal — dólar (US$)
-          <input type="number" step="0.01" min="0" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} className={`num ${inputCls}`} disabled={!isPaid} />
+          <input type="number" step="0.01" min="0" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} className={`num ${inputCls}`} />
+        </label>
+        <label className={labelCls}>
+          Preço anual — reais (R$)
+          <input type="number" step="0.01" min="0" value={annualReais} onChange={(e) => setAnnualReais(e.target.value)} className={`num ${inputCls}`} />
+        </label>
+        <label className={labelCls}>
+          Preço anual — dólar (US$)
+          <input type="number" step="0.01" min="0" value={annualUsd} onChange={(e) => setAnnualUsd(e.target.value)} className={`num ${inputCls}`} />
         </label>
         <label className={labelCls}>
           Modelo de IA
@@ -145,12 +161,19 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
           Histórico (dias) <span className="text-muted-foreground">(vazio = completo)</span>
           <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={`num ${inputCls}`} />
         </label>
-        {isPaid && (
-          <label className={`${labelCls} sm:col-span-2`}>
-            Paddle price id <span className="text-muted-foreground">(checkout em dólar / EN)</span>
-            <input value={paddleId} onChange={(e) => setPaddleId(e.target.value)} placeholder="pri_01h…" className={`num ${inputCls}`} />
-          </label>
-        )}
+        <label className={`${labelCls} sm:col-span-2`}>
+          Paddle price id <span className="text-muted-foreground">(checkout em dólar / EN)</span>
+          <input value={paddleId} onChange={(e) => setPaddleId(e.target.value)} placeholder="pri_01h…" className={`num ${inputCls}`} />
+        </label>
+      </div>
+
+      <div className="mt-4">
+        <div className={labelCls}>Módulos que o plano libera <span className="text-muted-foreground">(gating por módulo — a base do entitlement)</span></div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {ALL_MODULES.map((m) => (
+            <Chip key={m.key} active={modules.includes(m.key)} onClick={() => toggle(modules, setModules, m.key)}>{m.label}</Chip>
+          ))}
+        </div>
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">

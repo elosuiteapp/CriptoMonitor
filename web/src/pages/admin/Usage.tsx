@@ -10,11 +10,13 @@ const usd = (m?: number) => "$" + ((m ?? 0) / 1e6).toFixed((m ?? 0) > 0 && (m ??
 const tokens = (n?: number) => (n == null ? "0" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 export default function Usage() {
-  const { data: o } = useAdminRpc<AdminOverview>("admin_overview");
+  // Os 3 erros importam: engolir o de admin_ai_costs mostrava "Custo hoje $0.00" em falha (zero falso).
+  const { data: o, error: errOverview } = useAdminRpc<AdminOverview>("admin_overview");
   const { data: series, loading, error } = useAdminRpc<UsagePoint[]>("admin_usage_timeseries", { p_days: 90 });
-  const { data: costs } = useAdminRpc<AiCosts>("admin_ai_costs");
+  const { data: costs, error: errCosts } = useAdminRpc<AiCosts>("admin_ai_costs");
 
-  if (error) return <ErrorBox message={error} />;
+  const firstErr = error ?? errCosts ?? errOverview;
+  if (firstErr) return <ErrorBox message={firstErr} />;
 
   const total90 = (series ?? []).reduce((a, p) => a + p.analyses, 0);
   const byModel = costs?.by_model ?? [];
@@ -24,7 +26,7 @@ export default function Usage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={<IconUsage />} title="Uso & IA" subtitle="Consumo do copiloto de IA, custo do Gemini e distribuição por modelo." />
+      <PageHeader icon={<IconUsage />} title="Uso & IA" subtitle="Consumo de TODA a IA (copiloto + relatórios cockpit/B3/Forex): custo do Gemini e distribuição por modelo." />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Análises hoje" value={fmtInt(o?.ai_today)} icon={<IconCpu />} />

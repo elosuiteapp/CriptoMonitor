@@ -171,4 +171,8 @@ export interface PlanRow {
   ai_model: string;
   alert_channels: string[];
   history_days: number | null;
+  modules: string[];
+  price_annual_cents: number;
+  price_usd_annual_cents: number;
+  preview_layers: string[];
 }

@@ -5,7 +5,7 @@ import { useAdminRpc } from "../../hooks/useAdminRpc";
 import { fmtBRL, fmtInt, fmtPct1, fmtUSD, GATEWAY_COLOR, gatewayLabel } from "../../lib/adminFormat";
 import type { AdminOverview } from "../../lib/adminTypes";
 
-const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e" };
+const PLAN_COLORS: Record<string, string> = { free: "#64748b", pro: "#6366f1", expert: "#22c55e", mod_crypto: "#6366f1", mod_b3: "#10b981", mod_forex: "#f59e0b", complete: "#d946ef" };
 // Abaixo desta base paga, churn/LTV viram ruído (cancelamentos de teste) → mostramos "—".
 const MIN_PAID_BASE = 10;
 
@@ -32,7 +32,7 @@ export default function Subscriptions() {
         <StatCard label="MRR (reais)" value={fmtBRL(o.mrr_cents)} sub={`ARR ${fmtBRL(o.arr_cents)}`} tone="good" icon={<IconMoney />} />
         <StatCard label="MRR (dólar)" value={fmtUSD(o.mrr_usd_cents)} sub={`ARR ${fmtUSD(o.arr_usd_cents)}`} icon={<IconMoney />} />
         <StatCard label="ARPU" value={fmtBRL(arpu)} sub={`${fmtInt(o.subs_paid_active)} pagantes`} icon={<IconTrendUp />} />
-        <StatCard label="LTV estimado" value={ltv === null ? "—" : fmtBRL(ltv)} sub={churn === null ? "base pequena" : "ARPU ÷ churn"} />
+        <StatCard label="LTV estimado" value={ltv === null ? "—" : fmtBRL(ltv)} sub={churn === null ? "base pequena" : churn === 0 ? "sem cancelamentos 30d (LTV indefinido)" : "ARPU ÷ churn"} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -94,10 +94,11 @@ export default function Subscriptions() {
               <>
                 <Donut
                   centerValue={fmtBRL(o.mrr_cents)}
-                  centerLabel="MRR total"
+                  centerLabel={gw.some((x) => x.mrr_cents > 0) ? "MRR total" : "Assinaturas"}
                   data={gw.map((g) => ({
                     label: gatewayLabel(g.gateway),
-                    value: g.mrr_cents || g.count,
+                    // unidade ÚNICA por gráfico: MRR em centavos, ou (se ninguém tem MRR) contagem — nunca misturar
+                    value: gw.some((x) => x.mrr_cents > 0) ? g.mrr_cents : g.count,
                     color: GATEWAY_COLOR[g.gateway] ?? "#64748b",
                   }))}
                 />

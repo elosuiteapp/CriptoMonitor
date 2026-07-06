@@ -38,7 +38,7 @@ function runSummary(status: string, d: Record<string, unknown> | null): string {
 }
 
 /** Admin · Newsletter — gerar uma edição na hora (IA), publicar/despublicar e excluir.
- *  A geração semanal automática roda por cron (segunda 9h BRT); aqui é o controle manual. */
+ *  A geração semanal automática roda por cron (SEXTA ~9h BRT, sql/039); aqui é o controle manual. */
 export default function AdminNewsletter() {
   const [rows, setRows] = useState<Edition[] | null>(null);
   const [runs, setRuns] = useState<Run[] | null>(null);
@@ -46,17 +46,20 @@ export default function AdminNewsletter() {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
+    // Erro de banco NÃO pode virar "Nenhuma edição ainda" (vazio falso) — mostra no banner msg.
+    const { data, error } = await supabase
       .from("newsletter_editions")
       .select("id, slug, title, min_tier, published, published_at, auto_generated, created_at")
       .order("created_at", { ascending: false });
+    if (error) setMsg({ kind: "err", text: `Falha ao carregar edições: ${error.message}` });
     setRows((data as Edition[] | null) ?? []);
-    const { data: r } = await supabase
+    const { data: r, error: errRuns } = await supabase
       .from("automation_runs")
       .select("id, status, model, detail, created_at")
       .eq("job", "newsletter")
       .order("created_at", { ascending: false })
       .limit(8);
+    if (errRuns && !error) setMsg({ kind: "err", text: `Falha ao carregar execuções: ${errRuns.message}` });
     setRuns((r as Run[] | null) ?? []);
   }, []);
 
@@ -89,19 +92,21 @@ export default function AdminNewsletter() {
   }
 
   async function togglePublish(ed: Edition) {
-    await supabase
+    const { error } = await supabase
       .from("newsletter_editions")
       .update({
         published: !ed.published,
         published_at: ed.published ? ed.published_at : ed.published_at ?? new Date().toISOString(),
       })
       .eq("id", ed.id);
+    if (error) setMsg({ kind: "err", text: `Falha ao ${ed.published ? "despublicar" : "publicar"}: ${error.message}` });
     await load();
   }
 
   async function remove(ed: Edition) {
     if (!window.confirm(`Excluir a edição “${ed.title}”? Esta ação não pode ser desfeita.`)) return;
-    await supabase.from("newsletter_editions").delete().eq("id", ed.id);
+    const { error } = await supabase.from("newsletter_editions").delete().eq("id", ed.id);
+    if (error) setMsg({ kind: "err", text: `Falha ao excluir: ${error.message}` });
     await load();
   }
 
@@ -163,7 +168,7 @@ export default function AdminNewsletter() {
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-6 text-sm text-muted-foreground dark:bg-card/60">
-          Nenhuma edição ainda. Clique em “Gerar agora” para criar a primeira.
+          Nenhuma edição ainda. Clique em “✨ Gerar rascunho” para criar a primeira.
         </div>
       ) : (
         <div className="space-y-2">

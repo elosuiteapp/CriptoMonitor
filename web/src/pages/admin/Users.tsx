@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import UserDetailModal from "../../components/admin/UserDetailModal";
 import { IconDownload, IconUsers } from "../../components/admin/icons";
@@ -19,6 +19,11 @@ export default function Users() {
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Planos do catálogo REAL (o filtro era hardcoded free/pro/expert — não achava mod_crypto/b3/forex/complete).
+  const [planOpts, setPlanOpts] = useState<{ slug: string; name: string }[]>([]);
+  useEffect(() => {
+    supabase.from("plans").select("slug, name").order("sort_order").then(({ data }) => setPlanOpts((data as { slug: string; name: string }[] | null) ?? []));
+  }, []);
 
   const params = {
     p_search: search,
@@ -113,9 +118,9 @@ export default function Users() {
         />
         <select value={plan ?? ""} onChange={(e) => { setPlan(e.target.value || null); setPage(0); }} className={selectCls}>
           <option value="">Todos os planos</option>
-          <option value="free">Free</option>
-          <option value="pro">Pro</option>
-          <option value="expert">Expert</option>
+          {planOpts.map((p) => (
+            <option key={p.slug} value={p.slug}>{p.name}</option>
+          ))}
         </select>
         <select value={status ?? ""} onChange={(e) => { setStatus(e.target.value || null); setPage(0); }} className={selectCls}>
           <option value="">Todos os status</option>
@@ -181,7 +186,7 @@ export default function Users() {
             </tbody>
           </table>
         </div>
-        {!loading && rows.length === 0 && <Empty>Nenhum usuário encontrado.</Empty>}
+        {!loading && !error && rows.length === 0 && <Empty>Nenhum usuário encontrado.</Empty>}
         {loading && rows.length === 0 && <Skeleton rows={8} />}
       </Card>
 

@@ -63,26 +63,27 @@ export default function Audit() {
 
   useEffect(() => {
     setRows(null);
-    supabase
+    setError(null); // sem isso, um erro antigo curto-circuitava a tela pra sempre (sem retry)
+    let q = supabase
       .from("admin_audit_log")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(limit)
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        else setRows(data as AuditRow[]);
-      });
-  }, [limit]);
+      .limit(limit);
+    if (dateFrom) q = q.gte("created_at", dateFrom); // filtro de data no BANCO (client-side só via as 200 recentes)
+    q.then(({ data, error }) => {
+      if (error) setError(error.message);
+      else setRows(data as AuditRow[]);
+    });
+  }, [limit, dateFrom]);
 
   const shown = useMemo(
     () =>
       (rows ?? []).filter(
         (r) =>
           (!filter || r.action === filter) &&
-          (!adminFilter || r.admin_email === adminFilter) &&
-          (!dateFrom || r.created_at >= dateFrom),
+          (!adminFilter || r.admin_email === adminFilter),
       ),
-    [rows, filter, adminFilter, dateFrom],
+    [rows, filter, adminFilter],
   );
   const actions = useMemo(() => Array.from(new Set((rows ?? []).map((r) => r.action))), [rows]);
   const admins = useMemo(() => Array.from(new Set((rows ?? []).map((r) => r.admin_email).filter(Boolean))) as string[], [rows]);
@@ -167,7 +168,7 @@ export default function Audit() {
             </tbody>
           </table>
         </div>
-        {rows && shown.length === 0 && <Empty>Nenhuma ação registrada.</Empty>}
+        {rows && shown.length === 0 && <Empty>{filter || adminFilter || dateFrom ? `Nada encontrado para o filtro (nas ${rows.length} ações carregadas — "Carregar mais" busca períodos anteriores).` : "Nenhuma ação registrada."}</Empty>}
         {!rows && <Skeleton rows={6} />}
       </Card>
 

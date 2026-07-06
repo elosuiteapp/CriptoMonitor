@@ -81,10 +81,11 @@ export default function System() {
         }
       />
 
+      {/* Sem dados ainda → "—" neutro (zeros verdes davam falsa sensação de "tudo saudável" no load). */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="Fontes monitoradas" value={fmtInt(rows.length)} />
-        <StatCard label="Fontes com problema" value={fmtInt(stale)} tone={stale > 0 ? "bad" : "good"} />
-        <StatCard label="Registros totais" value={fmtInt(totalRows)} />
+        <StatCard label="Fontes monitoradas" value={data ? fmtInt(rows.length) : "—"} />
+        <StatCard label="Fontes com problema" value={data ? fmtInt(stale) : "—"} tone={!data ? undefined : stale > 0 ? "bad" : "good"} />
+        <StatCard label="Registros totais" value={data ? fmtInt(totalRows) : "—"} />
       </div>
 
       <Card className="overflow-hidden">

@@ -58,20 +58,24 @@ export default function AdminSocial() {
   const [xTokenSecret, setXTokenSecret] = useState("");
 
   const load = useCallback(async () => {
-    const { data: st } = await supabase.rpc("social_config_status");
+    // Erro NÃO pode virar "não conectado"/"DESLIGADO"/vazio falso — sobe no banner msg.
+    const { data: st, error: errSt } = await supabase.rpc("social_config_status");
+    if (errSt) setMsg({ kind: "err", text: `Falha ao ler o status da conexão: ${errSt.message}` });
     setStatus((st as Status) ?? null);
-    const { data: ps } = await supabase
+    const { data: ps, error: errPs } = await supabase
       .from("social_posts")
       .select("id, tweet, telegram_md, posted_x, posted_telegram, created_at")
       .order("created_at", { ascending: false })
       .limit(10);
+    if (errPs && !errSt) setMsg({ kind: "err", text: `Falha ao carregar posts: ${errPs.message}` });
     setPosts((ps as Post[] | null) ?? []);
-    const { data: r } = await supabase
+    const { data: r, error: errR } = await supabase
       .from("automation_runs")
       .select("id, status, model, detail, created_at")
       .eq("job", "social")
       .order("created_at", { ascending: false })
       .limit(8);
+    if (errR && !errSt && !errPs) setMsg({ kind: "err", text: `Falha ao carregar execuções: ${errR.message}` });
     setRuns((r as Run[] | null) ?? []);
   }, []);
 
@@ -197,7 +201,7 @@ export default function AdminSocial() {
       {preview && (
         <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/[0.05] p-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tweet (X) · {preview.tweet.length} caracteres</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tweet (X) · {preview.tweet.length} caracteres{preview.tweet.length > 280 && <span className="ml-1 font-bold text-rose-500">⚠ acima de 280 — o X vai cortar/recusar</span>}</div>
             <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{preview.tweet}</p>
           </div>
           <div>
