@@ -36,6 +36,7 @@ export interface BotPriceLine {
   color: string;
   title: string;
   dashed?: boolean; // tracejada (entrada/pico) × sólida (stop)
+  width?: 1 | 2; // 1 = nível SMC (fino, discreto) · 2 = linha da POSIÇÃO (destaque)
 }
 
 /** Gráfico de velas (Lightweight Charts) com marcadores de compra/venda do robô.
@@ -142,7 +143,7 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
     if (!s) return;
     for (const pl of priceLinesRef.current) s.removePriceLine(pl);
     priceLinesRef.current = priceLines.map((l) =>
-      s.createPriceLine({ price: l.price, color: l.color, lineWidth: 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, axisLabelVisible: true, title: l.title }),
+      s.createPriceLine({ price: l.price, color: l.color, lineWidth: (l.width ?? 2) as 1 | 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, axisLabelVisible: true, title: l.title }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceLines.map((l) => `${l.title}:${l.price}`).join("|")]);

@@ -629,19 +629,29 @@ export default function AdminBot() {
     if (!smc) return [] as BotPriceLine[];
     const px = candles[candles.length - 1].close;
     const cand: BotPriceLine[] = [];
-    for (const ob of smc.orderBlocks.slice(-6)) cand.push({ price: ob.mid, color: ob.bias === "bullish" ? "#10b981" : "#f43f5e", title: `OB${ob.bias === "bullish" ? "↑" : "↓"}`, dashed: true });
-    for (const f of smc.fvgs) cand.push({ price: f.mid, color: "#6366f1", title: `FVG${f.bias === "bullish" ? "↑" : "↓"}`, dashed: true });
-    for (const l of smc.liquidity.slice(0, 6)) cand.push({ price: l.price, color: "#d946ef", title: `Liq${l.swept ? " ✕" : ""}`, dashed: true });
+    for (const ob of smc.orderBlocks.slice(-6)) cand.push({ price: ob.mid, color: ob.bias === "bullish" ? "#10b981" : "#f43f5e", title: `OB${ob.bias === "bullish" ? "↑" : "↓"}`, dashed: true, width: 1 });
+    for (const f of smc.fvgs) cand.push({ price: f.mid, color: "#6366f1", title: `FVG${f.bias === "bullish" ? "↑" : "↓"}`, dashed: true, width: 1 });
+    for (const l of smc.liquidity.slice(0, 6)) cand.push({ price: l.price, color: "#d946ef", title: `Liq${l.swept ? " ✕" : ""}`, dashed: true, width: 1 });
     const pl = smc.prevLevels;
     for (const [t, v] of [["PDH", pl.pdh], ["PDL", pl.pdl], ["PWH", pl.pwh], ["PWL", pl.pwl]] as [string, number | null][]) {
-      if (v != null) cand.push({ price: v, color: "#3b82f6", title: t, dashed: true });
+      if (v != null) cand.push({ price: v, color: "#3b82f6", title: t, dashed: true, width: 1 });
     }
-    cand.push({ price: smc.equilibrium.top, color: "#64748b", title: "EQ", dashed: true });
+    cand.push({ price: smc.equilibrium.top, color: "#64748b", title: "EQ", dashed: true, width: 1 });
     if (smc.extremes) {
-      cand.push({ price: smc.trailingTop, color: "#f59e0b", title: smc.extremes.high === "strong" ? "Topo FORTE" : "Topo fraco", dashed: true });
-      cand.push({ price: smc.trailingBottom, color: "#f59e0b", title: smc.extremes.low === "strong" ? "Fundo FORTE" : "Fundo fraco", dashed: true });
+      cand.push({ price: smc.trailingTop, color: "#f59e0b", title: smc.extremes.high === "strong" ? "Topo FORTE" : "Topo fraco", dashed: true, width: 1 });
+      cand.push({ price: smc.trailingBottom, color: "#f59e0b", title: smc.extremes.low === "strong" ? "Fundo FORTE" : "Fundo fraco", dashed: true, width: 1 });
     }
-    return cand.sort((a, b) => Math.abs(a.price - px) - Math.abs(b.price - px)).slice(0, 12);
+    // FUSÃO de níveis quase iguais (≤0,08% — padrão glass do módulo): "PDH · FVG↑" numa etiqueta
+    // só, em vez do paredão de labels empilhados no eixo. Depois, as 10 mais próximas do preço.
+    const sorted = cand.sort((a, b) => a.price - b.price);
+    const merged: BotPriceLine[] = [];
+    for (const l of sorted) {
+      const prev = merged[merged.length - 1];
+      if (prev && px > 0 && Math.abs(l.price - prev.price) / px <= 0.0008) {
+        if (!prev.title.includes(l.title)) prev.title = `${prev.title} · ${l.title}`;
+      } else merged.push({ ...l });
+    }
+    return merged.sort((a, b) => Math.abs(a.price - px) - Math.abs(b.price - px)).slice(0, 10);
   }, [candles]);
 
   // Leitura da moeda em foco (cada ativo tem a sua em bot_positions); fallback ao config (BTC legado).
@@ -657,8 +667,13 @@ export default function AdminBot() {
   const quote = cfg?.quote_ccy ?? "USDT";
   const pxDec = (v: number | null | undefined) => (v == null ? 2 : v >= 1000 ? 1 : v >= 1 ? 2 : 4);
 
-  // Linhas de nível: camadas SMC (o que o robô lê) + níveis da posição aberta (Entrada/Pico/Stop/Alvo).
-  const priceLines: BotPriceLine[] = [...smcLevels];
+  // Toggle das camadas SMC no gráfico (pedido do dono): OFF = só posição (Entrada/Pico/Stop/Alvo)
+  // e marcadores de trade. Persistido entre sessões.
+  const [showSmc, setShowSmc] = useState(() => localStorage.getItem("bot_show_smc") !== "0");
+  useEffect(() => { localStorage.setItem("bot_show_smc", showSmc ? "1" : "0"); }, [showSmc]);
+
+  // Linhas de nível: camadas SMC (o que o robô lê, se ligadas) + níveis da posição (destaque, width 2).
+  const priceLines: BotPriceLine[] = showSmc ? [...smcLevels] : [];
   if (selPos && selPos.position !== "flat") {
     if (selPos.entry_px) priceLines.push({ price: selPos.entry_px, color: "#94a3b8", title: "Entrada", dashed: true });
     if (selPos.peak_px && selPos.peak_px !== selPos.entry_px) priceLines.push({ price: selPos.peak_px, color: "#10b981", title: "Pico", dashed: true });
@@ -1245,11 +1260,22 @@ export default function AdminBot() {
             <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
             <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
             <span className="flex items-center gap-1"><span className="text-blue-500">■</span> saída</span>
-            <span className="hidden items-center gap-1 md:flex" title="Order blocks vivos (verde demanda · vermelho oferta) — zona de entrada do setup B e stop estrutural"><span className="inline-block h-0.5 w-3 rounded bg-[#10b981]" /><span className="inline-block h-0.5 w-3 rounded bg-[#f43f5e]" /> OB</span>
-            <span className="hidden items-center gap-1 md:flex" title="Fair value gaps abertos — o setup de imbalance entra no RETESTE da zona"><span className="inline-block h-0.5 w-3 rounded bg-[#6366f1]" /> FVG</span>
-            <span className="hidden items-center gap-1 md:flex" title="Poças de liquidez (EQH/EQL) — alvo do take-profit; ✕ = varrida (gatilho do setup B)"><span className="inline-block h-0.5 w-3 rounded bg-[#d946ef]" /> Liq</span>
-            <span className="hidden items-center gap-1 md:flex" title="Máx/mín do dia e da semana anteriores — ímãs de liquidez, alvo fallback"><span className="inline-block h-0.5 w-3 rounded bg-[#3b82f6]" /> PDH/PDL</span>
-            <span className="hidden items-center gap-1 md:flex" title="Equilíbrio (EQ) e topo/fundo strong-weak — acima do EQ = premium (short), abaixo = discount (long)"><span className="inline-block h-0.5 w-3 rounded bg-[#f59e0b]" /> EQ/extremos</span>
+            <button
+              onClick={() => setShowSmc((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-medium transition-colors ${showSmc ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+              title="Liga/desliga as linhas de nível SMC (OB, FVG, Liquidez, PDH/PDL, EQ/extremos). Entradas, saídas, stop e alvo ficam SEMPRE visíveis."
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${showSmc ? "bg-primary" : "bg-muted-foreground/40"}`} /> Níveis SMC {showSmc ? "ON" : "OFF"}
+            </button>
+            {showSmc && (
+              <>
+                <span className="hidden items-center gap-1 lg:flex" title="Order blocks vivos (verde demanda · vermelho oferta) — zona de entrada do setup B e stop estrutural"><span className="inline-block h-0.5 w-3 rounded bg-[#10b981]" /><span className="inline-block h-0.5 w-3 rounded bg-[#f43f5e]" /> OB</span>
+                <span className="hidden items-center gap-1 lg:flex" title="Fair value gaps abertos — o setup de imbalance entra no RETESTE da zona"><span className="inline-block h-0.5 w-3 rounded bg-[#6366f1]" /> FVG</span>
+                <span className="hidden items-center gap-1 lg:flex" title="Poças de liquidez (EQH/EQL) — alvo do take-profit; ✕ = varrida (gatilho do setup B)"><span className="inline-block h-0.5 w-3 rounded bg-[#d946ef]" /> Liq</span>
+                <span className="hidden items-center gap-1 lg:flex" title="Máx/mín do dia e da semana anteriores — ímãs de liquidez, alvo fallback"><span className="inline-block h-0.5 w-3 rounded bg-[#3b82f6]" /> PDH/PDL</span>
+                <span className="hidden items-center gap-1 lg:flex" title="Equilíbrio (EQ) e topo/fundo strong-weak — acima do EQ = premium (short), abaixo = discount (long)"><span className="inline-block h-0.5 w-3 rounded bg-[#f59e0b]" /> EQ/extremos</span>
+              </>
+            )}
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
           </div>
         </div>
