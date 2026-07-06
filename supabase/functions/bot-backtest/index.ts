@@ -28,7 +28,41 @@ interface OrderBlock { top: number; bottom: number; mid: number; time: number; b
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone }
+// Máx/mín do período ANTERIOR completo (dia/semana/mês UTC) — ímãs clássicos de liquidez
+// (PDH/PDL/PWH/PWL/PMH/PML). null quando a janela de velas não cobre o período inteiro. (motor 7925e48)
+interface PrevLevels { pdh: number | null; pdl: number | null; pwh: number | null; pwl: number | null; pmh: number | null; pml: number | null }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone; prevLevels: PrevLevels; extremes: { high: "strong" | "weak"; low: "strong" | "weak" } | null }
+
+// ─── Máx/mín do período anterior (dia/semana/mês UTC) — cópia FIEL de web/src/lib/smc.ts ───
+function prevPeriodLevels(candles: Candle[]): PrevLevels {
+  const DAY = 86400;
+  const last = candles[candles.length - 1].time;
+  const first = candles[0].time;
+  // hi/lo do intervalo [start, end); null se a janela não cobre o INÍCIO do período (nível truncado = falso).
+  const range = (start: number, end: number): { hi: number | null; lo: number | null } => {
+    if (first > start) return { hi: null, lo: null };
+    let hi = -Infinity, lo = Infinity, seen = false;
+    for (const c of candles) {
+      if (c.time >= start && c.time < end) {
+        seen = true;
+        if (c.high > hi) hi = c.high;
+        if (c.low < lo) lo = c.low;
+      }
+    }
+    return seen ? { hi, lo } : { hi: null, lo: null };
+  };
+  const dayStart = Math.floor(last / DAY) * DAY;
+  const d = range(dayStart - DAY, dayStart);
+  const dayIdx = Math.floor(last / DAY);
+  const dow = (dayIdx + 4) % 7;
+  const weekStart = (dayIdx - ((dow + 6) % 7)) * DAY;
+  const w = range(weekStart - 7 * DAY, weekStart);
+  const dt = new Date(last * 1000);
+  const monthStart = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1) / 1000;
+  const prevMonthStart = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() - 1, 1) / 1000;
+  const m = range(prevMonthStart, monthStart);
+  return { pdh: d.hi, pdl: d.lo, pwh: w.hi, pwl: w.lo, pmh: m.hi, pml: m.lo };
+}
 
 function atrArray(candles: Candle[], len: number): number[] {
   const tr: number[] = [];
@@ -158,6 +192,9 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
     orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, internalLowLevel: internalLow.level, internalHighLevel: internalHigh.level, premium, equilibrium, discount,
+    prevLevels: prevPeriodLevels(candles),
+    // Strong/Weak (LuxAlgo, motor 7925e48): baixa → topo FORTE (origem defendida) + fundo FRACO; alta → espelho.
+    extremes: swingTrend === -1 ? { high: "strong" as const, low: "weak" as const } : swingTrend === 1 ? { high: "weak" as const, low: "strong" as const } : null,
   };
 }
 function structuralBias(smc: SmcResult | null, momTf: number): number {
@@ -166,8 +203,9 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
   add(smc.swingBias === "bullish" ? 78 : smc.swingBias === "bearish" ? -78 : 0, 0.40);
   if (smc.lastSwing) add((smc.lastSwing.bias === "bullish" ? 1 : -1) * (smc.lastSwing.type === "CHoCH" ? 80 : 55), 0.20);
   let z = 0;
-  if (smc.price <= smc.discount.top) z = smc.internalBias === "bullish" ? 72 : 0;
-  else if (smc.price >= smc.premium.bottom) z = smc.internalBias === "bearish" ? -72 : 0;
+  // Classificação pela BANDA DE EQUILÍBRIO (motor novo, fix da auditoria 7925e48).
+  if (smc.price < smc.equilibrium.bottom) z = smc.internalBias === "bullish" ? 72 : 0;
+  else if (smc.price > smc.equilibrium.top) z = smc.internalBias === "bearish" ? -72 : 0;
   add(z, 0.18);
   const atr = smc.atr || smc.price * 0.01;
   const dem = smc.orderBlocks.filter((o) => o.bias === "bullish" && o.mid < smc.price).sort((a, b) => b.mid - a.mid)[0];
@@ -191,7 +229,8 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
   const bear = smc.lastSwing?.bias === "bearish" || smc.internalBias === "bearish" || smc.swingBias === "bearish";
-  const inDisc = price <= smc.discount.top, inPrem = price >= smc.premium.bottom;
+  // Zona pela BANDA DE EQUILÍBRIO (motor novo 7925e48; as bordas 95/5 sufocavam o setup B).
+  const inDisc = price < smc.equilibrium.bottom, inPrem = price > smc.equilibrium.top;
   const sweptSell = smc.liquidity.some((l) => l.side === "sell" && l.sweptRecently);
   const sweptBuy = smc.liquidity.some((l) => l.side === "buy" && l.sweptRecently);
   const bullOB = smc.orderBlocks.filter((b) => b.bias === "bullish" && price >= b.bottom && price <= b.top + buf).sort((a, b) => b.mid - a.mid)[0];
@@ -247,17 +286,26 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   }
   let stop: number;
   if (want === "long") {
-    stop = (zone ? zone.bottom : (Number.isFinite(smc.swingLowLevel) ? smc.swingLowLevel : price - o.stopAtrMult * atr)) - buf;
+    stop = (zone ? (zone as Zone).bottom : (Number.isFinite(smc.swingLowLevel) ? smc.swingLowLevel : price - o.stopAtrMult * atr)) - buf;
     if (Number.isFinite(smc.swingLowLevel) && smc.swingLowLevel < price) stop = Math.min(stop, smc.swingLowLevel - buf);
     if (stop >= price) stop = price - o.stopAtrMult * atr;
   } else {
-    stop = (zone ? zone.top : (Number.isFinite(smc.swingHighLevel) ? smc.swingHighLevel : price + o.stopAtrMult * atr)) + buf;
+    stop = (zone ? (zone as Zone).top : (Number.isFinite(smc.swingHighLevel) ? smc.swingHighLevel : price + o.stopAtrMult * atr)) + buf;
     if (Number.isFinite(smc.swingHighLevel) && smc.swingHighLevel > price) stop = Math.max(stop, smc.swingHighLevel + buf);
     if (stop <= price) stop = price + o.stopAtrMult * atr;
   }
+  // ALVO: próxima liquidez a favor; senão PDH/PWH/PMH (ímãs do motor novo); senão a zona oposta.
   let target: number | null;
-  if (want === "long") { const la = smc.liquidity.filter((l) => l.side === "buy" && l.price > price).sort((a, b) => a.price - b.price)[0]; target = la ? la.price : (price < smc.premium.bottom ? smc.premium.bottom : null); }
-  else { const lb = smc.liquidity.filter((l) => l.side === "sell" && l.price < price).sort((a, b) => b.price - a.price)[0]; target = lb ? lb.price : (price > smc.discount.top ? smc.discount.top : null); }
+  const pl = smc.prevLevels;
+  if (want === "long") {
+    const la = smc.liquidity.filter((l) => l.side === "buy" && l.price > price).sort((a, b) => a.price - b.price)[0];
+    const prevUp = [pl.pdh, pl.pwh, pl.pmh].filter((v): v is number => v != null && v > price).sort((a, b) => a - b)[0];
+    target = la ? la.price : prevUp ?? (price < smc.premium.bottom ? smc.premium.bottom : null);
+  } else {
+    const lb = smc.liquidity.filter((l) => l.side === "sell" && l.price < price).sort((a, b) => b.price - a.price)[0];
+    const prevDn = [pl.pdl, pl.pwl, pl.pml].filter((v): v is number => v != null && v < price).sort((a, b) => b - a)[0];
+    target = lb ? lb.price : prevDn ?? (price > smc.discount.top ? smc.discount.top : null);
+  }
   const risk = Math.abs(price - stop);
   if (target != null && risk > 0 && Math.abs(target - price) < risk) target = null;
   // Identidade da zona de origem (p/ o experimento zone_once: 1 entrada por zona — stopou, não re-entra).
