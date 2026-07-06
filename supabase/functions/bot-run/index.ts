@@ -317,7 +317,7 @@ function dailyVwap(cs: Candle[]): number | null {
 //  • ALVO = próxima poça de LIQUIDEZ (EQH/EQL) / zona oposta — R:R vindo do gráfico.
 // Usa só: Order Blocks, Imbalance(FVG), Liquidez/EQH-EQL, Zonas, BOS/CHoCH. (VP/liq-heatmap/HTF fora.)
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number; imbRetest?: boolean; imbAlign?: boolean; structFirst?: boolean; dirMode?: string }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number; imbRetest?: boolean; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   // DIREÇÃO (cfg.dir_mode, sql/106 — caso SOL 06/jul: short no topo com a interna JÁ bullish):
@@ -372,6 +372,17 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup SMC" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot não faz short" };
+  // DISCIPLINA DE ZONA (sql/113, spec do dono 06/jul, fase M2 — melhorou as 4 moedas, R total
+  // recorde +59,9): no PREMIUM (topo) não compra e no DISCOUNT (fundo) não vende, SALVO
+  // rompimento de swing recente (≤16 velas) OU estrutura INTERNA já virada na direção
+  // (= rompimento em andamento — a exceção que preserva as continuações com força do ETH).
+  if (o.zoneDiscipline) {
+    const swingBreak = smc.lastSwing && smc.lastSwing.time >= lastT - 900 * 16 ? smc.lastSwing.bias : null;
+    const upOk = swingBreak === "bullish" || smc.internalBias === "bullish";
+    const dnOk = swingBreak === "bearish" || smc.internalBias === "bearish";
+    if (want === "long" && inPrem && !upOk) return { want: null, setup: "", stop: null, target: null, note: "premium sem rompimento — zona de venda, compra só com quebra forte" };
+    if (want === "short" && inDisc && !dnOk) return { want: null, setup: "", stop: null, target: null, note: "discount sem quebra — zona de compra, venda só com força" };
+  }
   // QUALIDADE 2 (opp_zone_atr): não entrar com FVG/OB OPOSTO não-preenchido a ≤ X ATR à frente —
   // estaria entrando direto numa oferta/demanda fresca (o alvo morre nela). 0 = off.
   if (o.oppZoneAtr && o.oppZoneAtr > 0) {
@@ -920,8 +931,9 @@ Deno.serve(async (req) => {
       const imbAlign = cfg.imb_align !== false;
       const structFirst = String(cfg.setup_priority ?? "structure") === "structure";
       const dirMode = String(cfg.dir_mode ?? "majority");
+      const zoneDiscipline = cfg.zone_discipline !== false;
       const plan: SmcPlan = primary?.smc
-        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0), imbRetest, imbAlign, structFirst, dirMode })
+        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0), imbRetest, imbAlign, structFirst, dirMode, zoneDiscipline })
         : { want: null, setup: "", stop: null, target: null, note: "sem SMC" };
       let want: "long" | "short" | null = plan.want;
       let gate = plan.note;
