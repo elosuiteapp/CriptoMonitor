@@ -185,8 +185,8 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 }
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
-interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number }): SmcPlan {
+interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
@@ -211,11 +211,26 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   const fresh = smc.fvgs.filter((f) => f.time >= lastT - barSec * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)) && nearZone(f));
   const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
   const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
-  let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number } | null = null;
-  if (o.imbalanceOn && freshBull && (!freshBear || freshBull.time >= freshBear.time)) { want = "long"; setup = "imbalance ↑"; zone = freshBull; }
-  else if (o.imbalanceOn && freshBear && (!freshBull || freshBear.time >= freshBull.time)) { want = "short"; setup = "imbalance ↓"; zone = freshBear; }
-  else if (bull && (bullOB || bullFvg) && (sweptSell || inDisc)) { want = "long"; setup = "OB/FVG + estrutura ↑"; zone = bullOB ?? bullFvg; }
-  else if (bear && (bearOB || bearFvg) && (sweptBuy || inPrem)) { want = "short"; setup = "OB/FVG + estrutura ↓"; zone = bearOB ?? bearFvg; }
+  // EXPERIMENTO imb_align (playbook do dono): o setup de imbalance só vale A FAVOR da estrutura
+  // (fim dos shorts de FVG contra alta — 31% de acerto no live). EXPERIMENTO setup_priority
+  // "structure": o reteste de OB/FVG pós-BOS/CHoCH (o setup do print) tem prioridade sobre imbalance.
+  const imbLongOk = o.imbalanceOn && !!freshBull && (!freshBear || freshBull.time >= freshBear.time) && (!o.imbAlign || bull);
+  const imbShortOk = o.imbalanceOn && !!freshBear && (!freshBull || freshBear.time >= freshBull.time) && (!o.imbAlign || bear);
+  const structLongOk = bull && !!(bullOB || bullFvg) && (sweptSell || inDisc);
+  const structShortOk = bear && !!(bearOB || bearFvg) && (sweptBuy || inPrem);
+  let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number; time?: number } | null = null;
+  const pick = (w: "long" | "short", s: string, z: { bottom: number; top: number; time?: number } | null) => { want = w; setup = s; zone = z; };
+  if (o.structFirst) {
+    if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
+    else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
+    else if (imbLongOk) pick("long", "imbalance ↑", freshBull);
+    else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
+  } else {
+    if (imbLongOk) pick("long", "imbalance ↑", freshBull);
+    else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
+    else if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
+    else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
+  }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot" };
   // EXPERIMENTO opp_zone_atr: bloqueia a entrada quando há FVG/OB OPOSTO não-preenchido a ≤ X ATR
@@ -245,7 +260,9 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   else { const lb = smc.liquidity.filter((l) => l.side === "sell" && l.price < price).sort((a, b) => b.price - a.price)[0]; target = lb ? lb.price : (price > smc.discount.top ? smc.discount.top : null); }
   const risk = Math.abs(price - stop);
   if (target != null && risk > 0 && Math.abs(target - price) < risk) target = null;
-  return { want, setup, stop, target, note: setup };
+  // Identidade da zona de origem (p/ o experimento zone_once: 1 entrada por zona — stopou, não re-entra).
+  const zoneKey = zone && (zone as { time?: number }).time ? `${setup}:${(zone as { time?: number }).time}` : null;
+  return { want, setup, stop, target, note: setup, zoneKey };
 }
 
 // ════════ Klines históricos REAIS — endpoint PÚBLICO de dados da Binance (geo-aberto). ════════
@@ -366,6 +383,11 @@ Deno.serve(async (req) => {
   const trailMode = String(body?.trail_mode ?? "atr");
   const trailTf = ["15m", "30m", "1H", "4H"].includes(String(body?.trail_tf)) ? String(body?.trail_tf) : baseTf;
   const trailArmR = Math.max(0, Number(body?.trail_arm_r ?? 0));
+  // PLAYBOOK DO DONO (06/jul): imbalance A FAVOR da estrutura, reteste de OB/FVG com prioridade,
+  // e 1 tiro por zona (stopou na zona → ela invalidou, não re-entra nela).
+  const imbAlign = !!body?.imb_align;
+  const structFirst = String(body?.setup_priority ?? "imbalance") === "structure";
+  const zoneOnce = !!body?.zone_once;
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -431,6 +453,7 @@ Deno.serve(async (req) => {
   let entryPx = 0, stopPx = 0, targetPx = 0, peak = 0, riskDist0 = 0, entryTime = 0, entryIdx = 0, counter = false;
   let partialDone = false, partialR = 0; // TP parcial: metade já embolsada no alvo (R líquido da perna)
   let lastStopIdx = -1; // barra do último STOP (cooldown de reentrada)
+  const usedZones = new Set<string>(); // zone_once: zonas que já deram entrada (não re-entra)
   const trades: Trade[] = [];
   let eq = 1; let peakEq = 1, maxDD = 0; const equity: { t: number; eq: number }[] = [];
   let barsInMarket = 0, evalBars = 0;
@@ -519,7 +542,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
@@ -566,13 +589,17 @@ Deno.serve(async (req) => {
 
     // 4) Reversão / entrada (fill no fechamento; stop e alvo vêm do plano estrutural).
     const hourBlocked = blockHours.size > 0 && blockHours.has(new Date(barCloseMs).getUTCHours());
+    // zone_once: se a entrada vem do plano SMC (não do TA-led) e a zona já foi usada, segura.
+    const fromPlan = eSetup === plan.setup;
+    const zoneBlocked = zoneOnce && fromPlan && plan.zoneKey != null && usedZones.has(plan.zoneKey);
+    const markZone = () => { if (zoneOnce && fromPlan && plan.zoneKey != null) usedZones.add(plan.zoneKey); };
     if (pos !== "flat") {
       const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
       const heldEnough = t - entryIdx >= minHold;
-      if (want && want !== pos && eStop != null && canRev && heldEnough && !hourBlocked) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); }
+      if (want && want !== pos && eStop != null && canRev && heldEnough && !hourBlocked && !zoneBlocked) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); }
     } else if (want && eStop != null) {
       const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
-      if (!cooling && !hourBlocked) openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null);
+      if (!cooling && !hourBlocked && !zoneBlocked) { openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); }
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -610,7 +637,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
