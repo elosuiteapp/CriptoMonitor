@@ -276,12 +276,12 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
                     por horizonte — resolve o velho "estrutura de alta mas ponteiro de baixa". */}
                 <HorizonGauge
                   title={tt("🧭 Fundo (estrutural)", "🧭 Backdrop (structural)")}
-                  sub={tt("1D · tendência + estrutura + momento + fluxo institucional + COT CME", "1D · trend + structure + momentum + institutional flow + CME COT")}
+                  sub={tt("1D · tendência + estrutura + momento + fluxo institucional + COT CME + área de valor (VP 30d)", "1D · trend + structure + momentum + institutional flow + CME COT + value area (30d VP)")}
                   value={read.structural.bias}
                 />
                 <HorizonGauge
                   title={tt("⚡ Hoje (tático)", "⚡ Today (tactical)")}
-                  sub={tt("4H + book, CVD inst×varejo, delta do dia, VWAP, VP, paredes, squeeze, sentimento, posição e opções", "4H + book, inst vs retail CVD, day delta, VWAP, VP, walls, squeeze, sentiment, positioning and options")}
+                  sub={tt("4H + book, CVD inst×varejo, delta do dia, VWAP, SuperTrend, paredes, squeeze, sentimento, posição e opções", "4H + book, inst vs retail CVD, day delta, VWAP, SuperTrend, walls, squeeze, sentiment, positioning and options")}
                   value={read.daily.bias}
                 />
                 <div className="min-w-0">

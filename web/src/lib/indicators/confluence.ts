@@ -743,8 +743,10 @@ export function computeMarketRead(
       : tl("Preço ", "Price ") + (price >= dVwap ? tl("ACIMA", "ABOVE") : tl("ABAIXO", "BELOW")) + " (" + (((price - dVwap) / dVwap) * 100).toFixed(2) + "%) — " + (price >= dVwap ? tl("dia comprador", "buyers' day") : tl("dia vendedor", "sellers' day")),
   });
 
-  // 5) Posição vs Volume Profile (POC/área de valor) — aceitação acima do VAH = alta; abaixo do VAL = baixa.
-  const vpSrc = intra && intra.length >= 60 ? intra : candles;
+  // 5) Posição vs Volume Profile (POC/área de valor) — aceitação acima do VAH = alta; abaixo do
+  //    VAL = baixa. ESTRUTURAL (07/jul): área de valor construída em 30 velas DIÁRIAS — aceitação
+  //    fora dela é fenômeno de semanas, não do dia (mesma janela do mapa de liquidez).
+  const vpSrc = candles.length >= 30 ? candles.slice(-30) : intra && intra.length >= 60 ? intra : candles;
   const vpRead = vpSrc.length >= 30 ? computeVolumeProfile(vpSrc) : null;
   const haveVpAx = !!(vpRead && price != null);
   let vpDir: Dir = 0;
@@ -755,7 +757,7 @@ export function computeMarketRead(
     else if (price < vpRead.val) { vpDir = -1; vpStr = clamp01(((vpRead.val - price) / width) * 2 + 0.35); }
   }
   axes.push({
-    key: "vp", label: tl("Volume Profile (área de valor)", "Volume Profile (value area)"), group: tl("técnico", "technical"),
+    key: "vp", label: tl("Volume Profile (área de valor 30d)", "Volume Profile (30d value area)"), group: tl("técnico", "technical"),
     dir: vpDir, strength: vpStr, available: haveVpAx,
     detail: !haveVpAx ? tl("Histórico insuficiente", "Not enough history")
       : vpDir > 0 ? tl("Aceitação ACIMA da área de valor — compradores no controle", "Acceptance ABOVE value area — buyers in control")
@@ -817,11 +819,70 @@ export function computeMarketRead(
       : (sqOn ? tl("Squeeze ARMADO (vol. comprimida — movimento vindo)", "Squeeze ON (vol compressed — move loading)") : tl("Squeeze liberado", "Squeeze off")) + " · momentum " + (sqMom >= 0 ? tl("comprador", "bullish") : tl("vendedor", "bearish")),
   });
 
+  // 8) SUPERTREND ADAPTATIVO (4H) — pedido do dono 07/jul. A ideia de 2020 (Kivanc, ATR 10×3
+  //    fixo) modernizada em 3 pontos: multiplicador ADAPTATIVO à volatilidade (percentil de ATR:
+  //    2,5× calmo → 4× nervoso), força = folga do preço até a linha em ATRs (tendência saudável
+  //    vs por um fio) e CONSCIÊNCIA DE REGIME — em lateral (ADX<18) ele se CALA em vez de serrar
+  //    (a falha clássica do original); squeeze armado corta a força pela metade.
+  const stSrc = intra && intra.length >= 60 ? intra : candles;
+  const haveSt = stSrc.length >= 60 && price != null;
+  let stDir: Dir = 0;
+  let stStr = 0;
+  let stDetail = tl("Histórico insuficiente", "Not enough history");
+  if (haveSt && price != null) {
+    const stAtrArr = atr(stSrc, 10);
+    const stAtrLast = last(stAtrArr);
+    const volPct = percentileRank(stAtrArr.slice(-120), stAtrLast);
+    const stMult = 2.5 + 1.5 * clamp01((Number.isFinite(volPct) ? volPct : 50) / 100);
+    let up = NaN;
+    let dn = NaN;
+    let trend = 1;
+    for (let i = 1; i < stSrc.length; i++) {
+      const a = stAtrArr[i];
+      if (!Number.isFinite(a)) continue;
+      const mid = (stSrc[i].high + stSrc[i].low) / 2;
+      const bUp = mid - stMult * a;
+      const bDn = mid + stMult * a;
+      const prevUp = up;
+      const prevDn = dn;
+      const prevClose = stSrc[i - 1].close;
+      up = !Number.isFinite(prevUp) || bUp > prevUp || prevClose < prevUp ? bUp : prevUp;
+      dn = !Number.isFinite(prevDn) || bDn < prevDn || prevClose > prevDn ? bDn : prevDn;
+      const c = stSrc[i].close;
+      if (trend === -1 && Number.isFinite(prevDn) && c > prevDn) trend = 1;
+      else if (trend === 1 && Number.isFinite(prevUp) && c < prevUp) trend = -1;
+    }
+    const stLine = trend === 1 ? up : dn;
+    const stAdx = adx(stSrc, 14);
+    if (Number.isFinite(stLine) && stAtrLast > 0) {
+      const distAtr = Math.abs(price - stLine) / stAtrLast;
+      const lateral = Number.isFinite(stAdx) && stAdx < 18;
+      const fmtL = stLine >= 1000 ? stLine.toLocaleString("en-US", { maximumFractionDigits: 0 }) : stLine.toFixed(2);
+      if (lateral) {
+        stDetail = tl(`Lateral (ADX ${stAdx.toFixed(0)}) — silenciado pra não serrar · flip em $${fmtL}`, `Ranging (ADX ${stAdx.toFixed(0)}) — muted to avoid whipsaw · flip at $${fmtL}`);
+      } else {
+        const damp = (!Number.isFinite(stAdx) || stAdx < 25 ? 0.65 : 1) * (sqOn ? 0.5 : 1);
+        stDir = sign(trend);
+        stStr = clamp01(distAtr / 3) * damp;
+        stDetail =
+          (trend === 1 ? tl("ALTA", "UP") : tl("BAIXA", "DOWN")) +
+          tl(` · flip em $${fmtL} (${distAtr.toFixed(1)} ATR de folga)`, ` · flip at $${fmtL} (${distAtr.toFixed(1)} ATR of room)`) +
+          tl(` · mult ${stMult.toFixed(1)}× (vol p${Number.isFinite(volPct) ? volPct.toFixed(0) : "—"})`, ` · mult ${stMult.toFixed(1)}× (vol p${Number.isFinite(volPct) ? volPct.toFixed(0) : "—"})`) +
+          (Number.isFinite(stAdx) ? ` · ADX ${stAdx.toFixed(0)}` : "");
+      }
+    }
+  }
+  axes.push({
+    key: "supertrend", label: tl("SuperTrend adaptativo (4H)", "Adaptive SuperTrend (4H)"), group: tl("técnico", "technical"),
+    dir: stDir, strength: stStr, available: haveSt,
+    detail: stDetail,
+  });
+
   // acerto medido >52% aumenta o peso, <52% reduz; funding (41%, invertido) virou contexto.
   const HIT: Record<string, number | null> = {
-    trend: 53, structure: 52, momentum: null, flow: 54, cot: null,          // estrutural
+    trend: 53, structure: 52, momentum: null, flow: 54, cot: null, vp: null, // estrutural (vp 30d 1D → fundo, 07/jul)
     intraday: 53, book: 56, sentiment: 56, position: 53, options: 52, prevlevels: null, // do dia
-    cvddiv: 67, walls: 63, daydelta: null, dayvwap: null, vp: null, squeeze: null, // novas 07/jul (régua forte do robô)
+    cvddiv: 67, walls: 63, daydelta: null, dayvwap: null, squeeze: null, supertrend: null, // novas 07/jul (régua forte do robô)
   };
   const mAdj = (hit: number | null) => (hit == null ? 1 : Math.max(0.7, Math.min(1.3, 1 + (hit - 52) * 0.05)));
   interface Force { key: string; dir: Dir; str: number; w: number; avail: boolean }
@@ -831,6 +892,7 @@ export function computeMarketRead(
     { key: "momentum", dir: momDir, str: momStr, w: 0.20, avail: haveMom },
     { key: "flow", dir: flowDir, str: flowStr, w: 0.22, avail: haveFlow },
     { key: "cot", dir: cotDir, str: cotStr, w: 0.12, avail: haveCot },
+    { key: "vp", dir: vpDir, str: vpStr, w: 0.12, avail: haveVpAx },
   ];
   const dailyForces: Force[] = [
     { key: "intraday", dir: intraDir, str: intraStr, w: 0.26, avail: haveIntra },
@@ -843,8 +905,8 @@ export function computeMarketRead(
     { key: "walls", dir: wallsDir, str: wallsStr, w: 0.10, avail: haveWalls },
     { key: "daydelta", dir: dayFlowDir, str: dayFlowStr, w: 0.12, avail: haveDayFlow },
     { key: "dayvwap", dir: vwapDir, str: vwapStr, w: 0.10, avail: haveDayVwap },
-    { key: "vp", dir: vpDir, str: vpStr, w: 0.10, avail: haveVpAx },
     { key: "squeeze", dir: sqDir, str: sqStr, w: 0.08, avail: haveSqueeze },
+    { key: "supertrend", dir: stDir, str: stStr, w: 0.12, avail: haveSt },
   ];
   const aggregate = (forces: Force[]) => {
     let n = 0;
@@ -865,9 +927,9 @@ export function computeMarketRead(
   const dailyRead = aggregate(dailyForces);
   // Peso efetivo + horizonte + acerto medido nas axes (UI: cabo de guerra, seções, badges).
   const HZ: Record<string, "structural" | "daily"> = {
-    trend: "structural", structure: "structural", momentum: "structural", flow: "structural", cot: "structural",
+    trend: "structural", structure: "structural", momentum: "structural", flow: "structural", cot: "structural", vp: "structural",
     intraday: "daily", book: "daily", sentiment: "daily", position: "daily", options: "daily", prevlevels: "daily",
-    cvddiv: "daily", walls: "daily", daydelta: "daily", dayvwap: "daily", vp: "daily", squeeze: "daily",
+    cvddiv: "daily", walls: "daily", daydelta: "daily", dayvwap: "daily", squeeze: "daily", supertrend: "daily",
   };
   for (const f of [...structuralForces, ...dailyForces]) {
     const ax = axes.find((a) => a.key === f.key);
