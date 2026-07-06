@@ -143,7 +143,7 @@ function ZoneScale({ bias }: { bias: number }) {
 /** Cabo de guerra das forças: cada segmento = peso × força (contribuição real ao
  *  viés). Baixistas puxam pra esquerda (vermelho), altistas pra direita (verde);
  *  o lado que estica mais "vence" — é o viés visualizado pela contribuição. */
-function TugOfWar({ axes }: { axes: AxisSignal[] }) {
+function TugOfWar({ axes, compact }: { axes: AxisSignal[]; compact?: boolean }) {
   const { isEn } = useT();
   const tt = (pt: string, en: string) => (isEn ? en : pt);
   const wsum = axes.filter((a) => a.weight != null && a.available).reduce((s, a) => s + (a.weight ?? 0), 0);
@@ -162,13 +162,15 @@ function TugOfWar({ axes }: { axes: AxisSignal[] }) {
     />
   );
   return (
-    <div className="mb-3">
-      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide">
-        <span className="font-semibold text-rose-500">◀ {tt("baixa", "down")}</span>
-        <span className="text-muted-foreground">{tt("cabo de guerra (peso × força)", "tug-of-war (weight × strength)")}</span>
-        <span className="font-semibold text-emerald-500">{tt("alta", "up")} ▶</span>
-      </div>
-      <div className="flex h-7 overflow-hidden rounded-lg border border-border bg-muted/40">
+    <div className={compact ? "mb-2" : "mb-3"}>
+      {!compact && (
+        <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide">
+          <span className="font-semibold text-rose-500">◀ {tt("baixa", "down")}</span>
+          <span className="text-muted-foreground">{tt("cabo de guerra (peso × força)", "tug-of-war (weight × strength)")}</span>
+          <span className="font-semibold text-emerald-500">{tt("alta", "up")} ▶</span>
+        </div>
+      )}
+      <div className={`flex overflow-hidden rounded-lg border border-border bg-muted/40 ${compact ? "h-4" : "h-7"}`}>
         <div className="flex w-1/2 flex-row-reverse">{bear.map((x) => seg(x, "bear"))}</div>
         <div className="w-px shrink-0 bg-foreground/50" />
         <div className="flex w-1/2">{bull.map((x) => seg(x, "bull"))}</div>
@@ -391,11 +393,17 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
               <span className={`num text-[11px] font-semibold ${dirText(read.structural.bias)}`}>{read.structural.bias > 0 ? "+" : ""}{read.structural.bias}</span>
               <span className="text-[11px] text-muted-foreground">· {read.structural.agree} {tt("de", "of")} {read.structural.voting} {tt("alinhadas", "aligned")}</span>
             </div>
+            <div className="mt-1.5">
+              <TugOfWar axes={read.axes.filter((a) => a.horizon === "structural")} compact />
+            </div>
             <div>{read.axes.filter((a) => a.weight != null && a.horizon === "structural").map((a) => <AxisRow key={a.key} a={a} />)}</div>
             <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">⚡ {tt("Hoje (tático)", "Today (tactical)")}</span>
               <span className={`num text-[11px] font-semibold ${dirText(read.daily.bias)}`}>{read.daily.bias > 0 ? "+" : ""}{read.daily.bias}</span>
               <span className="text-[11px] text-muted-foreground">· {read.daily.agree} {tt("de", "of")} {read.daily.voting} {tt("alinhadas", "aligned")}</span>
+            </div>
+            <div className="mt-1.5">
+              <TugOfWar axes={read.axes.filter((a) => a.horizon === "daily")} compact />
             </div>
             <div>{read.axes.filter((a) => a.weight != null && a.horizon === "daily").map((a) => <AxisRow key={a.key} a={a} />)}</div>
             {read.axes.some((a) => a.weight == null) && (
