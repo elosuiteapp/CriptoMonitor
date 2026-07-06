@@ -318,9 +318,17 @@ export default function IndicatorsTab({ asset, read, leans, biasHist, loading }:
               </div>
             </div>
 
-            {/* Escala de zonas nomeadas (gauge legível) */}
-            <div className="mt-4 border-t border-border/60 pt-3">
-              <ZoneScale bias={read.bias} />
+            {/* Escala de zonas nomeadas — UMA POR MEDIDOR (antes era só a do viés combinado,
+                que ficava órfã sob o Fundo e deixava o Hoje sem régua). */}
+            <div className="mt-4 flex flex-wrap gap-x-10 gap-y-3 border-t border-border/60 pt-3">
+              <div>
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">🧭 {tt("Fundo (estrutural)", "Backdrop (structural)")} <span className="num">({read.structural.bias > 0 ? "+" : ""}{read.structural.bias})</span></div>
+                <ZoneScale bias={read.structural.bias} />
+              </div>
+              <div>
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">⚡ {tt("Hoje (tático)", "Today (tactical)")} <span className="num">({read.daily.bias > 0 ? "+" : ""}{read.daily.bias})</span></div>
+                <ZoneScale bias={read.daily.bias} />
+              </div>
             </div>
 
             {/* Multi-timeframe */}
