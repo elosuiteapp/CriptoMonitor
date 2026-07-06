@@ -956,16 +956,20 @@ Deno.serve(async (req) => {
         gate = `sessão bloqueada (${hourNow}h UTC — janela historicamente negativa) — segura o setup`;
         want = null;
       }
-      const confMin = Math.min(4, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
+      // CONF_SCOPE (sql/107, decisão do dono 06/jul): 'smc_flow' = só ESTRUTURA + FLUXO decidem
+      // ("SMC com pressão"); Técnico/Sentimento seguem medidos (estudo), fora do gate.
+      const confScope = String(cfg.conf_scope ?? "smc_flow");
+      const confGroups = confScope === "smc_flow" ? confluence.filter((g) => g.key === "estrutura" || g.key === "fluxo") : confluence;
+      const confMin = Math.min(confGroups.length, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
       let confVotes: { for: number; against: number } | null = null;
       if (want) {
         const dir = want === "long" ? 1 : -1;
-        const votesFor = confluence.filter((g) => g.vote === dir).length;
-        const votesAgainst = confluence.filter((g) => g.vote === -dir).length;
+        const votesFor = confGroups.filter((g) => g.vote === dir).length;
+        const votesAgainst = confGroups.filter((g) => g.vote === -dir).length;
         confVotes = { for: votesFor, against: votesAgainst };
         if (votesFor < confMin || votesAgainst >= votesFor) {
-          const contra = confluence.filter((g) => g.vote === -dir).map((g) => g.label).join(", ");
-          gate = `confluência ${votesFor}/${confluence.length} a favor (precisa ${confMin}${votesAgainst ? `; contra: ${contra}` : ""}) — segura o setup`;
+          const contra = confGroups.filter((g) => g.vote === -dir).map((g) => g.label).join(", ");
+          gate = `confluência ${votesFor}/${confGroups.length} a favor (precisa ${confMin}${votesAgainst ? `; contra: ${contra}` : ""}) — segura o setup`;
           want = null;
         }
       }
