@@ -317,11 +317,17 @@ function dailyVwap(cs: Candle[]): number | null {
 //  • ALVO = próxima poça de LIQUIDEZ (EQH/EQL) / zona oposta — R:R vindo do gráfico.
 // Usa só: Order Blocks, Imbalance(FVG), Liquidez/EQH-EQL, Zonas, BOS/CHoCH. (VP/liq-heatmap/HTF fora.)
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number; imbRetest?: boolean; imbAlign?: boolean; structFirst?: boolean }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number; imbRetest?: boolean; imbAlign?: boolean; structFirst?: boolean; dirMode?: string }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
-  const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
-  const bear = smc.lastSwing?.bias === "bearish" || smc.internalBias === "bearish" || smc.swingBias === "bearish";
+  // DIREÇÃO (cfg.dir_mode, sql/106 — caso SOL 06/jul: short no topo com a interna JÁ bullish):
+  // "any" (antigo) = OU das 3 leituras (deixava estrutura VELHA vencer a recente); "majority"
+  // (default) = 2 de 3 concordando; "internal" = a estrutura INTERNA manda (fallback maioria).
+  const reads = [smc.lastSwing?.bias ?? null, smc.internalBias, smc.swingBias];
+  const nBull = reads.filter((r) => r === "bullish").length, nBear = reads.filter((r) => r === "bearish").length;
+  const dm = o.dirMode ?? "majority";
+  const bull = dm === "majority" ? nBull >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bullish" : nBull >= 2) : nBull > 0;
+  const bear = dm === "majority" ? nBear >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bearish" : nBear >= 2) : nBear > 0;
   // Zona pela BANDA DE EQUILÍBRIO (motor novo 7925e48): discount = abaixo da banda, premium = acima
   // (igual ao módulo Smart Money pós-auditoria; as bordas 95/5 sufocavam o setup B).
   const inDisc = price < smc.equilibrium.bottom, inPrem = price > smc.equilibrium.top;
@@ -906,8 +912,9 @@ Deno.serve(async (req) => {
       const imbRetest = String(cfg.imb_mode ?? "retest") === "retest";
       const imbAlign = cfg.imb_align !== false;
       const structFirst = String(cfg.setup_priority ?? "structure") === "structure";
+      const dirMode = String(cfg.dir_mode ?? "majority");
       const plan: SmcPlan = primary?.smc
-        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0), imbRetest, imbAlign, structFirst })
+        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0), imbRetest, imbAlign, structFirst, dirMode })
         : { want: null, setup: "", stop: null, target: null, note: "sem SMC" };
       let want: "long" | "short" | null = plan.want;
       let gate = plan.note;
@@ -917,6 +924,20 @@ Deno.serve(async (req) => {
       if (want && zoneOnce && plan.zoneKey && usedZones.includes(plan.zoneKey)) {
         gate = "zona já usada (1 tiro por zona) — segura o setup";
         want = null;
+      }
+      // ── BÚSSOLA HTF (cfg.htf_gate, sql/106, default 4H): a entrada precisa alinhar com a
+      //    estrutura do TF maior (top-down do dono). Neutra também segura (sem contexto = fora).
+      //    Fase F: maioria + bússola 4H = única variante acima do baseline, com metade do drawdown. ──
+      const htfGate = String(cfg.htf_gate ?? "4H");
+      if (want && htfGate !== "off" && BNB_INTERVAL[htfGate]) {
+        const hk = await bnb("GET", "/fapi/v1/klines", { symbol: instId, interval: BNB_INTERVAL[htfGate], limit: 300 }, bnbCreds, false);
+        const hcs: Candle[] = ((hk.body as any[]) ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0 }));
+        const hsmc = hcs.length >= 30 ? computeSmc(hcs, SWING) : null;
+        const hb = hsmc?.swingBias ?? hsmc?.internalBias ?? null;
+        if (hb !== (want === "long" ? "bullish" : "bearish")) {
+          gate = `bússola ${htfGate} ${hb === "bullish" ? "de ALTA" : hb === "bearish" ? "de BAIXA" : "neutra"} contra o setup ${plan.setup} — segura`;
+          want = null;
+        }
       }
       // ── GATE DE CONFLUÊNCIA (motor v17, pedido do dono): os 4 grupos (Estrutura/Fluxo/Técnico/
       //    Sentimento) votam na direção do setup; só executa com MAIORIA (cfg.conf_min, default
