@@ -22,7 +22,7 @@ function json(status: number, body: unknown) {
 
 // ════════ Motor SMC — CÓPIA FIEL de bot-run (portado de web/src/lib/smc.ts) ════════
 type Bias = "bullish" | "bearish";
-interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number; delta?: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
 interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
@@ -424,7 +424,7 @@ async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: n
     if (!r.ok) break;
     const rows = await r.json().catch(() => []) as (string | number)[][];
     if (!Array.isArray(rows) || rows.length === 0) break;
-    for (const x of rows) out.push({ time: Math.floor(Number(x[0]) / 1000), open: +x[1], high: +x[2], low: +x[3], close: +x[4], volume: +x[5] || 0 });
+    for (const x of rows) out.push({ time: Math.floor(Number(x[0]) / 1000), open: +x[1], high: +x[2], low: +x[3], close: +x[4], volume: +x[5] || 0, delta: 2 * (+x[10] || 0) - (+x[7] || 0) }); // delta por vela = taker buy − taker sell (USD)
     const last = Number(rows[rows.length - 1][0]);
     if (rows.length < 1000) break;
     cursor = last + TF_MS[tf];
@@ -510,6 +510,9 @@ Deno.serve(async (req) => {
   // defendido + FVG contrário fresco = reação; counter-trend consciente). "off" = atual.
   const fadeMode = String(body?.fade_mode ?? "off");
   const obMode = ["default", "solo", "only"].includes(String(body?.ob_mode)) ? String(body?.ob_mode) : "default";
+  // EXPERIMENTO delta_confirm (ideia do dono 06/jul): a VELA da entrada precisa ter DELTA
+  // (volume comprador − vendedor, da própria formação do candle) a favor da direção.
+  const deltaConfirm = String(body?.delta_confirm ?? "off") === "on";
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -675,6 +678,11 @@ Deno.serve(async (req) => {
       if (want && ta.vwap && taCache.vwap != null && (want === "long" ? px <= taCache.vwap : px >= taCache.vwap)) want = null;
       if (want && ta.adx && taCache.adx != null && taCache.adx < 20) want = null; // lateral/chop → segura continuação
     }
+    // FILTRO DELTA (experimento): a vela atual precisa ter volume comprador (long) / vendedor (short).
+    if (want && deltaConfirm) {
+      const d = base[t].delta ?? 0;
+      if ((want === "long" && d <= 0) || (want === "short" && d >= 0)) want = null;
+    }
     // FILTRO HTF (experimento): entrada precisa alinhar com a estrutura do htf_tf (swing; fallback interna).
     // Setup C (fade) é counter-trend POR DESENHO → isento da bússola.
     if (want && htfOn && !plan.setup.startsWith("fade")) {
@@ -762,7 +770,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

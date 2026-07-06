@@ -62,7 +62,7 @@ async function bnbOrder(params: Record<string, string | number | boolean>, c: Bn
 
 // ════════ Motor Smart Money (SMC) — portado de web/src/lib/smc.ts ════════
 type Bias = "bullish" | "bearish";
-interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number; delta?: number }
 interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
 interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
@@ -748,10 +748,10 @@ Deno.serve(async (req) => {
       const tkb = await bnb("GET", "/fapi/v1/ticker/price", { symbol: instId }, bnbCreds, false);
       const lastPx = Number(tkb.body?.price) || Number((snap.payload as any)?.gamma?.spot_price) || 0;
       const sets = await Promise.all(TFS.map((tf) => bnb("GET", "/fapi/v1/klines", { symbol: instId, interval: BNB_INTERVAL[tf] ?? "1h", limit: 300 }, bnbCreds, false)));
-      const candleRows: string[][][] = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4]), String(r[5] ?? "0")])); // [ts,o,h,l,c,volume]
+      const candleRows: string[][][] = sets.map((s) => ((s.body as any[]) ?? []).map((r) => [String(r[0]), String(r[1]), String(r[2]), String(r[3]), String(r[4]), String(r[5] ?? "0"), String(r[7] ?? "0"), String(r[10] ?? "0")])); // [ts,o,h,l,c,vol,quoteVol,takerBuyQuote]
       // Estrutura por TF: cada timeframe lê a sua + momentum dele.
       const tfReads: TfRead[] = TFS.map((tf, i) => {
-        const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0 }));
+        const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0, delta: 2 * (Number(r[7]) || 0) - (Number(r[6]) || 0) })); // delta = taker buy − taker sell (USD) da vela
         const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
         const cl = cs.map((c) => c.close);
         const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
@@ -930,6 +930,15 @@ Deno.serve(async (req) => {
       const usedZones: string[] = Array.isArray(st.used_zones) ? (st.used_zones as unknown[]).map(String) : [];
       if (want && zoneOnce && plan.zoneKey && usedZones.includes(plan.zoneKey)) {
         gate = "zona já usada (1 tiro por zona) — segura o setup";
+        want = null;
+      }
+      // ── CONFIRMAÇÃO DE DELTA (cfg.delta_confirm, sql/112 — ideia do dono 06/jul; fase K:
+      //    melhorou as 4 moedas, agregado +39,9→+56,1R, R médio 2×): a vela ATUAL precisa ter
+      //    volume COMPRADOR (long) / VENDEDOR (short) — o "combustível" da formação do candle. ──
+      const deltaConfirm = cfg.delta_confirm !== false;
+      const lastDelta = primary?.candles?.length ? (primary.candles[primary.candles.length - 1].delta ?? 0) : 0;
+      if (want && deltaConfirm && ((want === "long" && lastDelta <= 0) || (want === "short" && lastDelta >= 0))) {
+        gate = `delta da vela contra ($${(lastDelta / 1e6).toFixed(2)}M) — aguarda volume ${want === "long" ? "comprador" : "vendedor"}`;
         want = null;
       }
       // ── BÚSSOLA HTF (cfg.htf_gate, sql/106, default 4H): a entrada precisa alinhar com a
