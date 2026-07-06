@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { IconPlans } from "../../components/admin/icons";
-import { Card, Empty, ErrorBox, PageHeader, SectionTitle } from "../../components/admin/ui";
+import { Badge, Card, Empty, ErrorBox, PageHeader } from "../../components/admin/ui";
 import { supabase } from "../../lib/supabase";
 import { fmtBRL, fmtUSD } from "../../lib/adminFormat";
 import type { PlanRow } from "../../lib/adminTypes";
@@ -9,10 +9,13 @@ import type { PlanRow } from "../../lib/adminTypes";
 const ALL_ASSETS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI", "TON", "POL", "DOT", "LTC", "AAVE", "UNI", "LDO", "ARB", "ATOM", "PEPE"];
 const ALL_CHANNELS = ["inapp", "email"];
 const ALL_MODULES = [{ key: "crypto", label: "Cripto" }, { key: "b3", label: "B3" }, { key: "forex", label: "Forex" }];
+// Planos mantidos SÓ para assinantes antigos (sql/078) — não são vendidos no checkout.
+const LEGACY_SLUGS = ["pro", "expert"];
 
 export default function Plans() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
   async function load() {
     const { data, error } = await supabase.from("plans").select("*").order("sort_order");
@@ -25,7 +28,7 @@ export default function Plans() {
   }, []);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         icon={<IconPlans />}
         title="Planos"
@@ -33,18 +36,18 @@ export default function Plans() {
       />
       <div className="rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
         Cobrança por idioma: <b className="text-foreground">PT → Asaas (reais)</b> usa o preço em R$;{" "}
-        <b className="text-foreground">EN → Paddle (dólar)</b> usa o preço em US$ e o <i>Paddle price id</i> do plano.
+        <b className="text-foreground">EN → Paddle (dólar)</b> usa o preço em US$ e o <i>Paddle price id</i>. Clique num plano para editar.
       </div>
       {error && <ErrorBox message={error} />}
       {!plans && !error && <Empty>Carregando…</Empty>}
       {plans?.map((p) => (
-        <PlanEditor key={p.id} plan={p} onSaved={load} />
+        <PlanEditor key={p.id} plan={p} open={open === p.slug} onToggle={() => setOpen(open === p.slug ? null : p.slug)} onSaved={load} />
       ))}
     </div>
   );
 }
 
-function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
+function PlanEditor({ plan, open, onToggle, onSaved }: { plan: PlanRow; open: boolean; onToggle: () => void; onSaved: () => void }) {
   const [name, setName] = useState(plan.name);
   const [priceReais, setPriceReais] = useState((plan.price_cents / 100).toString());
   const [priceUsd, setPriceUsd] = useState((plan.price_usd_cents / 100).toString());
@@ -66,7 +69,12 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const isPaid = plan.slug !== "free";
+  const isLegacy = LEGACY_SLUGS.includes(plan.slug);
+  const mensal = Math.round(parseFloat(priceReais || "0") * 100);
+  const mensalUsd = Math.round(parseFloat(priceUsd || "0") * 100);
+  const anual = Math.round(parseFloat(annualReais || "0") * 100);
+  // Desconto implícito do anual vs 12× o mensal — ajuda a conferir se o preço anual faz sentido.
+  const descAnual = mensal > 0 && anual > 0 ? Math.round((1 - anual / (mensal * 12)) * 100) : null;
 
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -79,9 +87,9 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
     const { error } = await supabase.rpc("admin_update_plan", {
       p_slug: plan.slug,
       p_name: name,
-      p_price_cents: Math.round(parseFloat(priceReais || "0") * 100),
-      p_price_usd_cents: Math.round(parseFloat(priceUsd || "0") * 100),
-      p_price_annual_cents: Math.round(parseFloat(annualReais || "0") * 100),
+      p_price_cents: mensal,
+      p_price_usd_cents: mensalUsd,
+      p_price_annual_cents: anual,
       p_price_usd_annual_cents: Math.round(parseFloat(annualUsd || "0") * 100),
       p_paddle_price_id: paddleId.trim() || null,
       p_modules: modules,
@@ -107,109 +115,144 @@ function PlanEditor({ plan, onSaved }: { plan: PlanRow; onSaved: () => void }) {
 
   const inputCls = "mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary";
   const labelCls = "text-xs text-muted-foreground";
+  const sectionCls = "rounded-lg border border-border/70 bg-background/40 p-4";
+  const sectionTitleCls = "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground";
 
   return (
-    <Card className="p-5" hover>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <SectionTitle hint={`slug: ${plan.slug}`}>{plan.name}</SectionTitle>
-        <span className="text-sm text-muted-foreground">
-          <span className="num font-semibold text-foreground">{fmtBRL(Math.round(parseFloat(priceReais || "0") * 100))}</span>
-          {isPaid && (
-            <>
-              {" · "}
-              <span className="num font-semibold text-foreground">{fmtUSD(Math.round(parseFloat(priceUsd || "0") * 100))}</span>
-            </>
-          )}
-          <span className="text-muted-foreground">/mês</span>
-        </span>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className={labelCls}>
-          Nome
-          <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-        </label>
-        <label className={labelCls}>
-          Preço mensal — reais (R$)
-          <input type="number" step="0.01" min="0" value={priceReais} onChange={(e) => setPriceReais(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Preço mensal — dólar (US$)
-          <input type="number" step="0.01" min="0" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Preço anual — reais (R$)
-          <input type="number" step="0.01" min="0" value={annualReais} onChange={(e) => setAnnualReais(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Preço anual — dólar (US$)
-          <input type="number" step="0.01" min="0" value={annualUsd} onChange={(e) => setAnnualUsd(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Modelo de IA
-          <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className={inputCls} />
-        </label>
-        <label className={labelCls}>
-          Snapshot (min)
-          <input type="number" min="1" value={snapMin} onChange={(e) => setSnapMin(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Limite diário de IA <span className="text-muted-foreground">(vazio = ilimitado)</span>
-          <input type="number" min="0" value={aiLimit} onChange={(e) => setAiLimit(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={labelCls}>
-          Histórico (dias) <span className="text-muted-foreground">(vazio = completo)</span>
-          <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={`num ${inputCls}`} />
-        </label>
-        <label className={`${labelCls} sm:col-span-2`}>
-          Paddle price id <span className="text-muted-foreground">(checkout em dólar / EN)</span>
-          <input value={paddleId} onChange={(e) => setPaddleId(e.target.value)} placeholder="pri_01h…" className={`num ${inputCls}`} />
-        </label>
-      </div>
-
-      <div className="mt-4">
-        <div className={labelCls}>Módulos que o plano libera <span className="text-muted-foreground">(gating por módulo — a base do entitlement)</span></div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {ALL_MODULES.map((m) => (
-            <Chip key={m.key} active={modules.includes(m.key)} onClick={() => toggle(modules, setModules, m.key)}>{m.label}</Chip>
+    <Card className="overflow-hidden" hover>
+      {/* ── Resumo (sempre visível): clique abre o editor ── */}
+      <button type="button" onClick={onToggle} className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/40">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+          <span className="text-sm font-semibold text-foreground">{plan.name}</span>
+          <span className="num text-[10px] text-muted-foreground">{plan.slug}</span>
+          {isLegacy && <Badge tone="yellow">legado · não vendável</Badge>}
+          {(plan.modules ?? []).map((m) => (
+            <Badge key={m} tone="accent">{ALL_MODULES.find((x) => x.key === m)?.label ?? m}</Badge>
           ))}
+          {(plan.modules ?? []).length === 0 && <Badge>sem módulos (vitrine)</Badge>}
         </div>
-      </div>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span><span className="num font-semibold text-foreground">{fmtBRL(plan.price_cents)}</span>/mês{plan.price_annual_cents > 0 && <> · <span className="num">{fmtBRL(plan.price_annual_cents)}</span>/ano</>}</span>
+          {plan.price_usd_cents > 0 && <span className="num">{fmtUSD(plan.price_usd_cents)}/mo</span>}
+          <span>{plan.assets.length} ativos</span>
+        </div>
+      </button>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <div className={labelCls}>Ativos liberados</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {ALL_ASSETS.map((a) => (
-              <Chip key={a} active={assets.includes(a)} onClick={() => toggle(assets, setAssets, a)}>{a}</Chip>
-            ))}
+      {open && (
+        <div className="space-y-4 border-t border-border px-5 py-4">
+          {/* 1 · Preços & cobrança */}
+          <div className={sectionCls}>
+            <div className={sectionTitleCls}>1 · Preços & cobrança</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className={labelCls}>
+                Nome do plano
+                <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+              </label>
+              <label className={labelCls}>
+                Mensal — R$ <span className="text-muted-foreground">(Asaas · PT)</span>
+                <input type="number" step="0.01" min="0" value={priceReais} onChange={(e) => setPriceReais(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                Mensal — US$ <span className="text-muted-foreground">(Paddle · EN)</span>
+                <input type="number" step="0.01" min="0" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                Paddle price id
+                <input value={paddleId} onChange={(e) => setPaddleId(e.target.value)} placeholder="pri_01h…" className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                Anual — R$ <span className="text-muted-foreground">(0 = sem plano anual)</span>
+                <input type="number" step="0.01" min="0" value={annualReais} onChange={(e) => setAnnualReais(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                Anual — US$
+                <input type="number" step="0.01" min="0" value={annualUsd} onChange={(e) => setAnnualUsd(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              {descAnual !== null && (
+                <div className="flex items-end pb-2 text-xs text-muted-foreground sm:col-span-2">
+                  <span>Anual sai por <b className={`num ${descAnual > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>{descAnual}% {descAnual > 0 ? "de desconto" : "MAIS CARO"}</b> vs 12× o mensal.</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div>
-          <div className={labelCls}>Canais de alerta</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {ALL_CHANNELS.map((c) => (
-              <Chip key={c} active={channels.includes(c)} onClick={() => toggle(channels, setChannels, c)}>
-                {c === "inapp" ? "In-app + push" : c === "email" ? "E-mail" : c}
-              </Chip>
-            ))}
+
+          {/* 2 · Acesso (o que o plano libera) */}
+          <div className={sectionCls}>
+            <div className={sectionTitleCls}>2 · Acesso — o que o assinante enxerga</div>
+            <div className="mt-3 space-y-4">
+              <div>
+                <div className={labelCls}>Módulos <span className="text-muted-foreground">(a base do entitlement — libera Cripto, B3 e/ou Forex)</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ALL_MODULES.map((m) => (
+                    <Chip key={m.key} active={modules.includes(m.key)} onClick={() => toggle(modules, setModules, m.key)}>{m.label}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className={labelCls}>Ativos cripto liberados <span className="num text-muted-foreground">({assets.length}/{ALL_ASSETS.length})</span></div>
+                  <button type="button" onClick={() => setAssets([...ALL_ASSETS])} className="text-[11px] text-primary hover:underline">todos</button>
+                  <button type="button" onClick={() => setAssets([])} className="text-[11px] text-muted-foreground hover:underline">limpar</button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ALL_ASSETS.map((a) => (
+                    <Chip key={a} active={assets.includes(a)} onClick={() => toggle(assets, setAssets, a)}>{a}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-6">
+                <div>
+                  <div className={labelCls}>Canais de alerta</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {ALL_CHANNELS.map((c) => (
+                      <Chip key={c} active={channels.includes(c)} onClick={() => toggle(channels, setChannels, c)}>
+                        {c === "inapp" ? "In-app + push" : c === "email" ? "E-mail" : c}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 pb-1">
+                  <Check label="Métricas avançadas" checked={advanced} onChange={setAdvanced} />
+                  <Check label="Camadas no gráfico" checked={chartLayers} onChange={setChartLayers} />
+                  <Check label="Smart Money (SMC)" checked={smartMoney} onChange={setSmartMoney} />
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* 3 · Limites & recursos */}
+          <div className={sectionCls}>
+            <div className={sectionTitleCls}>3 · Limites & recursos</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className={labelCls}>
+                Atualização dos dados (min)
+                <input type="number" min="1" value={snapMin} onChange={(e) => setSnapMin(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                IA por dia <span className="text-muted-foreground">(vazio = ilimitado)</span>
+                <input type="number" min="0" value={aiLimit} onChange={(e) => setAiLimit(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+              <label className={labelCls}>
+                Modelo de IA
+                <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className={inputCls} />
+              </label>
+              <label className={labelCls}>
+                Histórico (dias) <span className="text-muted-foreground">(vazio = completo)</span>
+                <input type="number" min="0" value={historyDays} onChange={(e) => setHistoryDays(e.target.value)} className={`num ${inputCls}`} />
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={save} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-50">
+              {busy ? "Salvando…" : "Salvar plano"}
+            </button>
+            {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}
+          </div>
+          {err && <ErrorBox message={err} />}
         </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <Check label="Métricas avançadas" checked={advanced} onChange={setAdvanced} />
-        <Check label="Camadas no gráfico" checked={chartLayers} onChange={setChartLayers} />
-        <Check label="Smart Money (SMC)" checked={smartMoney} onChange={setSmartMoney} />
-      </div>
-
-      <div className="mt-5 flex items-center gap-3">
-        <button onClick={save} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-50">
-          {busy ? "Salvando…" : "Salvar plano"}
-        </button>
-        {msg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{msg}</span>}
-      </div>
-      {err && <div className="mt-3"><ErrorBox message={err} /></div>}
+      )}
     </Card>
   );
 }
