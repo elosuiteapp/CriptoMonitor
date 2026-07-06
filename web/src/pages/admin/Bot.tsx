@@ -152,20 +152,25 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "feargreed", label: "Fear & Greed" },
 ];
 const SIG_GROUPS = ["Estrutura por TF", "Estrutura", "Microestrutura", "Fluxo", "Sentimento", "Opções", "Técnico"];
-// Papel REAL de cada sinal no MOTOR v17 (confluência — espelha o bot-run):
-// decide = estrutura SMC 15m (arma o setup + vota no grupo Estrutura) · vota = compõe um dos 4
-// grupos do placar (Fluxo limpo / Técnico / Sentimento) — a MAIORIA dos grupos libera a entrada ·
-// medido = só alimenta o aprendizado (absorção/paredes/pressão/CVD/funding saíram do placar por hit-rate <50%).
+// Papel REAL de cada sinal no MOTOR v21 "SMC + PRESSÃO" (espelha o bot-run, sql/107):
+// decide = estrutura SMC 15m (arma o setup + é 1 dos 2 votos) · vota = grupo Fluxo (book inst+varejo
+// = a pressão, + liqs/gamma/CVD div) — Estrutura E Fluxo precisam votar na direção (2 de 2) ·
+// estudo = Técnico/Sentimento saíram da decisão (decisão do dono 06/jul) — seguem medidos ·
+// medido = só alimenta o aprendizado (absorção/paredes/pressão/CVD/funding, hit-rate <50%).
 const VOTE_GROUP: Record<string, string> = {
   book_inst: "Fluxo", book_retail: "Fluxo", cvd_div: "Fluxo", liqs: "Fluxo", gamma: "Fluxo", gflow: "Fluxo",
+};
+const STUDY_GROUP: Record<string, string> = {
   ema2050: "Técnico", vwap: "Técnico",
   feargreed: "Sentimento", ls_ratio: "Sentimento",
 };
 const sigRole = (key: string): { tag: string; cls: string; title: string } =>
   key.startsWith("tf_")
-    ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — arma o setup (entrada/stop/alvo estruturais) e vota como grupo Estrutura no placar de confluência" }
+    ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — arma o setup (entrada/stop/alvo estruturais) e é 1 dos 2 votos da confluência (Estrutura + Fluxo)" }
     : VOTE_GROUP[key]
-    ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: `Compõe o grupo ${VOTE_GROUP[key]} do placar de confluência: a maioria dos grupos (padrão 3 de 4) precisa votar na direção do setup pra entrada executar` }
+    ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: "Compõe o grupo Fluxo (a pressão): junto com a Estrutura, precisa votar na direção do setup (2 de 2) pra entrada executar" }
+    : STUDY_GROUP[key]
+    ? { tag: "estudo", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400", title: `Grupo ${STUDY_GROUP[key]} — fora da decisão desde o v21 (robô opera SMC + pressão); segue medido como confluência de estudo/aprendizado` }
     : { tag: "medido", cls: "bg-muted text-muted-foreground", title: "Só medido — não influencia a decisão; alimenta o aprendizado por moeda (pode voltar ao placar se provar edge)" };
 const decisionLabel = (d?: string | null) => (d === "long" || d === "buy" ? "Long" : d === "short" || d === "sell" ? "Short" : d === "flat" ? "Sair" : d === "preview" ? "Prévia" : d === "error" ? "Erro" : "Segurar");
 const LOG_TONE: Record<string, string> = {
@@ -938,7 +943,7 @@ export default function AdminBot() {
                     )}
                   </label>
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <label className="text-xs text-muted-foreground">Confluência mínima (grupos a favor) <span title="Os 4 grupos — Estrutura SMC · Fluxo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50+VWAP) · Sentimento (F&G, L/S) — votam na direção do setup. Só executa com essa maioria a favor e sem empate contra. Vale pra TODA entrada, imbalance incluído.">ⓘ</span>
+                    <label className="text-xs text-muted-foreground">Confluência mínima (grupos a favor) <span title="Desde o v21 (SMC + pressão) decidem só 2 grupos: Estrutura SMC · Fluxo (book inst+varejo = pressão, + liquidações, gamma, divergência CVD) — os dois precisam votar na direção (valor clampado a 2). Técnico e Sentimento viraram estudo. Reverter: bot_config.conf_scope='all'.">ⓘ</span>
                       <select className={`${input} mt-1`} value={cfg.conf_min ?? 3} onChange={(e) => setCfg({ ...cfg, conf_min: Number(e.target.value) })}>
                         <option value={2}>2 de 4 — maioria simples (mais trades)</option>
                         <option value={3}>3 de 4 — confluência forte (recomendado)</option>
@@ -1143,19 +1148,24 @@ export default function AdminBot() {
                 <div className="text-[10px] text-muted-foreground">{setup ? `stop ${num(planStop)} · alvo ${num(planTarget)}` : "aguarda OB/FVG ou imbalance"}</div>
               </div>
               <div className={`rounded-lg border p-3 text-center ${held && gate!.includes("confluência") ? "border-amber-500/40 bg-amber-500/5" : "border-border/70 bg-background/40"}`}>
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Placar de confluência: 4 grupos (Estrutura SMC · Fluxo limpo · Técnico EMA/VWAP · Sentimento) votam na direção do setup. Só executa com a maioria configurada a favor — vale pra TODA entrada, imbalance incluído.">3 · Confluência (maioria)</div>
-                {r.confluence?.length ? (<>
-                  <div className="num text-2xl font-bold text-foreground" title={r.confVotes ? `${r.confVotes.for} a favor × ${r.confVotes.against} contra` : undefined}>{r.confVotes ? `${r.confVotes.for}/${r.confluence.length}` : "—"}</div>
-                  <div className="mt-1 flex items-center justify-center gap-1">
-                    {r.confluence.map((g) => (
-                      <span key={g.key} title={`${g.label}: ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
-                    ))}
-                  </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">precisa {r.confMin ?? cfg?.conf_min ?? 3} de {r.confluence.length} · fluxo {flow >= 0 ? "+" : ""}{flow}</div>
-                </>) : (<>
-                  <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">aguardando 1º ciclo do motor v17…</div>
-                </>)}
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Confluência v21 'SMC + pressão': só ESTRUTURA (SMC 15m) e FLUXO (book inst+varejo, liqs, gamma, CVD div) decidem — os dois precisam votar na direção do setup (2 de 2). Técnico e Sentimento viraram estudo (fora da decisão).">3 · Confluência (SMC + pressão)</div>
+                {(() => {
+                  const scope = String((cfg as Record<string, unknown> | null)?.conf_scope ?? "smc_flow");
+                  const groups = (r.confluence ?? []).filter((g) => scope !== "smc_flow" || g.key === "estrutura" || g.key === "fluxo");
+                  const need = Math.min(groups.length || 2, Number(r.confMin ?? cfg?.conf_min ?? 2));
+                  return groups.length ? (<>
+                    <div className="num text-2xl font-bold text-foreground" title={r.confVotes ? `${r.confVotes.for} a favor × ${r.confVotes.against} contra` : undefined}>{r.confVotes ? `${r.confVotes.for}/${groups.length}` : "—"}</div>
+                    <div className="mt-1 flex items-center justify-center gap-1.5">
+                      {groups.map((g) => (
+                        <span key={g.key} title={`${g.label}: ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
+                      ))}
+                    </div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">precisa {need} de {groups.length} · fluxo {flow >= 0 ? "+" : ""}{flow}</div>
+                  </>) : (<>
+                    <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">aguardando 1º ciclo…</div>
+                  </>);
+                })()}
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">4 · Decisão</div>
@@ -1195,7 +1205,7 @@ export default function AdminBot() {
                 );
               })}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v17): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — OB/FVG/imbalance a favor de BOS/CHoCH, stop na invalidação estrutural, alvo na próxima liquidez. Os sinais <em>vota</em> formam os 4 grupos do placar de confluência (Estrutura · Fluxo · Técnico · Sentimento); a entrada — <strong>imbalance incluído</strong> — só executa com a maioria dos grupos a favor ({r.confMin ?? cfg?.conf_min ?? 3} de 4). Os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v21 · SMC + pressão): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — reteste de OB/FVG pós-BOS/CHoCH (prioritário) ou imbalance em reteste, sempre com a direção validada por <strong>maioria 2-de-3 das leituras de estrutura</strong>, stop na invalidação estrutural e alvo na liquidez/PDH-PDL. Antes de executar passa pelos gates: <strong>1 tiro por zona</strong>, sessão, <strong>bússola 4H</strong> (a estrutura do TF maior precisa concordar) e a confluência <strong>Estrutura + Fluxo</strong> (2 de 2 — os sinais <em>vota</em> são a pressão do book/fluxo). Os <em>estudo</em> (Técnico · Sentimento) e os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
           </div>
         );
       })()}
