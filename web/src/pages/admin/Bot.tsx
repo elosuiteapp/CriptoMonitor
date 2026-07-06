@@ -35,7 +35,15 @@ interface Config {
   rev_mode?: string;     // reversão: off (nunca vira a mão) | imbalance (só FVG fresco) | any (antigo)
   ta_gate?: boolean;     // LEGADO (v16): filtro técnico — substituído pelo voto do grupo Técnico
   flow_veto?: number;    // LEGADO (v16): veto de fluxo — substituído pelo voto do grupo Fluxo
-  conf_min?: number;     // motor v17: nº mínimo de grupos (de 4) votando na direção p/ executar
+  conf_min?: number;     // motor v17: nº mínimo de grupos votando na direção (só no escopo 'all')
+  // v18-v22 (playbook/contexto/pressão — sql/104/106/107):
+  imb_mode?: string;       // 'retest' (zona respeitada, igual módulo) | 'chase' (antigo)
+  imb_align?: boolean;     // imbalance só a favor da estrutura
+  setup_priority?: string; // 'structure' (reteste de OB/FVG primeiro) | 'imbalance'
+  zone_once?: boolean;     // 1 entrada por zona
+  dir_mode?: string;       // 'any' | 'majority' (2-de-3) | 'internal'
+  htf_gate?: string;       // 'off' | '1H' | '4H' | '1D' — bússola do TF maior
+  conf_scope?: string;     // 'smc_flow' (estrutura + pressão não-contra) | 'all' (4 grupos)
   target_on?: boolean;   // take-profit estrutural (alvo na liquidez); false = sai só por stop/trailing
   tp_partial?: boolean;  // no alvo, embolsa METADE e o resto corre no trailing (stop ≥ breakeven)
   block_hours?: number[] | null; // gate de sessão GLOBAL: horas UTC sem ENTRADAS novas (saídas normais)
@@ -920,13 +928,38 @@ export default function AdminBot() {
                     )}
                   </label>
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <label className="text-xs text-muted-foreground">Confluência mínima (grupos a favor) <span title="Desde o v21 (SMC + pressão) decidem só 2 grupos: Estrutura SMC · Fluxo (book inst+varejo = pressão, + liquidações, gamma, divergência CVD) — os dois precisam votar na direção (valor clampado a 2). Técnico e Sentimento viraram estudo. Reverter: bot_config.conf_scope='all'.">ⓘ</span>
-                      <select className={`${input} mt-1`} value={cfg.conf_min ?? 3} onChange={(e) => setCfg({ ...cfg, conf_min: Number(e.target.value) })}>
-                        <option value={2}>2 de 4 — maioria simples (mais trades)</option>
-                        <option value={3}>3 de 4 — confluência forte (recomendado)</option>
-                        <option value={4}>4 de 4 — unanimidade (raro, pouquíssimos trades)</option>
+                    <label className="text-xs text-muted-foreground">Direção da estrutura <span title="Como as 3 leituras de estrutura (último BOS/CHoCH · interna · swing) viram a direção do setup. 'Maioria 2-de-3' (v20, validado) impede a leitura VELHA de vencer a recente — era a causa dos shorts em rali.">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.dir_mode ?? "majority"} onChange={(e) => setCfg({ ...cfg, dir_mode: e.target.value })}>
+                        <option value="majority">Maioria 2-de-3 (recomendado)</option>
+                        <option value="internal">Interna manda (mais rápido nas viradas)</option>
+                        <option value="any">Qualquer uma (antigo — OU das 3)</option>
                       </select>
-                      <span className="mt-0.5 block text-[10px]">Nos trades reais: fluxo a favor = 60% de acerto (+683) × contra = 20% (−152). Setup segurado fica no Diário com o placar.</span>
+                    </label>
+                    <label className="text-xs text-muted-foreground">Bússola do TF maior <span title="A estrutura do timeframe maior precisa concordar com a direção da entrada (neutra também segura). Fase F: maioria+4H = única variante acima do baseline, com metade do drawdown. Em probatório — se a medição da semana mostrar que segura trade bom, desligar é 1 clique.">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.htf_gate ?? "4H"} onChange={(e) => setCfg({ ...cfg, htf_gate: e.target.value })}>
+                        <option value="4H">4H (recomendado)</option>
+                        <option value="1H">1H</option>
+                        <option value="1D">1D</option>
+                        <option value="off">Desligada (SMC do 15m puro)</option>
+                      </select>
+                    </label>
+                    <label className="text-xs text-muted-foreground">Confluência <span title="'SMC + pressão' (v22): a Estrutura vota na direção E o Fluxo (book inst+varejo, liqs, gamma flow, CVD div) NÃO pode votar contra — neutro passa. 'Todos os grupos' = regra antiga (maioria conf_min de 4, incluindo Técnico/Sentimento).">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.conf_scope ?? "smc_flow"} onChange={(e) => setCfg({ ...cfg, conf_scope: e.target.value })}>
+                        <option value="smc_flow">SMC + pressão não-contra (recomendado)</option>
+                        <option value="all">Todos os 4 grupos (antigo)</option>
+                      </select>
+                      <span className="mt-0.5 block text-[10px]">Nos trades reais: fluxo a favor = 60% de acerto × contra = 20%. Setup segurado fica no Diário com o motivo.</span>
+                    </label>
+                    <label className="text-xs text-muted-foreground">Imbalance (FVG) <span title="'Reteste' (v18, igual ao módulo Smart Money): entra quando o preço VOLTA à zona do FVG. 'Chase' (antigo): entrava na formação do gap, perseguindo o esticado — 31% de acerto contra a estrutura.">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.imb_mode ?? "retest"} onChange={(e) => setCfg({ ...cfg, imb_mode: e.target.value })}>
+                        <option value="retest">Reteste da zona (recomendado)</option>
+                        <option value="chase">Na formação (antigo)</option>
+                      </select>
+                      <span className="mt-0.5 flex items-center gap-3 text-[10px]">
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={cfg.imb_align !== false} onChange={(e) => setCfg({ ...cfg, imb_align: e.target.checked })} className="h-3 w-3 rounded border-border" />só a favor da estrutura</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={cfg.zone_once !== false} onChange={(e) => setCfg({ ...cfg, zone_once: e.target.checked })} className="h-3 w-3 rounded border-border" />1 tiro por zona</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={(cfg.setup_priority ?? "structure") === "structure"} onChange={(e) => setCfg({ ...cfg, setup_priority: e.target.checked ? "structure" : "imbalance" })} className="h-3 w-3 rounded border-border" />OB/FVG+estrutura primeiro</label>
+                      </span>
                     </label>
                     <label className="text-xs text-muted-foreground">Entrada perto da zona (× ATR) <span title="Qualidade 1: entrada imbalance só com o preço a até X ATR da borda do FVG (0 = desligado). REPROVADA no backtest de 03/jul (mata ETH/SOL — o chase é o que paga lá); fica disponível p/ experimento.">ⓘ</span>
                       <input type="number" step="0.25" min="0" className={`${input} mt-1`} value={cfg.max_zone_atr ?? 0} onChange={(e) => setCfg({ ...cfg, max_zone_atr: Number(e.target.value) })} />
@@ -936,7 +969,7 @@ export default function AdminBot() {
                       <input type="number" step="0.25" min="0" className={`${input} mt-1`} value={cfg.opp_zone_atr ?? 0} onChange={(e) => setCfg({ ...cfg, opp_zone_atr: Number(e.target.value) })} />
                       <span className="mt-0.5 block text-[10px]">0 = desligado (validado). Idem: reprovada em ETH/SOL.</span>
                     </label>
-                    <label className="text-xs text-muted-foreground">Sessão bloqueada (horas UTC, vírgula) <span title="Gate de sessão: nessas horas UTC o robô NÃO abre posição nova nem piramida — saídas (stop/alvo/trailing) seguem normais. Estudo 03/jul (28 backtests): 9-12h e 18-24h UTC negativas em 7-8 de 8 janelas; bloquear melhorou o agregado nas 2 janelas (180d: −6,5%→+42,1%). Em Brasília: 6-9h e 15-21h. Vazio = sem filtro.">ⓘ</span>
+                    <label className="text-xs text-muted-foreground">Sessão bloqueada (horas UTC, vírgula) <span title="Gate de sessão: nessas horas UTC o robô NÃO abre posição nova nem piramida — saídas seguem normais. ATENÇÃO: o estudo antigo (03/jul) era do MOTOR VELHO; na v22 tudo foi liberado (vazio) e a re-medição semanal decide se alguma janela volta. Vazio = sem filtro.">ⓘ</span>
                       <input type="text" className={`${input} mt-1`} value={(cfg.block_hours ?? []).join(",")} onChange={(e) => setCfg({ ...cfg, block_hours: e.target.value.split(",").map((s) => Number(s.trim())).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) })} placeholder="ex.: 9,10,11,18,19,20,21,22,23" />
                       <span className="mt-0.5 block text-[10px]">GLOBAL (fallback) — a config POR MOEDA abaixo sobrepõe. Só entradas; posição aberta segue gerida.</span>
                     </label>
@@ -948,8 +981,8 @@ export default function AdminBot() {
             {/* ── 2b · CONFIG POR MOEDA — cada moeda é única (motor idêntico, dose diferente) ── */}
             {isFut && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground">🪙 2b · Configuração por moeda <span className="font-normal normal-case text-muted-foreground">— CADA MOEDA É ÚNICA: o motor é o mesmo, a dose é a que o backtest validou POR ATIVO</span></div>
-                <p className="mb-2 text-[11px] text-muted-foreground">O <strong>aprendizado é individual por moeda</strong> (aba Aprendizado mede acerto por sinal em cada ativo; o dataset <code>bot_trades_hist</code> arquiva cada trade por moeda) — as melhorias são testadas e aplicadas <strong>separadamente</strong> em cada uma. Regra anti-overfit: parâmetro só muda com melhora nas DUAS janelas (90d+180d) do backtester. Base validada 03/jul: <strong>BTC/BNB defensivos</strong> (sessão bloqueada; BNB meio risco — candidato a pausa), <strong>ETH/SOL livres</strong> (SMC puro é a edge).</p>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground">🪙 2b · Exceções por moeda <span className="font-normal normal-case text-muted-foreground">— decisão 06/jul: o robô roda IGUAL nas 4; use só como exceção consciente</span></div>
+                <p className="mb-2 text-[11px] text-muted-foreground">Config atual: <strong>tudo neutro</strong> (risco 100%, sem sessões bloqueadas, trailing padrão) — as doses defensivas antigas eram calibradas no motor velho e foram removidas na v22. Estes campos ficam como ferramenta: se a medição semanal do <code>bot_trades_hist</code> condenar uma moeda, a exceção volta AQUI, com dado.</p>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {["BTC", "ETH", "SOL", "BNB"].map((a) => {
                     const ov = cfg.asset_overrides?.[a] ?? {};
@@ -1061,7 +1094,7 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {} })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {}, imb_mode: cfg.imb_mode ?? "retest", imb_align: cfg.imb_align !== false, setup_priority: cfg.setup_priority ?? "structure", zone_once: cfg.zone_once !== false, dir_mode: cfg.dir_mode ?? "majority", htf_gate: cfg.htf_gate ?? "4H", conf_scope: cfg.conf_scope ?? "smc_flow" })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia (motor v17 — confluência): o <strong>SMC do 15m arma o setup</strong> (Order Block/FVG/imbalance a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>, <strong>alvo = próxima liquidez</strong>, R:R ≥ 1) e <strong>4 grupos votam</strong> na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP) · Sentimento (F&G, L/S). <strong>Só executa com a maioria configurada a favor — toda entrada, imbalance incluído</strong> (fim do passe livre que entrava contra fluxo/EMAs/VWAP). Sinais com acerto &lt;50% no aprendizado (absorção, paredes, pressão do book, CVD agregado, funding) <strong>saíram do placar</strong> — só medidos. <strong>Reversão disciplinada</strong>: por padrão a posição sai só por stop/alvo/trailing. Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown pós-stop; pirâmide só no lucro e a favor. <strong>CADA MOEDA É ÚNICA</strong> (seção 2b): mesmo motor, dose validada por ativo — BTC/BNB defensivos, ETH/SOL livres; aprendizado e melhorias individuais por moeda.</span>
