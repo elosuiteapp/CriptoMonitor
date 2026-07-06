@@ -186,7 +186,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
@@ -202,12 +202,13 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   // VOLTA pra dentro dela (janela de frescor maior, 16 velas ≈ 4h). Modo chase (antigo): entra
   // na FORMAÇÃO do gap (janela 2 velas), comprando o esticado do impulso.
   const freshWin = o.imbRetest ? 16 : 2;
+  const barSec = o.barSec ?? 900; // duração da vela do TF base (a janela de frescor escala com o TF)
   const inZone = (f: FVG) => price >= f.bottom - buf && price <= f.top + buf;
   // EXPERIMENTO max_zone_atr: entrada imbalance só com o preço a ≤ X ATR da borda do FVG
   // (mata o "chase esticado" — comprar longe da zona de origem depois do impulso). 0 = off.
   const nearZone = (f: FVG) => !o.maxZoneAtr || o.maxZoneAtr <= 0 ? true
     : (f.bias === "bullish" ? (price - f.top) / atr <= o.maxZoneAtr : (f.bottom - price) / atr <= o.maxZoneAtr);
-  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)) && nearZone(f));
+  const fresh = smc.fvgs.filter((f) => f.time >= lastT - barSec * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)) && nearZone(f));
   const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
   const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
   let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number } | null = null;
@@ -286,7 +287,6 @@ function dailyVwap(cs: Candle[]): number | null {
 const DATA = "https://data-api.binance.vision";
 const TF_MS: Record<string, number> = { "15m": 900000, "30m": 1800000, "1H": 3600000, "4H": 14400000, "1D": 86400000 };
 const TF_INT: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
-const TFS = ["15m"]; // day-trade: só o 15m (motor SMC price-action, igual ao bot-run)
 
 async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: number): Promise<Candle[]> {
   const out: Candle[] = []; let cursor = startMs; const int = TF_INT[tf];
@@ -357,6 +357,15 @@ Deno.serve(async (req) => {
   // FILTRO DE SESSÃO (experimento): horas UTC em que o robô NÃO ABRE posição nova (saídas seguem
   // normais). Ex.: [0,1,2,3] = sem entradas na madrugada UTC. Vazio = sem filtro (baseline).
   const blockHours = new Set<number>(Array.isArray(body?.block_hours) ? (body.block_hours as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : []);
+  // EXPERIMENTO base_tf: roda o MESMO motor em outro timeframe (15m | 30m | 1H | 4H) — mede se a
+  // estratégia atual rende mais em velas mais lentas (menos ruído × menos sinais/stop mais largo).
+  const baseTf = ["15m", "30m", "1H", "4H"].includes(String(body?.base_tf)) ? String(body?.base_tf) : "15m";
+  // EXPERIMENTO trail_mode: "atr" (default, atual) = chandelier ATR + piso de estrutura;
+  // "candle" = stop segue a mínima/máxima do ÚLTIMO candle FECHADO do trail_tf (ratchet, sem piso).
+  // trail_arm_r > 0 = só arma o candle-trail após X R de lucro (modo runner; 0 = desde a entrada).
+  const trailMode = String(body?.trail_mode ?? "atr");
+  const trailTf = ["15m", "30m", "1H", "4H"].includes(String(body?.trail_tf)) ? String(body?.trail_tf) : baseTf;
+  const trailArmR = Math.max(0, Number(body?.trail_arm_r ?? 0));
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -384,13 +393,14 @@ Deno.serve(async (req) => {
   const windowStart = now - days * 86400000;
   const WARM = 320; // candles de aquecimento por TF (atr200 + estrutura)
 
-  // Busca candles reais de cada TF (janela + aquecimento). Com filtro HTF, o 1H entra junto.
-  const tfList = htfOn ? ["15m", "1H"] : [...TFS];
+  // Busca candles reais de cada TF (janela + aquecimento). HTF e trail_tf entram junto se usados.
+  const tfList = [...new Set([baseTf, ...(htfOn ? ["1H"] : []), ...(trailMode === "candle" ? [trailTf] : [])])];
   const byTf: Record<string, Candle[]> = {};
   for (const tf of tfList) {
     byTf[tf] = await fetchKlines(symbol, tf, windowStart - WARM * TF_MS[tf], now);
   }
-  const base = byTf["15m"];
+  const base = byTf[baseTf];
+  const barMs = TF_MS[baseTf], barSec = barMs / 1000;
   if (!base || base.length < WARM + 20) return json(400, { error: `poucos candles p/ ${symbol} (${base?.length ?? 0})` });
 
   // closeTime[tf][i] = fim da vela i (openTime + duração). Ponteiros avançam sem lookahead.
@@ -409,7 +419,7 @@ Deno.serve(async (req) => {
     smcCache[tf] = computeSmc(win, SWING);
     const cl = win.map((c) => c.close);
     momCache[tf] = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
-    if (tf === "15m" && (taOn || entryTa)) { // indicadores clássicos na MESMA janela do motor (sem lookahead)
+    if (tf === baseTf && (taOn || entryTa)) { // indicadores clássicos na MESMA janela do motor (sem lookahead)
       taCache.e20 = emaLast(cl, 20); taCache.e50 = emaLast(cl, 50);
       taCache.adx = adxDmi(win, 14)?.adx ?? null;
       taCache.vwap = dailyVwap(win);
@@ -448,7 +458,7 @@ Deno.serve(async (req) => {
 
   // Walk-forward sobre as velas de 15m dentro da janela.
   for (let t = 0; t < base.length; t++) {
-    const barCloseMs = base[t].time * 1000 + TF_MS["15m"];
+    const barCloseMs = base[t].time * 1000 + barMs;
     if (barCloseMs <= windowStart) continue;                    // ainda no aquecimento
     if (base[t].time * 1000 >= now) break;
 
@@ -483,12 +493,19 @@ Deno.serve(async (req) => {
       else if (smcCache[tf] === undefined && i >= 0) { recompute(tf, i); changed = true; }
     }
     void changed;
-    const smc15 = smcCache["15m"];
+    const smc15 = smcCache[baseTf];
     if (!smc15) continue;
     evalBars++;
 
-    // Trailing (usa o ATR/estrutura de 15m atuais). Só quando há posição.
-    if (pos !== "flat" && trailOn && trailMult > 0) {
+    // Trailing (usa o ATR/estrutura do TF base). Só quando há posição.
+    if (pos !== "flat" && trailMode === "candle") {
+      // STOP NO ÚLTIMO CANDLE FECHADO (trail_tf): long = mínima da vela; short = máxima.
+      // Ratchet puro (só avança), SEM piso de estrutura — mede a técnica crua do dono.
+      peak = pos === "long" ? Math.max(peak, base[t].close) : Math.min(peak, base[t].close);
+      const armed = trailArmR <= 0 || (pos === "long" ? peak - entryPx : entryPx - peak) >= trailArmR * riskDist0;
+      const tc = ptr[trailTf] >= 0 ? byTf[trailTf][ptr[trailTf]] : null;
+      if (armed && tc) stopPx = pos === "long" ? Math.max(stopPx, tc.low) : Math.min(stopPx, tc.high);
+    } else if (pos !== "flat" && trailOn && trailMult > 0) {
       const atr = smc15.atr || entryPx * 0.01;
       const dist = trailMult * atr, buf = 0.25 * atr;
       peak = pos === "long" ? Math.max(peak, base[t].close) : Math.min(peak, base[t].close);
@@ -502,7 +519,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
@@ -593,7 +610,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: "SMC price-action 15m", imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailOn ? `${trailMult}×ATR` : "off", trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", htf_filter: htfOn ? "1H" : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
