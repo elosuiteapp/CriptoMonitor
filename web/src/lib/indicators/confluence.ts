@@ -220,6 +220,10 @@ export function computeMarketRead(
   // ── Eixo MOMENTO (MACD + RSI) ───────────────────────────────────────────
   const m = macd(closes);
   const histLast = last(m.hist);
+  // Inclinação do histograma (nuance "4 cores" do MACD MTF do TradingView, 07/jul):
+  // positivo ACELERANDO ≠ positivo perdendo força — o esvaziamento antecipa a virada.
+  const histPrev = m.hist.length >= 2 ? m.hist[m.hist.length - 2] : NaN;
+  const histRising = Number.isFinite(histPrev) && histLast > histPrev;
   const rsiArr = rsi(closes, 14);
   const rLast = last(rsiArr);
   const haveMom = Number.isFinite(histLast) && Number.isFinite(rLast);
@@ -228,6 +232,10 @@ export function computeMarketRead(
   if (haveMom) {
     momDir = sign(histLast);
     momStr = clamp01(Math.abs(rLast - 50) / 30);
+    // Histograma contra a própria direção (positivo caindo / negativo subindo) = momentum
+    // esvaziando → força reduzida a 60%. A favor (acelerando) = força cheia.
+    const momFading = (histLast >= 0 && !histRising) || (histLast < 0 && histRising);
+    if (momFading) momStr *= 0.6;
     axes.push({
       key: "momentum",
       label: tl("Momento", "Momentum"),
@@ -235,7 +243,7 @@ export function computeMarketRead(
       dir: momDir,
       strength: momStr,
       available: true,
-      detail: `MACD ${histLast >= 0 ? tl("positivo", "positive") : tl("negativo", "negative")} · RSI ${rLast.toFixed(0)}${rLast > 70 ? tl(" (sobrecomprado)", " (overbought)") : rLast < 30 ? tl(" (sobrevendido)", " (oversold)") : ""}`,
+      detail: `MACD ${histLast >= 0 ? tl("positivo", "positive") : tl("negativo", "negative")}${momFading ? tl(" mas perdendo força", " but fading") : tl(" e acelerando", " and accelerating")} · RSI ${rLast.toFixed(0)}${rLast > 70 ? tl(" (sobrecomprado)", " (overbought)") : rLast < 30 ? tl(" (sobrevendido)", " (oversold)") : ""}`,
     });
     const div = rsiDivergence(closes, rsiArr);
     if (div) divergences.push(div);
