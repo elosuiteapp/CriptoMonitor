@@ -643,7 +643,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const groupDefs: { key: string; label: string; keys: string[] }[] = [
     { key: "estrutura", label: "Estrutura (SMC 15m)", keys: ["tf_15m"] },
     { key: "fluxo", label: "Fluxo", keys: [...flowKeys] },
-    { key: "tecnico", label: "Técnico (EMA20×50 + VWAP)", keys: ["ema2050", "vwap"] },
+    { key: "tecnico", label: "Técnico (EMA20×50 + VWAP + ADX)", keys: ["ema2050", "vwap", "adx"] },
     { key: "sentimento", label: "Sentimento (F&G + L/S)", keys: ["feargreed", "ls_ratio"] },
   ];
   const confluence = groupDefs.map((g) => {
@@ -963,13 +963,15 @@ Deno.serve(async (req) => {
         gate = `sessão bloqueada (${hourNow}h UTC — janela historicamente negativa) — segura o setup`;
         want = null;
       }
-      // CONF_SCOPE (sql/107 + ajuste 06/jul noite, caso BNB): 'smc_flow' = "SMC com pressão" na
-      // forma BÁSICA que o dono definiu — a ESTRUTURA precisa votar na direção e o FLUXO só
-      // precisa NÃO VOTAR CONTRA (neutro passa; exigir voto ativo dos dois segurava entrada boa
-      // com fluxo ~0). 'all' = regra antiga (maioria conf_min dos 4 grupos).
-      const confScope = String(cfg.conf_scope ?? "smc_flow");
-      const confGroups = confScope === "smc_flow" ? confluence.filter((g) => g.key === "estrutura" || g.key === "fluxo") : confluence;
-      const confMin = Math.min(confGroups.length, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
+      // CONF_SCOPE (sql/107 + evoluções 06/jul):
+      //   'smc_flow_ta' (default, pedido do dono à noite) = MAIORIA POSITIVA de 3 grupos —
+      //     Estrutura · Fluxo/pressão · Técnico (EMA+VWAP+ADX) — 2 de 3 a favor e sem empate contra;
+      //   'smc_flow' = Estrutura vota na direção E Fluxo não-contra (Sentimento/Técnico = estudo);
+      //   'all' = regra v17 (maioria conf_min dos 4 grupos, Sentimento incluído).
+      const confScope = String(cfg.conf_scope ?? "smc_flow_ta");
+      const scopeKeys = confScope === "smc_flow" ? ["estrutura", "fluxo"] : confScope === "smc_flow_ta" ? ["estrutura", "fluxo", "tecnico"] : null;
+      const confGroups = scopeKeys ? confluence.filter((g) => scopeKeys.includes(g.key)) : confluence;
+      const confMin = confScope === "smc_flow_ta" ? 2 : Math.min(confGroups.length, Math.max(1, Number(ov.conf_min ?? cfg.conf_min ?? 3)));
       let confVotes: { for: number; against: number } | null = null;
       if (want) {
         const dir = want === "long" ? 1 : -1;

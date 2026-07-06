@@ -167,10 +167,10 @@ const SIG_GROUPS = ["Estrutura por TF", "Estrutura", "Microestrutura", "Fluxo", 
 // estudo = Técnico/Sentimento saíram da decisão (decisão do dono 06/jul) — seguem medidos ·
 // medido = só alimenta o aprendizado (absorção/paredes/pressão/CVD/funding, hit-rate <50%).
 const VOTE_GROUP: Record<string, string> = {
-  book_inst: "Fluxo", book_retail: "Fluxo", cvd_div: "Fluxo", liqs: "Fluxo", gamma: "Fluxo", gflow: "Fluxo",
+  book_inst: "Fluxo", book_retail: "Fluxo", cvd_div: "Fluxo", liqs: "Fluxo", gflow: "Fluxo",
+  ema2050: "Técnico", vwap: "Técnico", adx: "Técnico",
 };
 const STUDY_GROUP: Record<string, string> = {
-  ema2050: "Técnico", vwap: "Técnico",
   feargreed: "Sentimento", ls_ratio: "Sentimento",
 };
 // Peças do SMC que JÁ COMPÕEM o placar DECIDE (Estrutura 15m) e o gatilho — não votam separado
@@ -182,7 +182,7 @@ const sigRole = (key: string): { tag: string; cls: string; title: string } =>
     : COMPOSE_KEYS.has(key)
     ? { tag: "compõe", cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-500", title: "Peça do SMC que JÁ está dentro do placar DECIDE (Estrutura 15m) e do gatilho — swing, BOS/CHoCH, OB, liquidez e FVG formam o +/-bias e as zonas de entrada. Não vota separado pra não contar duas vezes." }
     : VOTE_GROUP[key]
-    ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: "Compõe o grupo Fluxo (a pressão): junto com a Estrutura, precisa votar na direção do setup (2 de 2) pra entrada executar" }
+    ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: `Compõe o grupo ${VOTE_GROUP[key]} da confluência: maioria 2 de 3 (Estrutura · Pressão · Técnico) a favor libera a entrada` }
     : STUDY_GROUP[key]
     ? { tag: "estudo", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400", title: `Grupo ${STUDY_GROUP[key]} — fora da decisão desde o v21 (robô opera SMC + pressão); segue medido como confluência de estudo/aprendizado` }
     : { tag: "medido", cls: "bg-muted text-muted-foreground", title: "Só medido — não influencia a decisão; alimenta o aprendizado por moeda (pode voltar ao placar se provar edge)" };
@@ -948,10 +948,11 @@ export default function AdminBot() {
                         <option value="off">Desligada (SMC do 15m puro)</option>
                       </select>
                     </label>
-                    <label className="text-xs text-muted-foreground">Confluência <span title="'SMC + pressão' (v22): a Estrutura vota na direção E o Fluxo (book inst+varejo, liqs, gamma flow, CVD div) NÃO pode votar contra — neutro passa. 'Todos os grupos' = regra antiga (maioria conf_min de 4, incluindo Técnico/Sentimento).">ⓘ</span>
-                      <select className={`${input} mt-1`} value={cfg.conf_scope ?? "smc_flow"} onChange={(e) => setCfg({ ...cfg, conf_scope: e.target.value })}>
-                        <option value="smc_flow">SMC + pressão não-contra (recomendado)</option>
-                        <option value="all">Todos os 4 grupos (antigo)</option>
+                    <label className="text-xs text-muted-foreground">Confluência <span title="'Maioria 2 de 3' (v23, pedido do dono): Estrutura · Pressão/fluxo · Técnico (EMA+VWAP+ADX) votam — 2 a favor e sem empate contra libera a entrada. 'SMC + pressão': estrutura na direção e fluxo não-contra (técnico vira estudo). 'Todos': regra v17 com Sentimento incluído.">ⓘ</span>
+                      <select className={`${input} mt-1`} value={cfg.conf_scope ?? "smc_flow_ta"} onChange={(e) => setCfg({ ...cfg, conf_scope: e.target.value })}>
+                        <option value="smc_flow_ta">Maioria 2 de 3 — Estrutura·Pressão·Técnico (atual)</option>
+                        <option value="smc_flow">SMC + pressão não-contra (técnico = estudo)</option>
+                        <option value="all">Todos os 4 grupos (antigo, com Sentimento)</option>
                       </select>
                       <span className="mt-0.5 block text-[10px]">Nos trades reais: fluxo a favor = 60% de acerto × contra = 20%. Setup segurado fica no Diário com o motivo.</span>
                     </label>
