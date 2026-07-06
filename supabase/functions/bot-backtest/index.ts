@@ -532,6 +532,9 @@ Deno.serve(async (req) => {
   // EXPERIMENTO zone_mode "strong" (spec do dono): na zona, só rompimento COM volume (delta ≥1,5× média),
   // força (ADX≥25) e estrutura quebrando — compra e venda simétricos.
   const zoneStrong = String(body?.zone_mode ?? "off") === "strong";
+  // EXPERIMENTO sq_filter (Squeeze Momentum LazyBear como filtro): bloqueia entrada quando o
+  // momentum (linreg do desvio, 20 velas) esta FORTE contra a direcao (>=0,5 ATR).
+  const sqFilter = String(body?.sq_filter ?? "off") === "on";
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -717,6 +720,24 @@ Deno.serve(async (req) => {
         if (want === "short" && !strongDn) want = null;
       }
     }
+    // FILTRO SQUEEZE MOMENTUM (LazyBear): momentum forte CONTRA a direcao segura a entrada.
+    if (sqFilter && want && t >= 20) {
+      const n = 20;
+      const win = base.slice(t - n + 1, t + 1);
+      const clw = win.map((c) => c.close);
+      const smaV = clw.reduce((a, b) => a + b, 0) / n;
+      const hh = Math.max(...win.map((c) => c.high));
+      const ll = Math.min(...win.map((c) => c.low));
+      const mid = ((hh + ll) / 2 + smaV) / 2;
+      const srcArr = win.map((c) => c.close - mid);
+      const xm = (n - 1) / 2;
+      const ym = srcArr.reduce((a, b) => a + b, 0) / n;
+      let num = 0, den = 0;
+      srcArr.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
+      const mom = ym + (den ? num / den : 0) * (n - 1 - xm);
+      const atrV = smc15.atr || 0;
+      if (atrV > 0 && Math.abs(mom) >= 0.5 * atrV && ((want === "long" && mom < 0) || (want === "short" && mom > 0))) want = null;
+    }
     // FILTRO DELTA (experimento): a vela atual precisa ter volume comprador (long) / vendedor (short).
     if (want && deltaConfirm) {
       const d = base[t].delta ?? 0;
@@ -809,7 +830,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? "on" : "off", zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);

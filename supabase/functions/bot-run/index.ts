@@ -953,6 +953,29 @@ Deno.serve(async (req) => {
         gate = `delta da vela contra ($${(lastDelta / 1e6).toFixed(2)}M) — aguarda volume ${want === "long" ? "comprador" : "vendedor"}`;
         want = null;
       }
+      // ── FILTRO SQUEEZE MOMENTUM — LazyBear (cfg.sq_filter, sql/114; fase P: melhorou as 4,
+      //    agregado +59,9→+67,8R recorde): momentum (linreg do desvio, 20 velas 15m) FORTE
+      //    contra a direção (≥0,5 ATR) segura a entrada — não se compra contra mola armada. ──
+      const sqFilter = cfg.sq_filter !== false;
+      if (want && sqFilter && primary?.candles && primary.candles.length >= 21) {
+        const n = 20;
+        const win = primary.candles.slice(-n);
+        const clw = win.map((c) => c.close);
+        const smaV = clw.reduce((a, b) => a + b, 0) / n;
+        const hh = Math.max(...win.map((c) => c.high));
+        const ll = Math.min(...win.map((c) => c.low));
+        const mid = ((hh + ll) / 2 + smaV) / 2;
+        const srcArr = win.map((c) => c.close - mid);
+        const xm = (n - 1) / 2;
+        const ym = srcArr.reduce((a, b) => a + b, 0) / n;
+        let num = 0, den = 0;
+        srcArr.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
+        const mom = ym + (den ? num / den : 0) * (n - 1 - xm);
+        if (atrPx > 0 && Math.abs(mom) >= 0.5 * atrPx && ((want === "long" && mom < 0) || (want === "short" && mom > 0))) {
+          gate = `squeeze momentum ${mom < 0 ? "vendedor" : "comprador"} forte contra (${(mom / atrPx).toFixed(2)} ATR) — segura`;
+          want = null;
+        }
+      }
       // ── BÚSSOLA HTF (cfg.htf_gate, sql/106, default 4H): a entrada precisa alinhar com a
       //    estrutura do TF maior (top-down do dono). Neutra também segura (sem contexto = fora).
       //    Fase F: maioria + bússola 4H = única variante acima do baseline, com metade do drawdown. ──
