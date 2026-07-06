@@ -173,9 +173,14 @@ const STUDY_GROUP: Record<string, string> = {
   ema2050: "Técnico", vwap: "Técnico",
   feargreed: "Sentimento", ls_ratio: "Sentimento",
 };
+// Peças do SMC que JÁ COMPÕEM o placar DECIDE (Estrutura 15m) e o gatilho — não votam separado
+// pra não contar duas vezes; o selo "compõe" deixa isso explícito (dúvida do dono 06/jul).
+const COMPOSE_KEYS = new Set(["swing", "bos", "ob", "sweep", "fvg"]);
 const sigRole = (key: string): { tag: string; cls: string; title: string } =>
   key.startsWith("tf_")
     ? { tag: "decide", cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "Estrutura SMC do 15m — arma o setup (entrada/stop/alvo estruturais) e é 1 dos 2 votos da confluência (Estrutura + Fluxo)" }
+    : COMPOSE_KEYS.has(key)
+    ? { tag: "compõe", cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-500", title: "Peça do SMC que JÁ está dentro do placar DECIDE (Estrutura 15m) e do gatilho — swing, BOS/CHoCH, OB, liquidez e FVG formam o +/-bias e as zonas de entrada. Não vota separado pra não contar duas vezes." }
     : VOTE_GROUP[key]
     ? { tag: "vota", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400", title: "Compõe o grupo Fluxo (a pressão): junto com a Estrutura, precisa votar na direção do setup (2 de 2) pra entrada executar" }
     : STUDY_GROUP[key]
