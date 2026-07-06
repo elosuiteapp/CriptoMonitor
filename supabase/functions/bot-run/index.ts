@@ -277,8 +277,8 @@ function dailyVwap(cs: Candle[]): number | null {
 //  • STOP = abaixo do OB/mínima varrida (long) / acima (short) — a invalidação real.
 //  • ALVO = próxima poça de LIQUIDEZ (EQH/EQL) / zona oposta — R:R vindo do gráfico.
 // Usa só: Order Blocks, Imbalance(FVG), Liquidez/EQH-EQL, Zonas, BOS/CHoCH. (VP/liq-heatmap/HTF fora.)
-interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number }): SmcPlan {
+interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; maxZoneAtr?: number; oppZoneAtr?: number; imbRetest?: boolean; imbAlign?: boolean; structFirst?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   const bull = smc.lastSwing?.bias === "bullish" || smc.internalBias === "bullish" || smc.swingBias === "bullish";
@@ -294,15 +294,35 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   // mata o "chase esticado" (comprar longe da zona de origem depois do impulso). 0 = off.
   const nearZone = (f: FVG) => !o.maxZoneAtr || o.maxZoneAtr <= 0 ? true
     : (f.bias === "bullish" ? (price - f.top) / atr <= o.maxZoneAtr : (f.bottom - price) / atr <= o.maxZoneAtr);
-  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * 2 && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && nearZone(f));
+  // MODO RETEST (igual ao módulo Smart Money, playbook 06/jul): FVG é ZONA respeitada — só entra
+  // quando o preço VOLTA pra dentro dela (janela de frescor 16 velas ≈ 4h). Modo chase (antigo):
+  // entrava na FORMAÇÃO do gap (2 velas), comprando o esticado do impulso.
+  const freshWin = o.imbRetest ? 16 : 2;
+  const inZone = (f: FVG) => price >= f.bottom - buf && price <= f.top + buf;
+  const fresh = smc.fvgs.filter((f) => f.time >= lastT - 900 * freshWin && Math.abs(f.top - f.bottom) / price * 100 >= o.imbMinPct && (!o.imbRetest || inZone(f)) && nearZone(f));
   const freshBull = fresh.filter((f) => f.bias === "bullish").sort((a, b) => b.time - a.time)[0];
   const freshBear = fresh.filter((f) => f.bias === "bearish").sort((a, b) => b.time - a.time)[0];
 
-  let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number } | null = null;
-  if (o.imbalanceOn && freshBull && (!freshBear || freshBull.time >= freshBear.time)) { want = "long"; setup = "imbalance ↑"; zone = freshBull; }
-  else if (o.imbalanceOn && freshBear && (!freshBull || freshBear.time >= freshBull.time)) { want = "short"; setup = "imbalance ↓"; zone = freshBear; }
-  else if (bull && (bullOB || bullFvg) && (sweptSell || inDisc)) { want = "long"; setup = "OB/FVG + estrutura ↑"; zone = bullOB ?? bullFvg; }
-  else if (bear && (bearOB || bearFvg) && (sweptBuy || inPrem)) { want = "short"; setup = "OB/FVG + estrutura ↓"; zone = bearOB ?? bearFvg; }
+  // PLAYBOOK 06/jul: imbalance só A FAVOR da estrutura (imb_align — os 16 trades contra-estrutura
+  // da semana fizeram 31% de acerto e TODAS as 8 stopadas cheias); com setup_priority 'structure',
+  // o reteste de OB/FVG pós-BOS/CHoCH (o setup do print do dono) tem prioridade sobre o imbalance.
+  const imbLongOk = o.imbalanceOn && !!freshBull && (!freshBear || freshBull.time >= freshBear.time) && (!o.imbAlign || bull);
+  const imbShortOk = o.imbalanceOn && !!freshBear && (!freshBull || freshBear.time >= freshBull.time) && (!o.imbAlign || bear);
+  const structLongOk = bull && !!(bullOB || bullFvg) && (sweptSell || inDisc);
+  const structShortOk = bear && !!(bearOB || bearFvg) && (sweptBuy || inPrem);
+  let want: "long" | "short" | null = null, setup = "", zone: { bottom: number; top: number; time?: number } | null = null;
+  const pick = (w: "long" | "short", s: string, z: { bottom: number; top: number; time?: number } | null) => { want = w; setup = s; zone = z; };
+  if (o.structFirst) {
+    if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
+    else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
+    else if (imbLongOk) pick("long", "imbalance ↑", freshBull);
+    else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
+  } else {
+    if (imbLongOk) pick("long", "imbalance ↑", freshBull);
+    else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
+    else if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
+    else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
+  }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup SMC" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot não faz short" };
   // QUALIDADE 2 (opp_zone_atr): não entrar com FVG/OB OPOSTO não-preenchido a ≤ X ATR à frente —
@@ -335,7 +355,9 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   else { const lb = smc.liquidity.filter((l) => l.side === "sell" && l.price < price).sort((a, b) => b.price - a.price)[0]; target = lb ? lb.price : (price > smc.discount.top ? smc.discount.top : null); }
   const risk = Math.abs(price - stop);
   if (target != null && risk > 0 && Math.abs(target - price) < risk) target = null; // R:R < 1 → sem alvo (usa trailing)
-  return { want, setup, stop, target, note: `${setup}${zone ? ` @ ${((zone.bottom + zone.top) / 2).toFixed(2)}` : ""}` };
+  // Identidade da zona de origem (zone_once: 1 entrada por zona — stopou nela, não re-entra).
+  const zoneKey = zone && (zone as { time?: number }).time ? `${setup}:${(zone as { time?: number }).time}` : null;
+  return { want, setup, stop, target, note: `${setup}${zone ? ` @ ${(((zone as Zone).bottom + (zone as Zone).top) / 2).toFixed(2)}` : ""}`, zoneKey };
 }
 
 // ════════ AUTO-PONDERAÇÃO POR MOEDA (usa os hit-rates do aprendizado) ════════
@@ -613,8 +635,8 @@ Deno.serve(async (req) => {
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
-      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, stopped_at, target_px").eq("asset", asset).maybeSingle();
-      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null, target_px: data?.target_px != null ? Number(data.target_px) : null };
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, stopped_at, target_px, used_zones").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null, target_px: data?.target_px != null ? Number(data.target_px) : null, used_zones: (data?.used_zones as unknown[] | null) ?? [] };
     };
     const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false, peak_px: number | null = null) => {
       await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
@@ -828,11 +850,24 @@ Deno.serve(async (req) => {
       const imbMinPct = Number(cfg.imbalance_min_pct ?? 0);
       const c15 = candleRows[0] ?? [];
       const lastT = c15.length ? Math.floor(Number(c15[c15.length - 1][0]) / 1000) : Math.floor(Date.now() / 1000);
+      // PLAYBOOK 06/jul (defaults novos; reverter = update em bot_config, sem deploy):
+      // imbalance como o módulo Smart Money (retest da zona), a favor da estrutura, e o setup
+      // do print (reteste de OB/FVG pós-BOS/CHoCH) com prioridade.
+      const imbRetest = String(cfg.imb_mode ?? "retest") === "retest";
+      const imbAlign = cfg.imb_align !== false;
+      const structFirst = String(cfg.setup_priority ?? "structure") === "structure";
       const plan: SmcPlan = primary?.smc
-        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0) })
+        ? smcDecision(primary.smc, lastPx, lastT, { imbalanceOn, imbMinPct, stopAtrMult: Number(cfg.stop_atr_mult ?? 3), fut, maxZoneAtr: Number(cfg.max_zone_atr ?? 0), oppZoneAtr: Number(cfg.opp_zone_atr ?? 0), imbRetest, imbAlign, structFirst })
         : { want: null, setup: "", stop: null, target: null, note: "sem SMC" };
       let want: "long" | "short" | null = plan.want;
       let gate = plan.note;
+      // ── 1 TIRO POR ZONA (zone_once): zona que já deu entrada não re-entra (stop nela = invalidada).
+      const zoneOnce = cfg.zone_once !== false;
+      const usedZones: string[] = Array.isArray(st.used_zones) ? (st.used_zones as unknown[]).map(String) : [];
+      if (want && zoneOnce && plan.zoneKey && usedZones.includes(plan.zoneKey)) {
+        gate = "zona já usada (1 tiro por zona) — segura o setup";
+        want = null;
+      }
       // ── GATE DE CONFLUÊNCIA (motor v17, pedido do dono): os 4 grupos (Estrutura/Fluxo/Técnico/
       //    Sentimento) votam na direção do setup; só executa com MAIORIA (cfg.conf_min, default
       //    3-de-4) e sem empate contra. Vale p/ TODA entrada, IMBALANCE INCLUÍDO (era o passe
@@ -878,6 +913,9 @@ Deno.serve(async (req) => {
 
       let target: "long" | "short" | "flat" = want ?? pos;
       if (!fut && pos === "long" && want === "short") target = "flat";
+      // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
+      // tendência (up)" até em short contra alta — poluía log e avaliação).
+      const trendRel = regime === "range" ? "em range" : (target === "long") === (regime === "up") ? `a favor da tendência (${regime})` : `CONTRA a tendência (${regime})`;
 
       // PIRÂMIDE: a favor, no lucro (a virada de estrutura/CHoCH contra vira reversão via `want` oposto).
       const pyramidMax = Number(cfg.pyramid_max ?? 2);
@@ -1005,9 +1043,11 @@ Deno.serve(async (req) => {
           const stopBasis = plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
           await admin.from("bot_positions").update({ stopped_at: null, target_px: targetPx }).eq("asset", asset); // abriu → zera cooldown; grava alvo estrutural
+          // Marca a zona de origem como usada (zone_once) — cap de 20 zonas por ativo.
+          if (plan.zoneKey && target === plan.want) await admin.from("bot_positions").update({ used_zones: [...usedZones.filter((z) => z !== plan.zoneKey), plan.zoneKey].slice(-20) }).eq("asset", asset);
           openCount++;
-          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)}${isCounter ? " CONTRA-TENDÊNCIA" : ` a favor (${regime})`} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x · risco ${(riskPct * szMult).toFixed(2)}%) · stop ${stopPx.toFixed(2)} (${stopBasis})${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
-          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${isCounter ? "CONTRA-TENDÊNCIA (stop curto) " : `a favor da tendência (${regime}) `}· ${qtyStr} ${asset} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x)${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)}${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · risco ${(equity * riskPct / 100 * szMult).toFixed(2)} ${cfg.quote_ccy} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
+          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ${trendRel} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x · risco ${(riskPct * szMult).toFixed(2)}%) · stop ${stopPx.toFixed(2)} (${stopBasis})${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${trendRel} · ${qtyStr} ${asset} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x)${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)}${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · risco ${(equity * riskPct / 100 * szMult).toFixed(2)} ${cfg.quote_ccy} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };
         }
         await log("trade", `[${asset}] ${protExit ? "🛡️ SAÍDA DE PROTEÇÃO · " : ""}Saiu pra FORA · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${gate && protExit ? ` [${gate}]` : ""}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}. ${top}`, reading);
