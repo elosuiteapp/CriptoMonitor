@@ -5,6 +5,7 @@
 // responde no idioma do usuario (body.lang: 'pt' default ou 'en'; front envia getLocale()).
 // Deploy: supabase functions deploy generate-analysis - Secret: GEMINI_API_KEY
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { geminiPrice } from "../_shared/aiPricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -265,7 +266,7 @@ Deno.serve(async (req) => {
   const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
   const inTok = Number(um.promptTokenCount ?? 0);
   const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
-  const price = usedModel.includes("pro") ? { in: 1.25, out: 10 } : { in: 0.3, out: 2.5 };
+  const price = geminiPrice(usedModel); // fonte única: _shared/aiPricing.ts
   await admin.from("ai_analysis").insert({
     user_id: user.id, asset: ativo, model_used: usedModel, content, snapshot_ref: snap.id,
     input_tokens: inTok, output_tokens: outTok,

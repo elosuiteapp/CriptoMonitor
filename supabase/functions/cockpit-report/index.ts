@@ -7,6 +7,7 @@
 // Enriquecido com a Leitura do Mercado (market_read: regime/vies/conviccao).
 // Deploy: --no-verify-jwt. Secrets: GEMINI_API_KEY, DISPATCH_SECRET.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { geminiPrice } from "../_shared/aiPricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -153,7 +154,7 @@ async function generateReport(admin: any, geminiKey: string, ativo: string): Pro
   const um = (aiData.usageMetadata ?? {}) as Record<string, number>;
   const inTok = Number(um.promptTokenCount ?? 0);
   const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
-  const price = usedModel.includes("pro") ? { in: 1.25, out: 10 } : { in: 0.3, out: 2.5 };
+  const price = geminiPrice(usedModel); // fonte única: _shared/aiPricing.ts
   await admin.from("ai_analysis").insert({
     user_id: null, asset: ativo, model_used: usedModel, content,
     snapshot_ref: snap.id, report_type: "daily", auto_generated: true,

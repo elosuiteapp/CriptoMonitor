@@ -5,6 +5,7 @@
 // era admin-only e o assinante tomava 403 no botão que a UI libera (auditoria 02/jul).
 // Deploy: --no-verify-jwt. Secrets: GEMINI_API_KEY.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { geminiPrice } from "../_shared/aiPricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -117,7 +118,7 @@ Deno.serve(async (req) => {
   const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
   await admin.from("b3_asset_reports").insert({ asset, kind, content, model: usedModel, input_tokens: inTok, output_tokens: outTok });
   // Contabilidade unificada de custo (mesma tabela/preço do módulo cripto) + cota do usuário.
-  const price = usedModel.includes("pro") ? { in: 1.25, out: 10 } : { in: 0.3, out: 2.5 };
+  const price = geminiPrice(usedModel); // fonte única: _shared/aiPricing.ts
   await admin.from("ai_analysis").insert({
     user_id: user.id, asset, model_used: usedModel, content, report_type: "b3_asset", auto_generated: false,
     input_tokens: inTok, output_tokens: outTok, cost_usd_micros: Math.round(inTok * price.in + outTok * price.out),

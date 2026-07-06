@@ -110,7 +110,7 @@ async function postTweet(text: string, c: { apiKey: string; apiSecret: string; a
   const paramStr = Object.keys(oauth).sort().map((k) => `${pe(k)}=${pe(oauth[k])}`).join("&");
   const base = `POST&${pe(url)}&${pe(paramStr)}`;
   const signature = await hmacSha1(`${pe(c.apiSecret)}&${pe(c.accessSecret)}`, base);
-  const all = { ...oauth, oauth_signature: signature };
+  const all: Record<string, string> = { ...oauth, oauth_signature: signature };
   const header = "OAuth " + Object.keys(all).sort().map((k) => `${pe(k)}="${pe(all[k])}"`).join(", ");
   const r = await fetch(url, {
     method: "POST",

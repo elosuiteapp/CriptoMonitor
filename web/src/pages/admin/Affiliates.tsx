@@ -219,7 +219,9 @@ function AffiliateCard({ a, open, onToggle, onChanged }: { a: Affiliate; open: b
   }
 
   async function markPaid() {
-    if (!confirm(`Confirmar que você pagou ${fmtBRL(a.pending_cents)} via Pix para ${a.name}? Isso marca as comissões como pagas.`)) return;
+    // A RPC liquida TODAS as comissões pendentes/aprovadas NO MOMENTO do clique — o valor abaixo
+    // é do último carregamento e pode ter entrado comissão nova desde então (por isso o "≈").
+    if (!confirm(`Confirmar que você pagou via Pix para ${a.name}? Isso marca TODAS as comissões pendentes/aprovadas como pagas (≈ ${fmtBRL(a.pending_cents)} no último carregamento).`)) return;
     setBusy(true);
     setErr(null);
     const { error } = await supabase.rpc("admin_mark_commissions_paid", { p_affiliate_id: a.id });

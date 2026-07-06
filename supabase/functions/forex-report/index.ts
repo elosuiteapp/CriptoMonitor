@@ -5,6 +5,7 @@
 // custo em ai_analysis. Módulo Forex é preview admin → relatório também é admin-only.
 // Deploy: supabase functions deploy forex-report (verify_jwt true). Secret: GEMINI_API_KEY.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { geminiPrice } from "../_shared/aiPricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -86,7 +87,7 @@ Deno.serve(async (req) => {
       const um = ((aiData as Record<string, unknown>).usageMetadata ?? {}) as Record<string, number>;
       const inTok = Number(um.promptTokenCount ?? 0);
       const outTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
-      const price = usedModel.includes("pro") ? { in: 1.25, out: 10 } : { in: 0.3, out: 2.5 };
+      const price = geminiPrice(usedModel); // fonte única: _shared/aiPricing.ts
       await admin.from("ai_analysis").insert({
         user_id: null, asset: pair, model_used: usedModel, content,
         report_type: "forex", auto_generated: false,
