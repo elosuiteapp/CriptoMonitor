@@ -50,6 +50,12 @@ export function useMarketRead(
   const [macro, setMacro] = useState<MacroCtx>(null);
   const [biasHist, setBiasHist] = useState<number[]>([]);
   const [btcChg7d, setBtcChg7d] = useState<number | null>(null); // 7d do BTC (rotação de liderança)
+  // Novas forças 07/jul: paredes do book + delta/VWAP do dia + COT CME.
+  const [extras, setExtras] = useState<{
+    walls: { price: number; notional_usd: number }[] | null;
+    dayFlow: { delta: number; vol: number; vwap: number | null } | null;
+    cot: { instNet: number; instNetChg: number; date: string } | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -133,7 +139,57 @@ export function useMarketRead(
       } catch {
         /* opcional */
       }
+      // Paredes de baleia (snapshot mais recente). Opcional.
+      let walls: { price: number; notional_usd: number }[] | null = null;
+      try {
+        const { data } = await supabase
+          .from("orderbook_walls")
+          .select("price, notional_usd, ts")
+          .eq("asset", asset)
+          .order("ts", { ascending: false })
+          .limit(40);
+        const rows = (data ?? []) as Array<{ price: number; notional_usd: number; ts: string }>;
+        if (rows.length) walls = rows.filter((r) => r.ts === rows[0].ts).map((r) => ({ price: Number(r.price), notional_usd: Number(r.notional_usd) }));
+      } catch {
+        /* opcional */
+      }
+      // Delta/volume/VWAP do DIA — klines 15m com volume taker (campos 7/10). Opcional.
+      let dayFlow: { delta: number; vol: number; vwap: number | null } | null = null;
+      try {
+        const dayStart = Math.floor(Date.now() / 86400000) * 86400000;
+        const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${asset}USDT&interval=15m&startTime=${dayStart}&limit=200`);
+        if (res.ok) {
+          const rows = (await res.json()) as unknown[][];
+          let delta = 0, vol = 0, pv = 0, vv = 0;
+          for (const r of rows) {
+            const quote = Number(r[7]) || 0, takerBuy = Number(r[10]) || 0;
+            delta += 2 * takerBuy - quote;
+            vol += quote;
+            const hi = Number(r[2]), lo = Number(r[3]), cl = Number(r[4]), bv = Number(r[5]) || 0;
+            if (bv > 0) { pv += ((hi + lo + cl) / 3) * bv; vv += bv; }
+          }
+          if (rows.length) dayFlow = { delta, vol, vwap: vv > 0 ? pv / vv : null };
+        }
+      } catch {
+        /* opcional */
+      }
+      // COT cripto (CME, semanal). BTC serve de proxy market-wide p/ alts sem série própria.
+      let cot: { instNet: number; instNetChg: number; date: string } | null = null;
+      try {
+        const { data } = await supabase
+          .from("cot_positioning")
+          .select("asset, report_date, asset_mgr_net, asset_mgr_net_chg")
+          .in("asset", [asset, "BTC"])
+          .order("report_date", { ascending: false })
+          .limit(4);
+        const rows = (data ?? []) as Array<{ asset: string; report_date: string; asset_mgr_net: number | null; asset_mgr_net_chg: number | null }>;
+        const own = rows.find((r) => r.asset === asset) ?? rows.find((r) => r.asset === "BTC");
+        if (own && own.asset_mgr_net != null) cot = { instNet: Number(own.asset_mgr_net), instNetChg: Number(own.asset_mgr_net_chg ?? 0), date: own.report_date };
+      } catch {
+        /* opcional */
+      }
       if (!alive) return;
+      setExtras({ walls, dayFlow, cot });
       setC1d(d);
       setC4h(h4);
       setC1h(h1);
@@ -149,10 +205,10 @@ export function useMarketRead(
   }, [asset, enabled]);
 
   const read = useMemo(
-    () => (enabled ? computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d) : null),
+    () => (enabled ? computeMarketRead(c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d, extras) : null),
     // isEn nas deps: a leitura monta strings traduzidas (confluence.ts via getLocale),
     // então precisa recomputar ao trocar de idioma.
-    [enabled, c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d, isEn],
+    [enabled, c1d, payload, c4h, oiDelta, bookImbalance, macro, btcChg7d, extras, isEn],
   );
   const leans = useMemo<TfLean[]>(
     () => (enabled ? [timeframeLean("1D", c1d), timeframeLean("4H", c4h), timeframeLean("1H", c1h)] : EMPTY_LEANS),

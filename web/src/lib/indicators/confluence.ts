@@ -141,6 +141,11 @@ export function computeMarketRead(
   bookImbalance?: number | null,
   macro?: { vixChg: number; dxyChg: number; us10yChg: number; nlChg?: number | null; nfci?: number | null } | null,
   btcChg7d?: number | null, // variação 7d do BTC (fração) — p/ rotação de liderança (alts)
+  extras?: {
+    walls?: { price: number; notional_usd: number }[] | null; // paredes do book (orderbook_walls)
+    dayFlow?: { delta: number; vol: number; vwap: number | null } | null; // delta/vol/VWAP do dia (klines 15m)
+    cot?: { instNet: number; instNetChg: number; date: string } | null; // COT cripto CME (asset managers)
+  } | null,
 ): MarketRead {
   const closes = candles.map((c) => c.close);
   const price =
@@ -637,10 +642,178 @@ export function computeMarketRead(
   // ── DOIS MEDIDORES (03/jul): ESTRUTURAL (o fundo — 1D) × DO DIA (tático — 4H + micro).
   // Antes era UM ponteiro misturando horizontes (média de opostos → "baixa −50" com estrutura
   // de alta). Pesos CALIBRADOS pelo aprendizado do robô (bot_learning, n≥600 por sinal):
+  // ── NOVAS FORÇAS (07/jul, pedido do dono — dados já coletados que faltavam na leitura) ──
+  // 1) Divergência CVD institucional (Coinbase) × varejo (Binance+OKX) — melhor sinal do robô
+  //    na régua de trades reais (67% de acerto, +0,85R). Quando divergem, o institucional manda.
+  const cvdInstV = payload?.price?.coinbase?.cvd ?? null;
+  const cvdRetailV = payload?.price?.binance?.cvd != null || payload?.price?.okx?.cvd != null
+    ? Number(payload?.price?.binance?.cvd ?? 0) + Number(payload?.price?.okx?.cvd ?? 0)
+    : null;
+  const haveCvdDiv = cvdInstV != null && cvdRetailV != null;
+  let cvdDivDir: Dir = 0;
+  let cvdDivStr = 0;
+  {
+    const diverge = haveCvdDiv && Math.sign(cvdInstV) !== 0 && Math.sign(cvdRetailV) !== 0 && Math.sign(cvdInstV) !== Math.sign(cvdRetailV);
+    if (diverge) {
+      cvdDivDir = sign(cvdInstV);
+      cvdDivStr = clamp01(0.55 + 0.35 * Math.min(Math.abs(cvdInstV) / 300000, 1));
+    }
+    axes.push({
+      key: "cvddiv", label: tl("CVD: institucional × varejo", "CVD: institutional vs retail"), group: tl("fluxo", "flow"),
+      dir: cvdDivDir, strength: cvdDivStr, available: haveCvdDiv,
+      detail: !haveCvdDiv ? tl("Sem CVD das 3 corretoras agora", "3-exchange CVD unavailable")
+        : diverge
+          ? (cvdInstV > 0 ? tl("Coinbase COMPRA e varejo vende — acumulação (tell de alta)", "Coinbase BUYS while retail sells — accumulation") : tl("Coinbase VENDE e varejo compra — distribuição (tell de baixa)", "Coinbase SELLS while retail buys — distribution"))
+          : tl("Institucional e varejo do mesmo lado — sem tell", "Institutional and retail aligned — no tell"),
+    });
+  }
+
+  // 2) Paredes de baleia (suporte × resistência líquida do book) — 63% na régua de trades reais.
+  const wallsIn = extras?.walls ?? null;
+  const haveWalls = !!(wallsIn && wallsIn.length && price != null);
+  let wallsDir: Dir = 0;
+  let wallsStr = 0;
+  {
+    let sup = 0, res = 0;
+    if (haveWalls && price != null) {
+      for (const w of wallsIn) {
+        const wp = Number(w.price), nn = Number(w.notional_usd || 0);
+        if (!(wp > 0) || nn <= 0) continue;
+        const distPct = (Math.abs(wp - price) / price) * 100;
+        const pw = 1 / (1 + distPct); // meia-força a 1% de distância
+        if (wp < price) sup += nn * pw; else res += nn * pw;
+      }
+    }
+    const tot = sup + res;
+    if (tot > 0) {
+      const r = (sup - res) / tot;
+      wallsDir = Math.abs(r) >= 0.15 ? sign(r) : 0;
+      wallsStr = clamp01(Math.abs(r) * 1.4);
+    }
+    axes.push({
+      key: "walls", label: tl("Paredes de baleia (book)", "Whale walls (order book)"), group: tl("liquidez", "liquidity"),
+      dir: wallsDir, strength: wallsStr, available: haveWalls,
+      detail: !haveWalls ? tl("Sem snapshot de paredes", "No walls snapshot")
+        : tot > 0
+          ? (wallsDir > 0 ? tl("Suporte domina o book", "Support dominates the book") : wallsDir < 0 ? tl("Resistência domina o book", "Resistance dominates the book") : tl("Book equilibrado", "Balanced book")) + " · " + (sup / 1e6).toFixed(1) + "M sup × " + (res / 1e6).toFixed(1) + "M res"
+          : tl("Sem paredes relevantes", "No relevant walls"),
+    });
+  }
+
+  // 3) Delta acumulado do DIA (volume comprador − vendedor, taker, vela a vela desde 00:00 UTC)
+  //    — "quem está ganhando o dia" em dólares. Mesma régua do delta_confirm do robô.
+  const df = extras?.dayFlow ?? null;
+  const haveDayFlow = !!(df && df.vol > 0);
+  let dayFlowDir: Dir = 0;
+  let dayFlowStr = 0;
+  if (haveDayFlow && df) {
+    const pct = df.delta / df.vol;
+    dayFlowDir = Math.abs(pct) >= 0.02 ? sign(pct) : 0;
+    dayFlowStr = clamp01(Math.abs(pct) / 0.15);
+  }
+  axes.push({
+    key: "daydelta", label: tl("Delta do dia (compra − venda)", "Day delta (buys − sells)"), group: tl("fluxo", "flow"),
+    dir: dayFlowDir, strength: dayFlowStr, available: haveDayFlow,
+    detail: !haveDayFlow || !df ? tl("Sem velas do dia", "No intraday candles")
+      : (df.delta >= 0 ? tl("Compra líquida de $", "Net buying of $") : tl("Venda líquida de $", "Net selling of $")) + (Math.abs(df.delta) / 1e6).toFixed(1) + "M " + tl("hoje", "today") + " (" + ((Math.abs(df.delta) / df.vol) * 100).toFixed(1) + "% " + tl("do volume", "of volume") + ")",
+  });
+
+  // 4) VWAP diário — o lado do preço define quem manda no dia (referência institucional).
+  const dVwap = df?.vwap ?? null;
+  const haveDayVwap = dVwap != null && price != null;
+  let vwapDir: Dir = 0;
+  let vwapStr = 0;
+  if (haveDayVwap && dVwap != null && price != null) {
+    const dist = ((price - dVwap) / dVwap) * 100;
+    vwapDir = Math.abs(dist) >= 0.05 ? sign(dist) : 0;
+    vwapStr = clamp01(Math.abs(dist) / 2);
+  }
+  axes.push({
+    key: "dayvwap", label: tl("VWAP do dia (lado do preço)", "Daily VWAP (price side)"), group: tl("técnico", "technical"),
+    dir: vwapDir, strength: vwapStr, available: haveDayVwap,
+    detail: !haveDayVwap || dVwap == null || price == null ? tl("Sem VWAP do dia", "No daily VWAP")
+      : tl("Preço ", "Price ") + (price >= dVwap ? tl("ACIMA", "ABOVE") : tl("ABAIXO", "BELOW")) + " (" + (((price - dVwap) / dVwap) * 100).toFixed(2) + "%) — " + (price >= dVwap ? tl("dia comprador", "buyers' day") : tl("dia vendedor", "sellers' day")),
+  });
+
+  // 5) Posição vs Volume Profile (POC/área de valor) — aceitação acima do VAH = alta; abaixo do VAL = baixa.
+  const vpSrc = intra && intra.length >= 60 ? intra : candles;
+  const vpRead = vpSrc.length >= 30 ? computeVolumeProfile(vpSrc) : null;
+  const haveVpAx = !!(vpRead && price != null);
+  let vpDir: Dir = 0;
+  let vpStr = 0;
+  if (haveVpAx && vpRead && price != null) {
+    const width = Math.max(vpRead.vah - vpRead.val, 1e-9);
+    if (price > vpRead.vah) { vpDir = 1; vpStr = clamp01(((price - vpRead.vah) / width) * 2 + 0.35); }
+    else if (price < vpRead.val) { vpDir = -1; vpStr = clamp01(((vpRead.val - price) / width) * 2 + 0.35); }
+  }
+  axes.push({
+    key: "vp", label: tl("Volume Profile (área de valor)", "Volume Profile (value area)"), group: tl("técnico", "technical"),
+    dir: vpDir, strength: vpStr, available: haveVpAx,
+    detail: !haveVpAx ? tl("Histórico insuficiente", "Not enough history")
+      : vpDir > 0 ? tl("Aceitação ACIMA da área de valor — compradores no controle", "Acceptance ABOVE value area — buyers in control")
+      : vpDir < 0 ? tl("Rejeição ABAIXO da área de valor — vendedores no controle", "Below value area — sellers in control")
+      : tl("Dentro da área de valor — equilíbrio", "Inside value area — balance"),
+  });
+
+  // 6) COT cripto (CME, semanal) — asset managers = o institucional regulado. BTC serve de
+  //    proxy market-wide para alts sem série própria.
+  const cotIn = extras?.cot ?? null;
+  const haveCot = !!cotIn;
+  let cotDir: Dir = 0;
+  let cotStr = 0;
+  if (haveCot && cotIn) {
+    cotDir = sign(cotIn.instNet);
+    const chgAligned = Math.sign(cotIn.instNetChg) === Math.sign(cotIn.instNet) && cotIn.instNetChg !== 0;
+    cotStr = clamp01(0.4 + (chgAligned ? 0.3 : 0) + Math.min(Math.abs(cotIn.instNetChg) / Math.max(Math.abs(cotIn.instNet), 1), 1) * 0.2);
+  }
+  axes.push({
+    key: "cot", label: tl("COT CME (institucional, semanal)", "CME COT (institutional, weekly)"), group: tl("posição", "position"),
+    dir: cotDir, strength: cotStr, available: haveCot,
+    detail: !haveCot || !cotIn ? tl("Sem relatório COT", "No COT report")
+      : tl("Asset managers net ", "Asset managers net ") + (cotIn.instNet >= 0 ? "long " : "short ") + Math.abs(cotIn.instNet).toLocaleString() + tl(" contratos · Δ semana ", " contracts · wk Δ ") + (cotIn.instNetChg >= 0 ? "+" : "") + cotIn.instNetChg.toLocaleString(),
+  });
+
+  // 7) SQUEEZE MOMENTUM (LazyBear — pedido do dono, 113k boosts no TradingView): Bollinger DENTRO
+  //    do Keltner = volatilidade comprimida (energia armada); o momentum (endpoint da regressão
+  //    linear do desvio do preço) dá a direção provável da liberação. Calculado no 4H (tático).
+  const sqSrc = intra && intra.length >= 40 ? intra : candles;
+  const haveSqueeze = sqSrc.length >= 40;
+  let sqDir: Dir = 0;
+  let sqStr = 0;
+  let sqOn = false;
+  let sqMom = 0;
+  if (haveSqueeze) {
+    const n = 20;
+    const cl = sqSrc.map((c) => c.close);
+    const win = cl.slice(-n);
+    const smaV = win.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(win.reduce((a, b) => a + (b - smaV) ** 2, 0) / n);
+    const atrV = last(atr(sqSrc, n)) || 0;
+    sqOn = 2 * sd < 1.5 * atrV; // BB(20,2) dentro do KC(20,1.5×ATR)
+    const hh = Math.max(...sqSrc.slice(-n).map((c) => c.high));
+    const ll = Math.min(...sqSrc.slice(-n).map((c) => c.low));
+    const mid = ((hh + ll) / 2 + smaV) / 2;
+    const src = sqSrc.slice(-n).map((c) => c.close - mid);
+    const xm = (n - 1) / 2;
+    const ym = src.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    src.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
+    sqMom = ym + (den ? num / den : 0) * (n - 1 - xm);
+    sqDir = atrV > 0 && Math.abs(sqMom) >= 0.15 * atrV ? sign(sqMom) : 0;
+    sqStr = atrV > 0 ? clamp01(Math.abs(sqMom) / (1.5 * atrV)) : 0;
+  }
+  axes.push({
+    key: "squeeze", label: tl("Squeeze Momentum (LazyBear)", "Squeeze Momentum (LazyBear)"), group: tl("técnico", "technical"),
+    dir: sqDir, strength: sqStr, available: haveSqueeze,
+    detail: !haveSqueeze ? tl("Histórico insuficiente", "Not enough history")
+      : (sqOn ? tl("Squeeze ARMADO (vol. comprimida — movimento vindo)", "Squeeze ON (vol compressed — move loading)") : tl("Squeeze liberado", "Squeeze off")) + " · momentum " + (sqMom >= 0 ? tl("comprador", "bullish") : tl("vendedor", "bearish")),
+  });
+
   // acerto medido >52% aumenta o peso, <52% reduz; funding (41%, invertido) virou contexto.
   const HIT: Record<string, number | null> = {
-    trend: 53, structure: 52, momentum: null, flow: 54,          // estrutural
+    trend: 53, structure: 52, momentum: null, flow: 54, cot: null,          // estrutural
     intraday: 53, book: 56, sentiment: 56, position: 53, options: 52, prevlevels: null, // do dia
+    cvddiv: 67, walls: 63, daydelta: null, dayvwap: null, vp: null, squeeze: null, // novas 07/jul (régua forte do robô)
   };
   const mAdj = (hit: number | null) => (hit == null ? 1 : Math.max(0.7, Math.min(1.3, 1 + (hit - 52) * 0.05)));
   interface Force { key: string; dir: Dir; str: number; w: number; avail: boolean }
@@ -649,6 +822,7 @@ export function computeMarketRead(
     { key: "structure", dir: structDir, str: structStr, w: 0.28, avail: haveStruct },
     { key: "momentum", dir: momDir, str: momStr, w: 0.20, avail: haveMom },
     { key: "flow", dir: flowDir, str: flowStr, w: 0.22, avail: haveFlow },
+    { key: "cot", dir: cotDir, str: cotStr, w: 0.12, avail: haveCot },
   ];
   const dailyForces: Force[] = [
     { key: "intraday", dir: intraDir, str: intraStr, w: 0.26, avail: haveIntra },
@@ -657,6 +831,12 @@ export function computeMarketRead(
     { key: "position", dir: posDir, str: posStr, w: 0.12, avail: havePos },
     { key: "options", dir: optDir, str: optStr, w: 0.12, avail: haveOpt },
     { key: "prevlevels", dir: prevDir, str: prevStr, w: 0.12, avail: havePrev },
+    { key: "cvddiv", dir: cvdDivDir, str: cvdDivStr, w: 0.14, avail: haveCvdDiv },
+    { key: "walls", dir: wallsDir, str: wallsStr, w: 0.10, avail: haveWalls },
+    { key: "daydelta", dir: dayFlowDir, str: dayFlowStr, w: 0.12, avail: haveDayFlow },
+    { key: "dayvwap", dir: vwapDir, str: vwapStr, w: 0.10, avail: haveDayVwap },
+    { key: "vp", dir: vpDir, str: vpStr, w: 0.10, avail: haveVpAx },
+    { key: "squeeze", dir: sqDir, str: sqStr, w: 0.08, avail: haveSqueeze },
   ];
   const aggregate = (forces: Force[]) => {
     let n = 0;
@@ -677,8 +857,9 @@ export function computeMarketRead(
   const dailyRead = aggregate(dailyForces);
   // Peso efetivo + horizonte + acerto medido nas axes (UI: cabo de guerra, seções, badges).
   const HZ: Record<string, "structural" | "daily"> = {
-    trend: "structural", structure: "structural", momentum: "structural", flow: "structural",
+    trend: "structural", structure: "structural", momentum: "structural", flow: "structural", cot: "structural",
     intraday: "daily", book: "daily", sentiment: "daily", position: "daily", options: "daily", prevlevels: "daily",
+    cvddiv: "daily", walls: "daily", daydelta: "daily", dayvwap: "daily", vp: "daily", squeeze: "daily",
   };
   for (const f of [...structuralForces, ...dailyForces]) {
     const ax = axes.find((a) => a.key === f.key);
