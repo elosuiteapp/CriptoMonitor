@@ -253,7 +253,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number; extVeto?: boolean }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number; extVeto?: boolean; structEntry?: string; structEntryWin?: number; structEntryInternal?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   // EXPERIMENTO dir_mode (caso SOL 06/jul: short no topo com a interna JÁ bullish): "any" (atual) =
@@ -311,16 +311,39 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
     if (smc.extremes.high === "strong" && inPrem && nearTop && freshBear && o.fut) pick("short", "fade topo forte ↓", freshBear);
     else if (smc.extremes.low === "strong" && inDisc && nearBot && freshBull) pick("long", "fade fundo forte ↑", freshBull);
   }
-  if (!want) if (o.structFirst) {
+  // EXPERIMENTO struct_entry (fase W, SPEC DO DONO 08/jul: "não precisa de OB pro robô operar —
+  // quebrou estrutura de alta entra na venda, quebra de baixa entra na compra; só cuidar no
+  // premium/discount"): a QUEBRA (BOS/CHoCH) recente é gatilho PRÓPRIO, sem exigir zona.
+  //   "only" = SÓ a quebra dispara (setups de zona desligados); "add" = quebra entra como setup
+  //   adicional quando não há setup de zona. Janela de frescor struct_entry_win velas (default 2).
+  //   struct_entry_internal = quebras INTERNAS (CHoCH/BOS de ~1h) também disparam.
+  //   O cuidado do dono nas regiões é a zoneDiscipline (abaixo), que já segura compra no premium
+  //   e venda no discount — vale pra este setup também. Stop = swing oposto (invalidação real).
+  const seMode = o.structEntry ?? "off";
+  const structBreakPick = () => {
+    const win = o.structEntryWin ?? 2;
+    const ev = smc.lastSwing; // último evento de ESTRUTURA (BOS/CHoCH não-interno)
+    const evOk = ev && ev.time >= lastT - barSec * win;
+    const iBias = o.structEntryInternal ? smc.internalBias : null; // proxy: interna recém-virada
+    if (evOk && ev!.bias === "bullish" && bull) pick("long", "quebra de estrutura ↑", null);
+    else if (evOk && ev!.bias === "bearish" && bear && o.fut) pick("short", "quebra de estrutura ↓", null);
+    else if (!evOk && iBias === "bullish" && bull) pick("long", "quebra interna ↑", null);
+    else if (!evOk && iBias === "bearish" && bear && o.fut) pick("short", "quebra interna ↓", null);
+  };
+  if (!want && seMode === "only") {
+    structBreakPick();
+  } else if (!want) if (o.structFirst) {
     if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
     else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
     else if (imbLongOk) pick("long", "imbalance ↑", freshBull);
     else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
+    else if (seMode === "add") structBreakPick();
   } else {
     if (imbLongOk) pick("long", "imbalance ↑", freshBull);
     else if (imbShortOk) pick("short", "imbalance ↓", freshBear);
     else if (structLongOk) pick("long", "OB/FVG + estrutura ↑", bullOB ?? bullFvg);
     else if (structShortOk) pick("short", "OB/FVG + estrutura ↓", bearOB ?? bearFvg);
+    else if (seMode === "add") structBreakPick();
   }
   if (!want) return { want: null, setup: "", stop: null, target: null, note: "sem setup" };
   if (want === "short" && !o.fut) return { want: null, setup: "", stop: null, target: null, note: "spot" };
@@ -564,6 +587,11 @@ Deno.serve(async (req) => {
   const oppHtfAtr = Math.max(0, Number(body?.opp_htf_atr ?? 0));
   // EXPERIMENTO ext_veto (fase S): topo/fundo FORTE colado à frente veta entrada na direção dele.
   const extVeto = String(body?.ext_veto ?? "off") === "on";
+  // EXPERIMENTO struct_entry (fase W, spec do dono 08/jul): quebra de estrutura (BOS/CHoCH) como
+  // GATILHO próprio — "fez padrão de alta compra, padrão de baixa vende; cuidar no premium/discount".
+  const structEntry = ["add", "only"].includes(String(body?.struct_entry)) ? String(body?.struct_entry) : "off";
+  const structEntryWin = Math.max(1, Number(body?.struct_entry_win ?? 2));
+  const structEntryInternal = String(body?.struct_entry_internal ?? "off") === "on";
   // EXPERIMENTO time_stop_bars (fase V, prática das plataformas): posição que NUNCA andou (pico de
   // lucro < 1R) após N velas sai a mercado — o setup de 15m que não performa perdeu a validade. 0=off.
   const timeStopBars = Math.max(0, Number(body?.time_stop_bars ?? 0));
@@ -729,7 +757,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr, extVeto });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr, extVeto, structEntry, structEntryWin, structEntryInternal });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
@@ -894,7 +922,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, struct_entry: structEntry === "off" ? "off" : `${structEntry}(win ${structEntryWin}${structEntryInternal ? "+interna" : ""})`, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
