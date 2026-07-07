@@ -966,6 +966,17 @@ Deno.serve(async (req) => {
         gate = `delta da vela contra ($${(lastDelta / 1e6).toFixed(2)}M) — aguarda volume ${want === "long" ? "comprador" : "vendedor"}`;
         want = null;
       }
+      // ── FILTRO DE VOLATILIDADE (cfg.vol_max_atr, sql/116 — fase V, prática das plataformas):
+      //    vela FECHADA com range > K×ATR (spike/notícia) = entrada esticada longe da zona — não
+      //    entra. 90d: ETH PF 1,44→1,61 · SOL 4,81→5,35 · BNB/AAVE ~= · BTC neutro. 0 = off. ──
+      const volMaxAtr = Math.max(0, Number(cfg.vol_max_atr ?? 2));
+      if (want && volMaxAtr > 0 && primary?.candles?.length && atrPx > 0) {
+        const lc = primary.candles[primary.candles.length - 1];
+        if (lc.high - lc.low > volMaxAtr * atrPx) {
+          gate = `vela de range esticado (${((lc.high - lc.low) / atrPx).toFixed(1)}×ATR > ${volMaxAtr}× — spike) — não entra`;
+          want = null;
+        }
+      }
       // ── FILTRO SQUEEZE MOMENTUM — LazyBear (cfg.sq_filter, sql/114; fase P: melhorou as 4,
       //    agregado +59,9→+67,8R recorde): momentum (linreg do desvio, 20 velas 15m) FORTE
       //    contra a direção (≥0,5 ATR) segura a entrada — não se compra contra mola armada. ──
