@@ -902,7 +902,7 @@ export default function AdminBot() {
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="text-xs text-muted-foreground">Par (instId)
                   <input className={`${input} mt-1`} value={cfg.inst_id} onChange={(e) => setCfg({ ...cfg, inst_id: e.target.value.toUpperCase(), base_ccy: e.target.value.toUpperCase().split("-")[0] || cfg.base_ccy, quote_ccy: e.target.value.toUpperCase().split("-")[1] || cfg.quote_ccy })} />
-                  {isBinance && <span className="mt-0.5 block text-[10px]">na Binance o robô opera <strong>BTC · ETH · SOL · BNB</strong> (este campo vale só p/ OKX/spot)</span>}
+                  {isBinance && <span className="mt-0.5 block text-[10px]">na Binance o robô opera <strong>BTC · ETH · SOL · BNB · AAVE</strong> (este campo vale só p/ OKX/spot)</span>}
                 </label>
                 {isFut ? (
                   <label className="text-xs text-muted-foreground">Risco por trade (% do patrimônio)
@@ -1011,7 +1011,7 @@ export default function AdminBot() {
                 <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground">🪙 2b · Exceções por moeda <span className="font-normal normal-case text-muted-foreground">— decisão 06/jul: o robô roda IGUAL nas 4; use só como exceção consciente</span></div>
                 <p className="mb-2 text-[11px] text-muted-foreground">Config atual: <strong>tudo neutro</strong> (risco 100%, sem sessões bloqueadas, trailing padrão) — as doses defensivas antigas eram calibradas no motor velho e foram removidas na v22. Estes campos ficam como ferramenta: se a medição semanal do <code>bot_trades_hist</code> condenar uma moeda, a exceção volta AQUI, com dado.</p>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  {["BTC", "ETH", "SOL", "BNB"].map((a) => {
+                  {["BTC", "ETH", "SOL", "BNB", "AAVE"].map((a) => {
                     const ov = cfg.asset_overrides?.[a] ?? {};
                     const setOv = (patch: Record<string, unknown>) => setCfg({ ...cfg, asset_overrides: { ...(cfg.asset_overrides ?? {}), [a]: { ...ov, ...patch } } });
                     return (
@@ -1519,7 +1519,7 @@ export default function AdminBot() {
           <h2 className="text-sm font-semibold text-foreground">📈 Backtester · a estratégia dá lucro?</h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
-              {["BTC", "ETH", "SOL", "BNB"].map((a) => (
+              {["BTC", "ETH", "SOL", "BNB", "AAVE"].map((a) => (
                 <button key={a} onClick={() => setBtAsset(a)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${btAsset === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a}</button>
               ))}
             </div>

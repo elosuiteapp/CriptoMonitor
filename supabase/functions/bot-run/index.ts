@@ -705,7 +705,8 @@ Deno.serve(async (req) => {
 
   try {
     // ════════ MULTI-MOEDA: no binance opera as 4 majors (dados completos). OKX legado = 1 ativo. ════════
-    const ASSETS = venue === "binance" ? ["BTC", "ETH", "SOL", "BNB"] : [String(cfg.base_ccy)];
+    // AAVE adicionada 07/jul a pedido do dono (coletor já cobria: snapshot/book/paredes; sem gamma — sinais de opções não votam, igual BNB).
+    const ASSETS = venue === "binance" ? ["BTC", "ETH", "SOL", "BNB", "AAVE"] : [String(cfg.base_ccy)];
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
