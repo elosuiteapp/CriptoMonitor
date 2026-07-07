@@ -842,12 +842,17 @@ Deno.serve(async (req) => {
 
       // ── RE-ARMA ALVO AUSENTE: posição aberta sem take-profit (aberta na janela "sem alvo" de
       //    03/jul, ou plano sem R:R na entrada) ganha alvo na PRÓXIMA LIQUIDEZ da direção do lucro
-      //    — mesma regra da entrada. Sem isso, o runner depende só do trailing (caso BNB 03/jul). ──
+      //    — mesma regra da entrada. Sem isso, o runner depende só do trailing (caso BNB 03/jul).
+      //    BUG FIX 07/jul: o alvo re-armado precisa estar ALÉM DA ENTRADA (direção do lucro a partir
+      //    dela) — antes usava só lastPx e, com o preço já abaixo da entrada, "re-armava" um alvo
+      //    entre o preço e a entrada (ETH: entrada 1809,4 e alvo 1804,4) → o "take-profit" saía
+      //    no PREJUÍZO (SOL 07/jul: 🎯 ALVO com PnL −10,61). ──
       if (cfg.enabled && venue === "binance" && fut && pos !== "flat" && st.target_px == null && cfg.target_on !== false && primary?.smc) {
         const liq = primary.smc.liquidity;
+        const beyond = pos === "long" ? Math.max(lastPx, st.entry_px ?? lastPx) : Math.min(lastPx, st.entry_px ?? lastPx);
         const tgt = pos === "long"
-          ? liq.filter((l) => l.side === "buy" && l.price > lastPx).sort((a, b) => a.price - b.price)[0]?.price ?? null
-          : liq.filter((l) => l.side === "sell" && l.price < lastPx).sort((a, b) => b.price - a.price)[0]?.price ?? null;
+          ? liq.filter((l) => l.side === "buy" && l.price > beyond).sort((a, b) => a.price - b.price)[0]?.price ?? null
+          : liq.filter((l) => l.side === "sell" && l.price < beyond).sort((a, b) => b.price - a.price)[0]?.price ?? null;
         if (tgt != null) {
           await admin.from("bot_positions").update({ target_px: tgt }).eq("asset", asset);
           st.target_px = tgt;
@@ -910,11 +915,12 @@ Deno.serve(async (req) => {
           // Trailing travou lucro? (stop já está do lado do lucro em relação à entrada)
           const trailed = !!(st.entry_px && st.stop_px && (pos === "long" ? st.stop_px >= st.entry_px : st.stop_px <= st.entry_px));
           const stopLbl = hitTarget ? "🎯 ALVO (liquidez) — take-profit " : trailed ? "🛑 STOP MÓVEL (lucro travado)" : "🛑 STOP ";
+          const exitLvl = hitTarget ? st.target_px : st.stop_px; // fix 07/jul: o log do ALVO imprimia o stop (parecia alvo==stop)
           await savePos(asset, instId, "flat", 0, null);
           if (!hitTarget) await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown só pós-stop (não no take-profit)
           openCount = Math.max(0, openCount - 1);
-          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] ${stopLbl}@ ${st.stop_px}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-          await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${st.stop_px})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
+          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+          await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${exitLvl})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
           return { asset, decision: "flat", stopped: true, pnl };
         }
       }
@@ -988,6 +994,24 @@ Deno.serve(async (req) => {
         if (hb !== (want === "long" ? "bullish" : "bearish")) {
           gate = `bússola ${htfGate} ${hb === "bullish" ? "de ALTA" : hb === "bearish" ? "de BAIXA" : "neutra"} contra o setup ${plan.setup} — segura`;
           want = null;
+        }
+        // ── ZONA OPOSTA DO HTF (cfg.opp_htf_atr, sql/115 — fase R, prints do dono 07/jul): OB/FVG
+        //    CONTRÁRIO não-preenchido do TF da bússola a ≤ X×ATR(HTF) à frente segura a entrada —
+        //    não se compra colado num OB 1H de venda (o 15m não enxerga a zona do TF maior).
+        //    Backtest 90d (alvo off): BTC PF 1,90→2,18 · ETH 1,22→1,44 · SOL 2,99→4,81 · BNB neutro. ──
+        const oppHtfAtr = Math.max(0, Number(cfg.opp_htf_atr ?? 1));
+        if (want && oppHtfAtr > 0 && hsmc) {
+          const hAtr = hsmc.atr || lastPx * 0.01, hBuf = 0.25 * hAtr, ahead = oppHtfAtr * hAtr;
+          const oppF = want === "long"
+            ? hsmc.fvgs.some((f) => f.bias === "bearish" && f.bottom > lastPx - hBuf && f.bottom - lastPx <= ahead)
+            : hsmc.fvgs.some((f) => f.bias === "bullish" && f.top < lastPx + hBuf && lastPx - f.top <= ahead);
+          const oppO = want === "long"
+            ? hsmc.orderBlocks.some((b) => b.bias === "bearish" && b.bottom > lastPx - hBuf && b.bottom - lastPx <= ahead)
+            : hsmc.orderBlocks.some((b) => b.bias === "bullish" && b.top < lastPx + hBuf && lastPx - b.top <= ahead);
+          if (oppF || oppO) {
+            gate = `zona oposta ${htfGate} colada à frente (OB/FVG contra a ≤${oppHtfAtr}×ATR) — segura o setup ${plan.setup}`;
+            want = null;
+          }
         }
       }
       // ── GATE DE CONFLUÊNCIA (motor v17, pedido do dono): os 4 grupos (Estrutura/Fluxo/Técnico/

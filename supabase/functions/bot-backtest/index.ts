@@ -253,7 +253,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   // EXPERIMENTO dir_mode (caso SOL 06/jul: short no topo com a interna JÁ bullish): "any" (atual) =
@@ -382,6 +382,13 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
     target = lb ? lb.price : fbDn ?? (price > smc.discount.top ? smc.discount.top : null);
   }
   const risk = Math.abs(price - stop);
+  // EXPERIMENTO min_rr (fase R, caso 07/jul: ETH 1809/BNB 584/BTC 63769 comprando com o ímã COLADO):
+  // exige alvo estrutural válido com R:R ≥ min_rr — sem alvo, ou com a próxima liquidez/ímã mais
+  // perto que o risco, NÃO entra (antes: entrava "sem alvo" e corria só no trailing). 0 = off.
+  if (o.minRr && o.minRr > 0) {
+    const rr = target != null && risk > 0 ? Math.abs(target - price) / risk : 0;
+    if (rr < o.minRr) return { want: null, setup: "", stop: null, target: null, note: "R:R abaixo do mínimo — ímã/alvo colado à frente" };
+  }
   if (target != null && risk > 0 && Math.abs(target - price) < risk) target = null;
   // Identidade da zona de origem (p/ o experimento zone_once: 1 entrada por zona — stopou, não re-entra).
   const zoneKey = zone && (zone as { time?: number }).time ? `${setup}:${(zone as { time?: number }).time}` : null;
@@ -539,6 +546,12 @@ Deno.serve(async (req) => {
   // contra mas DESACELERANDO ha 2 velas seguidas libera (vendedor exausto pos-capitulacao — o
   // "maroon" do LazyBear; mesma nuance de inclinacao usada na Leitura do Mercado).
   const sqMode = String(body?.sq_mode ?? "abs") === "slope" ? "slope" : "abs";
+  // EXPERIMENTO min_rr (fase R): R:R mínimo vs o alvo estrutural (próxima liquidez/PDH-PDL) — sem
+  // alvo válido (ímã mais perto que o risco) não entra. 0 = off (comportamento atual: entra sem alvo).
+  const minRr = Math.max(0, Number(body?.min_rr ?? 0));
+  // EXPERIMENTO opp_htf_atr (fase R, prints 07/jul): zona OPOSTA fresca do TF MAIOR (OB/FVG do
+  // htf_tf) a ≤ X ATR(HTF) à frente bloqueia a entrada — não se compra colado num OB 1H de venda.
+  const oppHtfAtr = Math.max(0, Number(body?.opp_htf_atr ?? 0));
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -567,7 +580,7 @@ Deno.serve(async (req) => {
   const WARM = 320; // candles de aquecimento por TF (atr200 + estrutura)
 
   // Busca candles reais de cada TF (janela + aquecimento). HTF e trail_tf entram junto se usados.
-  const tfList = [...new Set([baseTf, ...(htfOn ? [htfTf] : []), ...(trailMode === "candle" ? [trailTf] : [])])];
+  const tfList = [...new Set([baseTf, ...(htfOn || oppHtfAtr > 0 ? [htfTf] : []), ...(trailMode === "candle" ? [trailTf] : [])])];
   const byTf: Record<string, Candle[]> = {};
   for (const tf of tfList) {
     byTf[tf] = await fetchKlines(symbol, tf, windowStart - WARM * TF_MS[tf], now);
@@ -695,7 +708,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
@@ -761,6 +774,22 @@ Deno.serve(async (req) => {
       const h = smcCache[htfTf];
       const hb = h?.swingBias ?? h?.internalBias ?? null;
       if (hb !== (want === "long" ? "bullish" : "bearish")) want = null;
+    }
+    // FILTRO ZONA OPOSTA DO HTF (experimento opp_htf_atr): OB/FVG CONTRÁRIO não-preenchido do TF
+    // maior a ≤ X ATR(HTF) à frente segura a entrada — o caso dos prints 07/jul (compra 15m colada
+    // num OB 1H de venda; o 15m não enxerga a zona do 1H). Mesma geometria do opp_zone_atr.
+    if (want && oppHtfAtr > 0) {
+      const h = smcCache[htfTf];
+      if (h) {
+        const hAtr = h.atr || px * 0.01, hBuf = 0.25 * hAtr, ahead = oppHtfAtr * hAtr;
+        const oppF = want === "long"
+          ? h.fvgs.some((f) => f.bias === "bearish" && f.bottom > px - hBuf && f.bottom - px <= ahead)
+          : h.fvgs.some((f) => f.bias === "bullish" && f.top < px + hBuf && px - f.top <= ahead);
+        const oppO = want === "long"
+          ? h.orderBlocks.some((b) => b.bias === "bearish" && b.bottom > px - hBuf && b.bottom - px <= ahead)
+          : h.orderBlocks.some((b) => b.bias === "bullish" && b.top < px + hBuf && px - b.top <= ahead);
+        if (oppF || oppO) want = null;
+      }
     }
 
     // ENTRADA TA-LED (experimento entry_mode): pullback à EMA20 em tendência (EMA20×50) e do lado
@@ -842,7 +871,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
