@@ -764,6 +764,11 @@ Deno.serve(async (req) => {
       // Estrutura por TF: cada timeframe lê a sua + momentum dele.
       const tfReads: TfRead[] = TFS.map((tf, i) => {
         const cs: Candle[] = (candleRows[i] ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0, delta: 2 * (Number(r[7]) || 0) - (Number(r[6]) || 0) })); // delta = taker buy − taker sell (USD) da vela
+        // v28 VELA FECHADA (07/jul, padrão da indústria + fidelidade): a última linha dos klines é a
+        // vela EM FORMAÇÃO — o backtest que validou a estratégia decide só em vela fechada, e o live
+        // decidia 3× dentro da mesma vela (SMC/delta/squeeze mudando no meio do candle = fakeout).
+        // Fora ela, tudo (SMC, delta_confirm, squeeze, janelas de frescor) passa a bater com o medido.
+        if (cs.length > 1) cs.pop();
         const smc = cs.length >= 30 ? computeSmc(cs, SWING) : null;
         const cl = cs.map((c) => c.close);
         const mom = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
@@ -929,8 +934,9 @@ Deno.serve(async (req) => {
       // ── DECISÃO SMC PRICE-ACTION (15m): a ESTRUTURA decide entrada, stop e alvo. ──
       const imbalanceOn = cfg.imbalance_on !== false;
       const imbMinPct = Number(cfg.imbalance_min_pct ?? 0);
-      const c15 = candleRows[0] ?? [];
-      const lastT = c15.length ? Math.floor(Number(c15[c15.length - 1][0]) / 1000) : Math.floor(Date.now() / 1000);
+      // v28: lastT = open da última vela FECHADA (primary.candles já veio sem a vela em formação) —
+      // a janela de frescor do reteste fica idêntica à do backtest.
+      const lastT = primary?.candles?.length ? primary.candles[primary.candles.length - 1].time : Math.floor(Date.now() / 1000);
       // PLAYBOOK 06/jul (defaults novos; reverter = update em bot_config, sem deploy):
       // imbalance como o módulo Smart Money (retest da zona), a favor da estrutura, e o setup
       // do print (reteste de OB/FVG pós-BOS/CHoCH) com prioridade.
@@ -990,6 +996,7 @@ Deno.serve(async (req) => {
       if (want && htfGate !== "off" && BNB_INTERVAL[htfGate]) {
         const hk = await bnb("GET", "/fapi/v1/klines", { symbol: instId, interval: BNB_INTERVAL[htfGate], limit: 300 }, bnbCreds, false);
         const hcs: Candle[] = ((hk.body as any[]) ?? []).map((r) => ({ time: Math.floor(Number(r[0]) / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] || 0 }));
+        if (hcs.length > 1) hcs.pop(); // v28: bússola também em vela FECHADA (igual smcCache do backtest)
         const hsmc = hcs.length >= 30 ? computeSmc(hcs, SWING) : null;
         const hb = hsmc?.swingBias ?? hsmc?.internalBias ?? null;
         if (hb !== (want === "long" ? "bullish" : "bearish")) {

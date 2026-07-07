@@ -564,6 +564,12 @@ Deno.serve(async (req) => {
   const oppHtfAtr = Math.max(0, Number(body?.opp_htf_atr ?? 0));
   // EXPERIMENTO ext_veto (fase S): topo/fundo FORTE colado à frente veta entrada na direção dele.
   const extVeto = String(body?.ext_veto ?? "off") === "on";
+  // EXPERIMENTO time_stop_bars (fase V, prática das plataformas): posição que NUNCA andou (pico de
+  // lucro < 1R) após N velas sai a mercado — o setup de 15m que não performa perdeu a validade. 0=off.
+  const timeStopBars = Math.max(0, Number(body?.time_stop_bars ?? 0));
+  // EXPERIMENTO vol_max_atr (fase V): não entrar em vela de range esticado (> K×ATR — candle de
+  // notícia/spike; as plataformas seguram pra não ser atropeladas). 0=off.
+  const volMaxAtr = Math.max(0, Number(body?.vol_max_atr ?? 0));
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -669,6 +675,9 @@ Deno.serve(async (req) => {
       const hitTarget = targetPx > 0 && (pos === "long" ? base[t].high >= targetPx : base[t].low <= targetPx);
       const hitStop = pos === "long" ? base[t].low <= stopPx : base[t].high >= stopPx;
       if (hitStop) closeTrade(stopPx, barCloseMs / 1000, t, "stop");           // conservador: se stop e alvo no mesmo candle, stop primeiro
+      else if (timeStopBars > 0 && t - entryIdx >= timeStopBars && (pos === "long" ? peak - entryPx : entryPx - peak) < riskDist0) {
+        closeTrade(base[t].close, barCloseMs / 1000, t, "time-stop"); // nunca chegou a +1R de pico em N velas → dormente, sai
+      }
       else if (hitTarget) {
         if (!tpPartial) closeTrade(targetPx, barCloseMs / 1000, t, "alvo");
         else {
@@ -780,6 +789,8 @@ Deno.serve(async (req) => {
       const d = base[t].delta ?? 0;
       if ((want === "long" && d <= 0) || (want === "short" && d >= 0)) want = null;
     }
+    // FILTRO DE VOLATILIDADE (experimento vol_max_atr): vela de range esticado (> K×ATR) não entra.
+    if (want && volMaxAtr > 0 && smc15.atr > 0 && (base[t].high - base[t].low) > volMaxAtr * smc15.atr) want = null;
     // FILTRO HTF (experimento): entrada precisa alinhar com a estrutura do htf_tf (swing; fallback interna).
     // Setup C (fade) é counter-trend POR DESENHO → isento da bússola.
     if (want && htfOn && !plan.setup.startsWith("fade")) {
@@ -883,7 +894,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
