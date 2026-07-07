@@ -253,7 +253,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number; extVeto?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   // EXPERIMENTO dir_mode (caso SOL 06/jul: short no topo com a interna JÁ bullish): "any" (atual) =
@@ -335,6 +335,16 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
     const dnOk = swingBreak === "bearish" || (o.zoneBreakInternal === true && smc.internalBias === "bearish");
     if (want === "long" && inPrem && !upOk) return { want: null, setup: "", stop: null, target: null, note: "premium sem rompimento — zona de venda" };
     if (want === "short" && inDisc && !dnOk) return { want: null, setup: "", stop: null, target: null, note: "discount sem quebra — zona de compra" };
+  }
+  // EXPERIMENTO ext_veto (fase S, aprendizado 07/jul: OB/zona é o que prediz; extremo defendido é
+  // zona): extremo FORTE (strong high/low do LuxAlgo = origem defendida) colado à frente VETA a
+  // entrada na direção dele — não se compra a ≤0,8 ATR de um topo forte nem se vende colado num
+  // fundo forte. (Espelho-veto do fade_mode, que ENTRA contra nesses pontos; fade fica isento.)
+  if (o.extVeto && smc.extremes && !setup.startsWith("fade")) {
+    if (want === "long" && smc.extremes.high === "strong" && Number.isFinite(smc.trailingTop) && smc.trailingTop > price && smc.trailingTop - price <= 0.8 * atr)
+      return { want: null, setup: "", stop: null, target: null, note: "topo forte colado acima — veta compra" };
+    if (want === "short" && smc.extremes.low === "strong" && Number.isFinite(smc.trailingBottom) && smc.trailingBottom < price && price - smc.trailingBottom <= 0.8 * atr)
+      return { want: null, setup: "", stop: null, target: null, note: "fundo forte colado abaixo — veta venda" };
   }
   // EXPERIMENTO opp_zone_atr: bloqueia a entrada quando há FVG/OB OPOSTO não-preenchido a ≤ X ATR
   // à frente (estaria entrando direto numa oferta/demanda fresca — o alvo morre nela). 0 = off.
@@ -552,6 +562,8 @@ Deno.serve(async (req) => {
   // EXPERIMENTO opp_htf_atr (fase R, prints 07/jul): zona OPOSTA fresca do TF MAIOR (OB/FVG do
   // htf_tf) a ≤ X ATR(HTF) à frente bloqueia a entrada — não se compra colado num OB 1H de venda.
   const oppHtfAtr = Math.max(0, Number(body?.opp_htf_atr ?? 0));
+  // EXPERIMENTO ext_veto (fase S): topo/fundo FORTE colado à frente veta entrada na direção dele.
+  const extVeto = String(body?.ext_veto ?? "off") === "on";
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -708,7 +720,7 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr, extVeto });
     let want = plan.want;
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
@@ -871,7 +883,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
