@@ -149,7 +149,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [error, setError] = useState<string | null>(null);
   const [layers, setLayers] = usePersistentState<SmcLayers>("cm.smc-layers", DEFAULT_LAYERS, true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral"; score: number }[]>([]);
+  const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral"; score: number; insufficient?: boolean }[]>([]);
   // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
   const perp = usePerpContext(smcAsset);
   // On-chain: próximo token unlock (DefiLlama) — evento de oferta.
@@ -231,10 +231,11 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, [smcAsset, tf]);
 
-  // Pressão estrutural multi-timeframe (top-down): calcula a estrutura em 1D/4h/1h/15m
+  // Pressão estrutural multi-timeframe (top-down macro→micro): 1S/1D/4h/1h/15m.
+  // Semanal em alt novo pode não ter candles suficientes → marca "sem histórico".
   useEffect(() => {
     let active = true;
-    const tfs: Timeframe[] = ["1d", "4h", "1h", "15m"];
+    const tfs: Timeframe[] = ["1w", "1d", "4h", "1h", "15m"];
     setMtf([]);
     (async () => {
       const out = await Promise.all(
@@ -242,9 +243,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           try {
             const k = await fetchKlines(smcAsset, tx, ANALYSIS_BARS);
             const r = computeSmc(k);
-            return { tf: tx, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral", score: structuralPressure(r) };
+            return { tf: tx, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral", score: structuralPressure(r), insufficient: !r };
           } catch {
-            return { tf: tx, bias: "neutral" as const, score: 0 };
+            return { tf: tx, bias: "neutral" as const, score: 0, insufficient: true };
           }
         }),
       );
@@ -585,25 +586,31 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
             <div className="space-y-1.5">
               {mtf.map((m) => (
                 <div key={m.tf} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-7 shrink-0 font-semibold text-muted-foreground">{tfLabel(m.tf) ?? m.tf}</span>
-                  <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                    <span className="absolute left-1/2 top-0 h-full w-px bg-border/80" aria-hidden />
-                    <span
-                      className="absolute top-0 h-full rounded-full transition-all"
-                      style={{
-                        left: m.score >= 0 ? "50%" : `${50 + m.score / 2}%`,
-                        width: `${Math.abs(m.score) / 2}%`,
-                        backgroundColor: m.score > 0 ? "#22c55e" : m.score < 0 ? "#ef4444" : "transparent",
-                      }}
-                    />
-                  </div>
-                  <span
-                    className={`num w-9 shrink-0 text-right ${
-                      m.score > 0 ? "text-emerald-600 dark:text-emerald-400" : m.score < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
-                    }`}
-                  >
-                    {m.score > 0 ? "+" : ""}{m.score}
-                  </span>
+                  <span className="w-9 shrink-0 font-semibold text-muted-foreground">{tfLabel(m.tf) ?? m.tf}</span>
+                  {m.insufficient ? (
+                    <span className="flex-1 text-[10px] italic text-muted-foreground/70">{locale === "en" ? "no history for this TF" : "sem histórico para este TF"}</span>
+                  ) : (
+                    <>
+                      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <span className="absolute left-1/2 top-0 h-full w-px bg-border/80" aria-hidden />
+                        <span
+                          className="absolute top-0 h-full rounded-full transition-all"
+                          style={{
+                            left: m.score >= 0 ? "50%" : `${50 + m.score / 2}%`,
+                            width: `${Math.abs(m.score) / 2}%`,
+                            backgroundColor: m.score > 0 ? "#22c55e" : m.score < 0 ? "#ef4444" : "transparent",
+                          }}
+                        />
+                      </div>
+                      <span
+                        className={`num w-9 shrink-0 text-right ${
+                          m.score > 0 ? "text-emerald-600 dark:text-emerald-400" : m.score < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                        }`}
+                      >
+                        {m.score > 0 ? "+" : ""}{m.score}
+                      </span>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
