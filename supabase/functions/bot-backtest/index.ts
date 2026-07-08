@@ -601,6 +601,11 @@ Deno.serve(async (req) => {
   // EXPERIMENTO vol_max_atr (fase V): não entrar em vela de range esticado (> K×ATR — candle de
   // notícia/spike; as plataformas seguram pra não ser atropeladas). 0=off.
   const volMaxAtr = Math.max(0, Number(body?.vol_max_atr ?? 0));
+  // EXPERIMENTO struct_exit (ideia do dono 08/jul, Opção 1): SAI da posição quando a estrutura
+  // VIRA CONTRA na base — CHoCH contra a posição impresso APÓS a entrada. Segue o SMC também na
+  // saída (não só no trailing/alvo): estrutura de alta virou baixa → fecha o long. "internal"
+  // também conta a virada da estrutura INTERNA (~1h) como saída (mais sensível). 0/off = atual.
+  const structExit = ["on", "internal"].includes(String(body?.struct_exit)) ? String(body?.struct_exit) : "off";
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -737,6 +742,17 @@ Deno.serve(async (req) => {
     const smc15 = smcCache[baseTf];
     if (!smc15) continue;
     evalBars++;
+
+    // SAÍDA POR ESTRUTURA (struct_exit): CHoCH CONTRA na base 15m, impresso após a entrada, fecha
+    // a posição (segue o SMC também na saída). Roda com o smc recém-recalculado, antes do trailing/
+    // decisão; se fechou, o bloco de decisão abaixo pode reentrar no próximo setup (ou virar, se rev).
+    if (pos !== "flat" && structExit !== "off") {
+      const against = pos === "long" ? "bearish" : "bullish";
+      const ls = smc15.lastSwing;
+      const swingChoch = !!ls && ls.type === "CHoCH" && ls.bias === against && ls.time > entryTime;
+      const internalChoch = structExit === "internal" && smc15.internalBias === against;
+      if (swingChoch || internalChoch) closeTrade(base[t].close, barCloseMs / 1000, t, "estrutura");
+    }
 
     // Trailing (usa o ATR/estrutura do TF base). Só quando há posição.
     if (pos !== "flat" && trailMode === "candle") {
@@ -925,6 +941,8 @@ Deno.serve(async (req) => {
     shorts: shorts.length, shorts_win: shorts.length ? Math.round((shorts.filter((t) => t.rNet > 0).length / shorts.length) * 1000) / 10 : 0,
     stops: trades.filter((t) => t.reason === "stop").length,
     reversals: trades.filter((t) => t.reason === "reversão").length,
+    struct_exits: trades.filter((t) => t.reason === "estrutura").length,
+    targets: trades.filter((t) => t.reason === "alvo" || t.reason === "alvo+parcial").length,
     bars_evaluated: evalBars,
     // Estudo de sessão: desempenho por bloco de 3h UTC da ENTRADA (n, win%, soma de R líquido).
     by_hour3: Array.from({ length: 8 }, (_, b) => {
@@ -934,7 +952,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, struct_entry: structEntry === "off" ? "off" : `${structEntry}(win ${structEntryWin}${structEntryInternal ? "+interna" : ""})`, trail_liq_mult: trailLiqMult, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, struct_entry: structEntry === "off" ? "off" : `${structEntry}(win ${structEntryWin}${structEntryInternal ? "+interna" : ""})`, struct_exit: structExit, trail_liq_mult: trailLiqMult, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
