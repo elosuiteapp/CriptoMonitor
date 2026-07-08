@@ -592,6 +592,9 @@ Deno.serve(async (req) => {
   const structEntry = ["add", "only"].includes(String(body?.struct_entry)) ? String(body?.struct_entry) : "off";
   const structEntryWin = Math.max(1, Number(body?.struct_entry_win ?? 2));
   const structEntryInternal = String(body?.struct_entry_internal ?? "off") === "on";
+  // EXPERIMENTO trail_liq_mult (fase X): trailing aperta pra K×ATR quando o preço está na zona de
+  // reação (±0,5 ATR) de uma poça de liquidez a favor; atravessou, volta ao trail normal. 0 = off.
+  const trailLiqMult = Math.max(0, Number(body?.trail_liq_mult ?? 0));
   // EXPERIMENTO time_stop_bars (fase V, prática das plataformas): posição que NUNCA andou (pico de
   // lucro < 1R) após N velas sai a mercado — o setup de 15m que não performa perdeu a validade. 0=off.
   const timeStopBars = Math.max(0, Number(body?.time_stop_bars ?? 0));
@@ -745,7 +748,16 @@ Deno.serve(async (req) => {
       if (armed && tc) stopPx = pos === "long" ? Math.max(stopPx, tc.low) : Math.min(stopPx, tc.high);
     } else if (pos !== "flat" && trailOn && trailMult > 0) {
       const atr = smc15.atr || entryPx * 0.01;
-      const dist = trailMult * atr, buf = 0.25 * atr;
+      // EXPERIMENTO trail_liq_mult (fase X, ideia do dono 08/jul: "alvo rolante" como sensor do
+      // trailing): preço DENTRO da zona de reação de uma poça de liquidez A FAVOR (±0,5 ATR dela)
+      // → o trailing aperta pra este multiplicador (protege o lucro onde a reação é provável);
+      // atravessou a poça → volta a folga normal (o ratchet preserva o que apertou). 0 = off.
+      let multEff = trailMult;
+      if (trailLiqMult > 0) {
+        const nearPool = smc15.liquidity.some((l) => (pos === "long" ? l.side === "buy" && l.price > entryPx : l.side === "sell" && l.price < entryPx) && Math.abs(base[t].close - l.price) <= 0.5 * atr);
+        if (nearPool) multEff = Math.min(multEff, trailLiqMult);
+      }
+      const dist = multEff * atr, buf = 0.25 * atr;
       peak = pos === "long" ? Math.max(peak, base[t].close) : Math.min(peak, base[t].close);
       const armed = pos === "long" ? peak - entryPx >= dist : entryPx - peak >= dist;
       if (armed) {
@@ -922,7 +934,7 @@ Deno.serve(async (req) => {
     }),
   };
   const taLabel = [ta.ema && "EMA20×50", ta.vwap && "VWAP", ta.adx && "ADX≥20"].filter(Boolean).join("+") || "off";
-  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, struct_entry: structEntry === "off" ? "off" : `${structEntry}(win ${structEntryWin}${structEntryInternal ? "+interna" : ""})`, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
+  const params = { asset, symbol, days, engine: `SMC price-action ${baseTf}`, base_tf: baseTf, imbalance: imbalanceOn ? "on" : "off", stop: "estrutural", target: !useTarget ? "off (sem take-profit)" : tpPartial ? "liquidez (parcial 50%)" : "liquidez", trailing: trailMode === "candle" ? `candle ${trailTf}${trailArmR > 0 ? ` (arma ${trailArmR}R)` : ""}` : trailOn ? `${trailMult}×ATR` : "off", trail_mode: trailMode, trail_tf: trailTf, trail_arm_r: trailArmR, trail_floor: floorMode, ta_scope: taAll ? "all" : "structural", entry_mode: entryMode, risk_pct: riskPct, fee_pct: feePct, slip_pct: slipPct, flow: "neutro (não backtestável)", ta_filter: taLabel, rev_mode: revMode, min_hold_bars: minHold, cooldown_bars: cooldownBars, imb_min_pct: imbMinPct, imb_mode: imbRetest ? "retest" : "chase", imb_align: imbAlign ? "on" : "off", setup_priority: structFirst ? "structure" : "imbalance", zone_once: zoneOnce ? "on" : "off", dir_mode: dirMode, vp_mode: vpMode, fade_mode: fadeMode, ob_mode: obMode, delta_confirm: deltaConfirm ? "on" : "off", sq_filter: sqFilter ? (sqMode === "slope" ? "on(slope)" : "on") : "off", min_rr: minRr, opp_htf_atr: oppHtfAtr, ext_veto: extVeto ? "on" : "off", time_stop_bars: timeStopBars, vol_max_atr: volMaxAtr, struct_entry: structEntry === "off" ? "off" : `${structEntry}(win ${structEntryWin}${structEntryInternal ? "+interna" : ""})`, trail_liq_mult: trailLiqMult, zone_discipline: zoneStrong ? "strong(volume+ADX+quebra)" : zoneDiscipline ? `on(win ${zoneBreakWin}${zoneBreakInternal ? "+interna" : ""})` : "off", htf_filter: htfOn ? htfTf : "off", block_hours: blockHours.size ? [...blockHours].sort((a, b) => a - b).join(",") : "off" };
   // Downsample da curva de equity (máx ~200 pontos) + amostra dos últimos trades.
   const step = Math.max(1, Math.ceil(equity.length / 200));
   const equityDs = equity.filter((_, i) => i % step === 0 || i === equity.length - 1);
