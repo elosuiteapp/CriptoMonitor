@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import Newsletter from "./pages/Newsletter";
 import NewsletterEdition from "./pages/NewsletterEdition";
 import NotFound from "./pages/NotFound";
+import Obrigado from "./pages/Obrigado";
 import Pricing from "./pages/Pricing";
 import AdminAffiliates from "./pages/admin/Affiliates";
 import AdminRoute from "./pages/admin/AdminRoute";
@@ -55,7 +56,7 @@ export default function App() {
   // checkout do plano logo após o login (sobrevive ao redirect do OAuth via sessionStorage).
   useEffect(() => {
     const plan = new URLSearchParams(location.search).get("plan");
-    if (plan === "pro" || plan === "expert") {
+    if (plan === "pro") {
       try {
         sessionStorage.setItem("ov.pending-plan", plan);
       } catch {
@@ -89,6 +90,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/obrigado" element={<Obrigado />} />
       <Route path="/newsletter" element={session ? <Newsletter /> : <CaptureAndLogin />} />
       <Route path="/newsletter/:slug" element={session ? <NewsletterEdition /> : <CaptureAndLogin />} />
       <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />

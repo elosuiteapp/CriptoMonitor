@@ -15,11 +15,11 @@ const ANNUAL_DISCOUNT = 0.3; // sincronizar com Pricing/asaas-checkout
 interface Props {
   user: User;
   welcome?: boolean; // primeiro acesso (boas-vindas)
-  intentPlan?: "pro" | "expert"; // veio da landing querendo assinar este plano
+  intentPlan?: "pro"; // veio da landing querendo assinar este plano
   onClose: () => void;
 }
 
-const PLAN_NAME: Record<string, string> = { free: "Free", pro: "Pro", expert: "Expert" };
+const PLAN_NAME: Record<string, string> = { free: "Free", pro: "Pro" };
 
 const fieldCls =
   "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary";
@@ -31,9 +31,9 @@ const fmtDate = (iso: string | null) =>
  *  troca/cancelamento) e PERFIL (nome, telefone, CPF). Substitui o ProfileModal. */
 export default function AccountDrawer({ user, welcome, intentPlan, onClose }: Props) {
   const { t } = useT();
-  const UPGRADE: { slug: "pro" | "expert"; tag?: string; features: string[] }[] = [
+  // Modelo Free+Pro (sql/110): só Pro é vendável. Expert virou legado (sellable=false).
+  const UPGRADE: { slug: "pro"; tag?: string; features: string[] }[] = [
     { slug: "pro", tag: t.accountDrawer.tagPopular, features: t.accountDrawer.proFeatures },
-    { slug: "expert", features: t.accountDrawer.expertFeatures },
   ];
   const navigate = useNavigate();
   const { profile, save } = useProfile(user);
@@ -100,7 +100,7 @@ export default function AccountDrawer({ user, welcome, intentPlan, onClose }: Pr
     setProfileMsg(error ? t.accountDrawer.saveError : t.accountDrawer.saved);
   }
 
-  async function startCheckout(slug: "pro" | "expert") {
+  async function startCheckout(slug: "pro") {
     setCheckoutMsg(null);
     setCheckoutBusy(slug);
     try {

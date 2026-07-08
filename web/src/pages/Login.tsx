@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
+import { getLocale } from "../hooks/useLocale";
 import { useT } from "../lib/i18n";
 import LangSwitch from "../components/ui/LangSwitch";
 
@@ -33,6 +34,8 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [accepted, setAccepted] = useState(false); // aceite de Termos/Privacidade (signup)
+  const isEn = getLocale() === "en";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,12 +129,33 @@ export default function Login() {
               <input type="password" className={fieldCls} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
             </label>
 
+            {mode === "signup" && (
+              <label className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(e) => setAccepted(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span>
+                  {isEn ? "I've read and agree to the " : "Li e concordo com os "}
+                  <a href={`${LANDING_URL}/termos`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                    {isEn ? "Terms of Use" : "Termos de Uso"}
+                  </a>
+                  {isEn ? " and " : " e a "}
+                  <a href={`${LANDING_URL}/privacidade`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                    {isEn ? "Privacy Policy" : "Política de Privacidade"}
+                  </a>.
+                </span>
+              </label>
+            )}
+
             {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
             {info && <p className="text-sm text-emerald-600 dark:text-emerald-400">{info}</p>}
 
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || (mode === "signup" && !accepted)}
               className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {busy ? "…" : mode === "signin" ? tr.login.signinBtn : tr.login.signupBtn}
@@ -152,6 +176,17 @@ export default function Login() {
             <GoogleIcon />
             {tr.login.google}
           </button>
+
+          <p className="mt-3 text-center text-[11px] leading-relaxed text-muted-foreground">
+            {isEn ? "By continuing, you agree to our " : "Ao continuar, você concorda com os "}
+            <a href={`${LANDING_URL}/termos`} target="_blank" rel="noreferrer" className="hover:underline">
+              {isEn ? "Terms" : "Termos"}
+            </a>
+            {isEn ? " and " : " e a "}
+            <a href={`${LANDING_URL}/privacidade`} target="_blank" rel="noreferrer" className="hover:underline">
+              {isEn ? "Privacy Policy" : "Política de Privacidade"}
+            </a>.
+          </p>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === "signin" ? (

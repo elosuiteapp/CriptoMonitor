@@ -22,7 +22,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
   const { t: tr } = useT();
   const { loading, avatarUrl, email, displayName, complete } = useProfile(user);
   const [open, setOpen] = useState(false);
-  const [account, setAccount] = useState<{ welcome: boolean; intent?: "pro" | "expert" } | null>(null);
+  const [account, setAccount] = useState<{ welcome: boolean; intent?: "pro" } | null>(null);
   useEscapeKey(() => setOpen(false), open);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function UserMenu({ user, planName, onSignOut }: Props) {
     } catch {
       /* indisponível */
     }
-    if (pending === "pro" || pending === "expert") {
+    if (pending === "pro") {
       try {
         sessionStorage.removeItem("ov.pending-plan");
         localStorage.setItem(WELCOME_KEY, "1"); // não duplica com as boas-vindas

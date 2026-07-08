@@ -23,7 +23,7 @@ export default function NewsletterEdition() {
     getEditionFull(slug).then((e) => setState(e ?? "notfound"));
   }, [slug]);
 
-  function upgrade(tier: "pro" | "expert") {
+  function upgrade(tier: "pro") {
     try {
       sessionStorage.setItem("ov.pending-plan", tier);
     } catch {
@@ -83,7 +83,7 @@ export default function NewsletterEdition() {
                   {t.pages.newsletterEdition.fullSub.replace("{tier}", TIER_LABEL[state.min_tier])}
                 </p>
                 <button
-                  onClick={() => upgrade(state.min_tier === "expert" ? "expert" : "pro")}
+                  onClick={() => upgrade("pro")}
                   className="mt-4 inline-block rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   {t.pages.newsletterEdition.subscribe.replace("{tier}", TIER_LABEL[state.min_tier])}

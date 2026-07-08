@@ -30,12 +30,20 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (!user) return json(401, { error: "não autenticado" });
 
-  const { plan_slug, cycle: cycleIn } = await req.json().catch(() => ({ plan_slug: "" }));
-  if (!["mod_crypto", "mod_b3", "mod_forex", "complete"].includes(plan_slug)) return json(400, { error: "plano inválido" });
+  const { plan_slug, cycle: cycleIn, returnUrl } = await req.json().catch(() => ({ plan_slug: "" }));
+  if (!plan_slug || plan_slug === "free") return json(400, { error: "plano inválido" });
   const cycle = cycleIn === "annual" ? "annual" : "monthly";
 
-  const { data: plan } = await admin.from("plans").select("name, price_cents, price_annual_cents").eq("slug", plan_slug).single();
+  // Valida pela tabela: qualquer plano com sellable=true pode ser assinado. Sem lista
+  // hardcoded — assim o checkout acompanha o modelo vigente (hoje Free+Pro) sem quebrar
+  // de novo a cada troca de planos (era o bug que rejeitava "pro").
+  const { data: plan } = await admin
+    .from("plans")
+    .select("name, price_cents, price_annual_cents, sellable")
+    .eq("slug", plan_slug)
+    .maybeSingle();
   if (!plan) return json(400, { error: "plano não encontrado" });
+  if (plan.sellable === false) return json(400, { error: "plano indisponível para assinatura" });
 
   const { data: prof } = await admin.from("profiles").select("full_name, cpf").eq("id", user.id).maybeSingle();
   const name = (prof?.full_name as string) || user.email?.split("@")[0] || "Cliente";
@@ -94,6 +102,13 @@ Deno.serve(async (req) => {
   //     de renovação é uma vez por ano e o Pix tem taxa menor para o lojista.
   const billingType = cycle === "annual" ? "UNDEFINED" : "CREDIT_CARD";
 
+  // Retorno pós-pagamento: o front manda returnUrl (ex.: <origin>/obrigado). O Asaas
+  // redireciona o cliente pra lá depois de pagar a fatura hospedada. Sem isso o usuário
+  // fica preso na tela do Asaas sem saber se liberou.
+  const cb = typeof returnUrl === "string" && /^https?:\/\//.test(returnUrl)
+    ? { callback: { successUrl: returnUrl, autoRedirect: true } }
+    : {};
+
   const today = new Date().toISOString().slice(0, 10);
   const s = await fetch(`${BASE}/subscriptions`, {
     method: "POST",
@@ -106,6 +121,7 @@ Deno.serve(async (req) => {
       cycle: asaasCycle,
       description: `OrbeView — ${plan.name} (${cycleLabel})`,
       externalReference: `${user.id}:${plan_slug}:${cycle}`,
+      ...cb,
     }),
   });
   if (!s.ok) return json(502, { error: "Falha ao criar assinatura Asaas", detail: (await s.text()).slice(0, 300) });

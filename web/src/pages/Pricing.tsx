@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
 import { useLocale, type Locale } from "../hooks/useLocale";
+import { useProfile } from "../hooks/useProfile";
 import { openPaddleCheckout, paddleConfigured } from "../lib/paddle";
 import { supabase } from "../lib/supabase";
 import LangSwitch from "../components/ui/LangSwitch";
@@ -29,6 +30,7 @@ const COPY: Record<Locale, {
   monthly: string; annual: string; annualBadge: string; save: string; perMonthEq: string;
   note: string; cancelAnytime: string;
   freeBtn: string; subscribe: string; redirecting: string; usdSoon: string; payNote: string;
+  cpfTitle: string; cpfDesc: string; cpfPh: string; cpfSaveBtn: string; cpfCancelBtn: string; cpfInvalid: string;
   plans: Record<Slug, { name: string; tag?: string; features: string[] }>;
 }> = {
   pt: {
@@ -41,6 +43,12 @@ const COPY: Record<Locale, {
     cancelAnytime: "cancele quando quiser",
     freeBtn: "Plano atual", subscribe: "Assinar", redirecting: "Redirecionando…",
     usdSoon: "Pagamento em dólar (Paddle) em breve.", payNote: "Pagamento via Pix e cartão (Asaas)",
+    cpfTitle: "Falta só o seu CPF",
+    cpfDesc: "O Asaas exige CPF (ou CNPJ) para emitir a cobrança em reais. Informe uma vez e seguimos direto pro pagamento.",
+    cpfPh: "000.000.000-00",
+    cpfSaveBtn: "Continuar",
+    cpfCancelBtn: "Cancelar",
+    cpfInvalid: "CPF/CNPJ inválido — confira os números.",
     plans: {
       free: { name: "Free", features: ["Dados AO VIVO, sem delay", "Cripto: cockpit do BTC em tempo real + camadas (gamma, VP, CVD varejo)", "Básico de cada mercado (Cripto, B3, Forex)", "1 análise de IA por dia", "Newsletter semanal completa"] },
       pro: { name: "Pro", tag: "Tudo liberado", features: ["Cripto + B3 + Forex, tudo liberado", "20 ativos cripto em tempo real + gamma, opções e fluxo completo", "Smart Money & On-chain (SMC) nos 3 mercados", "Leitura do mercado, Macro e institucional × varejo", "30 análises de IA por dia + relatórios e alertas"] },
@@ -56,6 +64,12 @@ const COPY: Record<Locale, {
     cancelAnytime: "cancel anytime",
     freeBtn: "Current plan", subscribe: "Subscribe", redirecting: "Redirecting…",
     usdSoon: "USD checkout (Paddle) coming soon.", payNote: "Billed in USD via Paddle",
+    cpfTitle: "One last thing: your tax ID",
+    cpfDesc: "Asaas requires a CPF/CNPJ to issue the BRL charge. Enter it once and we'll take you straight to checkout.",
+    cpfPh: "000.000.000-00",
+    cpfSaveBtn: "Continue",
+    cpfCancelBtn: "Cancel",
+    cpfInvalid: "Invalid CPF/CNPJ — please check the digits.",
     plans: {
       free: { name: "Free", features: ["LIVE data, no delay", "Crypto: real-time BTC cockpit + layers (gamma, VP, retail CVD)", "Basics of every market (Crypto, B3, Forex)", "1 AI analysis per day", "Full weekly newsletter"] },
       pro: { name: "Pro", tag: "Everything unlocked", features: ["Crypto + B3 + Forex, all unlocked", "20 crypto assets in real time + gamma, options and full flow", "Smart Money & On-chain (SMC) across all 3 markets", "Market read, Macro and institutional vs retail", "30 AI analyses per day + reports and alerts"] },
@@ -68,10 +82,17 @@ export default function Pricing() {
   const navigate = useNavigate();
   const { locale, isEn } = useLocale();
   const t = COPY[locale];
+  const { save: saveProfileCpf } = useProfile(user);
   const [plans, setPlans] = useState<DbPlan[]>([]);
   const [cycle, setCycle] = useState<Cycle>("annual");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Modal de CPF: o asaas-checkout exige CPF/CNPJ no perfil. Se faltar, coletamos aqui
+  // mesmo (sem mandar o usuário pro perfil e voltar) e retomamos o checkout.
+  const [cpfFor, setCpfFor] = useState<Slug | null>(null);
+  const [cpfInput, setCpfInput] = useState("");
+  const [cpfSaving, setCpfSaving] = useState(false);
+  const [cpfError, setCpfError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -107,8 +128,11 @@ export default function Pricing() {
         if (!paddleConfigured() || !plan?.paddle_price_id) throw new Error(t.usdSoon);
         await openPaddleCheckout({ priceId: plan.paddle_price_id, email: user?.email, userId: user!.id });
       } else {
-        const { data, error } = await supabase.functions.invoke("asaas-checkout", { body: { plan_slug: slug, cycle } });
+        const { data, error } = await supabase.functions.invoke("asaas-checkout", {
+          body: { plan_slug: slug, cycle, returnUrl: `${window.location.origin}/obrigado` },
+        });
         if (error) throw error;
+        if (data?.code === "cpf_required") { setCpfError(null); setCpfInput(""); setCpfFor(slug); return; }
         if (data?.url) window.location.href = data.url as string;
         else throw new Error(data?.error || "checkout indisponível");
       }
@@ -117,6 +141,20 @@ export default function Pricing() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // Salva o CPF no perfil e retoma o checkout do plano que o pediu.
+  async function saveCpfAndRetry() {
+    const digits = cpfInput.replace(/\D/g, "");
+    if (digits.length !== 11 && digits.length !== 14) { setCpfError(t.cpfInvalid); return; }
+    setCpfSaving(true);
+    setCpfError(null);
+    const { error } = await saveProfileCpf({ cpf: digits });
+    setCpfSaving(false);
+    if (error) { setCpfError(error instanceof Error ? error.message : t.cpfInvalid); return; }
+    const slug = cpfFor;
+    setCpfFor(null);
+    if (slug) await subscribe(slug);
   }
 
   return (
@@ -216,6 +254,48 @@ export default function Pricing() {
       {error && <p className="mt-4 text-center text-sm text-rose-600 dark:text-rose-400">{error}</p>}
 
       <p className="mt-7 text-center text-xs text-muted-foreground">{t.note} · {t.cancelAnytime}</p>
+
+      {/* Modal de CPF (aparece quando o checkout retorna cpf_required) */}
+      {cpfFor && (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => !cpfSaving && setCpfFor(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-foreground">{t.cpfTitle}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{t.cpfDesc}</p>
+            <input
+              autoFocus
+              inputMode="numeric"
+              value={cpfInput}
+              onChange={(e) => setCpfInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveCpfAndRetry()}
+              placeholder={t.cpfPh}
+              className="num mt-4 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary"
+            />
+            {cpfError && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{cpfError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setCpfFor(null)}
+                disabled={cpfSaving}
+                className="rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                {t.cpfCancelBtn}
+              </button>
+              <button
+                onClick={saveCpfAndRetry}
+                disabled={cpfSaving}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {cpfSaving ? "…" : t.cpfSaveBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
