@@ -301,6 +301,25 @@ export function buildLiquidityMap(smc: SmcResult, sources: ConfluenceSource[]): 
       `Viés de ALTA ${zoneTxt}. A mão forte tende a varrer a ISCA abaixo em ${pnum(below.price)} (pega stops de vendidos) num pavio, e então buscar o ALVO acima em ${pnum(above.price)}. Não compre no 1º toque — espere a varredura de ${pnum(below.price)} e a reação.`,
       `BULLISH bias ${zoneTxt}. Smart money tends to sweep the INDUCEMENT below at ${pnum(below.price)} (grabbing shorts' stops) in a wick, then head for the TARGET above at ${pnum(above.price)}. Don't buy the first touch — wait for the ${pnum(below.price)} sweep and reaction.`,
     );
+  } else if (bias !== "neutral") {
+    // Viés CLARO mas só um lado tem pool mapeado — não cair no texto "sem viés claro".
+    const posW = (s: LiqSide) => s.distPct >= 0 ? tl("acima", "above") : tl("abaixo", "below");
+    const bw = bias === "bearish" ? tl("BAIXA", "BEARISH") : tl("ALTA", "BULLISH");
+    const ind = [above, below].find((s) => s?.role === "inducement") ?? null;
+    const tgt = [above, below].find((s) => s?.role === "target") ?? null;
+    if (ind) {
+      playbook = tl(
+        `Viés de ${bw} ${zoneTxt}. A ISCA provável está ${posW(ind)} em ${pnum(ind.price)} (varredura que pega stops antes do movimento). Sem pool mapeado do outro lado — o alvo real é a próxima liquidez/estrutura na direção do viés.`,
+        `${bw} bias ${zoneTxt}. The likely INDUCEMENT is ${posW(ind)} at ${pnum(ind.price)} (a sweep grabbing stops before the move). No pool mapped on the other side — the real target is the next liquidity/structure in the bias direction.`,
+      );
+    } else if (tgt) {
+      playbook = tl(
+        `Viés de ${bw} ${zoneTxt}. O ALVO na direção do viés está ${posW(tgt)} em ${pnum(tgt.price)}. Sem isca mapeada do outro lado — atenção a um spike de varredura antes do movimento.`,
+        `${bw} bias ${zoneTxt}. The TARGET in the bias direction is ${posW(tgt)} at ${pnum(tgt.price)}. No inducement mapped on the other side — watch for a sweep spike before the move.`,
+      );
+    } else {
+      playbook = tl(`Viés de ${bw} ${zoneTxt}, mas sem pools de liquidez mapeados perto — referência pela estrutura e zona.`, `${bw} bias ${zoneTxt}, but no liquidity pools mapped nearby — use structure and zone as reference.`);
+    }
   } else {
     const ind = [above, below].find((s) => s?.role === "inducement");
     const tgt = [above, below].find((s) => s?.role === "target");

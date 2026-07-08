@@ -110,6 +110,19 @@ function liqMagnets(candles: Candle[], oi: OiPoint[], topN = 3): number[] {
   return out;
 }
 
+/** Pressão estrutural do SMC num TF: −100 (baixa forte) … +100 (alta forte). Composição
+ *  transparente: viés de swing (±50) + estrutura interna (±25) + último evento (CHoCH>BOS). */
+function structuralPressure(s: SmcResult | null): number {
+  if (!s) return 0;
+  let p = 0;
+  if (s.swingBias === "bullish") p += 50;
+  else if (s.swingBias === "bearish") p -= 50;
+  if (s.internalBias === "bullish") p += 25;
+  else if (s.internalBias === "bearish") p -= 25;
+  if (s.lastSwing) p += (s.lastSwing.bias === "bullish" ? 1 : -1) * (s.lastSwing.type === "CHoCH" ? 25 : 15);
+  return Math.max(-100, Math.min(100, Math.round(p)));
+}
+
 export default function SmartMoneyTab({ asset }: { asset: string }) {
   const { t, locale } = useT();
   const glossary = useGlossary();
@@ -136,7 +149,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const [error, setError] = useState<string | null>(null);
   const [layers, setLayers] = usePersistentState<SmcLayers>("cm.smc-layers", DEFAULT_LAYERS, true);
   const toggleLayer = (key: keyof SmcLayers) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral" }[]>([]);
+  const [mtf, setMtf] = useState<{ tf: Timeframe; bias: "bullish" | "bearish" | "neutral"; score: number }[]>([]);
   // Funding + OI (Binance Futures) — contexto de derivativos p/ qualquer moeda com perp.
   const perp = usePerpContext(smcAsset);
   // On-chain: próximo token unlock (DefiLlama) — evento de oferta.
@@ -218,20 +231,20 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
     };
   }, [smcAsset, tf]);
 
-  // Viés multi-timeframe (top-down): calcula a estrutura em 1D/4h/1h
+  // Pressão estrutural multi-timeframe (top-down): calcula a estrutura em 1D/4h/1h/15m
   useEffect(() => {
     let active = true;
-    const tfs: Timeframe[] = ["1d", "4h", "1h"];
+    const tfs: Timeframe[] = ["1d", "4h", "1h", "15m"];
     setMtf([]);
     (async () => {
       const out = await Promise.all(
-        tfs.map(async (t) => {
+        tfs.map(async (tx) => {
           try {
-            const k = await fetchKlines(smcAsset, t, ANALYSIS_BARS);
+            const k = await fetchKlines(smcAsset, tx, ANALYSIS_BARS);
             const r = computeSmc(k);
-            return { tf: t, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral" };
+            return { tf: tx, bias: (r?.swingBias ?? "neutral") as "bullish" | "bearish" | "neutral", score: structuralPressure(r) };
           } catch {
-            return { tf: t, bias: "neutral" as const };
+            return { tf: tx, bias: "neutral" as const, score: 0 };
           }
         }),
       );
@@ -561,7 +574,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
 
       {/* Tendência multi-timeframe (top-down) + medidor de range */}
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
+        <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {t.smart.trendTopDown}
             <InfoTip text={t.smart.trendTip} />
@@ -569,14 +582,34 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
           {mtf.length === 0 ? (
             <span className="text-xs text-muted-foreground">{t.smart.calculating}</span>
           ) : (
-            mtf.map((m) => (
-              <span key={m.tf} className={`rounded-full border px-2 py-0.5 text-xs ${BIAS_TONE[m.bias]}`}>
-                {tfLabel(m.tf) ?? m.tf} · {m.bias === "bullish" ? t.smart.biasUp : m.bias === "bearish" ? t.smart.biasDown : t.smart.trendNeutral}
-              </span>
-            ))
+            <div className="space-y-1.5">
+              {mtf.map((m) => (
+                <div key={m.tf} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-7 shrink-0 font-semibold text-muted-foreground">{tfLabel(m.tf) ?? m.tf}</span>
+                  <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <span className="absolute left-1/2 top-0 h-full w-px bg-border/80" aria-hidden />
+                    <span
+                      className="absolute top-0 h-full rounded-full transition-all"
+                      style={{
+                        left: m.score >= 0 ? "50%" : `${50 + m.score / 2}%`,
+                        width: `${Math.abs(m.score) / 2}%`,
+                        backgroundColor: m.score > 0 ? "#22c55e" : m.score < 0 ? "#ef4444" : "transparent",
+                      }}
+                    />
+                  </div>
+                  <span
+                    className={`num w-9 shrink-0 text-right ${
+                      m.score > 0 ? "text-emerald-600 dark:text-emerald-400" : m.score < 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                    }`}
+                  >
+                    {m.score > 0 ? "+" : ""}{m.score}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
           {topDown && (
-            <div className="mt-1 flex w-full items-start gap-2 border-t border-border/60 pt-2 text-xs">
+            <div className="flex items-start gap-2 border-t border-border/60 pt-2 text-xs">
               <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[topDown.tone]}`} />
               <span className="text-muted-foreground">{topDown.text}</span>
             </div>
