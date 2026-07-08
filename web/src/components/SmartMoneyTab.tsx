@@ -15,7 +15,7 @@ import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, DEEP_HISTORY_BARS, ANALYSIS_BARS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, prevLevelSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
-import { buildKeyLevels, buildLiquidityMap, buildNarrative, type KeyLevel, type LiqSide, type LiquidityMap, type ReadingLine, type Tone } from "../lib/smcNarrative";
+import { buildKeyLevels, buildLiquidityMap, buildNarrative, buildTopDownRead, type KeyLevel, type LiqSide, type LiquidityMap, type ReadingLine, type Tone } from "../lib/smcNarrative";
 import { useGlossary } from "../lib/glossary";
 import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
@@ -308,6 +308,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
   const narrative: ReadingLine[] = smc ? buildNarrative(smc, allSources) : [];
   const liqMap: LiquidityMap | null = smc ? buildLiquidityMap(smc, allSources) : null;
+  const topDown = buildTopDownRead(mtf); // conclusão acionável dos 3 chips 1D/4H/1H
 
   // Radar in-app: detecta evento SMC novo (BOS/CHoCH ou varredura de liquidez) e avisa.
   useEffect(() => {
@@ -573,6 +574,12 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
                 {tfLabel(m.tf) ?? m.tf} · {m.bias === "bullish" ? t.smart.biasUp : m.bias === "bearish" ? t.smart.biasDown : t.smart.trendNeutral}
               </span>
             ))
+          )}
+          {topDown && (
+            <div className="mt-1 flex w-full items-start gap-2 border-t border-border/60 pt-2 text-xs">
+              <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[topDown.tone]}`} />
+              <span className="text-muted-foreground">{topDown.text}</span>
+            </div>
           )}
         </div>
         {smc && <PremiumDiscountGauge smc={smc} />}

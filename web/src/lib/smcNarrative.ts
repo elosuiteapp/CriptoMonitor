@@ -60,7 +60,7 @@ export function buildKeyLevels(smc: SmcResult, sources: ConfluenceSource[]): Key
       category: "orderblock",
       price: ob.mid,
       bias: ob.bias,
-      note: `${pnum(ob.bottom)}–${pnum(ob.top)}`,
+      note: `${pnum(ob.bottom)}–${pnum(ob.top)}${ob.tested ? tl(" · testado", " · tested") : tl(" · virgem", " · virgin")}`,
     });
   }
   for (const g of smc.fvgs) {
@@ -145,6 +145,12 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
       ` Último evento relevante: ${ev} de ${biasWord(smc.lastSwing.bias)} em ${pnum(smc.lastSwing.price)}.`,
       ` Latest relevant event: ${biasWord(smc.lastSwing.bias)} ${ev} at ${pnum(smc.lastSwing.price)}.`,
     );
+    // Displacement: a quebra veio com pernada forte (convicção) ou foi um drift fraco (falso provável)?
+    if (smc.lastSwing.displacement === true) {
+      structText += tl(" Quebra com displacement (pernada forte) — mais confiável.", " Break with displacement (strong move) — more reliable.");
+    } else if (smc.lastSwing.displacement === false) {
+      structText += tl(" Quebra SEM displacement (fraca) — cautela, pode ser falsa.", " Break WITHOUT displacement (weak) — caution, may be a fakeout.");
+    }
   }
   lines.push({ id: "structure", title: tl("Estrutura de mercado", "Market structure"), text: structText, tone });
 
@@ -188,14 +194,17 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
     lines.push({ id: "liqBelow", title: tl("Alvo de liquidez abaixo", "Liquidity target below"), text: tl(`Pool de liquidez em ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — ímã provável${confTxt(below.price)}.`, `Liquidity pool at ${pnum(below.price)} (~${pct(below.price, price).toFixed(1)}%) — likely magnet${confTxt(below.price)}.`), tone: "neutral" });
   }
 
-  // 5) Suporte/resistência por order block (acima e abaixo)
+  // 5) Suporte/resistência por order block (acima e abaixo) — com qualidade virgem × testado
+  const freshTxt = (ob: { tested?: boolean }) => ob.tested
+    ? tl(" · já testado (mais fraco)", " · already tested (weaker)")
+    : tl(" · virgem, não testado (mais forte)", " · virgin, untested (stronger)");
   const obAbove = smc.orderBlocks.filter((o) => o.mid > price).sort((a, b) => a.mid - b.mid)[0];
   const obBelow = smc.orderBlocks.filter((o) => o.mid <= price).sort((a, b) => b.mid - a.mid)[0];
   if (obAbove) {
-    lines.push({ id: "obAbove", title: tl("Resistência (order block)", "Resistance (order block)"), text: tl(`Order block de ${biasWord(obAbove.bias)} em ${pnum(obAbove.mid)} acima — possível resistência${confTxt(obAbove.mid)}.`, `${biasWord(obAbove.bias)} order block at ${pnum(obAbove.mid)} above — possible resistance${confTxt(obAbove.mid)}.`), tone: "neutral" });
+    lines.push({ id: "obAbove", title: tl("Resistência (order block)", "Resistance (order block)"), text: tl(`Order block de ${biasWord(obAbove.bias)} em ${pnum(obAbove.mid)} acima — possível resistência${confTxt(obAbove.mid)}${freshTxt(obAbove)}.`, `${biasWord(obAbove.bias)} order block at ${pnum(obAbove.mid)} above — possible resistance${confTxt(obAbove.mid)}${freshTxt(obAbove)}.`), tone: "neutral" });
   }
   if (obBelow) {
-    lines.push({ id: "obBelow", title: tl("Suporte (order block)", "Support (order block)"), text: tl(`Order block de ${biasWord(obBelow.bias)} em ${pnum(obBelow.mid)} abaixo — possível suporte${confTxt(obBelow.mid)}.`, `${biasWord(obBelow.bias)} order block at ${pnum(obBelow.mid)} below — possible support${confTxt(obBelow.mid)}.`), tone: "neutral" });
+    lines.push({ id: "obBelow", title: tl("Suporte (order block)", "Support (order block)"), text: tl(`Order block de ${biasWord(obBelow.bias)} em ${pnum(obBelow.mid)} abaixo — possível suporte${confTxt(obBelow.mid)}${freshTxt(obBelow)}.`, `${biasWord(obBelow.bias)} order block at ${pnum(obBelow.mid)} below — possible support${confTxt(obBelow.mid)}${freshTxt(obBelow)}.`), tone: "neutral" });
   }
 
   // 6) Varredura de liquidez recente (stop hunt)
@@ -302,4 +311,35 @@ export function buildLiquidityMap(smc: SmcResult, sources: ConfluenceSource[]): 
   }
 
   return { bias, above, below, playbook };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONCLUSÃO DO TOP-DOWN — resolve os 3 chips (1D/4H/1H) numa leitura acionável:
+// alinhados = continuação; HTF × 1H divergindo = pullback/repique (não reversão).
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildTopDownRead(mtf: { tf: string; bias: "bullish" | "bearish" | "neutral" }[]): { text: string; tone: Tone } | null {
+  if (mtf.length < 3) return null;
+  const d1 = mtf.find((m) => m.tf === "1d")?.bias ?? "neutral";
+  const h4 = mtf.find((m) => m.tf === "4h")?.bias ?? "neutral";
+  const h1 = mtf.find((m) => m.tf === "1h")?.bias ?? "neutral";
+  const dir = (b: string) => b === "bullish" ? tl("alta", "bullish") : b === "bearish" ? tl("baixa", "bearish") : tl("neutro", "neutral");
+  const arr = [d1, h4, h1];
+  const nB = arr.filter((b) => b === "bullish").length;
+  const nS = arr.filter((b) => b === "bearish").length;
+
+  if (nB === 3) return { text: tl("Tendência ALINHADA de alta nos 3 timeframes — continuação favorecida; operar a favor da alta e comprar correções.", "Trend ALIGNED bullish across all 3 timeframes — continuation favored; trade with the uptrend and buy dips."), tone: "good" };
+  if (nS === 3) return { text: tl("Tendência ALINHADA de baixa nos 3 timeframes — continuação favorecida; operar a favor da baixa e vender repiques.", "Trend ALIGNED bearish across all 3 timeframes — continuation favored; trade with the downtrend and sell rallies."), tone: "bad" };
+
+  // TFs maiores (1D+4H) concordam e o 1H diverge → pullback/repique dentro da tendência maior
+  if (d1 !== "neutral" && d1 === h4 && h1 !== "neutral" && h1 !== d1) {
+    return {
+      text: d1 === "bearish"
+        ? tl("TFs maiores (1D+4H) de baixa, mas o 1H de alta: provável REPIQUE dentro da baixa maior — favorece VENDER no repique (não é reversão) enquanto a estrutura maior não virar.", "Higher TFs (1D+4H) bearish but 1H bullish: likely a RALLY within the larger downtrend — favors SELLING the rally (not a reversal) until the larger structure flips.")
+        : tl("TFs maiores (1D+4H) de alta, mas o 1H de baixa: provável CORREÇÃO dentro da alta maior — favorece COMPRAR na correção (não é reversão) enquanto a estrutura maior não virar.", "Higher TFs (1D+4H) bullish but 1H bearish: likely a PULLBACK within the larger uptrend — favors BUYING the dip (not a reversal) until the larger structure flips."),
+      tone: "warn",
+    };
+  }
+
+  // 1D e 4H divergem (ou há neutro) → sem tendência dominante
+  return { text: tl(`Timeframes divergentes (1D ${dir(d1)}, 4H ${dir(h4)}, 1H ${dir(h1)}) — sem tendência dominante; mercado indeciso, melhor esperar alinhamento antes de operar direcional.`, `Timeframes diverging (1D ${dir(d1)}, 4H ${dir(h4)}, 1H ${dir(h1)}) — no dominant trend; market undecided, better to wait for alignment before a directional trade.`), tone: "neutral" };
 }

@@ -26,6 +26,7 @@ export interface StructureBreak {
   type: "BOS" | "CHoCH";
   bias: Bias;
   internal: boolean;
+  displacement?: boolean; // a vela que quebrou veio com pernada forte (range ≥ 1,3×ATR) = convicção
 }
 
 export interface OrderBlock {
@@ -35,6 +36,7 @@ export interface OrderBlock {
   time: number;
   bias: Bias;
   internal: boolean;
+  tested?: boolean; // preço já entrou na zona (pavio) depois de formada, sem fechar através = mais fraco
 }
 
 export interface FVG {
@@ -333,14 +335,16 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
     // ─── Swing structure breaks ───
     if (!Number.isNaN(swingHigh.level) && c > swingHigh.level && cp <= swingHigh.level && !swingHigh.crossed) {
       const type = swingTrend === -1 ? "CHoCH" : "BOS";
-      structures.push({ time: candles[i].time, price: swingHigh.level, type, bias: "bullish", internal: false });
+      const disp = (candles[i].high - candles[i].low) >= 1.3 * atr200[i];
+      structures.push({ time: candles[i].time, price: swingHigh.level, type, bias: "bullish", internal: false, displacement: disp });
       swingHigh.crossed = true;
       swingTrend = 1;
       captureOB(swingHigh.index, i, "bullish", false);
     }
     if (!Number.isNaN(swingLow.level) && c < swingLow.level && cp >= swingLow.level && !swingLow.crossed) {
       const type = swingTrend === 1 ? "CHoCH" : "BOS";
-      structures.push({ time: candles[i].time, price: swingLow.level, type, bias: "bearish", internal: false });
+      const disp = (candles[i].high - candles[i].low) >= 1.3 * atr200[i];
+      structures.push({ time: candles[i].time, price: swingLow.level, type, bias: "bearish", internal: false, displacement: disp });
       swingLow.crossed = true;
       swingTrend = -1;
       captureOB(swingLow.index, i, "bearish", false);
@@ -375,7 +379,17 @@ export function computeSmc(candles: Candle[], opts: SmcOptions = {}): SmcResult 
       return true;
     })
     .filter((ob) => ob.time < lastTime)
-    .slice(-obCount * 3);
+    .slice(-obCount * 3)
+    .map((ob) => {
+      // "testado" = preço já ENTROU na zona (pavio) depois de formada — o OB virgem (nunca
+      // tocado) é o mais forte; testado = mão forte pode já ter usado parte da ordem.
+      let tested = false;
+      for (let k = 0; k < n; k++) {
+        if (candles[k].time <= ob.time) continue;
+        if (candles[k].high >= ob.bottom && candles[k].low <= ob.top) { tested = true; break; }
+      }
+      return { ...ob, tested };
+    });
 
   // ─── Fair value gaps (3 velas), só os não preenchidos ───
   const fvgs: FVG[] = [];
