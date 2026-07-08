@@ -214,3 +214,92 @@ export function buildNarrative(smc: SmcResult, sources: ConfluenceSource[]): Rea
 
   return lines;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAPA DE LIQUIDEZ + INDUCEMENT — o read de mão forte de verdade: onde estão os
+// stops (buy-side acima / sell-side abaixo), qual é a ISCA (inducement — a
+// liquidez próxima varrida PRIMEIRO como armadilha) e qual o ALVO real depois.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface LiqSide {
+  price: number;
+  distPct: number;
+  label: string;                              // já localizado
+  role: "inducement" | "target" | "none";
+  conf: string;                               // rótulo de confluência (ou "")
+}
+export interface LiquidityMap {
+  bias: "bullish" | "bearish" | "neutral";
+  above: LiqSide | null;
+  below: LiqSide | null;
+  playbook: string;                           // leitura acionável, já localizada
+}
+
+export function buildLiquidityMap(smc: SmcResult, sources: ConfluenceSource[]): LiquidityMap | null {
+  const price = smc.price;
+  const abovePool = smc.liquidity.filter((l) => l.price > price && !l.swept).sort((a, b) => a.price - b.price)[0];
+  const belowPool = smc.liquidity.filter((l) => l.price < price && !l.swept).sort((a, b) => b.price - a.price)[0];
+  if (!abovePool && !belowPool) return null;
+
+  // Viés direcional = estrutura; se neutra, a ZONA decide (premium puxa distribuição/baixa,
+  // discount puxa acumulação/alta). É o que orienta qual lado é a isca e qual é o alvo.
+  const inPrem = price > smc.equilibrium.top, inDisc = price < smc.equilibrium.bottom;
+  let bias: "bullish" | "bearish" | "neutral" = "neutral";
+  if (smc.swingBias === "bearish") bias = "bearish";
+  else if (smc.swingBias === "bullish") bias = "bullish";
+  else if (inPrem) bias = "bearish";
+  else if (inDisc) bias = "bullish";
+
+  const confLabel = (p: number): string => {
+    const c = confluenceFor(p, smc.atr, sources);
+    const exact = c.filter((h) => h.strength === "exact");
+    if (exact.length) return tl(`confluência: ${exact.map((h) => h.source.label).join(", ")}`, `confluence: ${exact.map((h) => h.source.label).join(", ")}`);
+    if (c.length) return tl(`perto de ${c.map((h) => h.source.label).join(", ")}`, `near ${c.map((h) => h.source.label).join(", ")}`);
+    return "";
+  };
+  const sideLabel = (side: "buy" | "sell") => side === "buy"
+    ? tl("stops de vendidos", "shorts' stops")
+    : tl("stops de comprados", "longs' stops");
+
+  // Isca (varrida primeiro) × alvo real, pela direção do viés. Baixa: isca ACIMA (spike que
+  // pega os stops dos comprados) → alvo ABAIXO. Alta: espelho. Neutro: isca = a mais PERTO.
+  let aboveRole: LiqSide["role"] = "none", belowRole: LiqSide["role"] = "none";
+  if (bias === "bearish") { if (abovePool) aboveRole = "inducement"; if (belowPool) belowRole = "target"; }
+  else if (bias === "bullish") { if (belowPool) belowRole = "inducement"; if (abovePool) aboveRole = "target"; }
+  else {
+    const da = abovePool ? (abovePool.price - price) / price : Infinity;
+    const db = belowPool ? (price - belowPool.price) / price : Infinity;
+    if (da <= db) { if (abovePool) aboveRole = "inducement"; if (belowPool) belowRole = "target"; }
+    else { if (belowPool) belowRole = "inducement"; if (abovePool) aboveRole = "target"; }
+  }
+
+  const mk = (pool: typeof abovePool, role: LiqSide["role"]): LiqSide | null => pool ? {
+    price: pool.price, distPct: pct(pool.price, price), label: sideLabel(pool.side), role, conf: confLabel(pool.price),
+  } : null;
+  const above = mk(abovePool, aboveRole);
+  const below = mk(belowPool, belowRole);
+
+  const zoneTxt = inPrem ? tl("no PREMIUM (caro)", "in the PREMIUM (expensive) zone")
+    : inDisc ? tl("no DISCOUNT (barato)", "in the DISCOUNT (cheap) zone")
+    : tl("em equilíbrio", "at equilibrium");
+  let playbook: string;
+  if (bias === "bearish" && above && below) {
+    playbook = tl(
+      `Viés de BAIXA ${zoneTxt}. A mão forte tende a varrer a ISCA acima em ${pnum(above.price)} (pega stops de comprados) num spike, e então buscar o ALVO abaixo em ${pnum(below.price)}. Não venda no 1º toque — espere a varredura de ${pnum(above.price)} e a rejeição.`,
+      `BEARISH bias ${zoneTxt}. Smart money tends to sweep the INDUCEMENT above at ${pnum(above.price)} (grabbing longs' stops) in a spike, then head for the TARGET below at ${pnum(below.price)}. Don't sell the first touch — wait for the ${pnum(above.price)} sweep and rejection.`,
+    );
+  } else if (bias === "bullish" && above && below) {
+    playbook = tl(
+      `Viés de ALTA ${zoneTxt}. A mão forte tende a varrer a ISCA abaixo em ${pnum(below.price)} (pega stops de vendidos) num pavio, e então buscar o ALVO acima em ${pnum(above.price)}. Não compre no 1º toque — espere a varredura de ${pnum(below.price)} e a reação.`,
+      `BULLISH bias ${zoneTxt}. Smart money tends to sweep the INDUCEMENT below at ${pnum(below.price)} (grabbing shorts' stops) in a wick, then head for the TARGET above at ${pnum(above.price)}. Don't buy the first touch — wait for the ${pnum(below.price)} sweep and reaction.`,
+    );
+  } else {
+    const ind = [above, below].find((s) => s?.role === "inducement");
+    const tgt = [above, below].find((s) => s?.role === "target");
+    playbook = tl(
+      `Sem viés claro ${zoneTxt}. A isca provável (varrida primeiro) é ${ind ? pnum(ind.price) : "—"}; espere a varredura + reação pra definir o lado${tgt ? ` (alvo do outro lado em ${pnum(tgt.price)})` : ""}.`,
+      `No clear bias ${zoneTxt}. Likely inducement (swept first) is ${ind ? pnum(ind.price) : "—"}; wait for the sweep + reaction to define the side${tgt ? ` (target on the other side at ${pnum(tgt.price)})` : ""}.`,
+    );
+  }
+
+  return { bias, above, below, playbook };
+}

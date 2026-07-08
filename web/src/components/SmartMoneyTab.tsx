@@ -15,7 +15,7 @@ import { buildLiquidationGrid } from "../lib/liquidationModel";
 import { computeVolumeProfile, fetchKlines, CURATED_ASSETS, DEEP_HISTORY_BARS, ANALYSIS_BARS, type Candle, type Timeframe } from "../lib/marketData";
 import { computeSmc, type SmcResult } from "../lib/smc";
 import { buildConfluenceSources, prevLevelSources, type ConfluenceSource, type GammaLevels, type WallLevel } from "../lib/smcConfluence";
-import { buildKeyLevels, buildNarrative, type KeyLevel, type ReadingLine, type Tone } from "../lib/smcNarrative";
+import { buildKeyLevels, buildLiquidityMap, buildNarrative, type KeyLevel, type LiqSide, type LiquidityMap, type ReadingLine, type Tone } from "../lib/smcNarrative";
 import { useGlossary } from "../lib/glossary";
 import { useT } from "../lib/i18n";
 import { supabase } from "../lib/supabase";
@@ -307,6 +307,7 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
   const bias = smc?.swingBias ?? "neutral";
   const keyLevels: KeyLevel[] = smc ? buildKeyLevels(smc, allSources) : [];
   const narrative: ReadingLine[] = smc ? buildNarrative(smc, allSources) : [];
+  const liqMap: LiquidityMap | null = smc ? buildLiquidityMap(smc, allSources) : null;
 
   // Radar in-app: detecta evento SMC novo (BOS/CHoCH ou varredura de liquidez) e avisa.
   useEffect(() => {
@@ -609,6 +610,9 @@ export default function SmartMoneyTab({ asset }: { asset: string }) {
         </div>
       )}
 
+      {/* Mapa de liquidez + inducement (o read de mão forte: isca × alvo real) */}
+      {liqMap && <LiquidityMapCard map={liqMap} en={locale === "en"} />}
+
       {/* Gráfico SMC */}
       <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
         {/* Timeframe ACIMA do gráfico (as camadas vão ABAIXO, seguindo o cockpit) */}
@@ -804,6 +808,54 @@ function PremiumDiscountGauge({ smc }: { smc: SmcResult }) {
         <span>{t.smart.zoneEquilibrium}</span>
         <span>{t.smart.zonePremium}</span>
       </div>
+    </div>
+  );
+}
+
+/** Mapa de liquidez + inducement: onde estão os stops (acima/abaixo), qual é a ISCA
+ *  (varrida primeiro como armadilha) e qual o ALVO real depois da varredura. */
+function LiquidityMapCard({ map, en }: { map: LiquidityMap; en: boolean }) {
+  const Row = ({ side, s }: { side: string; s: LiqSide | null }) => {
+    const badge = s?.role === "inducement"
+      ? { txt: en ? "🪤 inducement" : "🪤 isca", cls: "border-amber-500/40 text-amber-600 dark:text-amber-400" }
+      : s?.role === "target"
+        ? { txt: en ? "🎯 target" : "🎯 alvo", cls: "border-primary/40 text-primary" }
+        : null;
+    return (
+      <div className="flex items-center justify-between gap-2 border-t border-border/60 py-1.5 text-xs first:border-t-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">{side}</span>
+          {badge && <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`}>{badge.txt}</span>}
+          {s ? (
+            <span className="truncate text-muted-foreground">{s.label}{s.conf ? ` · ${s.conf}` : ""}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+        {s && (
+          <div className="shrink-0 whitespace-nowrap text-right">
+            <span className="num text-foreground">{fmtPrice(s.price)}</span>
+            <span className="num ml-1 text-[11px] text-muted-foreground">({s.distPct >= 0 ? "+" : ""}{s.distPct.toFixed(1)}%)</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="rounded-2xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60 p-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+        🎯 {en ? "Liquidity map + inducement" : "Mapa de liquidez + inducement"}
+        <InfoTip
+          text={en
+            ? "Where the stops sit (above/below), which pool is the inducement (swept first as a trap) and which is the real target after the sweep."
+            : "Onde estão os stops (acima/abaixo), qual pool é a isca (inducement — varrida primeiro como armadilha) e qual é o alvo real depois da varredura."}
+        />
+      </div>
+      <div className="mt-2">
+        <Row side={en ? "ABOVE" : "ACIMA"} s={map.above} />
+        <Row side={en ? "BELOW" : "ABAIXO"} s={map.below} />
+      </div>
+      <p className="mt-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">{map.playbook}</p>
     </div>
   );
 }
