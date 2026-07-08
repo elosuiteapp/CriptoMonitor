@@ -465,8 +465,8 @@ function dailyVwap(cs: Candle[]): number | null {
 // data-api.binance.vision = mercado spot, feito p/ histórico (sem auth/geo-block). Estruturalmente
 // idêntico ao perp p/ as majors (o backtest é de ESTRUTURA de preço), evitando bloqueio de futuros.
 const DATA = "https://data-api.binance.vision";
-const TF_MS: Record<string, number> = { "15m": 900000, "30m": 1800000, "1H": 3600000, "4H": 14400000, "1D": 86400000 };
-const TF_INT: Record<string, string> = { "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
+const TF_MS: Record<string, number> = { "5m": 300000, "15m": 900000, "30m": 1800000, "1H": 3600000, "4H": 14400000, "1D": 86400000 };
+const TF_INT: Record<string, string> = { "5m": "5m", "15m": "15m", "30m": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
 
 async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: number): Promise<Candle[]> {
   const out: Candle[] = []; let cursor = startMs; const int = TF_INT[tf];
@@ -539,12 +539,12 @@ Deno.serve(async (req) => {
   const blockHours = new Set<number>(Array.isArray(body?.block_hours) ? (body.block_hours as unknown[]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) : []);
   // EXPERIMENTO base_tf: roda o MESMO motor em outro timeframe (15m | 30m | 1H | 4H) — mede se a
   // estratégia atual rende mais em velas mais lentas (menos ruído × menos sinais/stop mais largo).
-  const baseTf = ["15m", "30m", "1H", "4H"].includes(String(body?.base_tf)) ? String(body?.base_tf) : "15m";
+  const baseTf = ["5m", "15m", "30m", "1H", "4H"].includes(String(body?.base_tf)) ? String(body?.base_tf) : "15m";
   // EXPERIMENTO trail_mode: "atr" (default, atual) = chandelier ATR + piso de estrutura;
   // "candle" = stop segue a mínima/máxima do ÚLTIMO candle FECHADO do trail_tf (ratchet, sem piso).
   // trail_arm_r > 0 = só arma o candle-trail após X R de lucro (modo runner; 0 = desde a entrada).
   const trailMode = String(body?.trail_mode ?? "atr");
-  const trailTf = ["15m", "30m", "1H", "4H"].includes(String(body?.trail_tf)) ? String(body?.trail_tf) : baseTf;
+  const trailTf = ["5m", "15m", "30m", "1H", "4H"].includes(String(body?.trail_tf)) ? String(body?.trail_tf) : baseTf;
   const trailArmR = Math.max(0, Number(body?.trail_arm_r ?? 0));
   // PLAYBOOK DO DONO (06/jul): imbalance A FAVOR da estrutura, reteste de OB/FVG com prioridade,
   // e 1 tiro por zona (stopou na zona → ela invalidou, não re-entra nela).
@@ -646,7 +646,7 @@ Deno.serve(async (req) => {
   // closeTime[tf][i] = fim da vela i (openTime + duração). Ponteiros avançam sem lookahead.
   const closeMs: Record<string, number[]> = {};
   for (const tf of tfList) closeMs[tf] = byTf[tf].map((c) => c.time * 1000 + TF_MS[tf]);
-  const ptr: Record<string, number> = { "15m": -1, "30m": -1, "1H": -1, "4H": -1, "1D": -1 };
+  const ptr: Record<string, number> = { "5m": -1, "15m": -1, "30m": -1, "1H": -1, "4H": -1, "1D": -1 };
   const smcCache: Record<string, SmcResult | null> = {};
   const momCache: Record<string, number> = {};
 
