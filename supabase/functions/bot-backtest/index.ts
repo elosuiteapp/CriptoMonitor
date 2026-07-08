@@ -484,6 +484,29 @@ async function fetchKlines(symbol: string, tf: string, startMs: number, endMs: n
   return out;
 }
 
+// ─── FOREX (Yahoo Finance, grátis/sem chave) — MESMO motor SMC, só troca a fonte de candle.
+//     Só p/ TESTE exploratório: majors têm 15m/1h; sem delta/volume real (delta=0). Guardado
+//     por market:"forex" no body — não altera nada do fluxo cripto (Binance).
+const YF_INT: Record<string, string> = { "5m": "5m", "15m": "15m", "30m": "30m", "1H": "60m", "4H": "60m", "1D": "1d" };
+async function fetchForexYahoo(asset: string, tf: string, startMs: number, endMs: number): Promise<Candle[]> {
+  const interval = YF_INT[tf] ?? "15m";
+  const p1 = Math.floor(startMs / 1000), p2 = Math.floor(endMs / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${asset}=X?period1=${p1}&period2=${p2}&interval=${interval}`;
+  const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null);
+  const res = j?.chart?.result?.[0];
+  const ts: number[] = res?.timestamp ?? [];
+  const q = res?.indicators?.quote?.[0] ?? {};
+  const out: Candle[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    if (o == null || h == null || l == null || c == null) continue;
+    out.push({ time: ts[i], open: +o, high: +h, low: +l, close: +c, volume: +(q.volume?.[i] ?? 0), delta: 0 });
+  }
+  return out;
+}
+
 interface Trade { side: "long" | "short"; entryTime: number; entryPx: number; exitTime: number; exitPx: number; stopPx: number; riskDist: number; reason: string; r: number; rNet: number; bars: number; counter: boolean }
 
 Deno.serve(async (req) => {
@@ -627,8 +650,9 @@ Deno.serve(async (req) => {
   const feePct = Number(body.fee_pct ?? 0.04), slipPct = Number(body.slip_pct ?? 0.02); // taxa taker + slippage por lado (%)
   const costFrac = (feePct + slipPct) / 100;
 
+  const isForex = String(body?.market ?? "") === "forex";
   const quote = String(cfg.quote_ccy ?? "USDT");
-  const symbol = `${asset}${quote}`;
+  const symbol = isForex ? asset : `${asset}${quote}`;
   const now = Date.now();
   const windowStart = now - days * 86400000;
   const WARM = 320; // candles de aquecimento por TF (atr200 + estrutura)
@@ -637,7 +661,9 @@ Deno.serve(async (req) => {
   const tfList = [...new Set([baseTf, ...(htfOn || oppHtfAtr > 0 ? [htfTf] : []), ...(trailMode === "candle" ? [trailTf] : [])])];
   const byTf: Record<string, Candle[]> = {};
   for (const tf of tfList) {
-    byTf[tf] = await fetchKlines(symbol, tf, windowStart - WARM * TF_MS[tf], now);
+    byTf[tf] = isForex
+      ? await fetchForexYahoo(asset, tf, windowStart - WARM * TF_MS[tf], now)
+      : await fetchKlines(symbol, tf, windowStart - WARM * TF_MS[tf], now);
   }
   const base = byTf[baseTf];
   const barMs = TF_MS[baseTf], barSec = barMs / 1000;
