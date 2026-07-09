@@ -116,6 +116,7 @@ interface OrderRow {
   result: { msg?: string; data?: { sMsg?: string; ordId?: string }[] } | null;
   note: string | null;
   created_at: string;
+  engine?: string;
 }
 interface LogRow {
   id: number;
@@ -138,6 +139,7 @@ interface BotPosition {
   last_conviction: number | null;
   last_decision: string | null;
   last_reading: Reading | null;
+  engine?: string;
 }
 interface LearningSig { key: string; label: string; weight: number; n: number; hitRate: number; edge: number }
 interface LearnAssetStat { n: number; hitRate: number; perSignal?: LearningSig[]; ai_report?: string | null }
@@ -298,9 +300,9 @@ export default function AdminBot() {
     const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }, { data: shp }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
       supabase.from("bot_shadow_trades").select("engine, asset, side, pnl_pct, closed_at").order("closed_at", { ascending: false }).limit(1000),
       supabase.from("bot_shadow").select("engine, asset, position, entry_px, stop_px"),
@@ -320,27 +322,34 @@ export default function AdminBot() {
     loadBase();
   }, [loadBase]);
 
-  // Desempenho comparado dos DOIS robôs — AMBOS no papel (sombra), mesma unidade (% por trade), régua justa.
-  // O motor VIVO também opera a conta real à parte (isso aparece em "Resumo da conta").
+  // Desempenho por robô: REAL (conta demo, PnL em USDT, carimbado por engine) + PAPEL (sombra, % por trade).
+  // Só o motor VIVO opera real; o v28 carrega o histórico real de quando era o vivo. O papel roda p/ os dois
+  // sempre (comparação simultânea justa).
   const engineCompare = useMemo(() => {
-    const stat = (eng: string) => {
+    const real = (eng: string) => {
+      const closes = orders.filter((o) => o.action === "close" && o.pnl != null && (o.engine ?? "smc") === eng);
+      const wins = closes.filter((o) => (Number(o.pnl) || 0) > 0).length;
+      const pnl = closes.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
+      const open = positions.filter((p) => p.position && p.position !== "flat" && (p.engine ?? "smc") === eng).length;
+      return { trades: closes.length, win: closes.length ? Math.round((wins / closes.length) * 100) : 0, pnl, open };
+    };
+    const paper = (eng: string) => {
       const tr = shadowTrades.filter((t) => t.engine === eng);
       const wins = tr.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
       const sum = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
-      const open = shadowPos.filter((p) => p.engine === eng && p.position && p.position !== "flat").length;
-      return { trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, sum, open };
+      return { trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, sum };
     };
-    return { v28: stat("smc"), c2: stat("confluence2") };
-  }, [shadowTrades, shadowPos]);
+    return { v28: { real: real("smc"), paper: paper("smc") }, c2: { real: real("confluence2"), paper: paper("confluence2") } };
+  }, [orders, positions, shadowTrades]);
 
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
   const loadLive = useCallback(async () => {
     const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
+      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
@@ -1339,8 +1348,8 @@ export default function AdminBot() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
-            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28, isPct: true },
-            { key: "confluence2", name: "Robô 2.0 · 3-de-4", desc: "confluência 4 blocos + trailing 4º candle", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2, isPct: true },
+            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28 },
+            { key: "confluence2", name: "Robô 2.0 · 3-de-4", desc: "confluência 4 blocos + trailing 4º candle", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2 },
           ].map((e) => (
             <div key={e.key} className={`rounded-lg border p-3 ${e.live ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-border/70 bg-background/40"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -1350,16 +1359,19 @@ export default function AdminBot() {
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${e.live ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{e.live ? "● VIVO" : "sombra (papel)"}</span>
               </div>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <div><div className="num text-lg font-bold text-foreground">{e.st.trades}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">trades</div></div>
-                <div><div className="num text-lg font-bold text-foreground">{e.st.trades ? `${e.st.win}%` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">acerto</div></div>
-                <div><div className={`num text-lg font-bold ${e.st.sum > 0 ? "text-emerald-500" : e.st.sum < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.st.trades ? `${e.st.sum >= 0 ? "+" : ""}${e.isPct ? `${e.st.sum.toFixed(1)}%` : num(e.st.sum)}` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">retorno</div></div>
-                <div><div className="num text-lg font-bold text-foreground">{e.st.open}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">abertas</div></div>
+              <div className="rounded-md border border-border/50 bg-background/40 p-2">
+                <div className="mb-1 flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Real · conta demo</span><span className="text-[9px] font-semibold text-muted-foreground">{e.st.real.open} aberta{e.st.real.open === 1 ? "" : "s"}</span></div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div><div className="num text-lg font-bold text-foreground">{e.st.real.trades}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">trades</div></div>
+                  <div><div className="num text-lg font-bold text-foreground">{e.st.real.trades ? `${e.st.real.win}%` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">acerto</div></div>
+                  <div><div className={`num text-lg font-bold ${e.st.real.pnl > 0 ? "text-emerald-500" : e.st.real.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.st.real.trades ? `${e.st.real.pnl >= 0 ? "+" : ""}${num(e.st.real.pnl)}` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">PnL {quote}</div></div>
+                </div>
               </div>
+              <div className="mt-1.5 text-center text-[10px] text-muted-foreground">Papel (sombra): {e.st.paper.trades} trades · acerto {e.st.paper.trades ? `${e.st.paper.win}%` : "—"} · <span className={e.st.paper.sum > 0 ? "text-emerald-500" : e.st.paper.sum < 0 ? "text-rose-500" : ""}>{e.st.paper.trades ? `${e.st.paper.sum >= 0 ? "+" : ""}${e.st.paper.sum.toFixed(1)}%` : "—"}</span></div>
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">Os <b>DOIS</b> robôs rodam no papel nas mesmas 5 moedas (retorno em % por trade) pra comparar na régua justa. O selado <b>● VIVO</b> também opera a conta demo de verdade — o resultado real dele aparece em <b>Resumo da conta</b>. Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground"><b>Real</b> = o que cada robô fez de fato na conta demo (só o <b>● VIVO</b> opera real; o v28 carrega o histórico de quando era o vivo). <b>Papel</b> = os dois simulados agora nas mesmas moedas, pra comparar lado a lado. Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
       </div>
 
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
@@ -1421,7 +1433,10 @@ export default function AdminBot() {
                 return (
                   <div key={p.asset} className={`rounded-lg border p-3 ${long ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-rose-500/30 bg-rose-500/[0.06]"}`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-foreground">{p.asset}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-foreground">{p.asset}</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${p.engine === "confluence2" ? "bg-sky-500/15 text-sky-600 dark:text-sky-400" : "bg-violet-500/15 text-violet-600 dark:text-violet-400"}`} title="robô que abriu esta posição">{p.engine === "confluence2" ? "Robô 2.0" : "Robô v28"}</span>
+                      </span>
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${long ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/20 text-rose-600 dark:text-rose-400"}`}>{long ? "▲ LONG" : "▼ SHORT"}{isFut && cfg?.leverage ? ` ${cfg.leverage}x` : ""}</span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold"><span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />rodando</span>{p.ctrend && <span className="rounded bg-amber-500/15 px-1 py-0.5 text-amber-600 dark:text-amber-400" title="Aberta contra a tendência — stop curto e tamanho reduzido">contra-tend.</span>}</div>

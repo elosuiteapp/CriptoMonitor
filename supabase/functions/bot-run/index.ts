@@ -757,7 +757,7 @@ Deno.serve(async (req) => {
       return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null, target_px: data?.target_px != null ? Number(data.target_px) : null, used_zones: (data?.used_zones as unknown[] | null) ?? [], stop_order_id: data?.stop_order_id != null ? Number(data.stop_order_id) : null };
     };
     const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false, peak_px: number | null = null) => {
-      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
+      await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, engine: botEngine, updated_at: new Date().toISOString() }, { onConflict: "asset" });
     };
     const saveReading = async (asset: string, patch: Record<string, unknown>) => {
       await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
@@ -1050,7 +1050,7 @@ Deno.serve(async (req) => {
               const beStop = pos === "long" ? Math.max(st.stop_px, st.entry_px) : Math.min(st.stop_px, st.entry_px);
               await savePos(asset, instId, pos, rest, st.entry_px, st.adds, beStop, st.ctrend, st.peak_px);
               await admin.from("bot_positions").update({ target_px: null }).eq("asset", asset);
-              await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: true, result: rr.body, pnl, note: `[${asset}] 🎯 ALVO PARCIAL (50%) @ ${st.target_px} · resto ${rest} corre no trailing (stop ≥ breakeven ${beStop.toFixed(2)}) · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` });
+              await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: true, result: rr.body, pnl, note: `[${asset}] 🎯 ALVO PARCIAL (50%) @ ${st.target_px} · resto ${rest} corre no trailing (stop ≥ breakeven ${beStop.toFixed(2)}) · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` });
               await log("trade", `[${asset}] 🎯 ALVO PARCIAL: embolsou metade (${qtyStr}) @ ${exitPx} · resto ${rest} segue no trailing com stop ${beStop.toFixed(2)} (≥ breakeven) · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}.`, {});
               st.pos_base_sz = rest; st.stop_px = beStop; st.target_px = null;
               hitTarget = false; // resto sem alvo — o ciclo segue normal (trailing gere a metade restante)
@@ -1083,7 +1083,7 @@ Deno.serve(async (req) => {
             await admin.from("bot_positions").update({ stop_order_id: null, ...(hitTarget ? {} : { stopped_at: new Date().toISOString() }) }).eq("asset", asset); // limpa stop residente + cooldown só pós-stop
             openCount = Math.max(0, openCount - 1);
           }
-          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: okk ? `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` : `[${asset}] ⚠️ FALHA ao fechar no ${hitTarget ? "alvo" : "stop"} (${rr.body?.code ?? "?"} ${rr.body?.msg ?? ""}) — posição MANTIDA, re-tenta no próximo ciclo` });
+          await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: okk ? `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` : `[${asset}] ⚠️ FALHA ao fechar no ${hitTarget ? "alvo" : "stop"} (${rr.body?.code ?? "?"} ${rr.body?.msg ?? ""}) — posição MANTIDA, re-tenta no próximo ciclo` });
           if (okk) {
             await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${exitLvl})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
             return { asset, decision: "flat", stopped: true, pnl };
@@ -1331,7 +1331,7 @@ Deno.serve(async (req) => {
           const qtyStr = qty.toFixed(qDec);
           const addSide = pos === "long" ? "BUY" : "SELL";
           const res = await place(addSide, qtyStr, false);
-          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao adicionar (pirâmide)` }); await log("error", `[${asset}] Falha ao adicionar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
+          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao adicionar (pirâmide)` }); await log("error", `[${asset}] Falha ao adicionar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
           const filled = res.fz ?? Number(qtyStr); const addPx = res.ap ?? lastPx;
           const newSz = st.pos_base_sz + filled;
           const newEntry = st.entry_px != null && st.pos_base_sz > 0 ? (st.entry_px * st.pos_base_sz + addPx * filled) / newSz : addPx;
@@ -1342,7 +1342,7 @@ Deno.serve(async (req) => {
           await savePos(asset, instId, pos, Number(newSz.toFixed(qDec)), newEntry, nAdds, addStop, false, addPeak); // guarda o tamanho limpo (sem ruído de float)
           const psoid = await syncStopOrder(asset, instId, pos as "long" | "short", addStop, st.stop_order_id); // re-sincroniza o stop residente no novo médio
           await admin.from("bot_positions").update({ stop_order_id: psoid }).eq("asset", asset);
-          await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] PIRÂMIDE ${nAdds}/${pyramidMax}: +${qtyStr} ${asset} em ${lbl(pos)}${addPx ? ` @ ${addPx}` : ""} · novo médio ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons}). ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: "add", ok: true, bias, conviction, avgPx: addPx, adds: nAdds };
         }
@@ -1352,13 +1352,13 @@ Deno.serve(async (req) => {
           const closeSide = pos === "long" ? "SELL" : "BUY";
           const closeQty = roundStep(st.pos_base_sz).toFixed(qDec);
           const res = await place(closeSide, closeQty, true);
-          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, ok: false, result: res.r, note: `[${asset}] falha ao fechar` }); await log("error", `[${asset}] Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
+          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, ok: false, result: res.r, note: `[${asset}] falha ao fechar` }); await log("error", `[${asset}] Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
           const exitPx = res.ap ?? lastPx;
           if (st.entry_px) pnl = (exitPx - st.entry_px) * Number(closeQty) * (pos === "long" ? 1 : -1);
           await cancelStopOrder(instId, st.stop_order_id); // vai fechar/flipar → cancela o stop residente antigo
           await savePos(asset, instId, "flat", 0, null);
           await admin.from("bot_positions").update({ stop_order_id: null }).eq("asset", asset);
-          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
+          await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
           pos = "flat";
           openCount = Math.max(0, openCount - 1);
         }
@@ -1396,7 +1396,7 @@ Deno.serve(async (req) => {
           const qtyStr = qty.toFixed(qDec);
           const openSide = target === "long" ? "BUY" : "SELL";
           const res = await place(openSide, qtyStr, false);
-          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
+          if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, ok: false, result: res.r, note: `[${asset}] falha ao abrir` }); await log("error", `[${asset}] Falha ao abrir ${lbl(target)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg, pnl }; }
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
           // STOP = nível estrutural do plano (senão entry ∓ riskDist). ALVO = próxima liquidez (take-profit),
           // OPCIONAL (cfg.target_on): desligado, a posição corre só com stop + trailing até sair/stopar (dono 03/jul).
@@ -1412,7 +1412,7 @@ Deno.serve(async (req) => {
           // Marca a zona de origem como usada (zone_once) — cap de 20 zonas por ativo.
           if (plan.zoneKey && target === plan.want) await admin.from("bot_positions").update({ used_zones: [...usedZones.filter((z) => z !== plan.zoneKey), plan.zoneKey].slice(-20) }).eq("asset", asset);
           openCount++;
-          await admin.from("bot_orders").insert({ source: "auto", action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ${trendRel} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x · risco ${(riskPct * szMult).toFixed(2)}%) · stop ${stopPx.toFixed(2)} (${stopBasis})${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
+          await admin.from("bot_orders").insert({ source: "auto", engine: botEngine,action: "open", inst_id: instId, side: openSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: entryPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] abriu ${lbl(target)} ${trendRel} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x · risco ${(riskPct * szMult).toFixed(2)}%) · stop ${stopPx.toFixed(2)} (${stopBasis})${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] ${target === "long" ? "LONG (compra)" : "SHORT (venda)"} ${trendRel} · ${qtyStr} ${asset} ~$${realNot.toFixed(0)} (${usedLev.toFixed(1)}x)${entryPx ? ` @ ${entryPx}` : ""} · stop @ ${stopPx.toFixed(2)}${targetPx != null ? ` · alvo ${targetPx.toFixed(2)}` : ""} · risco ${(equity * riskPct / 100 * szMult).toFixed(2)} ${cfg.quote_ccy} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})${pnl != null ? ` · fechou anterior PnL ${pnl.toFixed(2)}` : ""}. ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: target, ok: true, bias, conviction, avgPx: entryPx, notional: realNot, pnl, counter: isCounter, stopPx };
         }
