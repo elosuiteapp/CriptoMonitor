@@ -511,7 +511,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     }
     add("absorb", "Microestrutura", "Teste de parede (absorção)", 0.02, absScore, absNote); // 47% n739 → fora do placar, só medido
     const wTot = wSup + wRes;
-    if (wTot > 0) { const r = (wSup - wRes) / wTot; add("walls", "Microestrutura", "Paredes de baleia (suporte × resistência)", 0.02, r * 120, `${r >= 0 ? "suporte" : "resistência"} ${Math.round((r >= 0 ? wSup : wRes) / wTot * 100)}% · $${(wSup / 1e6).toFixed(1)}M sup × $${(wRes / 1e6).toFixed(1)}M res`); } // 49% n2326 → só medido
+    if (wTot > 0) { const r = (wSup - wRes) / wTot; add("walls", "Microestrutura", "Paredes de baleia (suporte × resistência)", 0.06, r * 120, `${r >= 0 ? "suporte" : "resistência"} ${Math.round((r >= 0 ? wSup : wRes) / wTot * 100)}% · $${(wSup / 1e6).toFixed(1)}M sup × $${(wRes / 1e6).toFixed(1)}M res`); } // REPROMOVIDO ao voto 08/jul (bot_trades_hist n65: concorda 63% × discorda 34%, +29pp — melhor sinal da amostra; confirmar no raio-x 15/jul)
   }
 
   // ── PRESSÃO DO BOOK (±2%): TENDÊNCIA recente (agora vs início da janela coletada) — o
@@ -642,9 +642,11 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   });
 
   // FLUXO LIMPO: só os sinais que o aprendizado validou (book 56%/54%, liqs 53%, gflow 51%,
-  // cvd_div 67%/+0.85R na régua forte). Absorção/paredes/pressão/CVD-agregado saíram (47-50%);
+  // cvd_div 67%/+0.85R na régua forte). Absorção/pressão/CVD-agregado saíram (47-50%);
   // Put/Call Wall ('gamma') REMOVIDO 06/jul — INVERTIDO na régua forte (trades reais).
-  const flowKeys = new Set(["book_inst", "book_retail", "cvd_div", "liqs", "gflow"]);
+  // PAREDES ('walls') REPROMOVIDAS 08/jul: bot_trades_hist (n65) concorda 63% × discorda 34%
+  // (+29pp, maior spread da amostra) — de volta ao voto, peso modesto. Reavaliar no raio-x 15/jul.
+  const flowKeys = new Set(["book_inst", "book_retail", "cvd_div", "liqs", "gflow", "walls"]);
   let fn = 0, fd = 0;
   for (const x of sig) if (flowKeys.has(x.key) && toggles[x.key] !== false) { fn += x.score * x.weight; fd += x.weight; }
   const flowTilt = fd ? Math.round(clamp(fn / fd)) : 0;
