@@ -23,15 +23,15 @@ function json(status: number, body: unknown) {
 // ════════ Motor SMC — CÓPIA FIEL de bot-run (portado de web/src/lib/smc.ts) ════════
 type Bias = "bullish" | "bearish";
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number; delta?: number }
-interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean }
-interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean }
+interface StructureBreak { time: number; price: number; type: "BOS" | "CHoCH"; bias: Bias; internal: boolean; displacement?: boolean }
+interface OrderBlock { top: number; bottom: number; mid: number; time: number; bias: Bias; internal: boolean; tested?: boolean }
 interface FVG { top: number; bottom: number; mid: number; time: number; bias: Bias }
 interface LiquidityPool { price: number; side: "buy" | "sell"; count: number; time: number; swept: boolean; sweptRecently: boolean }
 interface Zone { top: number; bottom: number }
 // Máx/mín do período ANTERIOR completo (dia/semana/mês UTC) — ímãs clássicos de liquidez
 // (PDH/PDL/PWH/PWL/PMH/PML). null quando a janela de velas não cobre o período inteiro. (motor 7925e48)
 interface PrevLevels { pdh: number | null; pdl: number | null; pwh: number | null; pwl: number | null; pmh: number | null; pml: number | null }
-interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone; prevLevels: PrevLevels; extremes: { high: "strong" | "weak"; low: "strong" | "weak" } | null }
+interface SmcResult { price: number; atr: number; swingBias: Bias | null; internalBias: Bias | null; lastSwing: StructureBreak | null; orderBlocks: OrderBlock[]; fvgs: FVG[]; liquidity: LiquidityPool[]; trailingTop: number; trailingBottom: number; swingLowLevel: number; swingHighLevel: number; internalLowLevel: number; internalHighLevel: number; premium: Zone; equilibrium: Zone; discount: Zone; prevLevels: PrevLevels; internalOBs: OrderBlock[]; sweep: { bull: boolean; bear: boolean }; extremes: { high: "strong" | "weak"; low: "strong" | "weak" } | null }
 
 // ─── Volume Profile (POC/VAH/VAL) — cópia FIEL de web/src/lib/marketData.ts (mesma do módulo) ───
 interface VolumeProfile { poc: number; vah: number; val: number }
@@ -119,21 +119,21 @@ function makeLegUpdater(candles: Candle[], size: number) {
     return { flip: leg === 1 ? 1 : -1 };
   };
 }
-function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
+function computeSmc(candles: Candle[], swingLen = 50, full = false): SmcResult | null {
   const n = candles.length, internalLen = 5, obCount = 6;
   if (n < internalLen + 3) return null;
   const atr200 = atrArray(candles, 200), atr10 = atrArray(candles, 10);
   const swingHigh = newPivot(), swingLow = newPivot(), internalHigh = newPivot(), internalLow = newPivot();
   let swingTrend = 0, internalTrend = 0;
   let trailingTop = candles[0].high, trailingBottom = candles[0].low;
-  const structures: StructureBreak[] = [], orderBlocksRaw: OrderBlock[] = [];
+  const structures: StructureBreak[] = [], orderBlocksRaw: OrderBlock[] = [], internalOBsRaw: OrderBlock[] = [];
   const legSwing = makeLegUpdater(candles, swingLen), legInternal = makeLegUpdater(candles, internalLen);
-  const captureOB = (pivotIndex: number, i: number, bias: Bias) => {
+  const captureOB = (pivotIndex: number, i: number, bias: Bias, internal = false) => {
     let bestIdx = pivotIndex;
     if (bias === "bullish") { let min = Infinity; for (let k = pivotIndex; k <= i; k++) if (candles[k].low < min) { min = candles[k].low; bestIdx = k; } }
     else { let max = -Infinity; for (let k = pivotIndex; k <= i; k++) if (candles[k].high > max) { max = candles[k].high; bestIdx = k; } }
     const top = candles[bestIdx].high, bottom = candles[bestIdx].low;
-    orderBlocksRaw.push({ top, bottom, mid: (top + bottom) / 2, time: candles[bestIdx].time, bias, internal: false });
+    (internal ? internalOBsRaw : orderBlocksRaw).push({ top, bottom, mid: (top + bottom) / 2, time: candles[bestIdx].time, bias, internal });
   };
   for (let i = 0; i < n; i++) {
     const fs = legSwing(i).flip;
@@ -150,29 +150,31 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
     }
     if (i === 0) continue;
     const c = candles[i].close, cp = candles[i - 1].close;
+    const disp = (candles[i].high - candles[i].low) >= 1.3 * atr200[i]; // pernada forte na quebra (motor front)
     if (!Number.isNaN(internalHigh.level) && c > internalHigh.level && cp <= internalHigh.level && !internalHigh.crossed && internalHigh.level !== swingHigh.level) {
-      structures.push({ time: candles[i].time, price: internalHigh.level, type: internalTrend === -1 ? "CHoCH" : "BOS", bias: "bullish", internal: true });
-      internalHigh.crossed = true; internalTrend = 1;
+      structures.push({ time: candles[i].time, price: internalHigh.level, type: internalTrend === -1 ? "CHoCH" : "BOS", bias: "bullish", internal: true, displacement: disp });
+      internalHigh.crossed = true; internalTrend = 1; captureOB(internalHigh.index, i, "bullish", true);
     }
     if (!Number.isNaN(internalLow.level) && c < internalLow.level && cp >= internalLow.level && !internalLow.crossed && internalLow.level !== swingLow.level) {
-      structures.push({ time: candles[i].time, price: internalLow.level, type: internalTrend === 1 ? "CHoCH" : "BOS", bias: "bearish", internal: true });
-      internalLow.crossed = true; internalTrend = -1;
+      structures.push({ time: candles[i].time, price: internalLow.level, type: internalTrend === 1 ? "CHoCH" : "BOS", bias: "bearish", internal: true, displacement: disp });
+      internalLow.crossed = true; internalTrend = -1; captureOB(internalLow.index, i, "bearish", true);
     }
     if (!Number.isNaN(swingHigh.level) && c > swingHigh.level && cp <= swingHigh.level && !swingHigh.crossed) {
-      structures.push({ time: candles[i].time, price: swingHigh.level, type: swingTrend === -1 ? "CHoCH" : "BOS", bias: "bullish", internal: false });
+      structures.push({ time: candles[i].time, price: swingHigh.level, type: swingTrend === -1 ? "CHoCH" : "BOS", bias: "bullish", internal: false, displacement: disp });
       swingHigh.crossed = true; swingTrend = 1; captureOB(swingHigh.index, i, "bullish");
     }
     if (!Number.isNaN(swingLow.level) && c < swingLow.level && cp >= swingLow.level && !swingLow.crossed) {
-      structures.push({ time: candles[i].time, price: swingLow.level, type: swingTrend === 1 ? "CHoCH" : "BOS", bias: "bearish", internal: false });
+      structures.push({ time: candles[i].time, price: swingLow.level, type: swingTrend === 1 ? "CHoCH" : "BOS", bias: "bearish", internal: false, displacement: disp });
       swingLow.crossed = true; swingTrend = -1; captureOB(swingLow.index, i, "bearish");
     }
   }
   for (let i = 0; i < n; i++) { if (candles[i].high >= trailingTop) trailingTop = candles[i].high; if (candles[i].low <= trailingBottom) trailingBottom = candles[i].low; }
   const lastTime = candles[n - 1].time;
-  const orderBlocks = orderBlocksRaw.filter((ob) => {
-    for (let k = 0; k < n; k++) { if (candles[k].time <= ob.time) continue; if (ob.bias === "bullish" && candles[k].close < ob.bottom) return false; if (ob.bias === "bearish" && candles[k].close > ob.top) return false; }
-    return true;
-  }).filter((ob) => ob.time < lastTime).slice(-obCount * 3);
+  const obUnmitigated = (ob: OrderBlock) => { for (let k = 0; k < n; k++) { if (candles[k].time <= ob.time) continue; if (ob.bias === "bullish" && candles[k].close < ob.bottom) return false; if (ob.bias === "bearish" && candles[k].close > ob.top) return false; } return true; };
+  const obTested = (ob: OrderBlock) => { for (let k = 0; k < n; k++) { if (candles[k].time <= ob.time) continue; if (ob.bias === "bullish" ? candles[k].low <= ob.top : candles[k].high >= ob.bottom) return true; } return false; };
+  const orderBlocks = orderBlocksRaw.filter(obUnmitigated).filter((ob) => ob.time < lastTime).slice(-obCount * 3);
+  // internalOBs: SÓ p/ o rev_setup; capado aos últimos 18 ANTES do filtro O(n) (mantém o custo ~baseline).
+  const internalOBs = full ? internalOBsRaw.slice(-obCount * 3).filter(obUnmitigated).filter((ob) => ob.time < lastTime).map((ob) => ({ ...ob, tested: obTested(ob) })) : [];
   const fvgsRaw: FVG[] = [];
   for (let i = 2; i < n; i++) {
     const gapUp = candles[i].low - candles[i - 2].high, gapDn = candles[i - 2].low - candles[i].high, thr = 0.25 * atr200[i];
@@ -215,13 +217,23 @@ function computeSmc(candles: Candle[], swingLen = 50): SmcResult | null {
   const discount: Zone = { top: 0.95 * bottom + 0.05 * top, bottom };
   const equilibrium: Zone = { top: 0.525 * top + 0.475 * bottom, bottom: 0.525 * bottom + 0.475 * top };
   const swingStructs = structures.filter((s) => !s.internal);
+  const pl = prevPeriodLevels(candles);
+  // VARREDURA + REJEIÇÃO (failed breakdown/breakout = stop hunt): pavio além de um nível de liquidez
+  // (swing low/high, PDL/PDH, PWL/PWH) que FECHA de volta pra dentro nas últimas 12 velas. Base do rev_setup.
+  const sellRefs = [swingLow.level, swingLow.lastLevel, pl.pdl, pl.pwl].filter((v): v is number => Number.isFinite(v as number));
+  const buyRefs = [swingHigh.level, swingHigh.lastLevel, pl.pdh, pl.pwh].filter((v): v is number => Number.isFinite(v as number));
+  let bullReject = false, bearReject = false;
+  if (full) for (let k = Math.max(1, n - 12); k < n; k++) {
+    if (!bullReject) for (const ref of sellRefs) if (candles[k].low < ref && candles[k].close > ref) { bullReject = true; break; }
+    if (!bearReject) for (const ref of buyRefs) if (candles[k].high > ref && candles[k].close < ref) { bearReject = true; break; }
+  }
   return {
     price: candles[n - 1].close, atr: atr200[n - 1],
     swingBias: swingTrend === 1 ? "bullish" : swingTrend === -1 ? "bearish" : null,
     internalBias: internalTrend === 1 ? "bullish" : internalTrend === -1 ? "bearish" : null,
     lastSwing: swingStructs.length ? swingStructs[swingStructs.length - 1] : null,
     orderBlocks, fvgs, liquidity, trailingTop, trailingBottom, swingLowLevel: swingLow.level, swingHighLevel: swingHigh.level, internalLowLevel: internalLow.level, internalHighLevel: internalHigh.level, premium, equilibrium, discount,
-    prevLevels: prevPeriodLevels(candles),
+    prevLevels: pl, internalOBs, sweep: { bull: bullReject, bear: bearReject },
     // Strong/Weak (LuxAlgo, motor 7925e48): baixa → topo FORTE (origem defendida) + fundo FRACO; alta → espelho.
     extremes: swingTrend === -1 ? { high: "strong" as const, low: "weak" as const } : swingTrend === 1 ? { high: "weak" as const, low: "strong" as const } : null,
   };
@@ -253,7 +265,7 @@ function structuralBias(smc: SmcResult | null, momTf: number): number {
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — CÓPIA FIEL do bot-run (manter em sincronia) ════════
 interface SmcPlan { want: "long" | "short" | null; setup: string; stop: number | null; target: number | null; note: string; zoneKey?: string | null }
-function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number; extVeto?: boolean; structEntry?: string; structEntryWin?: number; structEntryInternal?: boolean }): SmcPlan {
+function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalanceOn: boolean; imbMinPct: number; stopAtrMult: number; fut: boolean; imbRetest?: boolean; maxZoneAtr?: number; oppZoneAtr?: number; barSec?: number; imbAlign?: boolean; structFirst?: boolean; dirMode?: string; zoneDiscipline?: boolean; zoneBreakWin?: number; zoneBreakInternal?: boolean; vp?: VolumeProfile | null; vpMode?: string; fadeMode?: string; obMode?: string; minRr?: number; extVeto?: boolean; structEntry?: string; structEntryWin?: number; structEntryInternal?: boolean; revSetup?: boolean; revWin?: number; revChoch?: string; revVirgin?: boolean }): SmcPlan {
   const price = lastPx > 0 ? lastPx : smc.price;
   const atr = smc.atr || price * 0.01, buf = 0.25 * atr;
   // EXPERIMENTO dir_mode (caso SOL 06/jul: short no topo com a interna JÁ bullish): "any" (atual) =
@@ -262,8 +274,17 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   const reads = [smc.lastSwing?.bias ?? null, smc.internalBias, smc.swingBias];
   const nBull = reads.filter((r) => r === "bullish").length, nBear = reads.filter((r) => r === "bearish").length;
   const dm = o.dirMode ?? "any";
-  const bull = dm === "majority" ? nBull >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bullish" : nBull >= 2) : nBull > 0;
-  const bear = dm === "majority" ? nBear >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bearish" : nBear >= 2) : nBear > 0;
+  // COMPOSTO GRADUADO (mesmo do medidor de pressão do OrbeView, SmartMoneyTab.structuralPressure):
+  // swing ±50 + interna ±25 + último evento (CHoCH ±25 / BOS ±15). "pressure" usa esse composto
+  // (vira cedo, como o medidor); "2src" = 2 FONTES INDEPENDENTES (swing macro × interna rápida) —
+  // conserta o double-count do "majority" (lastSwing ≡ swing contava o swing 2×; a interna sumia).
+  const pressure = (smc.swingBias === "bullish" ? 50 : smc.swingBias === "bearish" ? -50 : 0)
+    + (smc.internalBias === "bullish" ? 25 : smc.internalBias === "bearish" ? -25 : 0)
+    + (smc.lastSwing ? (smc.lastSwing.bias === "bullish" ? 1 : -1) * (smc.lastSwing.type === "CHoCH" ? 25 : 15) : 0);
+  const bull = dm === "majority" ? nBull >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bullish" : nBull >= 2)
+    : dm === "pressure" ? pressure >= 20 : dm === "2src" ? (smc.swingBias === "bullish" || (smc.internalBias === "bullish" && smc.lastSwing?.bias === "bullish")) : nBull > 0;
+  const bear = dm === "majority" ? nBear >= 2 : dm === "internal" ? (smc.internalBias ? smc.internalBias === "bearish" : nBear >= 2)
+    : dm === "pressure" ? pressure <= -20 : dm === "2src" ? (smc.swingBias === "bearish" || (smc.internalBias === "bearish" && smc.lastSwing?.bias === "bearish")) : nBear > 0;
   // Zona pela BANDA DE EQUILÍBRIO (motor novo 7925e48; as bordas 95/5 sufocavam o setup B).
   const inDisc = price < smc.equilibrium.bottom, inPrem = price > smc.equilibrium.top;
   const sweptSell = smc.liquidity.some((l) => l.side === "sell" && l.sweptRecently);
@@ -319,6 +340,26 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   //   struct_entry_internal = quebras INTERNAS (CHoCH/BOS de ~1h) também disparam.
   //   O cuidado do dono nas regiões é a zoneDiscipline (abaixo), que já segura compra no premium
   //   e venda no discount — vale pra este setup também. Stop = swing oposto (invalidação real).
+  // EXPERIMENTO rev_setup (plano 09/jul — "fazer o robô enxergar a reversão no 15m"): entrada de
+  // REVERSÃO disciplinada = VARREDURA+rejeição de um nível (smc.sweep) + CHoCH a favor no 15m
+  // (interna basta) + reteste de ZONA FRESCA (OB interno virgem ou FVG no preço). Isenta do voto de
+  // direção e da bússola HTF (ela É o sinal antecipado); mantém delta/vol no walk-forward. Marcada
+  // "reversão" p/ o walk-forward isentar bússola/opp/squeeze e permitir o flip de posição oposta.
+  if (o.revSetup && !want) {
+    const rw = o.revWin ?? 8, cm = o.revChoch ?? "swing", virginOnly = o.revVirgin !== false;
+    const ev = smc.lastSwing, evRecent = !!ev && ev.time >= lastT - barSec * rw;
+    // CHoCH a favor: 'internal' = interna virada (frouxo); 'swing' = CHoCH de SWING recente; 'disp' = + displacement (pernada forte).
+    const chochUp = cm === "internal" ? (smc.internalBias === "bullish" || (!!ev && ev.bias === "bullish"))
+      : (evRecent && ev!.type === "CHoCH" && ev!.bias === "bullish" && (cm !== "disp" || ev!.displacement === true));
+    const chochDn = cm === "internal" ? (smc.internalBias === "bearish" || (!!ev && ev.bias === "bearish"))
+      : (evRecent && ev!.type === "CHoCH" && ev!.bias === "bearish" && (cm !== "disp" || ev!.displacement === true));
+    const bullVirgin = smc.internalOBs.filter((b) => b.bias === "bullish" && !b.tested && price >= b.bottom && price <= b.top + buf).sort((a, b) => b.mid - a.mid)[0];
+    const bearVirgin = smc.internalOBs.filter((b) => b.bias === "bearish" && !b.tested && price <= b.top && price >= b.bottom - buf).sort((a, b) => a.mid - b.mid)[0];
+    const revBullZone = bullVirgin ?? (virginOnly ? null : (bullOB ?? bullFvg));
+    const revBearZone = bearVirgin ?? (virginOnly ? null : (bearOB ?? bearFvg));
+    if (smc.sweep.bull && chochUp && revBullZone) pick("long", "reversão ↑ (varredura+CHoCH)", revBullZone);
+    else if (smc.sweep.bear && chochDn && revBearZone && o.fut) pick("short", "reversão ↓ (varredura+CHoCH)", revBearZone);
+  }
   const seMode = o.structEntry ?? "off";
   const structBreakPick = () => {
     const win = o.structEntryWin ?? 2;
@@ -350,7 +391,7 @@ function smcDecision(smc: SmcResult, lastPx: number, lastT: number, o: { imbalan
   // DISCIPLINA DE ZONA (pedido do dono 06/jul): no PREMIUM (topo) não compra — só vende, salvo
   // ROMPIMENTO de swing recente pra cima (sinal forte); no DISCOUNT (fundo), espelho. O fade
   // (setup C) é isento — ele é a venda do premium / compra do discount por definição.
-  if (o.zoneDiscipline && !setup.startsWith("fade")) {
+  if (o.zoneDiscipline && !setup.startsWith("fade") && !setup.startsWith("reversão")) {
     const bw = o.zoneBreakWin ?? 16; // janela (velas) em que um rompimento de swing "vale" como sinal forte
     const swingBreak = smc.lastSwing && smc.lastSwing.time >= lastT - barSec * bw ? smc.lastSwing.bias : null;
     // zone_break_internal: a estrutura INTERNA recente também conta como evidência de rompimento
@@ -576,7 +617,7 @@ Deno.serve(async (req) => {
   const zoneOnce = !!body?.zone_once;
   // CONTEXTO (caso SOL 06/jul): dir_mode = como as 3 leituras de estrutura viram direção;
   // htf_tf = timeframe do filtro HTF (era fixo 1H; agora testável com 4H = "bússola" do dono).
-  const dirMode = ["any", "majority", "internal"].includes(String(body?.dir_mode)) ? String(body?.dir_mode) : "any";
+  const dirMode = ["any", "majority", "internal", "pressure", "2src"].includes(String(body?.dir_mode)) ? String(body?.dir_mode) : "any";
   const htfTf = ["1H", "4H", "1D"].includes(String(body?.htf_tf)) ? String(body?.htf_tf) : "1H";
   // EXPERIMENTO vp_mode: "react" = POC/VAH/VAL (camada Volume Profile do módulo, mesma matemática)
   // como níveis de reação (bloqueia entrada com nível colado à frente) e alvo fallback. "off" = atual.
@@ -629,6 +670,13 @@ Deno.serve(async (req) => {
   // saída (não só no trailing/alvo): estrutura de alta virou baixa → fecha o long. "internal"
   // também conta a virada da estrutura INTERNA (~1h) como saída (mais sensível). 0/off = atual.
   const structExit = ["on", "internal"].includes(String(body?.struct_exit)) ? String(body?.struct_exit) : "off";
+  // EXPERIMENTO rev_setup (plano 09/jul): entrada de REVERSÃO no reteste (varredura+CHoCH+zona fresca),
+  // isenta da bússola/voto/squeeze e podendo flipar posição oposta. 0/off = atual (sem reversão).
+  const revSetup = String(body?.rev_setup ?? "off") === "on";
+  const revWin = Math.max(1, Number(body?.rev_win ?? 8));                          // janela (velas) do CHoCH recente
+  const revChoch = ["internal", "swing", "disp"].includes(String(body?.rev_choch)) ? String(body?.rev_choch) : "swing"; // rigidez do CHoCH
+  const revVirgin = String(body?.rev_virgin ?? "on") !== "off";                    // exige OB interno VIRGEM (sem fallback p/ zona qualquer)
+  const revFlip = String(body?.rev_flip ?? "on") !== "off";                        // pode flipar posição oposta na reversão
   const { data: cfg } = await admin.from("bot_config").select("*").eq("id", 1).maybeSingle();
   if (!cfg) return json(500, { error: "sem config" });
 
@@ -683,7 +731,7 @@ Deno.serve(async (req) => {
     const arr = byTf[tf];
     const lo = Math.max(0, closedIdx - LOOKBACK + 1);
     const win = arr.slice(lo, closedIdx + 1);
-    smcCache[tf] = computeSmc(win, SWING);
+    smcCache[tf] = computeSmc(win, SWING, tf === baseTf && revSetup); // motor "full" (OBs internos+sweep) só p/ o rev_setup no TF base
     if (tf === baseTf && vpMode !== "off") vpCache = computeVolumeProfile(win);
     const cl = win.map((c) => c.close);
     momCache[tf] = cl.length >= 4 ? (cl[cl.length - 1] - cl[cl.length - 4]) / cl[cl.length - 4] : 0;
@@ -702,7 +750,7 @@ Deno.serve(async (req) => {
   const usedZones = new Set<string>(); // zone_once: zonas que já deram entrada (não re-entra)
   const trades: Trade[] = [];
   let eq = 1; let peakEq = 1, maxDD = 0; const equity: { t: number; eq: number }[] = [];
-  let barsInMarket = 0, evalBars = 0;
+  let barsInMarket = 0, evalBars = 0, revEntries = 0;
 
   const openTrade = (side: "long" | "short", px: number, t: number, idx: number, stop: number, target: number | null) => {
     riskDist0 = Math.abs(px - stop) || (px * 0.01);
@@ -811,8 +859,9 @@ Deno.serve(async (req) => {
     }
 
     // 3) DECISÃO SMC PRICE-ACTION (15m) — stop e alvo ESTRUTURAIS; fluxo neutro (não backtestável).
-    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr, extVeto, structEntry, structEntryWin, structEntryInternal });
+    const plan = smcDecision(smc15, base[t].close, base[t].time, { imbalanceOn, imbMinPct, stopAtrMult: stopMult, fut: true, imbRetest, maxZoneAtr, oppZoneAtr, barSec, imbAlign, structFirst, dirMode, vp: vpCache, vpMode, fadeMode, obMode, zoneDiscipline, zoneBreakWin, zoneBreakInternal, minRr, extVeto, structEntry, structEntryWin, structEntryInternal, revSetup, revWin, revChoch, revVirgin });
     let want = plan.want;
+    const isRev = plan.setup.startsWith("reversão"); // reversão: isenta de bússola/opp/squeeze e pode flipar a posição oposta
     const px = base[t].close, tsec = barCloseMs / 1000;
     // FILTRO TA (experimento): setup não-imbalance só entra alinhado aos clássicos escolhidos.
     if (want && taOn && plan.setup && (taAll || !plan.setup.startsWith("imbalance"))) {
@@ -841,7 +890,7 @@ Deno.serve(async (req) => {
       }
     }
     // FILTRO SQUEEZE MOMENTUM (LazyBear): momentum forte CONTRA a direcao segura a entrada.
-    if (sqFilter && want && t >= 20) {
+    if (sqFilter && want && !isRev && t >= 20) {
       const n = 20;
       const momAt = (j: number) => {
         const win = base.slice(j - n + 1, j + 1);
@@ -875,7 +924,7 @@ Deno.serve(async (req) => {
     if (want && volMaxAtr > 0 && smc15.atr > 0 && (base[t].high - base[t].low) > volMaxAtr * smc15.atr) want = null;
     // FILTRO HTF (experimento): entrada precisa alinhar com a estrutura do htf_tf (swing; fallback interna).
     // Setup C (fade) é counter-trend POR DESENHO → isento da bússola.
-    if (want && htfOn && !plan.setup.startsWith("fade")) {
+    if (want && htfOn && !isRev && !plan.setup.startsWith("fade")) {
       const h = smcCache[htfTf];
       const hb = h?.swingBias ?? h?.internalBias ?? null;
       if (hb !== (want === "long" ? "bullish" : "bearish")) want = null;
@@ -883,7 +932,7 @@ Deno.serve(async (req) => {
     // FILTRO ZONA OPOSTA DO HTF (experimento opp_htf_atr): OB/FVG CONTRÁRIO não-preenchido do TF
     // maior a ≤ X ATR(HTF) à frente segura a entrada — o caso dos prints 07/jul (compra 15m colada
     // num OB 1H de venda; o 15m não enxerga a zona do 1H). Mesma geometria do opp_zone_atr.
-    if (want && oppHtfAtr > 0) {
+    if (want && oppHtfAtr > 0 && !isRev) {
       const h = smcCache[htfTf];
       if (h) {
         const hAtr = h.atr || px * 0.01, hBuf = 0.25 * hAtr, ahead = oppHtfAtr * hAtr;
@@ -933,12 +982,14 @@ Deno.serve(async (req) => {
     const zoneBlocked = zoneOnce && fromPlan && plan.zoneKey != null && usedZones.has(plan.zoneKey);
     const markZone = () => { if (zoneOnce && fromPlan && plan.zoneKey != null) usedZones.add(plan.zoneKey); };
     if (pos !== "flat") {
-      const canRev = revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
+      // rev_setup pode flipar a posição oposta MESMO com rev_mode='off' (é o gatilho de qualidade,
+      // não o flip-em-qualquer-sinal que deu churn).
+      const canRev = (!!eSetup && eSetup.startsWith("reversão")) ? revFlip : revMode === "any" ? true : revMode === "imbalance" ? !!eSetup && eSetup.startsWith("imbalance") : false;
       const heldEnough = t - entryIdx >= minHold;
-      if (want && want !== pos && eStop != null && canRev && heldEnough && !hourBlocked && !zoneBlocked) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); }
+      if (want && want !== pos && eStop != null && canRev && heldEnough && !hourBlocked && !zoneBlocked) { closeTrade(px, tsec, t, "reversão"); openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); if (isRev) revEntries++; }
     } else if (want && eStop != null) {
       const cooling = cooldownBars > 0 && lastStopIdx >= 0 && t - lastStopIdx <= cooldownBars;
-      if (!cooling && !hourBlocked && !zoneBlocked) { openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); }
+      if (!cooling && !hourBlocked && !zoneBlocked) { openTrade(want, px, tsec, t, eStop, useTarget ? eTarget : null); markZone(); if (isRev) revEntries++; }
     }
   }
   // Fecha posição aberta no fim (marcação a mercado).
@@ -967,6 +1018,7 @@ Deno.serve(async (req) => {
     shorts: shorts.length, shorts_win: shorts.length ? Math.round((shorts.filter((t) => t.rNet > 0).length / shorts.length) * 1000) / 10 : 0,
     stops: trades.filter((t) => t.reason === "stop").length,
     reversals: trades.filter((t) => t.reason === "reversão").length,
+    rev_entries: revEntries,
     struct_exits: trades.filter((t) => t.reason === "estrutura").length,
     targets: trades.filter((t) => t.reason === "alvo" || t.reason === "alvo+parcial").length,
     bars_evaluated: evalBars,

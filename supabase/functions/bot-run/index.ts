@@ -924,12 +924,22 @@ Deno.serve(async (req) => {
           const trailed = !!(st.entry_px && st.stop_px && (pos === "long" ? st.stop_px >= st.entry_px : st.stop_px <= st.entry_px));
           const stopLbl = hitTarget ? "🎯 ALVO (liquidez) — take-profit " : trailed ? "🛑 STOP MÓVEL (lucro travado)" : "🛑 STOP ";
           const exitLvl = hitTarget ? st.target_px : st.stop_px; // fix 07/jul: o log do ALVO imprimia o stop (parecia alvo==stop)
-          await savePos(asset, instId, "flat", 0, null);
-          if (!hitTarget) await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown só pós-stop (não no take-profit)
-          openCount = Math.max(0, openCount - 1);
-          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
-          await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${exitLvl})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
-          return { asset, decision: "flat", stopped: true, pnl };
+          // GUARD anti-órfã (P0, auditoria 09/jul): só marca 'flat'/decrementa slot/entra em cooldown
+          // SE a ordem de saída de fato passou. Antes gravava 'flat' INCONDICIONALMENTE — uma ordem
+          // rejeitada deixava a posição VIVA na corretora, sem stop, invisível e furando max_positions.
+          if (okk) {
+            await savePos(asset, instId, "flat", 0, null);
+            if (!hitTarget) await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown só pós-stop (não no take-profit)
+            openCount = Math.max(0, openCount - 1);
+          }
+          await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: okk ? `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` : `[${asset}] ⚠️ FALHA ao fechar no ${hitTarget ? "alvo" : "stop"} (${rr.body?.code ?? "?"} ${rr.body?.msg ?? ""}) — posição MANTIDA, re-tenta no próximo ciclo` });
+          if (okk) {
+            await log("trade", `[${asset}] ${stopLbl}acionado @ ${lastPx} (nível ${exitLvl})${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}.`, {});
+            return { asset, decision: "flat", stopped: true, pnl };
+          }
+          // Ordem de saída REJEITADA: não mexe no estado (posição segue aberta), alerta e re-tenta no próximo ciclo.
+          await log("error", `[${asset}] ⚠️ ORDEM DE ${hitTarget ? "ALVO" : "STOP"} REJEITADA (${rr.body?.code ?? "?"} ${rr.body?.msg ?? ""}) — posição SEGUE ABERTA (sem marcar flat); re-tenta no próximo ciclo.`, { result: rr.body });
+          return { asset, decision: pos, stop_failed: true };
         }
       }
 
