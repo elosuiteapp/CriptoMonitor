@@ -719,8 +719,8 @@ Deno.serve(async (req) => {
     const instOf = (asset: string) => venue === "binance" ? `${asset}${cfg.quote_ccy ?? "USDT"}` : String(cfg.inst_id);
     // Estado por-ativo em bot_positions (isolado); leitura espelhada em bot_config só p/ BTC (painel legado).
     const loadPos = async (asset: string) => {
-      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, stopped_at, target_px, used_zones").eq("asset", asset).maybeSingle();
-      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null, target_px: data?.target_px != null ? Number(data.target_px) : null, used_zones: (data?.used_zones as unknown[] | null) ?? [] };
+      const { data } = await admin.from("bot_positions").select("position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, stopped_at, target_px, used_zones, stop_order_id").eq("asset", asset).maybeSingle();
+      return { position: (data?.position === "long" ? "long" : data?.position === "short" ? "short" : "flat") as "long" | "short" | "flat", pos_base_sz: Number(data?.pos_base_sz ?? 0), entry_px: data?.entry_px != null ? Number(data.entry_px) : null, adds: Number(data?.adds ?? 0), stop_px: data?.stop_px != null ? Number(data.stop_px) : null, ctrend: !!data?.ctrend, peak_px: data?.peak_px != null ? Number(data.peak_px) : null, stopped_at: (data?.stopped_at as string | null) ?? null, target_px: data?.target_px != null ? Number(data.target_px) : null, used_zones: (data?.used_zones as unknown[] | null) ?? [], stop_order_id: data?.stop_order_id != null ? Number(data.stop_order_id) : null };
     };
     const savePos = async (asset: string, instId: string, position: string, pos_base_sz: number, entry_px: number | null, adds = 0, stop_px: number | null = null, ctrend = false, peak_px: number | null = null) => {
       await admin.from("bot_positions").upsert({ asset, inst_id: instId, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, updated_at: new Date().toISOString() }, { onConflict: "asset" });
@@ -728,6 +728,43 @@ Deno.serve(async (req) => {
     const saveReading = async (asset: string, patch: Record<string, unknown>) => {
       await admin.from("bot_positions").upsert({ asset, ...patch }, { onConflict: "asset" });
       if (asset === "BTC") await admin.from("bot_config").update(patch).eq("id", 1);
+    };
+
+    // ── STOP RESIDENTE NA CORRETORA (auditoria 09/jul, P0): um STOP_MARKET de verdade na Binance
+    //    (closePosition=true, workingType=MARK_PRICE) que dispara SOZINHO entre os ciclos — hoje o
+    //    stop só existia na memória (checado 1×/5min). DEFENSIVO: qualquer falha aqui só LOGA e segue
+    //    (o check sintético por ciclo + a reconciliação continuam protegendo) → camada ADITIVA, nunca piora. ──
+    const tickCache: Record<string, number> = {};
+    const getTick = async (instId: string): Promise<number> => {
+      if (tickCache[instId]) return tickCache[instId];
+      const info = await bnb("GET", "/fapi/v1/exchangeInfo", {}, bnbCreds, false);
+      const sym = ((info.body?.symbols as any[]) ?? []).find((s) => s.symbol === instId) ?? {};
+      const pf = ((sym.filters as any[]) ?? []).find((f) => f.filterType === "PRICE_FILTER") ?? {};
+      const tick = Number(pf.tickSize) || 0.1;
+      tickCache[instId] = tick;
+      return tick;
+    };
+    const roundTick = (px: number, tick: number) => { const d = String(tick).includes(".") ? String(tick).replace(/0+$/, "").split(".")[1].length : 0; return (Math.round(px / tick) * tick).toFixed(d); };
+    const cancelStopOrder = async (instId: string, orderId: number | null) => {
+      if (!orderId) return;
+      try { await bnb("DELETE", "/fapi/v1/order", { symbol: instId, orderId: String(orderId) }, bnbCreds, true); } catch { /* ordem já sumiu (disparou/cancelada) — ok */ }
+    };
+    // Reposiciona o stop residente: cancela o antigo e coloca um novo no nível atual. Retorna o novo orderId (ou null).
+    const syncStopOrder = async (asset: string, instId: string, posSide: "long" | "short", stopPx: number, oldOrderId: number | null): Promise<number | null> => {
+      // GATE (09/jul): o STOP_MARKET só é colocado se cfg.resident_stop === true. A API do DEMO
+      // (demo-fapi) REJEITA STOP_MARKET via /fapi/v1/order (-4120 "use Algo Order API") — verificado
+      // ao vivo. Na Binance REAL o STOP_MARKET é padrão e funciona: lá é só ligar o flag e validar.
+      // Default OFF → no demo o stop sintético por ciclo + a reconciliação seguem protegendo.
+      if (cfg.resident_stop !== true) return null;
+      try {
+        await cancelStopOrder(instId, oldOrderId);
+        const tick = await getTick(instId);
+        const side = posSide === "long" ? "SELL" : "BUY";
+        const r = await bnbOrder({ symbol: instId, side, type: "STOP_MARKET", stopPrice: roundTick(stopPx, tick), closePosition: true, workingType: "MARK_PRICE" }, bnbCreds);
+        if (r.body?.orderId && !r.body?.code) return Number(r.body.orderId);
+        await log("info", `[${asset}] stop residente não colocado (${r.body?.code ?? "?"} ${r.body?.msg ?? ""}) — check sintético segue protegendo.`, {});
+        return null;
+      } catch (e) { await log("info", `[${asset}] stop residente: exceção (${(e as Error).message}) — check sintético segue.`, {}); return null; }
     };
 
     // ── BLINDAGEM DE RISCO: sizing por RISCO (% do patrimônio) + teto de alavancagem + circuit breakers. ──
@@ -808,11 +845,12 @@ Deno.serve(async (req) => {
           const amt = Number(row.positionAmt) || 0, exchFlat = Math.abs(amt) < 1e-9;
           const exchSide = amt > 0 ? "long" : amt < 0 ? "short" : "flat";
           if (st.position !== "flat" && exchFlat) {
+            await cancelStopOrder(instId, st.stop_order_id); // normalmente foi ELE que disparou (já sumiu); se sobrou algo, limpa
             await savePos(asset, instId, "flat", 0, null);
-            await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown conservador
+            await admin.from("bot_positions").update({ stopped_at: new Date().toISOString(), stop_order_id: null }).eq("asset", asset); // cooldown conservador + limpa stop residente
             openCount = Math.max(0, openCount - 1);
             await log("info", `[${asset}] 🔄 reconciliação: corretora ZERADA e o banco tinha ${st.position} — fechou fora do ciclo; sincronizado p/ flat (cooldown ligado).`, {});
-            st.position = "flat"; st.pos_base_sz = 0; st.entry_px = null; st.stop_px = null; st.stopped_at = new Date().toISOString();
+            st.position = "flat"; st.pos_base_sz = 0; st.entry_px = null; st.stop_px = null; st.stop_order_id = null; st.stopped_at = new Date().toISOString();
           } else if (st.position === "flat" && !exchFlat) {
             await log("error", `[${asset}] ⚠️ reconciliação: corretora tem ${exchSide} ${Math.abs(amt)} @ ${Number(row.entryPrice) || 0} mas o banco está FLAT — fora do controle do robô. Verificar/fechar manualmente.`, { positionAmt: amt, entryPrice: row.entryPrice });
           } else if (st.position !== "flat" && exchSide !== st.position) {
@@ -872,8 +910,11 @@ Deno.serve(async (req) => {
           }
         }
         if (peak !== prevPeak || newStop !== st.stop_px) {
+          const stopMoved = newStop != null && newStop !== st.stop_px;
           await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
           if (newStop !== st.stop_px) await log("info", `[${asset}] trailing ATR: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)} · ${kTrail}×ATR ${atrPx.toFixed(2)}).`, {});
+          // stop residente acompanha o trailing: cancela o antigo e recoloca no novo nível (defensivo).
+          if (stopMoved) { const oid = await syncStopOrder(asset, instId, pos, newStop!, st.stop_order_id); await admin.from("bot_positions").update({ stop_order_id: oid }).eq("asset", asset); st.stop_order_id = oid; }
           st.stop_px = newStop; st.peak_px = peak;
         }
       }
@@ -958,8 +999,9 @@ Deno.serve(async (req) => {
           // SE a ordem de saída de fato passou. Antes gravava 'flat' INCONDICIONALMENTE — uma ordem
           // rejeitada deixava a posição VIVA na corretora, sem stop, invisível e furando max_positions.
           if (okk) {
+            await cancelStopOrder(instId, st.stop_order_id); // fechou a mercado → cancela o stop residente
             await savePos(asset, instId, "flat", 0, null);
-            if (!hitTarget) await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown só pós-stop (não no take-profit)
+            await admin.from("bot_positions").update({ stop_order_id: null, ...(hitTarget ? {} : { stopped_at: new Date().toISOString() }) }).eq("asset", asset); // limpa stop residente + cooldown só pós-stop
             openCount = Math.max(0, openCount - 1);
           }
           await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: stopQty, avg_px: exitPx, fill_sz: Number(rr.body?.executedQty) || null, ok: okk, result: rr.body, pnl, note: okk ? `[${asset}] ${stopLbl}@ ${exitLvl}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` : `[${asset}] ⚠️ FALHA ao fechar no ${hitTarget ? "alvo" : "stop"} (${rr.body?.code ?? "?"} ${rr.body?.msg ?? ""}) — posição MANTIDA, re-tenta no próximo ciclo` });
@@ -1210,6 +1252,8 @@ Deno.serve(async (req) => {
           const addStop = pos === "long" ? newEntry - addStopDist : newEntry + addStopDist; // trava o stop no novo médio (ATR ou %)
           const addPeak = pos === "long" ? Math.max(st.peak_px ?? newEntry, lastPx) : Math.min(st.peak_px ?? newEntry, lastPx); // preserva o pico do trailing na pirâmide
           await savePos(asset, instId, pos, Number(newSz.toFixed(qDec)), newEntry, nAdds, addStop, false, addPeak); // guarda o tamanho limpo (sem ruído de float)
+          const psoid = await syncStopOrder(asset, instId, pos as "long" | "short", addStop, st.stop_order_id); // re-sincroniza o stop residente no novo médio
+          await admin.from("bot_positions").update({ stop_order_id: psoid }).eq("asset", asset);
           await admin.from("bot_orders").insert({ source: "auto", action: "add", inst_id: instId, side: addSide.toLowerCase(), ord_type: "market", sz: qtyStr, avg_px: addPx, fill_sz: res.fz, ok: true, result: res.r, note: `[${asset}] pirâmide ${nAdds}/${pyramidMax} em ${lbl(pos)} · médio @ ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons})` });
           await log("trade", `[${asset}] PIRÂMIDE ${nAdds}/${pyramidMax}: +${qtyStr} ${asset} em ${lbl(pos)}${addPx ? ` @ ${addPx}` : ""} · novo médio ${newEntry.toFixed(2)} · viés ${bias >= 0 ? "+" : ""}${bias} (${cons}). ${top}`, { ...reading, status: res.r?.status });
           return { asset, decision: "add", ok: true, bias, conviction, avgPx: addPx, adds: nAdds };
@@ -1223,7 +1267,9 @@ Deno.serve(async (req) => {
           if (!res.okk) { await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, ok: false, result: res.r, note: `[${asset}] falha ao fechar` }); await log("error", `[${asset}] Falha ao fechar ${lbl(pos)}: ${res.sMsg}`, reading); return { asset, decision: "error", error: res.sMsg }; }
           const exitPx = res.ap ?? lastPx;
           if (st.entry_px) pnl = (exitPx - st.entry_px) * Number(closeQty) * (pos === "long" ? 1 : -1);
+          await cancelStopOrder(instId, st.stop_order_id); // vai fechar/flipar → cancela o stop residente antigo
           await savePos(asset, instId, "flat", 0, null);
+          await admin.from("bot_positions").update({ stop_order_id: null }).eq("asset", asset);
           await admin.from("bot_orders").insert({ source: "auto", action: "close", inst_id: instId, side: closeSide.toLowerCase(), ord_type: "market", sz: closeQty, avg_px: res.ap ?? exitPx, fill_sz: res.fz, ok: true, result: res.r, pnl, note: `[${asset}] fechou ${lbl(pos)}${pnl != null ? ` · PnL ${pnl.toFixed(2)} ${cfg.quote_ccy}` : ""}` });
           pos = "flat";
           openCount = Math.max(0, openCount - 1);
@@ -1263,6 +1309,9 @@ Deno.serve(async (req) => {
           const stopBasis = plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
           await admin.from("bot_positions").update({ stopped_at: null, target_px: targetPx }).eq("asset", asset); // abriu → zera cooldown; grava alvo estrutural
+          // STOP RESIDENTE na corretora (P0): dispara sozinho entre ciclos, não depende do robô rodar.
+          const soid = await syncStopOrder(asset, instId, target, stopPx, null);
+          await admin.from("bot_positions").update({ stop_order_id: soid }).eq("asset", asset);
           // Marca a zona de origem como usada (zone_once) — cap de 20 zonas por ativo.
           if (plan.zoneKey && target === plan.want) await admin.from("bot_positions").update({ used_zones: [...usedZones.filter((z) => z !== plan.zoneKey), plan.zoneKey].slice(-20) }).eq("asset", asset);
           openCount++;
