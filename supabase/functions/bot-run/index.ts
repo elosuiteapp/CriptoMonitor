@@ -27,6 +27,39 @@ function json(status: number, body: unknown) {
 const clamp = (v: number) => Math.max(-100, Math.min(100, v));
 const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
+// ════════ ROBÔ 2.0 (motor "confluence2") — decisão por 3-de-4 dos 4 BLOCOS da leitura ════════
+// Reagrupa os 22 sinais nos 4 blocos que o dono vê na tela (Estrutura·Micro·Fluxo·Técnico); cada bloco
+// vira 1 voto (média ponderada dos seus sinais; ±1 se |score|≥10); 3 de 4 na mesma direção → abre.
+// Ignora o setup SMC/zona e os gates do v28 (é confluência pura, o método pedido pelo dono).
+const CONF2_GROUPS: Record<string, string[]> = {
+  estrutura: ["tf_15m", "swing", "bos", "ob", "sweep"],
+  micro:     ["book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg"],
+  fluxo:     ["funding", "cvd", "cvd_div", "liqs", "ls_ratio", "feargreed"],
+  tecnico:   ["vwap", "adx", "ema2050"],
+};
+function conf2Groups(signals: { key: string; score: number; weight: number }[], toggles: Record<string, boolean>) {
+  return Object.entries(CONF2_GROUPS).map(([key, keys]) => {
+    let n = 0, d = 0;
+    for (const s of signals) if (keys.includes(s.key) && toggles[s.key] !== false) { n += s.score * s.weight; d += s.weight; }
+    const score = d ? Math.round(clamp(n / d)) : 0;
+    return { key, score, vote: (score >= 10 ? 1 : score <= -10 ? -1 : 0) };
+  });
+}
+function conf2Target(groups: { vote: number }[], fut: boolean): "long" | "short" | "flat" {
+  const up = groups.filter((g) => g.vote === 1).length, dn = groups.filter((g) => g.vote === -1).length;
+  if (up >= 3 && up > dn) return "long";
+  if (dn >= 3 && dn > up && fut) return "short";
+  return "flat";
+}
+// Trailing "abaixo do 4º último candle FECHADO" (ratchet): long = mínima do 4º candle atrás; short = máxima.
+function candleTrailStop(candles: { high: number; low: number }[], side: "long" | "short", prevStop: number | null): number | null {
+  if (candles.length < 4) return prevStop;
+  const c = candles[candles.length - 4];
+  const lvl = side === "long" ? c.low : c.high;
+  if (prevStop == null) return lvl;
+  return side === "long" ? Math.max(prevStop, lvl) : Math.min(prevStop, lvl); // ratchet: só aperta a favor
+}
+
 // ════════ Binance USDⓈ-M Futures DEMO (long+short; OKX bloqueia derivativos p/ BR) ════════
 // Demo Trading da Binance (demo.binance.com) — base de futuros = demo-fapi.binance.com.
 // (Carteira de Futuros do demo é separada do Spot; abastecida via Reset na aba Futures.)
@@ -709,6 +742,7 @@ Deno.serve(async (req) => {
   const learnByAsset: Record<string, { perSignal?: { key: string; label?: string; hitRate: number; n: number }[] }> = ((learnRow?.data as any)?.byAsset) ?? {};
 
   const venue = String(cfg.venue ?? "binance");
+  const botEngine = String(cfg.bot_engine ?? "smc"); // 'smc' = v28 (SMC) | 'confluence2' = Robô 2.0 (3-de-4 dos 4 blocos)
   const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
   if (!bnbCreds.key || !bnbCreds.secret) { await log("error", "Sem chaves da Binance testnet."); return json(400, { error: "sem credenciais binance" }); }
 
@@ -765,6 +799,36 @@ Deno.serve(async (req) => {
         await log("info", `[${asset}] stop residente não colocado (${r.body?.code ?? "?"} ${r.body?.msg ?? ""}) — check sintético segue protegendo.`, {});
         return null;
       } catch (e) { await log("info", `[${asset}] stop residente: exceção (${(e as Error).message}) — check sintético segue.`, {}); return null; }
+    };
+
+    // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
+    //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
+    //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
+    const runShadow2 = async (asset: string, sigs: { key: string; score: number; weight: number }[], toggles: Record<string, boolean>, candles: { high: number; low: number }[], px: number, fut: boolean) => {
+      const eng = "confluence2";
+      const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", eng).eq("asset", asset).maybeSingle();
+      const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
+      const want = conf2Target(conf2Groups(sigs, toggles), fut);
+      const now = new Date().toISOString();
+      const open = async (side: "long" | "short") => {
+        const { error } = await admin.from("bot_shadow").upsert({ engine: eng, asset, position: side, entry_px: px, stop_px: candleTrailStop(candles, side, null), peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
+        await log("info", `[${asset}] 👻 sombra 2.0: ABRE ${side} @ ${px}${error ? ` — ERRO upsert: ${error.message}` : ""}.`, {});
+      };
+      if (spos === "flat") { if (want !== "flat") await open(want); return; }
+      const entry = Number(sp!.entry_px) || px, curStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
+      const newStop = candleTrailStop(candles, spos, curStop);
+      const breached = newStop != null && (spos === "long" ? px <= newStop : px >= newStop);
+      const flip = want !== "flat" && want !== spos;
+      if (breached || flip) {
+        const exitPx = breached && newStop != null ? newStop : px;
+        const dir = spos === "long" ? 1 : -1;
+        const pnlPct = entry ? Math.round(((exitPx - entry) * dir / entry) * 1e4) / 1e2 : null;
+        await admin.from("bot_shadow_trades").insert({ engine: eng, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason: breached ? "stop (4º candle)" : "reversão 3-de-4", opened_at: sp!.opened_at, closed_at: now });
+        if (flip) await open(want as "long" | "short");
+        else await admin.from("bot_shadow").upsert({ engine: eng, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
+      } else if (newStop !== curStop) {
+        await admin.from("bot_shadow").update({ stop_px: newStop, updated_at: now }).eq("engine", eng).eq("asset", asset);
+      }
     };
 
     // ── BLINDAGEM DE RISCO: sizing por RISCO (% do patrimônio) + teto de alavancagem + circuit breakers. ──
@@ -860,6 +924,11 @@ Deno.serve(async (req) => {
       } catch { /* leitura falhou → mantém o estado do banco (não age sobre leitura ruim) */ }
       let pos: "long" | "short" | "flat" = st.position;
 
+      // ROBÔ SOMBRA: quando o Robô 2.0 NÃO é o vivo, roda ele em paper aqui (sem tocar na conta).
+      if (botEngine !== "confluence2" && primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
+        try { await runShadow2(asset, signals, signalToggles, primary.candles, lastPx, fut); } catch (e) { await log("info", `[${asset}] sombra 2.0: ${(e as Error).message}`, {}); }
+      }
+
       // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): definida AQUI no topo p/ valer em todo
       //    o processamento (trailing, gates, sizing). Cada moeda é única — mesmo motor, dose própria. ──
       const ov = (((cfg.asset_overrides ?? {}) as Record<string, Record<string, unknown>>)[asset]) ?? {};
@@ -888,6 +957,9 @@ Deno.serve(async (req) => {
         const prevPeak = st.peak_px != null ? st.peak_px : st.entry_px;
         const peak = pos === "long" ? Math.max(prevPeak, lastPx) : Math.min(prevPeak, lastPx);
         let newStop = st.stop_px;
+        if (botEngine === "confluence2") {
+          newStop = candleTrailStop(primary?.candles ?? [], pos, st.stop_px); // 2.0: trailing abaixo do 4º candle (ratchet)
+        } else {
         const kTrail = Number(cfg.trail_atr_mult ?? 3);
         if (cfg.trail_on && kTrail > 0 && atrPx > 0) {
           const dist = kTrail * atrPx;
@@ -909,10 +981,11 @@ Deno.serve(async (req) => {
             }
           }
         }
+        }
         if (peak !== prevPeak || newStop !== st.stop_px) {
           const stopMoved = newStop != null && newStop !== st.stop_px;
           await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
-          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing ATR: stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)} · ${kTrail}×ATR ${atrPx.toFixed(2)}).`, {});
+          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing (${botEngine === "confluence2" ? "4º candle" : `${Number(cfg.trail_atr_mult ?? 3)}×ATR`}): stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)}).`, {});
           // stop residente acompanha o trailing: cancela o antigo e recoloca no novo nível (defensivo).
           if (stopMoved) { const oid = await syncStopOrder(asset, instId, pos, newStop!, st.stop_order_id); await admin.from("bot_positions").update({ stop_order_id: oid }).eq("asset", asset); st.stop_order_id = oid; }
           st.stop_px = newStop; st.peak_px = peak;
@@ -1175,6 +1248,8 @@ Deno.serve(async (req) => {
 
       let target: "long" | "short" | "flat" = want ?? pos;
       if (!fut && pos === "long" && want === "short") target = "flat";
+      // ROBÔ 2.0 (motor confluence2): a decisão é o 3-de-4 dos 4 blocos — ignora o setup SMC e os gates do v28.
+      if (botEngine === "confluence2") target = conf2Target(conf2Groups(signals, signalToggles), fut);
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
       // tendência (up)" até em short contra alta — poluía log e avaliação).
       const trendRel = regime === "range" ? "em range" : (target === "long") === (regime === "up") ? `a favor da tendência (${regime})` : `CONTRA a tendência (${regime})`;
@@ -1287,7 +1362,10 @@ Deno.serve(async (req) => {
           // varrida no long; espelho no short). Fallback = ATR se o plano não trouxe stop. Base do sizing.
           const szMult = 1;
           const kStopFb = Number(cfg.stop_atr_mult ?? 3);
-          const riskDist = (plan.stop != null ? Math.abs(lastPx - plan.stop) : kStopFb * atrPx) || (lastPx * 0.01);
+          // ROBÔ 2.0: stop inicial = 4º último candle (trailing); o v28 usa o stop estrutural do plano.
+          const conf2 = botEngine === "confluence2";
+          const conf2Stop = conf2 ? candleTrailStop(primary.candles ?? [], target as "long" | "short", null) : null;
+          const riskDist = ((conf2 && conf2Stop != null) ? Math.abs(lastPx - conf2Stop) : plan.stop != null ? Math.abs(lastPx - plan.stop) : kStopFb * atrPx) || (lastPx * 0.01);
           // SIZING POR RISCO: qty = risco($) ÷ distância-até-o-stop → cada trade arrisca riskPct% do patrimônio.
           // A alavancagem é só TETO: nunca deixa o nocional passar de equity × maxLev (não liquida antes do stop).
           const riskDollars = equity * (riskPct / 100) * szMult * riskMult; // riskMult = dose por moeda (BNB ½ até decisão de pausa)
@@ -1303,10 +1381,10 @@ Deno.serve(async (req) => {
           const filled = res.fz ?? Number(qtyStr); const entryPx = res.ap ?? lastPx; const realNot = filled * entryPx;
           // STOP = nível estrutural do plano (senão entry ∓ riskDist). ALVO = próxima liquidez (take-profit),
           // OPCIONAL (cfg.target_on): desligado, a posição corre só com stop + trailing até sair/stopar (dono 03/jul).
-          const stopPx = plan.stop != null ? plan.stop : (target === "long" ? entryPx - riskDist : entryPx + riskDist);
-          const targetPx = cfg.target_on !== false ? plan.target : null;
+          const stopPx = (conf2 && conf2Stop != null) ? conf2Stop : (plan.stop != null ? plan.stop : (target === "long" ? entryPx - riskDist : entryPx + riskDist));
+          const targetPx = conf2 ? null : (cfg.target_on !== false ? plan.target : null); // 2.0 sai só por trailing (sem alvo fixo)
           const usedLev = equity > 0 ? realNot / equity : 0;
-          const stopBasis = plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
+          const stopBasis = conf2 ? "4º candle" : plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
           await admin.from("bot_positions").update({ stopped_at: null, target_px: targetPx }).eq("asset", asset); // abriu → zera cooldown; grava alvo estrutural
           // STOP RESIDENTE na corretora (P0): dispara sozinho entre ciclos, não depende do robô rodar.

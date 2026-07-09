@@ -44,6 +44,7 @@ interface Config {
   dir_mode?: string;       // 'any' | 'majority' (2-de-3) | 'internal'
   htf_gate?: string;       // 'off' | '1H' | '4H' | '1D' — bússola do TF maior
   conf_scope?: string;     // 'smc_flow' (estrutura + pressão não-contra) | 'all' (4 grupos)
+  bot_engine?: string;     // 'smc' (v28) | 'confluence2' (Robô 2.0: 3-de-4 dos 4 blocos + trailing 4º candle)
   delta_confirm?: boolean; // vela da entrada precisa de delta (volume taker) a favor (v24)
   zone_discipline?: boolean; // premium não compra / discount não vende, salvo rompimento (v25)
   sq_filter?: boolean;     // Squeeze Momentum (LazyBear) forte contra segura a entrada (v26)
@@ -237,6 +238,8 @@ export default function AdminBot() {
   // é limit(30) misturando as 4 moedas → a entrada da posição atual some dos markers).
   const [chartOrders, setChartOrders] = useState<OrderRow[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
+  const [shadowTrades, setShadowTrades] = useState<{ asset: string; side: string; pnl_pct: number | null; closed_at: string }[]>([]);
+  const [shadowPos, setShadowPos] = useState<{ asset: string; position: string; entry_px: number | null; stop_px: number | null }[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
   const [selMonth, setSelMonth] = useState(""); // mês escolhido no card "Saldo do mês" (vazio = mês vigente)
@@ -292,13 +295,15 @@ export default function AdminBot() {
   const [mPx, setMPx] = useState("");
 
   const loadBase = useCallback(async () => {
-    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }] = await Promise.all([
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }, { data: shp }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
+      supabase.from("bot_shadow_trades").select("asset, side, pnl_pct, closed_at").eq("engine", "confluence2").order("closed_at", { ascending: false }).limit(500),
+      supabase.from("bot_shadow").select("asset, position, entry_px, stop_px").eq("engine", "confluence2"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -307,11 +312,28 @@ export default function AdminBot() {
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
     setLearning((lrn as Learning | null) ?? null);
+    setShadowTrades((sh as typeof shadowTrades | null) ?? []);
+    setShadowPos((shp as typeof shadowPos | null) ?? []);
   }, []);
 
   useEffect(() => {
     loadBase();
   }, [loadBase]);
+
+  // Desempenho comparado dos DOIS robôs: v28 (vivo, PnL real em USDT) × Robô 2.0 (sombra/papel, retorno em %).
+  const engineCompare = useMemo(() => {
+    const v28Closes = orders.filter((o) => o.action === "close" && o.pnl != null);
+    const v28Wins = v28Closes.filter((o) => (Number(o.pnl) || 0) > 0).length;
+    const v28Sum = v28Closes.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
+    const v28Open = positions.filter((p) => p.position && p.position !== "flat").length;
+    const c2Wins = shadowTrades.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
+    const c2Sum = shadowTrades.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
+    const c2Open = shadowPos.filter((p) => p.position && p.position !== "flat").length;
+    return {
+      v28: { trades: v28Closes.length, win: v28Closes.length ? Math.round((v28Wins / v28Closes.length) * 100) : 0, sum: v28Sum, open: v28Open },
+      c2: { trades: shadowTrades.length, win: shadowTrades.length ? Math.round((c2Wins / shadowTrades.length) * 100) : 0, sum: c2Sum, open: c2Open },
+    };
+  }, [orders, positions, shadowTrades, shadowPos]);
 
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
@@ -322,7 +344,7 @@ export default function AdminBot() {
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
     ]);
-    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
+    if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto, bot_engine: prev.bot_engine } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
@@ -897,6 +919,15 @@ export default function AdminBot() {
               {busy === "run" ? "Rodando…" : cfg.enabled ? "Rodar agora" : "Testar sinal (sem operar)"}
             </button>
           </div>
+          <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/[0.05] p-3">
+            <label className="text-xs font-semibold text-foreground">🤖 Motor do robô <span className="font-normal text-muted-foreground">— qual robô OPERA a conta; o outro roda em sombra (papel) pra comparar</span>
+              <select className={`${input} mt-1`} value={cfg.bot_engine ?? "smc"} onChange={(e) => setCfg({ ...cfg, bot_engine: e.target.value })}>
+                <option value="smc">Robô 1 · v28 — SMC price-action 15m (reteste + gates) · atual</option>
+                <option value="confluence2">Robô 2.0 — confluência 3-de-4 dos 4 blocos + trailing no 4º candle</option>
+              </select>
+            </label>
+            <p className="mt-1 text-[10px] text-muted-foreground">Trocar aqui só muda qual dos dois opera de verdade; o desempenho dos dois aparece no card "Desempenho dos robôs".</p>
+          </div>
           <div className="mt-3 space-y-4">
             {/* ── 1 · Execução & risco — quanto arrisca e os freios de segurança ── */}
             <div className="rounded-lg border border-border/70 bg-background/40 p-3">
@@ -1131,7 +1162,7 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {}, imb_mode: cfg.imb_mode ?? "retest", imb_align: cfg.imb_align !== false, setup_priority: cfg.setup_priority ?? "structure", zone_once: cfg.zone_once !== false, dir_mode: cfg.dir_mode ?? "majority", htf_gate: cfg.htf_gate ?? "1H", conf_scope: cfg.conf_scope ?? "smc_flow_ta", delta_confirm: cfg.delta_confirm !== false, zone_discipline: cfg.zone_discipline !== false, sq_filter: cfg.sq_filter !== false, opp_htf_atr: cfg.opp_htf_atr ?? 1, vol_max_atr: cfg.vol_max_atr ?? 2 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {}, imb_mode: cfg.imb_mode ?? "retest", imb_align: cfg.imb_align !== false, setup_priority: cfg.setup_priority ?? "structure", zone_once: cfg.zone_once !== false, dir_mode: cfg.dir_mode ?? "majority", htf_gate: cfg.htf_gate ?? "1H", conf_scope: cfg.conf_scope ?? "smc_flow_ta", delta_confirm: cfg.delta_confirm !== false, zone_discipline: cfg.zone_discipline !== false, sq_filter: cfg.sq_filter !== false, opp_htf_atr: cfg.opp_htf_atr ?? 1, vol_max_atr: cfg.vol_max_atr ?? 2, bot_engine: cfg.bot_engine ?? "smc" })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia (motor v28 — vela fechada): o <strong>SMC do 15m arma o setup em VELA FECHADA</strong> (reteste de Order Block/FVG a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>) e os grupos votam na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP + ADX). Filtros de entrada validados: delta da vela a favor · squeeze momentum não-contra · disciplina de zona (premium/discount) · <strong>zona oposta do 1H</strong> (não compra colado em OB/FVG de venda do TF maior) · <strong>filtro de volatilidade</strong> (vela-spike &gt; 2×ATR não entra). <strong>Saída SÓ por stop estrutural + trailing 2,5×ATR</strong> (alvo de liquidez DESLIGADO por decisão do dono 07/jul; trava de breakeven com lucro ≥ 1×ATR). Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown 60min pós-stop; pirâmide só no lucro e a favor. <strong>ROBÔ ÚNICO</strong>: config idêntica nas 5 moedas (BTC·ETH·SOL·BNB·AAVE) — exceções por moeda (2b) só com evidência nova.</span>
@@ -1300,6 +1331,37 @@ export default function AdminBot() {
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
+      </div>
+
+      {/* Desempenho comparado dos DOIS robôs (vivo × sombra) */}
+      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs</h2>
+          <span className="text-[10px] text-muted-foreground">vivo (real) × sombra (papel) — mesmas 5 moedas, mesmos ciclos</span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[
+            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28, isPct: false },
+            { key: "confluence2", name: "Robô 2.0 · 3-de-4", desc: "confluência 4 blocos + trailing 4º candle", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2, isPct: true },
+          ].map((e) => (
+            <div key={e.key} className={`rounded-lg border p-3 ${e.live ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-border/70 bg-background/40"}`}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{e.name}</div>
+                  <div className="text-[10px] text-muted-foreground">{e.desc}</div>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${e.live ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{e.live ? "● VIVO" : "sombra (papel)"}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div><div className="num text-lg font-bold text-foreground">{e.st.trades}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">trades</div></div>
+                <div><div className="num text-lg font-bold text-foreground">{e.st.trades ? `${e.st.win}%` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">acerto</div></div>
+                <div><div className={`num text-lg font-bold ${e.st.sum > 0 ? "text-emerald-500" : e.st.sum < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.st.trades ? `${e.st.sum >= 0 ? "+" : ""}${e.isPct ? `${e.st.sum.toFixed(1)}%` : num(e.st.sum)}` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">retorno</div></div>
+                <div><div className="num text-lg font-bold text-foreground">{e.st.open}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">abertas</div></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-muted-foreground">O robô <b>VIVO</b> opera a conta demo (retorno realizado em {quote}); o outro roda em <b>SOMBRA</b> (papel, retorno em % por trade) pra comparar sem conflito. Troque qual é o vivo em <b>Configuração → Motor do robô</b>.</p>
       </div>
 
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
