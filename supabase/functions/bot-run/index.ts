@@ -811,7 +811,9 @@ Deno.serve(async (req) => {
       const want = conf2Target(conf2Groups(sigs, toggles), fut);
       const now = new Date().toISOString();
       const open = async (side: "long" | "short") => {
-        const { error } = await admin.from("bot_shadow").upsert({ engine: eng, asset, position: side, entry_px: px, stop_px: candleTrailStop(candles, side, null), peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
+        const stop = candleTrailStop(candles, side, null);
+        if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop do 4º candle não-protetor → não abre no papel
+        const { error } = await admin.from("bot_shadow").upsert({ engine: eng, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
         await log("info", `[${asset}] 👻 sombra 2.0: ABRE ${side} @ ${px}${error ? ` — ERRO upsert: ${error.message}` : ""}.`, {});
       };
       if (spos === "flat") { if (want !== "flat") await open(want); return; }
@@ -1366,6 +1368,12 @@ Deno.serve(async (req) => {
           const conf2 = botEngine === "confluence2";
           const conf2Stop = conf2 ? candleTrailStop(primary.candles ?? [], target as "long" | "short", null) : null;
           const riskDist = ((conf2 && conf2Stop != null) ? Math.abs(lastPx - conf2Stop) : plan.stop != null ? Math.abs(lastPx - plan.stop) : kStopFb * atrPx) || (lastPx * 0.01);
+          // ROBÔ 2.0 GUARD: o stop do 4º candle precisa ter distância PROTETORA real (≥0,1×ATR do lado
+          // certo). Sem isso (candle colado/do lado errado) o sizing inflaria a posição — não abre.
+          if (conf2 && (conf2Stop == null || (target === "long" ? conf2Stop >= lastPx - 0.1 * atrPx : conf2Stop <= lastPx + 0.1 * atrPx))) {
+            await log("info", `[${asset}] Robô 2.0: stop do 4º candle sem distância protetora (${conf2Stop?.toFixed(4)} vs ${lastPx}) — não abre, aguarda candle melhor.`, reading);
+            return { asset, decision: "flat", bias, conviction };
+          }
           // SIZING POR RISCO: qty = risco($) ÷ distância-até-o-stop → cada trade arrisca riskPct% do patrimônio.
           // A alavancagem é só TETO: nunca deixa o nocional passar de equity × maxLev (não liquida antes do stop).
           const riskDollars = equity * (riskPct / 100) * szMult * riskMult; // riskMult = dose por moeda (BNB ½ até decisão de pausa)
