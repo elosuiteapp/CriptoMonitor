@@ -42,8 +42,15 @@ async function hmacHex(secret: string, msg: string): Promise<string> {
 async function bnb(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string | number | boolean>, c: BnbCreds, signed: boolean): Promise<{ status: number; body: any }> {
   let qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
   if (signed) { qs += (qs ? "&" : "") + "recvWindow=5000&timestamp=" + Date.now(); qs += "&signature=" + await hmacHex(c.secret, qs); }
-  const r = await fetch(BNB_BASE + path + (qs ? "?" + qs : ""), { method, headers: { "X-MBX-APIKEY": c.key } });
-  return { status: r.status, body: await r.json().catch(() => ({})) };
+  // TIMEOUT (robustez, auditoria 09/jul): aborta a chamada em 8s p/ um request pendurado não travar
+  // o ciclo. No abort, o fetch lança (AbortError) e sobe ao catch do chamador (mesma semântica de
+  // falha de rede de hoje) — só que limitada no tempo.
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(BNB_BASE + path + (qs ? "?" + qs : ""), { method, headers: { "X-MBX-APIKEY": c.key }, signal: ctrl.signal });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  } finally { clearTimeout(to); }
 }
 // Ordem com RECONCILIAÇÃO de -1007 ("Timeout… execution status unknown", visto 02/jul no demo):
 // envia com newClientOrderId; no timeout, consulta a ordem pelo clientId antes de tratar como
@@ -790,6 +797,29 @@ Deno.serve(async (req) => {
       const isSwapOkx = String(instId).toUpperCase().endsWith("-SWAP");
       const fut = venue === "binance" || isSwapOkx; // opera short?
       const st = await loadPos(asset);
+      // RECONCILIAÇÃO banco×corretora (auditoria 09/jul, P1): a CORRETORA é a verdade. Sincroniza o
+      // estado ANTES de decidir — fecha o drift (o guard anti-órfã evita CRIAR órfã; isto conserta as
+      // que já existem e o caso "posição fechou entre ciclos" por stop residente/liquidação/manual).
+      // Conservador: só AGE no sentido seguro (corretora zerada + leitura 200 OK); ambíguo = só alerta.
+      try {
+        const pr = await bnb("GET", "/fapi/v2/positionRisk", { symbol: instId }, bnbCreds, true);
+        const row = Array.isArray(pr.body) ? (pr.body as any[]).find((p) => p.symbol === instId) : null;
+        if (pr.status === 200 && row) {
+          const amt = Number(row.positionAmt) || 0, exchFlat = Math.abs(amt) < 1e-9;
+          const exchSide = amt > 0 ? "long" : amt < 0 ? "short" : "flat";
+          if (st.position !== "flat" && exchFlat) {
+            await savePos(asset, instId, "flat", 0, null);
+            await admin.from("bot_positions").update({ stopped_at: new Date().toISOString() }).eq("asset", asset); // cooldown conservador
+            openCount = Math.max(0, openCount - 1);
+            await log("info", `[${asset}] 🔄 reconciliação: corretora ZERADA e o banco tinha ${st.position} — fechou fora do ciclo; sincronizado p/ flat (cooldown ligado).`, {});
+            st.position = "flat"; st.pos_base_sz = 0; st.entry_px = null; st.stop_px = null; st.stopped_at = new Date().toISOString();
+          } else if (st.position === "flat" && !exchFlat) {
+            await log("error", `[${asset}] ⚠️ reconciliação: corretora tem ${exchSide} ${Math.abs(amt)} @ ${Number(row.entryPrice) || 0} mas o banco está FLAT — fora do controle do robô. Verificar/fechar manualmente.`, { positionAmt: amt, entryPrice: row.entryPrice });
+          } else if (st.position !== "flat" && exchSide !== st.position) {
+            await log("error", `[${asset}] ⚠️ reconciliação: direção diverge (banco ${st.position} × corretora ${exchSide}) — verificar.`, { positionAmt: amt });
+          }
+        }
+      } catch { /* leitura falhou → mantém o estado do banco (não age sobre leitura ruim) */ }
       let pos: "long" | "short" | "flat" = st.position;
 
       // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): definida AQUI no topo p/ valer em todo
