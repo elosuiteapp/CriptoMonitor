@@ -238,8 +238,8 @@ export default function AdminBot() {
   // é limit(30) misturando as 4 moedas → a entrada da posição atual some dos markers).
   const [chartOrders, setChartOrders] = useState<OrderRow[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
-  const [shadowTrades, setShadowTrades] = useState<{ asset: string; side: string; pnl_pct: number | null; closed_at: string }[]>([]);
-  const [shadowPos, setShadowPos] = useState<{ asset: string; position: string; entry_px: number | null; stop_px: number | null }[]>([]);
+  const [shadowTrades, setShadowTrades] = useState<{ engine: string; asset: string; side: string; pnl_pct: number | null; closed_at: string }[]>([]);
+  const [shadowPos, setShadowPos] = useState<{ engine: string; asset: string; position: string; entry_px: number | null; stop_px: number | null }[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
   const [selMonth, setSelMonth] = useState(""); // mês escolhido no card "Saldo do mês" (vazio = mês vigente)
@@ -302,8 +302,8 @@ export default function AdminBot() {
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
-      supabase.from("bot_shadow_trades").select("asset, side, pnl_pct, closed_at").eq("engine", "confluence2").order("closed_at", { ascending: false }).limit(500),
-      supabase.from("bot_shadow").select("asset, position, entry_px, stop_px").eq("engine", "confluence2"),
+      supabase.from("bot_shadow_trades").select("engine, asset, side, pnl_pct, closed_at").order("closed_at", { ascending: false }).limit(1000),
+      supabase.from("bot_shadow").select("engine, asset, position, entry_px, stop_px"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -320,20 +320,18 @@ export default function AdminBot() {
     loadBase();
   }, [loadBase]);
 
-  // Desempenho comparado dos DOIS robôs: v28 (vivo, PnL real em USDT) × Robô 2.0 (sombra/papel, retorno em %).
+  // Desempenho comparado dos DOIS robôs — AMBOS no papel (sombra), mesma unidade (% por trade), régua justa.
+  // O motor VIVO também opera a conta real à parte (isso aparece em "Resumo da conta").
   const engineCompare = useMemo(() => {
-    const v28Closes = orders.filter((o) => o.action === "close" && o.pnl != null);
-    const v28Wins = v28Closes.filter((o) => (Number(o.pnl) || 0) > 0).length;
-    const v28Sum = v28Closes.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
-    const v28Open = positions.filter((p) => p.position && p.position !== "flat").length;
-    const c2Wins = shadowTrades.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
-    const c2Sum = shadowTrades.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
-    const c2Open = shadowPos.filter((p) => p.position && p.position !== "flat").length;
-    return {
-      v28: { trades: v28Closes.length, win: v28Closes.length ? Math.round((v28Wins / v28Closes.length) * 100) : 0, sum: v28Sum, open: v28Open },
-      c2: { trades: shadowTrades.length, win: shadowTrades.length ? Math.round((c2Wins / shadowTrades.length) * 100) : 0, sum: c2Sum, open: c2Open },
+    const stat = (eng: string) => {
+      const tr = shadowTrades.filter((t) => t.engine === eng);
+      const wins = tr.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
+      const sum = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
+      const open = shadowPos.filter((p) => p.engine === eng && p.position && p.position !== "flat").length;
+      return { trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, sum, open };
     };
-  }, [orders, positions, shadowTrades, shadowPos]);
+    return { v28: stat("smc"), c2: stat("confluence2") };
+  }, [shadowTrades, shadowPos]);
 
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
@@ -1337,11 +1335,11 @@ export default function AdminBot() {
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs</h2>
-          <span className="text-[10px] text-muted-foreground">vivo (real) × sombra (papel) — mesmas 5 moedas, mesmos ciclos</span>
+          <span className="text-[10px] text-muted-foreground">os dois no papel (%) — régua justa · o ● VIVO também opera real</span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
-            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28, isPct: false },
+            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28, isPct: true },
             { key: "confluence2", name: "Robô 2.0 · 3-de-4", desc: "confluência 4 blocos + trailing 4º candle", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2, isPct: true },
           ].map((e) => (
             <div key={e.key} className={`rounded-lg border p-3 ${e.live ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-border/70 bg-background/40"}`}>
@@ -1361,7 +1359,7 @@ export default function AdminBot() {
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">O robô <b>VIVO</b> opera a conta demo (retorno realizado em {quote}); o outro roda em <b>SOMBRA</b> (papel, retorno em % por trade) pra comparar sem conflito. Troque qual é o vivo em <b>Configuração → Motor do robô</b>.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Os <b>DOIS</b> robôs rodam no papel nas mesmas 5 moedas (retorno em % por trade) pra comparar na régua justa. O selado <b>● VIVO</b> também opera a conta demo de verdade — o resultado real dele aparece em <b>Resumo da conta</b>. Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
       </div>
 
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}

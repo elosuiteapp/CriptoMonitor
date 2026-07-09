@@ -804,32 +804,41 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow2 = async (asset: string, sigs: { key: string; score: number; weight: number }[], toggles: Record<string, boolean>, candles: { high: number; low: number }[], px: number, fut: boolean) => {
-      const eng = "confluence2";
-      const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", eng).eq("asset", asset).maybeSingle();
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number) => {
+      const conf2 = engine === "confluence2";
+      // stop inicial: 2.0 = 4º candle; v28 = estrutural do plano (fallback ATR).
+      const initStop = (side: "long" | "short") => conf2 ? candleTrailStop(candles, side, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
+      const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", engine).eq("asset", asset).maybeSingle();
       const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
-      const want = conf2Target(conf2Groups(sigs, toggles), fut);
       const now = new Date().toISOString();
       const open = async (side: "long" | "short") => {
-        const stop = candleTrailStop(candles, side, null);
-        if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop do 4º candle não-protetor → não abre no papel
-        const { error } = await admin.from("bot_shadow").upsert({ engine: eng, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
-        await log("info", `[${asset}] 👻 sombra 2.0: ABRE ${side} @ ${px}${error ? ` — ERRO upsert: ${error.message}` : ""}.`, {});
+        const stop = initStop(side);
+        if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop não-protetor → não abre no papel
+        await admin.from("bot_shadow").upsert({ engine, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
       };
       if (spos === "flat") { if (want !== "flat") await open(want); return; }
-      const entry = Number(sp!.entry_px) || px, curStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
-      const newStop = candleTrailStop(candles, spos, curStop);
+      const entry = Number(sp!.entry_px) || px;
+      const prevStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
+      const prevPeak = Number(sp!.peak_px) || entry;
+      const peak = spos === "long" ? Math.max(prevPeak, px) : Math.min(prevPeak, px);
+      // trailing: 2.0 = 4º candle (ratchet); v28 = chandelier ATR do pico (ratchet), armado após kTrail×ATR de lucro.
+      let newStop = prevStop;
+      if (conf2) newStop = candleTrailStop(candles, spos, prevStop);
+      else if (atr > 0) {
+        const armed = spos === "long" ? peak - entry >= kTrail * atr : entry - peak >= kTrail * atr;
+        if (armed) { const ts = spos === "long" ? peak - kTrail * atr : peak + kTrail * atr; newStop = prevStop == null ? ts : (spos === "long" ? Math.max(prevStop, ts) : Math.min(prevStop, ts)); }
+      }
       const breached = newStop != null && (spos === "long" ? px <= newStop : px >= newStop);
       const flip = want !== "flat" && want !== spos;
       if (breached || flip) {
         const exitPx = breached && newStop != null ? newStop : px;
         const dir = spos === "long" ? 1 : -1;
         const pnlPct = entry ? Math.round(((exitPx - entry) * dir / entry) * 1e4) / 1e2 : null;
-        await admin.from("bot_shadow_trades").insert({ engine: eng, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason: breached ? "stop (4º candle)" : "reversão 3-de-4", opened_at: sp!.opened_at, closed_at: now });
+        await admin.from("bot_shadow_trades").insert({ engine, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason: breached ? "stop" : "reversão", opened_at: sp!.opened_at, closed_at: now });
         if (flip) await open(want as "long" | "short");
-        else await admin.from("bot_shadow").upsert({ engine: eng, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
-      } else if (newStop !== curStop) {
-        await admin.from("bot_shadow").update({ stop_px: newStop, updated_at: now }).eq("engine", eng).eq("asset", asset);
+        else await admin.from("bot_shadow").upsert({ engine, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
+      } else if (newStop !== prevStop || peak !== prevPeak) {
+        await admin.from("bot_shadow").update({ stop_px: newStop, peak_px: peak, updated_at: now }).eq("engine", engine).eq("asset", asset);
       }
     };
 
@@ -925,11 +934,6 @@ Deno.serve(async (req) => {
         }
       } catch { /* leitura falhou → mantém o estado do banco (não age sobre leitura ruim) */ }
       let pos: "long" | "short" | "flat" = st.position;
-
-      // ROBÔ SOMBRA: quando o Robô 2.0 NÃO é o vivo, roda ele em paper aqui (sem tocar na conta).
-      if (botEngine !== "confluence2" && primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
-        try { await runShadow2(asset, signals, signalToggles, primary.candles, lastPx, fut); } catch (e) { await log("info", `[${asset}] sombra 2.0: ${(e as Error).message}`, {}); }
-      }
 
       // ── CONFIG POR MOEDA (cfg.asset_overrides, sql/103): definida AQUI no topo p/ valer em todo
       //    o processamento (trailing, gates, sizing). Cada moeda é única — mesmo motor, dose própria. ──
@@ -1252,6 +1256,13 @@ Deno.serve(async (req) => {
       if (!fut && pos === "long" && want === "short") target = "flat";
       // ROBÔ 2.0 (motor confluence2): a decisão é o 3-de-4 dos 4 blocos — ignora o setup SMC e os gates do v28.
       if (botEngine === "confluence2") target = conf2Target(conf2Groups(signals, signalToggles), fut);
+      // SOMBRA dos DOIS motores (paper) — ambos rodam TODO ciclo p/ comparação justa (mesma unidade %);
+      // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-4 dos 4 blocos.
+      if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
+        const kTr = Number(cfg.trail_atr_mult ?? 3);
+        try { await runShadow("confluence2", asset, conf2Target(conf2Groups(signals, signalToggles), fut), lastPx, primary.candles, null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
+        try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
+      }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
       // tendência (up)" até em short contra alta — poluía log e avaliação).
       const trendRel = regime === "range" ? "em range" : (target === "long") === (regime === "up") ? `a favor da tendência (${regime})` : `CONTRA a tendência (${regime})`;
