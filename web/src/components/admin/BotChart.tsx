@@ -42,8 +42,9 @@ export interface BotSubRef { value: number; color: string; dashed?: boolean }
 /** Sub-painel de indicadores (blocos do Robô 2.0) — escala própria −100..+100 no rodapé do gráfico. */
 export interface BotSub { lines: BotIndicatorLine[]; refs?: BotSubRef[] }
 
-const SUB_SCALE = "left"; // escala do sub-painel (eixo à esquerda, −100..+100)
+const SUB_SCALE = "blk"; // escala SOBREPOSTA invisível do sub-painel (sem eixo próprio; pin ±100 + faixa de baixo)
 const PIN_100 = () => ({ priceRange: { minValue: -108, maxValue: 108 } }); // trava a escala do sub-painel
+const shortLabel = (t: string) => (t === "Força ponderada" ? "Força" : t === "Microestrutura" ? "Micro" : t === "Posicionamento" ? "Posic" : t);
 
 /** Gráfico de velas (Lightweight Charts) — marcadores de trade + sub-painel de indicadores por bloco. */
 export default function BotChart({ candles, markers, priceLines = [], lines = [], sub = null, decimals = 2, height = 460, fitKey }: { candles: BotCandle[]; markers: BotMarker[]; priceLines?: BotPriceLine[]; lines?: BotIndicatorLine[]; sub?: BotSub | null; decimals?: number; height?: number; fitKey?: string }) {
@@ -55,6 +56,10 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
   const subRefSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const didFitRef = useRef(false);
+  const legendRef = useRef<HTMLDivElement>(null);
+  const subMetaRef = useRef<{ short: string; color: string; series: ISeriesApi<"Line">; last: number | null }[]>([]);
+  const priceMetaRef = useRef<{ series: ISeriesApi<"Candlestick"> | null; last: number | null }>({ series: null, last: null });
+  const renderLegendRef = useRef<(p: unknown) => void>(() => {});
   const { isDark } = useTheme();
 
   useEffect(() => { didFitRef.current = false; }, [fitKey]);
@@ -92,6 +97,43 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
     chartRef.current?.applyOptions({ layout: { textColor: c.text }, grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } }, rightPriceScale: { borderColor: c.border }, leftPriceScale: { borderColor: c.border }, timeScale: { borderColor: c.border } });
   }, [isDark]);
 
+  // LEGENDA (glass) — mostra os valores dos indicadores no ponto sob o mouse (o sub-painel não tem eixo próprio).
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const fmt = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v)}`;
+    const render = (param: unknown) => {
+      const leg = legendRef.current;
+      if (!leg) return;
+      const meta = subMetaRef.current;
+      if (!meta.length) { leg.style.display = "none"; return; }
+      const sd = (param as { seriesData?: Map<unknown, unknown> } | null)?.seriesData;
+      const val = (s: ISeriesApi<"Line">, fb: number | null) => {
+        const d = sd?.get(s) as { value?: number } | number | undefined;
+        const v = d == null ? fb : typeof d === "object" ? d.value ?? fb : d;
+        return v ?? null;
+      };
+      let html = "";
+      const pm = priceMetaRef.current;
+      if (pm.series) {
+        const cd = sd?.get(pm.series) as { close?: number } | undefined;
+        const px = cd?.close ?? pm.last;
+        if (px != null) html += `<span style="opacity:.6">preço</span> <b style="margin-right:2px">${px}</b>`;
+      }
+      for (const m of meta) {
+        const v = val(m.series, m.last);
+        html += `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:9999px;background:${m.color};display:inline-block"></span><span style="opacity:.7">${m.short}</span><b style="color:${m.color}">${v == null ? "—" : fmt(v)}</b></span>`;
+      }
+      leg.innerHTML = html;
+      leg.style.display = "flex";
+    };
+    renderLegendRef.current = render;
+    chart.subscribeCrosshairMove(render);
+    render(null);
+    return () => chart.unsubscribeCrosshairMove(render);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const s = seriesRef.current;
     if (!s) return;
@@ -115,6 +157,8 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
       chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 110), to: candles.length + 4 });
       didFitRef.current = true;
     }
+    priceMetaRef.current = { series: s, last: candles.length ? candles[candles.length - 1].close : null };
+    renderLegendRef.current(null);
   }, [candles, markers, decimals]);
 
   // Indicadores SOBRE as velas (EMA/VWAP) — série de linha por id estável (escala do preço).
@@ -147,15 +191,15 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
   useEffect(() => {
     const chart = chartRef.current, cs = seriesRef.current;
     if (!chart || !cs) return;
-    const c = chartAxisColors(isDark);
     const has = !!(sub && sub.lines.length && candles.length);
-    // As velas cedem o rodapé quando o sub-painel está ligado.
-    cs.priceScale().applyOptions({ scaleMargins: has ? { top: 0.05, bottom: 0.36 } : { top: 0.08, bottom: 0.08 } });
-    chart.applyOptions({ leftPriceScale: { visible: has, borderColor: c.border, scaleMargins: { top: 0.68, bottom: 0.02 } } });
+    // As velas cedem o rodapé quando o sub-painel está ligado; o sub-painel fica numa escala SOBREPOSTA
+    // INVISÍVEL (sem eixo próprio — o eixo à esquerda extrapolava e dava aquele −100..600 com cara de bug).
+    cs.priceScale().applyOptions({ scaleMargins: has ? { top: 0.06, bottom: 0.34 } : { top: 0.08, bottom: 0.08 } });
+    if (has) chart.priceScale(SUB_SCALE).applyOptions({ scaleMargins: { top: 0.72, bottom: 0.04 } });
     for (const s of subRefSeriesRef.current) chart.removeSeries(s);
     subRefSeriesRef.current = [];
     const map = subSeriesRef.current;
-    if (!has) { for (const [id, s] of map) { chart.removeSeries(s); map.delete(id); } return; }
+    if (!has) { for (const [id, s] of map) { chart.removeSeries(s); map.delete(id); } subMetaRef.current = []; renderLegendRef.current(null); return; }
     const t0 = candles[0].time, t1 = candles[candles.length - 1].time;
     for (const r of sub!.refs ?? []) {
       const rs = chart.addLineSeries({ priceScaleId: SUB_SCALE, color: r.color, lineWidth: 1, lineStyle: r.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: PIN_100 });
@@ -170,8 +214,15 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
       if (!s) { s = chart.addLineSeries(opts); map.set(l.id, s); } else s.applyOptions(opts);
       s.setData(l.data);
     }
+    subMetaRef.current = sub!.lines.map((l) => ({ short: shortLabel(l.title), color: l.color, series: map.get(l.id)!, last: l.data.length ? l.data[l.data.length - 1].value : null }));
+    renderLegendRef.current(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub, candles, isDark]);
 
-  return <div ref={wrapRef} style={{ height }} className="w-full" />;
+  return (
+    <div className="relative w-full" style={{ height }}>
+      <div ref={wrapRef} className="h-full w-full" />
+      <div ref={legendRef} style={{ display: "none" }} className="pointer-events-none absolute left-2.5 top-2.5 z-10 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-white/10 bg-background/70 px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-lg backdrop-blur-md" />
+    </div>
+  );
 }
