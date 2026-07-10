@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { UTCTimestamp } from "lightweight-charts";
 
-import BotChart, { type BotCandle, type BotMarker, type BotPriceLine } from "../../components/admin/BotChart";
+import BotChart, { type BotCandle, type BotMarker, type BotPriceLine, type BotSub } from "../../components/admin/BotChart";
 import Markdown from "../../components/Markdown";
-import { computeSmc } from "../../lib/smc";
 import { supabase } from "../../lib/supabase";
 
 interface Config {
@@ -148,6 +147,7 @@ interface BotPosition {
   last_decision: string | null;
   last_reading: Reading | null;
   engine?: string;
+  block_hist?: number[][]; // histórico rolante [t, wforce, estrutura, micro, fluxo, posic, tecnico] p/ o gráfico
 }
 interface LearningSig { key: string; label: string; weight: number; n: number; hitRate: number; edge: number }
 interface LearnAssetStat { n: number; hitRate: number; perSignal?: LearningSig[]; ai_report?: string | null }
@@ -185,6 +185,16 @@ const CONF2_BLOCK: Record<string, string> = {
   ls_ratio: "Posicionamento", feargreed: "Posicionamento", gflow: "Posicionamento",
   vwap: "Técnico", adx: "Técnico", ema2050: "Técnico", rsi: "Técnico", macd: "Técnico", sqz: "Técnico",
 };
+// INDICADORES por bloco no sub-painel do gráfico (Robô 2.0). idx = posição na tupla block_hist
+// [t, wforce, estrutura, micro, fluxo, posic, tecnico]. Cor casa com a bolinha do bloco no card.
+const BLOCK_LINES: { id: string; idx: number; label: string; color: string; width?: 1 | 2 }[] = [
+  { id: "wforce", idx: 1, label: "Força ponderada", color: "#e2e8f0", width: 2 },
+  { id: "estrutura", idx: 2, label: "Estrutura", color: "#10b981" },
+  { id: "micro", idx: 3, label: "Microestrutura", color: "#38bdf8" },
+  { id: "fluxo", idx: 4, label: "Fluxo", color: "#a78bfa" },
+  { id: "posicionamento", idx: 5, label: "Posicionamento", color: "#fbbf24" },
+  { id: "tecnico", idx: 6, label: "Técnico", color: "#f472b6" },
+];
 // Papel REAL de cada sinal no MOTOR v21 "SMC + PRESSÃO" (espelha o bot-run, sql/107):
 // decide = estrutura SMC 15m (arma o setup + é 1 dos 2 votos) · vota = grupo Fluxo (book inst+varejo
 // = a pressão, + liqs/gamma/CVD div) — Estrutura E Fluxo precisam votar na direção (2 de 2) ·
@@ -325,7 +335,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist").order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
       supabase.from("bot_shadow_trades").select("engine, asset, side, pnl_pct, closed_at").order("closed_at", { ascending: false }).limit(1000),
       supabase.from("bot_shadow").select("engine, asset, position, entry_px, stop_px"),
@@ -372,7 +382,7 @@ export default function AdminBot() {
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine").order("asset"),
+      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist").order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
@@ -675,41 +685,7 @@ export default function AdminBot() {
       });
   }, [chartOrders, candles, selInst]);
 
-  // CAMADAS SMC sobre as velas — EXATAMENTE o que o robô usa pra operar (motor v21, swing 20
-  // igual ao bot-run): OBs vivos, FVGs abertos, poças de liquidez, PDH/PDL/PWH/PWL, banda de
-  // equilíbrio e topo/fundo strong-weak. EMA/VWAP/ADX SAÍRAM do gráfico: viraram "estudo"
-  // (fora da decisão) no v21 — o gráfico mostra só o que decide. Mostra as 12 mais próximas
-  // do preço (padrão glass do módulo) pra não poluir.
-  const smcLevels = useMemo(() => {
-    if (candles.length < 30) return [] as BotPriceLine[];
-    const smc = computeSmc(candles.map((c) => ({ ...c, volume: c.volume ?? 0 })), { swing: 20 });
-    if (!smc) return [] as BotPriceLine[];
-    const px = candles[candles.length - 1].close;
-    const cand: BotPriceLine[] = [];
-    for (const ob of smc.orderBlocks.slice(-6)) cand.push({ price: ob.mid, color: ob.bias === "bullish" ? "#10b981" : "#f43f5e", title: `OB${ob.bias === "bullish" ? "↑" : "↓"}`, dashed: true, width: 1 });
-    for (const f of smc.fvgs) cand.push({ price: f.mid, color: "#6366f1", title: `FVG${f.bias === "bullish" ? "↑" : "↓"}`, dashed: true, width: 1 });
-    for (const l of smc.liquidity.slice(0, 6)) cand.push({ price: l.price, color: "#d946ef", title: `Liq${l.swept ? " ✕" : ""}`, dashed: true, width: 1 });
-    const pl = smc.prevLevels;
-    for (const [t, v] of [["PDH", pl.pdh], ["PDL", pl.pdl], ["PWH", pl.pwh], ["PWL", pl.pwl]] as [string, number | null][]) {
-      if (v != null) cand.push({ price: v, color: "#3b82f6", title: t, dashed: true, width: 1 });
-    }
-    cand.push({ price: smc.equilibrium.top, color: "#64748b", title: "EQ", dashed: true, width: 1 });
-    if (smc.extremes) {
-      cand.push({ price: smc.trailingTop, color: "#f59e0b", title: smc.extremes.high === "strong" ? "Topo FORTE" : "Topo fraco", dashed: true, width: 1 });
-      cand.push({ price: smc.trailingBottom, color: "#f59e0b", title: smc.extremes.low === "strong" ? "Fundo FORTE" : "Fundo fraco", dashed: true, width: 1 });
-    }
-    // FUSÃO de níveis quase iguais (≤0,08% — padrão glass do módulo): "PDH · FVG↑" numa etiqueta
-    // só, em vez do paredão de labels empilhados no eixo. Depois, as 10 mais próximas do preço.
-    const sorted = cand.sort((a, b) => a.price - b.price);
-    const merged: BotPriceLine[] = [];
-    for (const l of sorted) {
-      const prev = merged[merged.length - 1];
-      if (prev && px > 0 && Math.abs(l.price - prev.price) / px <= 0.0008) {
-        if (!prev.title.includes(l.title)) prev.title = `${prev.title} · ${l.title}`;
-      } else merged.push({ ...l });
-    }
-    return merged.sort((a, b) => Math.abs(a.price - px) - Math.abs(b.price - px)).slice(0, 10);
-  }, [candles]);
+  // (Níveis SMC removidos do gráfico — pedido do dono 10/jul: o gráfico foca em trade + indicadores por bloco.)
 
   // Leitura da moeda em foco (cada ativo tem a sua em bot_positions); fallback ao config (BTC legado).
   const selPos = positions.find((p) => p.asset === selAsset) ?? null;
@@ -724,13 +700,22 @@ export default function AdminBot() {
   const quote = cfg?.quote_ccy ?? "USDT";
   const pxDec = (v: number | null | undefined) => (v == null ? 2 : v >= 1000 ? 1 : v >= 1 ? 2 : 4);
 
-  // Toggle das camadas SMC no gráfico (pedido do dono): OFF = só posição (Entrada/Pico/Stop/Alvo)
-  // e marcadores de trade. Persistido entre sessões.
-  const [showSmc, setShowSmc] = useState(() => localStorage.getItem("bot_show_smc") !== "0");
-  useEffect(() => { localStorage.setItem("bot_show_smc", showSmc ? "1" : "0"); }, [showSmc]);
+  // Toggle de cada INDICADOR de bloco no sub-painel (persistido). Default: todos ligados.
+  const [blockShow, setBlockShow] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("bot_block_show") || "{}"); } catch { return {}; } });
+  useEffect(() => { localStorage.setItem("bot_block_show", JSON.stringify(blockShow)); }, [blockShow]);
+  // Sub-painel de indicadores: série temporal do saldo de cada bloco + a força ponderada (do histórico rolante).
+  const sub = useMemo<BotSub | null>(() => {
+    const hist = Array.isArray(selPos?.block_hist) ? (selPos!.block_hist as number[][]) : [];
+    if (hist.length < 2) return null;
+    const seen = new Set<number>();
+    const rows = hist.filter((r) => Array.isArray(r) && r.length >= 7 && r[0] != null && !seen.has(r[0]) && (seen.add(r[0]), true)).sort((a, b) => a[0] - b[0]);
+    const shownLines = BLOCK_LINES.filter((b) => blockShow[b.id] !== false).map((b) => ({ id: b.id, title: b.label, color: b.color, width: (b.width ?? 1) as 1 | 2, data: rows.map((r) => ({ time: r[0] as UTCTimestamp, value: Number(r[b.idx]) || 0 })) }));
+    const enter = Number(cfg?.conf2_enter ?? 30);
+    return { lines: shownLines, refs: [{ value: 0, color: "#64748b" }, { value: enter, color: "#475569", dashed: true }, { value: -enter, color: "#475569", dashed: true }] };
+  }, [selPos?.block_hist, blockShow, cfg?.conf2_enter]);
 
-  // Linhas de nível: camadas SMC (o que o robô lê, se ligadas) + níveis da posição (destaque, width 2).
-  const priceLines: BotPriceLine[] = showSmc ? [...smcLevels] : [];
+  // Linhas de nível: só a POSIÇÃO (Entrada/Pico/Stop) — os níveis SMC saíram do gráfico.
+  const priceLines: BotPriceLine[] = [];
   if (selPos && selPos.position !== "flat") {
     if (selPos.entry_px) priceLines.push({ price: selPos.entry_px, color: "#94a3b8", title: "Entrada", dashed: true });
     if (selPos.peak_px && selPos.peak_px !== selPos.entry_px) priceLines.push({ price: selPos.peak_px, color: "#10b981", title: "Pico", dashed: true });
@@ -1413,30 +1398,25 @@ export default function AdminBot() {
             <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
               {BARS.map((b) => <button key={b} onClick={() => cfg && setCfg({ ...cfg, bar: b })} className={`rounded-md px-2 py-0.5 transition-colors ${cfg?.bar === b ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>{b}</button>)}
             </div>
-            <span className="flex items-center gap-1"><span className="text-emerald-500">▲</span> compra</span>
-            <span className="flex items-center gap-1"><span className="text-rose-500">▼</span> venda</span>
-            <span className="flex items-center gap-1"><span className="text-blue-500">■</span> saída</span>
-            <button
-              onClick={() => setShowSmc((v) => !v)}
-              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-medium transition-colors ${showSmc ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-              title="Liga/desliga as linhas de nível SMC (OB, FVG, Liquidez, PDH/PDL, EQ/extremos). Entradas, saídas, stop e alvo ficam SEMPRE visíveis."
-            >
-              <span className={`inline-block h-2 w-2 rounded-full ${showSmc ? "bg-primary" : "bg-muted-foreground/40"}`} /> Níveis SMC {showSmc ? "ON" : "OFF"}
-            </button>
-            {showSmc && (
-              <>
-                <span className="hidden items-center gap-1 lg:flex" title="Order blocks vivos (verde demanda · vermelho oferta) — zona de entrada do setup B e stop estrutural"><span className="inline-block h-0.5 w-3 rounded bg-[#10b981]" /><span className="inline-block h-0.5 w-3 rounded bg-[#f43f5e]" /> OB</span>
-                <span className="hidden items-center gap-1 lg:flex" title="Fair value gaps abertos — o setup de imbalance entra no RETESTE da zona"><span className="inline-block h-0.5 w-3 rounded bg-[#6366f1]" /> FVG</span>
-                <span className="hidden items-center gap-1 lg:flex" title="Poças de liquidez (EQH/EQL) — alvo do take-profit; ✕ = varrida (gatilho do setup B)"><span className="inline-block h-0.5 w-3 rounded bg-[#d946ef]" /> Liq</span>
-                <span className="hidden items-center gap-1 lg:flex" title="Máx/mín do dia e da semana anteriores — ímãs de liquidez, alvo fallback"><span className="inline-block h-0.5 w-3 rounded bg-[#3b82f6]" /> PDH/PDL</span>
-                <span className="hidden items-center gap-1 lg:flex" title="Equilíbrio (EQ) e topo/fundo strong-weak — acima do EQ = premium (short), abaixo = discount (long)"><span className="inline-block h-0.5 w-3 rounded bg-[#f59e0b]" /> EQ/extremos</span>
-              </>
-            )}
+            <span className="flex items-center gap-1" title="Entrada de COMPRA (long)"><span className="text-emerald-500">▲</span> compra</span>
+            <span className="flex items-center gap-1" title="Entrada de VENDA (short)"><span className="text-rose-500">▼</span> venda</span>
+            <span className="flex items-center gap-1" title="Saída/fechamento da posição"><span className="text-slate-400">•</span> saída</span>
+            <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
+            <span className="hidden text-muted-foreground/80 sm:inline">indicadores:</span>
+            {BLOCK_LINES.map((b) => {
+              const on = blockShow[b.id] !== false;
+              const short = b.id === "wforce" ? "Força" : b.id === "micro" ? "Micro" : b.id === "posicionamento" ? "Posic" : b.label;
+              return (
+                <button key={b.id} onClick={() => setBlockShow((s) => ({ ...s, [b.id]: !on }))} title={`Mostrar/ocultar o indicador ${b.label} no sub-painel do gráfico`} className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium transition-colors ${on ? "border-border text-foreground hover:bg-muted" : "border-border/50 text-muted-foreground/50 line-through"}`}>
+                  <span className="inline-block h-2 w-2 rounded-full" style={on ? { backgroundColor: b.color } : { border: `1px solid ${b.color}` }} />{short}
+                </button>
+              );
+            })}
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
           </div>
         </div>
         {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} priceLines={priceLines} lines={[]} decimals={dec} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
+          <BotChart candles={candles} markers={markers} priceLines={priceLines} sub={sub} lines={[]} decimals={dec} height={sub ? 520 : 420} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
