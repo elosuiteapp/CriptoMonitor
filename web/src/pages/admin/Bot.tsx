@@ -1214,6 +1214,9 @@ export default function AdminBot() {
         const held = !!gate && /contra|bloqueada|segura|não faz short/i.test(gate);
         const posNow = selPos?.position ?? r.position ?? "flat";
         const setupUp = !!setup && setup.includes("↑");
+        const c2 = r.confluence2;
+        // Saldo TOTAL entre os blocos = média dos saldos dos 5 blocos (−100..+100). Mostrado no card 1 (Robô 2.0).
+        const c2saldo = c2 && c2.groups.length ? Math.round(c2.groups.reduce((s, g) => s + g.score, 0) / c2.groups.length) : null;
         return (
           <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1238,13 +1241,23 @@ export default function AdminBot() {
             {/* Pipeline de decisão: estrutura decide → gatilho arma → fluxo/técnico vetam → decisão */}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Viés da estrutura SMC do 15m — a ÚNICA leitura que abre trade.">1 · Estrutura 15m</div>
-                <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
-                <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
-                  <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                  <div className={`absolute top-0 h-full rounded-full ${bias >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={bias >= 0 ? { left: "50%", width: `${Math.abs(bias) / 2}%` } : { right: "50%", width: `${Math.abs(bias) / 2}%` }} />
-                </div>
-                <div className="mt-1 text-[10px] text-muted-foreground">decide entrada, stop e alvo</div>
+                {c2 && c2saldo != null ? (<>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="SALDO ENTRE TODOS OS BLOCOS = média dos saldos dos 5 blocos (−100..+100): o quanto o conjunto pende pra compra (verde) ou venda (vermelho). A decisão em si é o 3-de-5 (card 3).">1 · Saldo dos blocos</div>
+                  <div className={`num text-2xl font-bold ${c2saldo > 0 ? "text-emerald-500" : c2saldo < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{c2saldo >= 0 ? "+" : ""}{c2saldo}</div>
+                  <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
+                    <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                    <div className={`absolute top-0 h-full rounded-full ${c2saldo >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={c2saldo >= 0 ? { left: "50%", width: `${Math.abs(c2saldo) / 2}%` } : { right: "50%", width: `${Math.abs(c2saldo) / 2}%` }} />
+                  </div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">média dos 5 blocos · decisão no card 3</div>
+                </>) : (<>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Viés da estrutura SMC do 15m — a ÚNICA leitura que abre trade.">1 · Estrutura 15m</div>
+                  <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
+                  <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
+                    <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                    <div className={`absolute top-0 h-full rounded-full ${bias >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={bias >= 0 ? { left: "50%", width: `${Math.abs(bias) / 2}%` } : { right: "50%", width: `${Math.abs(bias) / 2}%` }} />
+                  </div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">decide entrada, stop e alvo</div>
+                </>)}
               </div>
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Setup SMC armado agora: imbalance (FVG fresco) ou OB/FVG a favor de BOS/CHoCH após varrer liquidez ou em discount/premium.">2 · Gatilho (setup)</div>
@@ -1266,7 +1279,7 @@ export default function AdminBot() {
                           <span key={g.key} title={`${g.label}: ${g.up}↑ ${g.dn}↓ · força ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
                         ))}
                       </div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">precisa {need} de 5 · força {c2.force >= 0 ? "+" : ""}{c2.force}%</div>
+                      <div className="mt-1 text-[10px] text-muted-foreground">precisa {need} de 5 · saldo {c2saldo != null && c2saldo >= 0 ? "+" : ""}{c2saldo}</div>
                     </>);
                   }
                   const scope = String((cfg as Record<string, unknown> | null)?.conf_scope ?? "smc_flow");
@@ -1306,11 +1319,21 @@ export default function AdminBot() {
                 const items = r.signals.filter((s) => s.group === grp);
                 if (!items.length) return null;
                 const blk = r.confluence2?.groups.find((g) => g.label === grp); // força do bloco (Robô 2.0)
+                const isCtx = grp === "Estrutura por TF";
                 return (
-                  <div key={grp}>
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{grp}</span>
-                      {blk && <span className={`rounded px-1 py-px text-[9px] font-semibold ${blk.vote === 1 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : blk.vote === -1 ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Força do bloco (indicadores com peso IGUAL): quantos de alta × de baixa e o saldo −100..+100. O bloco vota na maioria; 3 dos 5 blocos abrem o trade.">{blk.up}↑ {blk.dn}↓ · {blk.score >= 0 ? "+" : ""}{blk.score}</span>}
+                  <div key={grp} className={`rounded-lg border p-2.5 ${blk ? (blk.vote === 1 ? "border-emerald-500/30 bg-emerald-500/[0.04]" : blk.vote === -1 ? "border-rose-500/30 bg-rose-500/[0.04]" : "border-border/60 bg-background/30") : "border-dashed border-border/50 bg-background/20"}`}>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground">{grp}{isCtx && <span className="ml-1 font-normal text-muted-foreground">· contexto (não vota)</span>}</span>
+                      {blk && (
+                        <div className="flex items-center gap-1.5" title="SALDO DO BLOCO: indicadores com peso IGUAL — quantos de alta × de baixa e o saldo (−100..+100). O bloco vota na maioria; 3 dos 5 blocos abrem o trade.">
+                          <span className="text-[10px] tabular-nums text-muted-foreground">{blk.up}↑ {blk.dn}↓</span>
+                          <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
+                            <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+                            <div className={`absolute top-0 h-full rounded-full ${blk.score >= 0 ? "bg-emerald-500/80" : "bg-rose-500/80"}`} style={blk.score >= 0 ? { left: "50%", width: `${Math.abs(blk.score) / 2}%` } : { right: "50%", width: `${Math.abs(blk.score) / 2}%` }} />
+                          </div>
+                          <span className={`num w-9 text-right text-xs font-bold ${blk.score > 0 ? "text-emerald-500" : blk.score < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{blk.score >= 0 ? "+" : ""}{blk.score}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-1">
                       {items.map((s) => { const role = r.confluence2 ? conf2Role(s.key) : sigRole(s.key); return (

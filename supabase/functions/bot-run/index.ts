@@ -60,6 +60,17 @@ function conf2Target(groups: { vote: number }[], fut: boolean): "long" | "short"
   if (dn >= 3 && dn > up && fut) return "short";
   return "flat";
 }
+// DECISÃO COM HISTERESE (anti-churn, 10/jul — o 3-de-5 simétrico girava demais: posição vivia 5-15 min).
+// Limiar de ENTRADA (3) ≠ limiar de SAÍDA (≤1): abre em 3-de-5; SEGURA enquanto o apoio ≥ 2; só SAI pra flat
+// quando o apoio cai a ≤ 1; e VIRA a mão só quando o lado OPOSTO chega a 3 (reversão de verdade, não um pisca).
+// `up`/`dn` = nº de blocos votando a favor/contra a direção. Depende da posição atual (stateful).
+function conf2Decide(up: number, dn: number, fut: boolean, pos: "long" | "short" | "flat"): "long" | "short" | "flat" {
+  const enterLong = up >= 3 && up > dn;
+  const enterShort = dn >= 3 && dn > up && fut;
+  if (pos === "long") { if (enterShort) return "short"; if (up <= 1) return "flat"; return "long"; }
+  if (pos === "short") { if (enterLong) return "long"; if (dn <= 1) return "flat"; return "short"; }
+  return enterLong ? "long" : enterShort ? "short" : "flat"; // flat → regra de entrada normal (3-de-5)
+}
 // Robô 2.0 — stop de CATÁSTROFE largo (chandelier a k×ATR do pico, ratchet). A saída PRINCIPAL do 2.0 é por
 // CONFLUÊNCIA (fecha quando o apoio cai < 3 blocos); este stop fica LONGE e só cobre um tranco rápido que os
 // blocos (que atrasam o preço) não pegariam a tempo. Ratchet: acompanha o pico, nunca afrouxa. (dono 10/jul:
@@ -862,20 +873,22 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number) => {
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2up?: number, c2dn?: number, c2fut?: boolean) => {
       const conf2 = engine === "confluence2";
       const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
       // stop inicial: 2.0 = catástrofe largo (k×ATR do pico); v28 = estrutural do plano (fallback ATR).
       const initStop = (side: "long" | "short") => conf2 ? catastropheStop(side, px, atr, kCat, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
       const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", engine).eq("asset", asset).maybeSingle();
       const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
+      // 2.0: a sombra aplica a MESMA histerese do live, relativa à posição DELA (spos). v28 usa o `want` direto.
+      const w: "long" | "short" | "flat" = (conf2 && c2up != null && c2dn != null) ? conf2Decide(c2up, c2dn, !!c2fut, spos) : want;
       const now = new Date().toISOString();
       const open = async (side: "long" | "short") => {
         const stop = initStop(side);
         if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop não-protetor → não abre no papel
         await admin.from("bot_shadow").upsert({ engine, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
       };
-      if (spos === "flat") { if (want !== "flat") await open(want); return; }
+      if (spos === "flat") { if (w !== "flat") await open(w); return; }
       const entry = Number(sp!.entry_px) || px;
       const prevStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
       const prevPeak = Number(sp!.peak_px) || entry;
@@ -888,16 +901,16 @@ Deno.serve(async (req) => {
         if (armed) { const ts = spos === "long" ? peak - kTrail * atr : peak + kTrail * atr; newStop = prevStop == null ? ts : (spos === "long" ? Math.max(prevStop, ts) : Math.min(prevStop, ts)); }
       }
       const breached = newStop != null && (spos === "long" ? px <= newStop : px >= newStop);
-      const flip = want !== "flat" && want !== spos;
-      // 2.0: SAÍDA POR CONFLUÊNCIA — apoio caiu abaixo de 3 blocos (want vira flat) OU virou (oposto) → fecha.
-      const confExit = conf2 && want !== spos;
+      const flip = w !== "flat" && w !== spos;
+      // 2.0: SAÍDA — com HISTERESE, `w` (conf2Decide) só vira flat quando o apoio cai a ≤1 (sai) ou oposto ao chegar a 3 (vira).
+      const confExit = conf2 && w !== spos;
       if (breached || flip || confExit) {
         const exitPx = breached && newStop != null ? newStop : px;
         const dir = spos === "long" ? 1 : -1;
         const pnlPct = entry ? Math.round(((exitPx - entry) * dir / entry) * 1e4) / 1e2 : null;
-        const reason = breached ? "stop" : want === "flat" ? "confluência" : "reversão";
+        const reason = breached ? "stop" : w === "flat" ? "confluência" : "reversão";
         await admin.from("bot_shadow_trades").insert({ engine, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason, opened_at: sp!.opened_at, closed_at: now });
-        if (want !== "flat" && want !== spos) await open(want as "long" | "short");
+        if (w !== "flat" && w !== spos) await open(w as "long" | "short");
         else await admin.from("bot_shadow").upsert({ engine, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
       } else if (newStop !== prevStop || peak !== prevPeak) {
         await admin.from("bot_shadow").update({ stop_px: newStop, peak_px: peak, updated_at: now }).eq("engine", engine).eq("asset", asset);
@@ -1306,17 +1319,18 @@ Deno.serve(async (req) => {
       if (!fut && pos === "long" && want === "short") target = "flat";
       // ROBÔ 2.0 (motor confluence2): 3-de-5 dos 5 blocos (cada 20%) — ignora o setup SMC e os gates do v28.
       const conf2g = conf2Groups(signals, signalToggles);
-      const conf2dir = conf2Target(conf2g, fut);
       const CONF2_LABELS: Record<string, string> = { estrutura: "Estrutura", micro: "Microestrutura", fluxo: "Fluxo", posicionamento: "Posicionamento", tecnico: "Técnico" };
       const conf2Up = conf2g.filter((g) => g.vote === 1).length, conf2Dn = conf2g.filter((g) => g.vote === -1).length;
       const conf2Force = Math.round((conf2g.reduce((s, g) => s + g.vote, 0) / conf2g.length) * 100); // força total −100..+100 (cada bloco 20%)
-      const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n })), up: conf2Up, dn: conf2Dn, need: 3, dir: conf2dir, force: conf2Force };
+      const conf2Signal = conf2Target(conf2g, fut);              // o que os blocos DIZEM agora (3-de-5, sem estado) — mostrado no painel
+      const conf2dir = conf2Decide(conf2Up, conf2Dn, fut, pos);  // o que o robô FAZ (HISTERESE: segura ≥2, sai a ≤1, vira no oposto 3)
+      const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n })), up: conf2Up, dn: conf2Dn, need: 3, dir: conf2Signal, force: conf2Force };
       if (botEngine === "confluence2") target = conf2dir;
       // SOMBRA dos DOIS motores (paper) — ambos rodam TODO ciclo p/ comparação justa (mesma unidade %);
       // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-5 dos 5 blocos.
       if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
         const kTr = Number(cfg.trail_atr_mult ?? 3);
-        try { await runShadow("confluence2", asset, conf2dir, lastPx, primary.candles, null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
+        try { await runShadow("confluence2", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Up, conf2Dn, fut); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
