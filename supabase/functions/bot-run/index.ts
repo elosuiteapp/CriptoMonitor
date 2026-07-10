@@ -60,14 +60,6 @@ function conf2Target(groups: { vote: number }[], fut: boolean): "long" | "short"
   if (dn >= 3 && dn > up && fut) return "short";
   return "flat";
 }
-// Trailing "abaixo do 4º último candle FECHADO" (ratchet): long = mínima do 4º candle atrás; short = máxima.
-function candleTrailStop(candles: { high: number; low: number }[], side: "long" | "short", prevStop: number | null): number | null {
-  if (candles.length < 4) return prevStop;
-  const c = candles[candles.length - 4];
-  const lvl = side === "long" ? c.low : c.high;
-  if (prevStop == null) return lvl;
-  return side === "long" ? Math.max(prevStop, lvl) : Math.min(prevStop, lvl); // ratchet: só aperta a favor
-}
 // Robô 2.0 — stop de CATÁSTROFE largo (chandelier a k×ATR do pico, ratchet). A saída PRINCIPAL do 2.0 é por
 // CONFLUÊNCIA (fecha quando o apoio cai < 3 blocos); este stop fica LONGE e só cobre um tranco rápido que os
 // blocos (que atrasam o preço) não pegariam a tempo. Ratchet: acompanha o pico, nunca afrouxa. (dono 10/jul:
