@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { ColorType, CrosshairMode, createChart, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type UTCTimestamp } from "lightweight-charts";
+import { ColorType, CrosshairMode, createChart, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type LogicalRangeChangeEventHandler, type SeriesMarker, type UTCTimestamp } from "lightweight-charts";
 
 import { useTheme } from "../../hooks/useTheme";
 import { chartAxisColors, chartLocalization, chartTickFormatter } from "../../lib/chartTheme";
@@ -44,7 +44,7 @@ export interface BotSub { lines: BotIndicatorLine[]; refs?: BotSubRef[] }
 
 const PIN_100 = () => ({ priceRange: { minValue: -108, maxValue: 108 } }); // trava a escala do sub-gráfico em ±100
 const shortLabel = (t: string) => (t === "Força ponderada" ? "Força" : t === "Microestrutura" ? "Micro" : t === "Posicionamento" ? "Posic" : t);
-const AXIS_W = 66; // largura fixa dos dois eixos de preço → as duas telas alinham na vertical
+const AXIS_W = 78; // largura fixa e IGUAL dos dois eixos de preço → as telas alinham na vertical (cabe BTC ~64105.1 e ±100)
 
 /** Gráfico do robô: velas (com marcadores de trade) em cima + tela separada de indicadores por bloco embaixo,
  *  com o eixo de TEMPO sincronizado (zoom/pan em uma move a outra). Lightweight Charts (2 instâncias). */
@@ -66,6 +66,7 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
   const subMetaRef = useRef<{ short: string; color: string; byTime: Map<number, number>; last: number | null }[]>([]);
   const mainHRef = useRef(height);
   const renderLegendRef = useRef<(p: unknown, isSub: boolean) => void>(() => {});
+  const rangeHandlersRef = useRef<{ chart: IChartApi; handler: LogicalRangeChangeEventHandler }[]>([]);
   const { isDark } = useTheme();
 
   const showSub = !!sub; // reserva a tela de baixo sempre que houver blocos
@@ -121,10 +122,11 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
       leg.style.top = `${Math.max(6, y)}px`;
     };
     renderLegendRef.current = renderLegend;
-    chart.subscribeCrosshairMove((p) => renderLegend(p, false));
+    // Pop-up (legenda) só aparece sobre o SUB-gráfico de indicadores — o gráfico de velas NÃO dispara.
     return () => {
       chart.remove();
       subChartRef.current?.remove();
+      rangeHandlersRef.current = [];
       chartRef.current = null;
       seriesRef.current = null;
       subChartRef.current = null;
@@ -198,7 +200,12 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
     const main = chartRef.current;
     if (!main) return;
     if (!showSub) {
-      if (subChartRef.current) { subChartRef.current.remove(); subChartRef.current = null; subSeriesRef.current.clear(); subRefSeriesRef.current = []; subMetaRef.current = []; }
+      if (subChartRef.current) {
+        // Desinscreve os handlers de range (o link registrou 1 no MAIN capturando o sub) antes de destruir o sub — senão vira handler órfão chamando um chart removido (erro + leak).
+        for (const { chart, handler } of rangeHandlersRef.current) { try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler); } catch { /* chart já removido */ } }
+        rangeHandlersRef.current = [];
+        subChartRef.current.remove(); subChartRef.current = null; subSeriesRef.current.clear(); subRefSeriesRef.current = []; subMetaRef.current = [];
+      }
       main.applyOptions({ timeScale: { visible: true } });
       renderLegendRef.current(null, false);
       return;
@@ -219,7 +226,11 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
       subChartRef.current = sc;
       main.applyOptions({ timeScale: { visible: false } }); // o eixo de tempo fica só na tela de baixo
       // SINCRONIZA o range de tempo nos dois sentidos (com trava anti-loop).
-      const link = (from: IChartApi, to: IChartApi) => from.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (syncingRef.current || !r) return; syncingRef.current = true; try { to.timeScale().setVisibleLogicalRange(r); } finally { syncingRef.current = false; } });
+      const link = (from: IChartApi, to: IChartApi) => {
+        const handler: LogicalRangeChangeEventHandler = (r) => { if (syncingRef.current || !r) return; syncingRef.current = true; try { to.timeScale().setVisibleLogicalRange(r); } finally { syncingRef.current = false; } };
+        from.timeScale().subscribeVisibleLogicalRangeChange(handler);
+        rangeHandlersRef.current.push({ chart: from, handler });
+      };
       link(main, sc);
       link(sc, main);
       sc.subscribeCrosshairMove((p) => renderLegendRef.current(p, true));
@@ -232,7 +243,7 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
     subRefSeriesRef.current = [];
     const t0 = candles[0]?.time, t1 = candles[candles.length - 1]?.time;
     if (t0 != null && t1 != null) for (const r of sub!.refs ?? []) {
-      const rs = sc.addLineSeries({ color: r.color, lineWidth: 1, lineStyle: r.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: PIN_100 });
+      const rs = sc.addLineSeries({ color: r.color, lineWidth: 1, lineStyle: r.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: PIN_100, priceFormat: { type: "price", precision: 0, minMove: 1 } });
       rs.setData([{ time: t0, value: r.value }, { time: t1, value: r.value }]);
       subRefSeriesRef.current.push(rs);
     }
@@ -242,7 +253,7 @@ export default function BotChart({ candles, markers, priceLines = [], lines = []
     for (const [id, ser] of map) if (!ids.has(id)) { sc.removeSeries(ser); map.delete(id); }
     for (const l of sub!.lines) {
       let ser = map.get(l.id);
-      const opts = { color: l.color, lineWidth: (l.width ?? 2) as 1 | 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: true, autoscaleInfoProvider: PIN_100 };
+      const opts = { color: l.color, lineWidth: (l.width ?? 2) as 1 | 2, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: true, autoscaleInfoProvider: PIN_100, priceFormat: { type: "price" as const, precision: 0, minMove: 1 } };
       if (!ser) { ser = sc.addLineSeries(opts); map.set(l.id, ser); } else ser.applyOptions(opts);
       ser.setData(l.data);
     }

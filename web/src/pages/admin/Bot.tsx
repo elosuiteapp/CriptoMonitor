@@ -706,13 +706,24 @@ export default function AdminBot() {
   // Sub-painel de indicadores: série temporal do saldo de cada bloco + a força ponderada (do histórico rolante).
   const sub = useMemo<BotSub | null>(() => {
     const hist = Array.isArray(selPos?.block_hist) ? (selPos!.block_hist as number[][]) : [];
-    if (hist.length < 2) return null;
+    if (hist.length < 2 || candles.length < 2) return null;
     const seen = new Set<number>();
     const rows = hist.filter((r) => Array.isArray(r) && r.length >= 7 && r[0] != null && !seen.has(r[0]) && (seen.add(r[0]), true)).sort((a, b) => a[0] - b[0]);
-    const shownLines = BLOCK_LINES.filter((b) => blockShow[b.id] !== false).map((b) => ({ id: b.id, title: b.label, color: b.color, width: (b.width ?? 1) as 1 | 2, data: rows.map((r) => ({ time: r[0] as UTCTimestamp, value: Number(r[b.idx]) || 0 })) }));
+    // Reamostra os blocos na MESMA grade de tempo das velas (forward-fill): 1 ponto POR vela → o sub compartilha
+    // o eixo de tempo do gráfico principal, então a sincronização por índice é EXATA e as colunas (vela × indicador)
+    // alinham. Velas antes do 1º registro ficam em 0 (some sob a linha de referência 0). Os times do block_hist são
+    // arbitrários (ciclo de 5min, não alinhados aos candles de 15m) — por isso reamostrar, não usar o time cru.
+    let ri = 0;
+    let cur: number[] | null = null;
+    const grid = candles.map((c) => {
+      const t = c.time as number;
+      while (ri < rows.length && (rows[ri][0] as number) <= t) cur = rows[ri++];
+      return { t: c.time, row: cur };
+    });
+    const shownLines = BLOCK_LINES.filter((b) => blockShow[b.id] !== false).map((b) => ({ id: b.id, title: b.label, color: b.color, width: (b.width ?? 1) as 1 | 2, data: grid.map((g) => ({ time: g.t, value: g.row ? Number(g.row[b.idx]) || 0 : 0 })) }));
     const enter = Number(cfg?.conf2_enter ?? 30);
     return { lines: shownLines, refs: [{ value: 0, color: "#64748b" }, { value: enter, color: "#475569", dashed: true }, { value: -enter, color: "#475569", dashed: true }] };
-  }, [selPos?.block_hist, blockShow, cfg?.conf2_enter]);
+  }, [selPos?.block_hist, blockShow, cfg?.conf2_enter, candles]);
 
   // ACERTO POR BLOCO (Robô 2.0): reconstrói dos trades fechados (bot_orders) + histórico de blocos (block_hist).
   // Pra cada trade: no instante da ENTRADA, cada bloco CONCORDOU (saldo a favor) ou DISCORDOU da direção? E o
