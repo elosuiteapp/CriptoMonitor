@@ -44,7 +44,11 @@ interface Config {
   dir_mode?: string;       // 'any' | 'majority' (2-de-3) | 'internal'
   htf_gate?: string;       // 'off' | '1H' | '4H' | '1D' — bússola do TF maior
   conf_scope?: string;     // 'smc_flow' (estrutura + pressão não-contra) | 'all' (4 grupos)
-  bot_engine?: string;     // 'smc' (v28) | 'confluence2' (Robô 2.0: 3-de-5 dos 5 blocos, força igual + saída por confluência)
+  bot_engine?: string;     // 'smc' (v28) | 'confluence2' (Robô 2.0: força ponderada dos 5 blocos + saída por confluência)
+  conf2_weights?: Record<string, number>; // peso por bloco (%) do Robô 2.0 (força ponderada = Σ peso×força)
+  conf2_enter?: number;    // força ponderada mínima p/ ABRIR (−100..+100)
+  conf2_hold?: number;     // histerese: segura enquanto |força| ≥ hold; sai perto de 0
+  conf2_stop_atr?: number; // largura ×ATR do stop de catástrofe (saída principal é por confluência)
   delta_confirm?: boolean; // vela da entrada precisa de delta (volume taker) a favor (v24)
   zone_discipline?: boolean; // premium não compra / discount não vende, salvo rompimento (v25)
   sq_filter?: boolean;     // Squeeze Momentum (LazyBear) forte contra segura a entrada (v26)
@@ -82,8 +86,8 @@ interface ReadingSig {
   note: string;
 }
 interface ConfGroup { key: string; label: string; score: number; vote: 1 | 0 | -1 }
-interface Conf2Group { key: string; label: string; score: number; vote: 1 | 0 | -1; up: number; dn: number; n: number }
-interface Conf2 { groups: Conf2Group[]; up: number; dn: number; need: number; dir: string; force: number }
+interface Conf2Group { key: string; label: string; score: number; vote: 1 | 0 | -1; up: number; dn: number; n: number; weight: number }
+interface Conf2 { groups: Conf2Group[]; up: number; dn: number; wforce: number; enter: number; hold: number; dir: string; weights?: Record<string, number> }
 interface Reading {
   bias: number;              // viés estrutural SMC do 15m (quem decide)
   conviction: number;        // legado: |bias| (fica no payload, não é mais exibido)
@@ -172,7 +176,7 @@ const FLOW_SIGNALS: { key: string; label: string }[] = [
   { key: "ls_ratio", label: "Long/Short (contrário)" },
   { key: "feargreed", label: "Fear & Greed" },
 ];
-const SIG_GROUPS = ["Estrutura por TF", "Estrutura", "Microestrutura", "Fluxo", "Posicionamento", "Técnico"];
+const SIG_GROUPS = ["Estrutura", "Microestrutura", "Fluxo", "Posicionamento", "Técnico"];
 // Robô 2.0 — a que BLOCO (dos 5, força igual) cada indicador vota. Fora daqui = contexto (TFs) ou medido (Put/Call Wall invertido).
 const CONF2_BLOCK: Record<string, string> = {
   tf_15m: "Estrutura", swing: "Estrutura", bos: "Estrutura", ob: "Estrutura", sweep: "Estrutura",
@@ -949,11 +953,39 @@ export default function AdminBot() {
             <label className="text-xs font-semibold text-foreground">🤖 Motor do robô <span className="font-normal text-muted-foreground">— qual robô OPERA a conta; o outro roda em sombra (papel) pra comparar</span>
               <select className={`${input} mt-1`} value={cfg.bot_engine ?? "smc"} onChange={(e) => setCfg({ ...cfg, bot_engine: e.target.value })}>
                 <option value="smc">Robô 1 · v28 — SMC price-action 15m (reteste + gates) · atual</option>
-                <option value="confluence2">Robô 2.0 — confluência 3-de-5 dos 5 blocos (força igual) + saída por confluência</option>
+                <option value="confluence2">Robô 2.0 — força ponderada dos 5 blocos (peso ajustável) + saída por confluência</option>
               </select>
             </label>
             <p className="mt-1 text-[10px] text-muted-foreground">Trocar aqui só muda qual dos dois opera de verdade; o desempenho dos dois aparece no card "Desempenho dos robôs".</p>
           </div>
+          {(cfg.bot_engine ?? "smc") === "confluence2" && (() => {
+            const w = (cfg.conf2_weights ?? { estrutura: 30, micro: 25, tecnico: 20, fluxo: 13, posicionamento: 12 }) as Record<string, number>;
+            const soma = Object.values(w).reduce((s, v) => s + (Number(v) || 0), 0);
+            return (
+            <div className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/[0.04] p-3">
+              <div className="text-xs font-semibold text-foreground">⚖️ Peso dos blocos (Robô 2.0) <span className="font-normal text-muted-foreground">— a decisão é a FORÇA PONDERADA: Σ (peso × força do bloco). Não precisa somar 100 (é normalizado). Soma atual: {soma}%</span></div>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {([["estrutura", "Estrutura"], ["micro", "Microestrutura"], ["fluxo", "Fluxo"], ["posicionamento", "Posicionamento"], ["tecnico", "Técnico"]] as [string, string][]).map(([k, lbl]) => (
+                  <label key={k} className="text-[11px] text-muted-foreground">{lbl}
+                    <input type="number" min={0} max={100} step={1} className={`${input} mt-0.5`} value={w[k] ?? 0} onChange={(e) => setCfg({ ...cfg, conf2_weights: { ...w, [k]: Number(e.target.value) } })} />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <label className="text-[11px] text-muted-foreground" title="Força ponderada mínima (−100..+100) pra ABRIR. Maior = mais seletivo.">Abre em ±força
+                  <input type="number" min={0} max={100} step={1} className={`${input} mt-0.5`} value={cfg.conf2_enter ?? 30} onChange={(e) => setCfg({ ...cfg, conf2_enter: Number(e.target.value) })} />
+                </label>
+                <label className="text-[11px] text-muted-foreground" title="Histerese: mantém a posição enquanto a força ≥ este piso; abaixo, sai. Menor que 'Abre'.">Segura até ±força
+                  <input type="number" min={0} max={100} step={1} className={`${input} mt-0.5`} value={cfg.conf2_hold ?? 10} onChange={(e) => setCfg({ ...cfg, conf2_hold: Number(e.target.value) })} />
+                </label>
+                <label className="text-[11px] text-muted-foreground" title="Largura do stop de proteção (chandelier ×ATR). A saída principal é por confluência; este stop fica longe.">Stop catástrofe ×ATR
+                  <input type="number" min={1} max={10} step={0.5} className={`${input} mt-0.5`} value={cfg.conf2_stop_atr ?? 4} onChange={(e) => setCfg({ ...cfg, conf2_stop_atr: Number(e.target.value) })} />
+                </label>
+              </div>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">Default: 3 fortes (Estrutura 30 · Micro 25 · Técnico 20) + 2 leves (Fluxo 13 · Posic 12). Ajuste e clique em <strong>Salvar</strong> embaixo. Vale pra todas as moedas.</p>
+            </div>
+            );
+          })()}
           <div className="mt-3 space-y-4">
             {/* ── 1 · Execução & risco — quanto arrisca e os freios de segurança ── */}
             <div className="rounded-lg border border-border/70 bg-background/40 p-3">
@@ -1188,7 +1220,7 @@ export default function AdminBot() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {}, imb_mode: cfg.imb_mode ?? "retest", imb_align: cfg.imb_align !== false, setup_priority: cfg.setup_priority ?? "structure", zone_once: cfg.zone_once !== false, dir_mode: cfg.dir_mode ?? "majority", htf_gate: cfg.htf_gate ?? "1H", conf_scope: cfg.conf_scope ?? "smc_flow_ta", delta_confirm: cfg.delta_confirm !== false, zone_discipline: cfg.zone_discipline !== false, sq_filter: cfg.sq_filter !== false, opp_htf_atr: cfg.opp_htf_atr ?? 1, vol_max_atr: cfg.vol_max_atr ?? 2, bot_engine: cfg.bot_engine ?? "smc" })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={() => saveConfig({ inst_id: cfg.inst_id, base_ccy: cfg.base_ccy, quote_ccy: cfg.quote_ccy, order_quote_sz: cfg.order_quote_sz, buy_threshold: cfg.buy_threshold, sell_threshold: cfg.sell_threshold, leverage: cfg.leverage, pyramid: cfg.pyramid, pyramid_max: cfg.pyramid_max, min_votes: cfg.min_votes, stop_pct: cfg.stop_pct, ct_stop_pct: cfg.ct_stop_pct, counter_trend: cfg.counter_trend, auto_weight: cfg.auto_weight, trail_on: cfg.trail_on, trail_pct: cfg.trail_pct, trail_atr_mult: cfg.trail_atr_mult, stop_atr_on: cfg.stop_atr_on, stop_atr_mult: cfg.stop_atr_mult, risk_pct: cfg.risk_pct, daily_loss_pct: cfg.daily_loss_pct, max_positions: cfg.max_positions, cooldown_min: cfg.cooldown_min, imbalance_on: cfg.imbalance_on, imbalance_min_pct: cfg.imbalance_min_pct, signal_toggles: cfg.signal_toggles, rev_mode: cfg.rev_mode ?? "off", conf_min: cfg.conf_min ?? 3, max_zone_atr: cfg.max_zone_atr ?? 0, opp_zone_atr: cfg.opp_zone_atr ?? 0, target_on: cfg.target_on !== false, tp_partial: !!cfg.tp_partial, block_hours: cfg.block_hours ?? [], asset_overrides: cfg.asset_overrides ?? {}, imb_mode: cfg.imb_mode ?? "retest", imb_align: cfg.imb_align !== false, setup_priority: cfg.setup_priority ?? "structure", zone_once: cfg.zone_once !== false, dir_mode: cfg.dir_mode ?? "majority", htf_gate: cfg.htf_gate ?? "1H", conf_scope: cfg.conf_scope ?? "smc_flow_ta", delta_confirm: cfg.delta_confirm !== false, zone_discipline: cfg.zone_discipline !== false, sq_filter: cfg.sq_filter !== false, opp_htf_atr: cfg.opp_htf_atr ?? 1, vol_max_atr: cfg.vol_max_atr ?? 2, bot_engine: cfg.bot_engine ?? "smc", conf2_weights: cfg.conf2_weights ?? { estrutura: 30, micro: 25, tecnico: 20, fluxo: 13, posicionamento: 12 }, conf2_enter: cfg.conf2_enter ?? 30, conf2_hold: cfg.conf2_hold ?? 10, conf2_stop_atr: cfg.conf2_stop_atr ?? 4 })} disabled={busy !== null} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {busy === "cfg" ? "Salvando…" : "Salvar config"}
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia (motor v28 — vela fechada): o <strong>SMC do 15m arma o setup em VELA FECHADA</strong> (reteste de Order Block/FVG a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>) e os grupos votam na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP + ADX). Filtros de entrada validados: delta da vela a favor · squeeze momentum não-contra · disciplina de zona (premium/discount) · <strong>zona oposta do 1H</strong> (não compra colado em OB/FVG de venda do TF maior) · <strong>filtro de volatilidade</strong> (vela-spike &gt; 2×ATR não entra). <strong>Saída SÓ por stop estrutural + trailing 2,5×ATR</strong> (alvo de liquidez DESLIGADO por decisão do dono 07/jul; trava de breakeven com lucro ≥ 1×ATR). Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown 60min pós-stop; pirâmide só no lucro e a favor. <strong>ROBÔ ÚNICO</strong>: config idêntica nas 5 moedas (BTC·ETH·SOL·BNB·AAVE) — exceções por moeda (2b) só com evidência nova.</span>
@@ -1215,8 +1247,8 @@ export default function AdminBot() {
         const posNow = selPos?.position ?? r.position ?? "flat";
         const setupUp = !!setup && setup.includes("↑");
         const c2 = r.confluence2;
-        // Saldo TOTAL entre os blocos = média dos saldos dos 5 blocos (−100..+100). Mostrado no card 1 (Robô 2.0).
-        const c2saldo = c2 && c2.groups.length ? Math.round(c2.groups.reduce((s, g) => s + g.score, 0) / c2.groups.length) : null;
+        // FORÇA PONDERADA = Σ(peso × força do bloco) — a variável que decide (card 1). −100..+100.
+        const c2saldo = c2 && c2.wforce != null ? c2.wforce : null;
         return (
           <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1242,13 +1274,13 @@ export default function AdminBot() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
                 {c2 && c2saldo != null ? (<>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="SALDO ENTRE TODOS OS BLOCOS = média dos saldos dos 5 blocos (−100..+100): o quanto o conjunto pende pra compra (verde) ou venda (vermelho). A decisão em si é o 3-de-5 (card 3).">1 · Saldo dos blocos</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="FORÇA PONDERADA = Σ (peso do bloco × força do bloco), −100..+100. É a variável que DECIDE: abre quando passa ±o limiar de entrada. Blocos com mais peso puxam mais.">1 · Força ponderada</div>
                   <div className={`num text-2xl font-bold ${c2saldo > 0 ? "text-emerald-500" : c2saldo < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{c2saldo >= 0 ? "+" : ""}{c2saldo}</div>
                   <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
                     <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
                     <div className={`absolute top-0 h-full rounded-full ${c2saldo >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={c2saldo >= 0 ? { left: "50%", width: `${Math.abs(c2saldo) / 2}%` } : { right: "50%", width: `${Math.abs(c2saldo) / 2}%` }} />
                   </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">média dos 5 blocos · decisão no card 3</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">abre em ±{c2.enter} · segura ±{c2.hold}</div>
                 </>) : (<>
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Viés da estrutura SMC do 15m — a ÚNICA leitura que abre trade.">1 · Estrutura 15m</div>
                   <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
@@ -1269,17 +1301,17 @@ export default function AdminBot() {
                   const c2 = r.confluence2;
                   // ROBÔ 2.0 — os 5 blocos (força IGUAL por indicador): X/5 na direção + bolinha por bloco + força total.
                   if (c2 && c2.groups?.length) {
-                    const dir = c2.dir, need = c2.need ?? 3;
-                    const cnt = dir === "long" ? c2.up : dir === "short" ? c2.dn : Math.max(c2.up, c2.dn);
+                    const dir = c2.dir;
+                    const dirLbl = dir === "long" ? "Compra" : dir === "short" ? "Venda" : "Neutro";
                     return (<>
-                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Robô 2.0: 5 blocos, cada um 20%. Dentro do bloco os indicadores têm força IGUAL — o bloco segue a maioria (mais forças de alta ou de baixa). 3 dos 5 na mesma direção abre; cair abaixo de 3 fecha.">3 · Força dos blocos</div>
-                      <div className={`num text-2xl font-bold ${dir === "long" ? "text-emerald-500" : dir === "short" ? "text-rose-500" : "text-foreground"}`} title={`${c2.up} de alta × ${c2.dn} de baixa`}>{cnt}/5</div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Como os 5 blocos estão votando AGORA (uma bolinha por bloco). O PESO de cada bloco aparece no card do bloco lá embaixo. Quem decide é a força ponderada (card 1).">3 · Blocos</div>
+                      <div className={`text-2xl font-bold ${dir === "long" ? "text-emerald-500" : dir === "short" ? "text-rose-500" : "text-muted-foreground"}`}>{dirLbl}</div>
                       <div className="mt-1 flex items-center justify-center gap-1.5">
                         {c2.groups.map((g) => (
-                          <span key={g.key} title={`${g.label}: ${g.up}↑ ${g.dn}↓ · força ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
+                          <span key={g.key} title={`${g.label} (peso ${g.weight}%): ${g.up}↑ ${g.dn}↓ · saldo ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
                         ))}
                       </div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">precisa {need} de 5 · saldo {c2saldo != null && c2saldo >= 0 ? "+" : ""}{c2saldo}</div>
+                      <div className="mt-1 text-[10px] text-muted-foreground">abre em ±{c2.enter} de força</div>
                     </>);
                   }
                   const scope = String((cfg as Record<string, unknown> | null)?.conf_scope ?? "smc_flow");
@@ -1319,13 +1351,15 @@ export default function AdminBot() {
                 const items = r.signals.filter((s) => s.group === grp);
                 if (!items.length) return null;
                 const blk = r.confluence2?.groups.find((g) => g.label === grp); // força do bloco (Robô 2.0)
-                const isCtx = grp === "Estrutura por TF";
                 return (
-                  <div key={grp} className={`rounded-lg border p-2.5 ${blk ? (blk.vote === 1 ? "border-emerald-500/30 bg-emerald-500/[0.04]" : blk.vote === -1 ? "border-rose-500/30 bg-rose-500/[0.04]" : "border-border/60 bg-background/30") : "border-dashed border-border/50 bg-background/20"}`}>
+                  <div key={grp} className={`rounded-lg border p-2.5 ${blk ? (blk.vote === 1 ? "border-emerald-500/30 bg-emerald-500/[0.04]" : blk.vote === -1 ? "border-rose-500/30 bg-rose-500/[0.04]" : "border-border/60 bg-background/30") : "border-border/60 bg-background/30"}`}>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground">{grp}{isCtx && <span className="ml-1 font-normal text-muted-foreground">· contexto (não vota)</span>}</span>
+                      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
+                        {grp}
+                        {blk && <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-bold text-primary" title="Peso deste bloco na força ponderada (ajustável em Configuração).">{blk.weight}%</span>}
+                      </span>
                       {blk && (
-                        <div className="flex items-center gap-1.5" title="SALDO DO BLOCO: indicadores com peso IGUAL — quantos de alta × de baixa e o saldo (−100..+100). O bloco vota na maioria; 3 dos 5 blocos abrem o trade.">
+                        <div className="flex items-center gap-1.5" title="SALDO DO BLOCO (−100..+100): indicadores com peso igual, o bloco segue a maioria. Entra na força ponderada com o peso do bloco.">
                           <span className="text-[10px] tabular-nums text-muted-foreground">{blk.up}↑ {blk.dn}↓</span>
                           <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
                             <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
@@ -1355,7 +1389,7 @@ export default function AdminBot() {
               })}
             </div>
             {r.confluence2 ? (
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o <strong>Robô 2.0</strong> decide (confluência dos 5 blocos): cada bloco — <strong>Estrutura · Microestrutura · Fluxo · Posicionamento · Técnico</strong> — vale <strong>20%</strong>. Dentro do bloco os indicadores têm <strong>força IGUAL</strong> (cada um = 1 voto pela cor) e o bloco <strong>segue a maioria</strong> (mais forças de alta ou de baixa). Quando <strong>3 dos 5 blocos</strong> apontam a mesma direção ele <strong>abre</strong>; quando o apoio cai abaixo de 3 ele <strong>fecha</strong> (saída por confluência), com um <strong>stop largo</strong> só de proteção. O bloco Técnico junta <strong>tendência</strong> (EMA/VWAP/ADX) e <strong>momentum</strong> (RSI/MACD/Squeeze). Ignora o setup SMC e os gates do v28 — é confluência pura. Put/Call Wall fica medido (invertido, não vota). Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Como o <strong>Robô 2.0</strong> decide (força ponderada dos 5 blocos): cada bloco — <strong>Estrutura · Microestrutura · Fluxo · Posicionamento · Técnico</strong> — tem um <strong>PESO</strong> (ajustável em Configuração; padrão 30·25·13·12·20). Dentro do bloco os indicadores têm força igual e o bloco vira um <strong>saldo</strong> (−100..+100). A <strong>força ponderada</strong> = Σ (peso × saldo) é quem decide: <strong>abre</strong> quando passa ±o limiar de entrada, <strong>segura</strong> enquanto a força se sustenta (histerese) e <strong>fecha</strong> perto de zero — e <strong>vira a mão</strong> se a força cruza o limiar do lado oposto. Bloco neutro contribui 0 (não trava). Stop de catástrofe largo só de proteção. O bloco Técnico junta <strong>tendência</strong> (EMA/VWAP/ADX) e <strong>momentum</strong> (RSI/MACD/Squeeze). Ignora o setup SMC e os gates do v28. Put/Call Wall fica medido (invertido, não vota). Vale pra todas as moedas. Educacional — não é recomendação.</p>
             ) : (
             <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v21 · SMC + pressão): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — reteste de OB/FVG pós-BOS/CHoCH (prioritário) ou imbalance em reteste, sempre com a direção validada por <strong>maioria 2-de-3 das leituras de estrutura</strong>, stop na invalidação estrutural e alvo na liquidez/PDH-PDL. Antes de executar passa pelos gates: <strong>1 tiro por zona</strong>, sessão, <strong>bússola 4H</strong> (a estrutura do TF maior precisa concordar) e a confluência <strong>Estrutura + Fluxo</strong> (2 de 2 — os sinais <em>vota</em> são a pressão do book/fluxo). Os <em>estudo</em> (Técnico · Sentimento) e os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
             )}
@@ -1417,7 +1451,7 @@ export default function AdminBot() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28 },
-            { key: "confluence2", name: "Robô 2.0 · 3-de-5", desc: "5 blocos (força igual) + saída por confluência", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2 },
+            { key: "confluence2", name: "Robô 2.0 · força ponderada", desc: "5 blocos com peso ajustável + saída por confluência", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2 },
           ].map((e) => (
             <div key={e.key} className={`rounded-lg border p-3 ${e.live ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-border/70 bg-background/40"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">

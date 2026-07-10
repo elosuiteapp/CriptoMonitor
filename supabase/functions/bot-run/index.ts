@@ -32,7 +32,7 @@ const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n :
 //   Estrutura · Microestrutura · Fluxo · Posicionamento (sentimento+opções) · Técnico (tendência+momentum).
 // DENTRO do bloco cada indicador vale IGUAL (1 voto ±1: verde >8 = alta, vermelho <−8 = baixa, senão neutro);
 //   o bloco SEGUE A MAIORIA (mais forças de alta ou de baixa → o bloco vai pra esse lado). Força do bloco =
-//   saldo de indicadores (−100..+100). 3 dos 5 blocos na mesma direção → abre (fácil de ler: qual lado tem mais força).
+//   saldo de indicadores (−100..+100). Os blocos têm PESO (cfg.conf2_weights); a decisão é a FORÇA PONDERADA (Σ peso×força).
 // Ignora o setup SMC/zona e os gates do v28 (é confluência pura, o método pedido pelo dono).
 // Bloco Técnico = EMA20×50+VWAP+ADX (tendência) + RSI+MACD+Squeeze/LazyBear (momentum).
 // Posicionamento = L/S + Fear&Greed + gamma/HIRO. Put/Call Wall fica MEDIDO (não vota): é invertido na régua
@@ -54,22 +54,25 @@ function conf2Groups(signals: { key: string; score: number; weight: number }[], 
     return { key, score: n ? Math.round((net / n) * 100) : 0, vote: (net > 0 ? 1 : net < 0 ? -1 : 0) as 1 | 0 | -1, up, dn, n };
   });
 }
-function conf2Target(groups: { vote: number }[], fut: boolean): "long" | "short" | "flat" {
-  const up = groups.filter((g) => g.vote === 1).length, dn = groups.filter((g) => g.vote === -1).length;
-  if (up >= 3 && up > dn) return "long";       // 3 dos 5 blocos (60%) na mesma direção, sem empate contra
-  if (dn >= 3 && dn > up && fut) return "short";
-  return "flat";
+// FORÇA PONDERADA (sql/120, pedido do dono): a decisão NÃO é mais contagem (3-de-5). Cada bloco tem um PESO
+// (cfg.conf2_weights, %) — default 3 fortes (Estrutura 30·Micro 25·Técnico 20) + 2 leves (Fluxo 13·Posic 12).
+// Força total = Σ (peso × força do bloco) / Σpesos, de −100 a +100. Bloco NEUTRO (força ~0) contribui ~0 →
+// não trava a decisão (o problema que o dono viu); os blocos PESADOS mandam.
+type Conf2Weights = { estrutura: number; micro: number; fluxo: number; posicionamento: number; tecnico: number };
+function conf2Wforce(groups: { key: string; score: number }[], w: Conf2Weights): number {
+  let num = 0, den = 0;
+  for (const g of groups) { const wt = Math.max(0, Number((w as Record<string, number>)[g.key] ?? 0)); num += wt * g.score; den += wt; }
+  return den ? Math.round(num / den) : 0;
 }
-// DECISÃO COM HISTERESE (anti-churn, 10/jul — o 3-de-5 simétrico girava demais: posição vivia 5-15 min).
-// Limiar de ENTRADA (3) ≠ limiar de SAÍDA (≤1): abre em 3-de-5; SEGURA enquanto o apoio ≥ 2; só SAI pra flat
-// quando o apoio cai a ≤ 1; e VIRA a mão só quando o lado OPOSTO chega a 3 (reversão de verdade, não um pisca).
-// `up`/`dn` = nº de blocos votando a favor/contra a direção. Depende da posição atual (stateful).
-function conf2Decide(up: number, dn: number, fut: boolean, pos: "long" | "short" | "flat"): "long" | "short" | "flat" {
-  const enterLong = up >= 3 && up > dn;
-  const enterShort = dn >= 3 && dn > up && fut;
-  if (pos === "long") { if (enterShort) return "short"; if (up <= 1) return "flat"; return "long"; }
-  if (pos === "short") { if (enterLong) return "long"; if (dn <= 1) return "flat"; return "short"; }
-  return enterLong ? "long" : enterShort ? "short" : "flat"; // flat → regra de entrada normal (3-de-5)
+// DECISÃO por força ponderada + HISTERESE (anti-churn): ABRE quando |força| ≥ enter; SEGURA enquanto
+// |força| ≥ hold (mesmo lado); SAI perto de 0 (< hold); VIRA a mão quando a força passa `enter` do lado oposto.
+// `enter` > `hold` = a banda de histerese (ex.: abre em 30, segura até 10, sai abaixo de 10). Stateful (usa a posição).
+function wfDecide(wf: number, enter: number, hold: number, fut: boolean, pos: "long" | "short" | "flat"): "long" | "short" | "flat" {
+  const enterLong = wf >= enter;
+  const enterShort = wf <= -enter && fut;
+  if (pos === "long") { if (enterShort) return "short"; if (wf < hold) return "flat"; return "long"; }
+  if (pos === "short") { if (enterLong) return "long"; if (wf > -hold) return "flat"; return "short"; }
+  return enterLong ? "long" : enterShort ? "short" : "flat";
 }
 // Robô 2.0 — stop de CATÁSTROFE largo (chandelier a k×ATR do pico, ratchet). A saída PRINCIPAL do 2.0 é por
 // CONFLUÊNCIA (fecha quando o apoio cai < 3 blocos); este stop fica LONGE e só cobre um tranco rápido que os
@@ -571,7 +574,7 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   // ── ESTRUTURA POR TIMEFRAME — cada TF vota (compra/venda) ──
   for (const t of tfReads) {
     if (!t.smc) continue;
-    add(`tf_${t.tf}`, "Estrutura por TF", `Estrutura ${t.tf}`, TFW[t.tf] ?? 0.15, t.bias, `${t.smc.swingBias === "bullish" ? "alta" : t.smc.swingBias === "bearish" ? "baixa" : "neutra"}${t.smc.lastSwing ? ` · ${t.smc.lastSwing.type}` : ""}${t.smc.price < t.smc.equilibrium.bottom ? " · discount" : t.smc.price > t.smc.equilibrium.top ? " · premium" : ""}`);
+    add(`tf_${t.tf}`, "Estrutura", `Estrutura ${t.tf}`, TFW[t.tf] ?? 0.15, t.bias, `${t.smc.swingBias === "bullish" ? "alta" : t.smc.swingBias === "bearish" ? "baixa" : "neutra"}${t.smc.lastSwing ? ` · ${t.smc.lastSwing.type}` : ""}${t.smc.price < t.smc.equilibrium.bottom ? " · discount" : t.smc.price > t.smc.equilibrium.top ? " · premium" : ""}`);
   }
 
   // ── MICROESTRUTURA: book + paredes/ímã + ABSORÇÃO (estado atual do mercado) ──
@@ -812,6 +815,9 @@ Deno.serve(async (req) => {
   const venue = String(cfg.venue ?? "binance");
   const botEngine = String(cfg.bot_engine ?? "smc"); // 'smc' = v28 (SMC) | 'confluence2' = Robô 2.0 (3-de-5 dos 5 blocos, força igual)
   const conf2StopK = Number(cfg.conf2_stop_atr ?? 4); // 2.0: largura (×ATR) do stop de catástrofe — saída principal é por confluência
+  const conf2W = (cfg.conf2_weights && typeof cfg.conf2_weights === "object" ? cfg.conf2_weights : { estrutura: 30, micro: 25, tecnico: 20, fluxo: 13, posicionamento: 12 }) as Conf2Weights; // pesos por bloco (%)
+  const conf2Enter = Number(cfg.conf2_enter ?? 30); // força ponderada mínima p/ ABRIR (−100..+100)
+  const conf2Hold = Number(cfg.conf2_hold ?? 10);   // histerese: segura enquanto |força| ≥ hold, sai perto de 0
   const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
   if (!bnbCreds.key || !bnbCreds.secret) { await log("error", "Sem chaves da Binance testnet."); return json(400, { error: "sem credenciais binance" }); }
 
@@ -873,15 +879,15 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2up?: number, c2dn?: number, c2fut?: boolean) => {
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean) => {
       const conf2 = engine === "confluence2";
       const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
       // stop inicial: 2.0 = catástrofe largo (k×ATR do pico); v28 = estrutural do plano (fallback ATR).
       const initStop = (side: "long" | "short") => conf2 ? catastropheStop(side, px, atr, kCat, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
       const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", engine).eq("asset", asset).maybeSingle();
       const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
-      // 2.0: a sombra aplica a MESMA histerese do live, relativa à posição DELA (spos). v28 usa o `want` direto.
-      const w: "long" | "short" | "flat" = (conf2 && c2up != null && c2dn != null) ? conf2Decide(c2up, c2dn, !!c2fut, spos) : want;
+      // 2.0: a sombra aplica a MESMA força ponderada + histerese do live, relativa à posição DELA (spos). v28 usa `want` direto.
+      const w: "long" | "short" | "flat" = (conf2 && c2wf != null) ? wfDecide(c2wf, c2enter ?? 30, c2hold ?? 10, !!c2fut, spos) : want;
       const now = new Date().toISOString();
       const open = async (side: "long" | "short") => {
         const stop = initStop(side);
@@ -1321,16 +1327,16 @@ Deno.serve(async (req) => {
       const conf2g = conf2Groups(signals, signalToggles);
       const CONF2_LABELS: Record<string, string> = { estrutura: "Estrutura", micro: "Microestrutura", fluxo: "Fluxo", posicionamento: "Posicionamento", tecnico: "Técnico" };
       const conf2Up = conf2g.filter((g) => g.vote === 1).length, conf2Dn = conf2g.filter((g) => g.vote === -1).length;
-      const conf2Force = Math.round((conf2g.reduce((s, g) => s + g.vote, 0) / conf2g.length) * 100); // força total −100..+100 (cada bloco 20%)
-      const conf2Signal = conf2Target(conf2g, fut);              // o que os blocos DIZEM agora (3-de-5, sem estado) — mostrado no painel
-      const conf2dir = conf2Decide(conf2Up, conf2Dn, fut, pos);  // o que o robô FAZ (HISTERESE: segura ≥2, sai a ≤1, vira no oposto 3)
-      const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n })), up: conf2Up, dn: conf2Dn, need: 3, dir: conf2Signal, force: conf2Force };
+      const conf2Wf = conf2Wforce(conf2g, conf2W);                                 // FORÇA PONDERADA −100..+100 (a variável que decide)
+      const conf2Signal = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, "flat");   // o que os blocos DIZEM (sem estado) — mostrado no painel
+      const conf2dir = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, pos);         // o que o robô FAZ (histerese pela posição atual)
+      const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n, weight: Number((conf2W as Record<string, number>)[g.key] ?? 0) })), up: conf2Up, dn: conf2Dn, wforce: conf2Wf, enter: conf2Enter, hold: conf2Hold, dir: conf2Signal, weights: conf2W };
       if (botEngine === "confluence2") target = conf2dir;
       // SOMBRA dos DOIS motores (paper) — ambos rodam TODO ciclo p/ comparação justa (mesma unidade %);
       // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-5 dos 5 blocos.
       if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
         const kTr = Number(cfg.trail_atr_mult ?? 3);
-        try { await runShadow("confluence2", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Up, conf2Dn, fut); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
+        try { await runShadow("confluence2", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
