@@ -27,27 +27,36 @@ function json(status: number, body: unknown) {
 const clamp = (v: number) => Math.max(-100, Math.min(100, v));
 const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
-// ════════ ROBÔ 2.0 (motor "confluence2") — decisão por 3-de-4 dos 4 BLOCOS da leitura ════════
-// Reagrupa os 22 sinais nos 4 blocos que o dono vê na tela (Estrutura·Micro·Fluxo·Técnico); cada bloco
-// vira 1 voto (média ponderada dos seus sinais; ±1 se |score|≥10); 3 de 4 na mesma direção → abre.
+// ════════ ROBÔ 2.0 (motor "confluence2") — decisão por 3-de-5 dos 5 BLOCOS da leitura ════════
+// Reagrupa os sinais nos 5 blocos que o dono vê na tela — cada um vale 20% (1 voto):
+//   Estrutura · Microestrutura · Fluxo · Posicionamento (sentimento+opções) · Técnico (tendência+momentum).
+// DENTRO do bloco cada indicador vale IGUAL (1 voto ±1: verde >8 = alta, vermelho <−8 = baixa, senão neutro);
+//   o bloco SEGUE A MAIORIA (mais forças de alta ou de baixa → o bloco vai pra esse lado). Força do bloco =
+//   saldo de indicadores (−100..+100). 3 dos 5 blocos na mesma direção → abre (fácil de ler: qual lado tem mais força).
 // Ignora o setup SMC/zona e os gates do v28 (é confluência pura, o método pedido pelo dono).
+// Bloco Técnico = EMA20×50+VWAP+ADX (tendência) + RSI+MACD+Squeeze/LazyBear (momentum).
+// Posicionamento = L/S + Fear&Greed + gamma/HIRO. Put/Call Wall fica MEDIDO (não vota): é invertido na régua
+//   forte e, com voto igual, sujaria o bloco (dá p/ inverter o sinal e ligar depois, se o dono quiser).
 const CONF2_GROUPS: Record<string, string[]> = {
-  estrutura: ["tf_15m", "swing", "bos", "ob", "sweep"],
-  micro:     ["book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg"],
-  fluxo:     ["funding", "cvd", "cvd_div", "liqs", "ls_ratio", "feargreed"],
-  tecnico:   ["vwap", "adx", "ema2050"],
+  estrutura:      ["tf_15m", "swing", "bos", "ob", "sweep"],
+  micro:          ["book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg"],
+  fluxo:          ["funding", "cvd", "cvd_div", "liqs"],
+  posicionamento: ["ls_ratio", "feargreed", "gflow"],
+  tecnico:        ["vwap", "adx", "ema2050", "rsi", "macd", "sqz"],
 };
+// Peso IGUAL por indicador (pedido do dono: robô entende mais fácil). Cada um = 1 voto pela cor (verde >8 /
+// vermelho <−8; senão neutro). O bloco segue a maioria; a "força" (−100..+100) é o saldo de indicadores.
 function conf2Groups(signals: { key: string; score: number; weight: number }[], toggles: Record<string, boolean>) {
   return Object.entries(CONF2_GROUPS).map(([key, keys]) => {
-    let n = 0, d = 0;
-    for (const s of signals) if (keys.includes(s.key) && toggles[s.key] !== false) { n += s.score * s.weight; d += s.weight; }
-    const score = d ? Math.round(clamp(n / d)) : 0;
-    return { key, score, vote: (score >= 10 ? 1 : score <= -10 ? -1 : 0) };
+    let up = 0, dn = 0, n = 0;
+    for (const s of signals) if (keys.includes(s.key) && toggles[s.key] !== false) { n++; if (s.score > 8) up++; else if (s.score < -8) dn++; }
+    const net = up - dn;
+    return { key, score: n ? Math.round((net / n) * 100) : 0, vote: (net > 0 ? 1 : net < 0 ? -1 : 0) as 1 | 0 | -1, up, dn, n };
   });
 }
 function conf2Target(groups: { vote: number }[], fut: boolean): "long" | "short" | "flat" {
   const up = groups.filter((g) => g.vote === 1).length, dn = groups.filter((g) => g.vote === -1).length;
-  if (up >= 3 && up > dn) return "long";
+  if (up >= 3 && up > dn) return "long";       // 3 dos 5 blocos (60%) na mesma direção, sem empate contra
   if (dn >= 3 && dn > up && fut) return "short";
   return "flat";
 }
@@ -58,6 +67,15 @@ function candleTrailStop(candles: { high: number; low: number }[], side: "long" 
   const lvl = side === "long" ? c.low : c.high;
   if (prevStop == null) return lvl;
   return side === "long" ? Math.max(prevStop, lvl) : Math.min(prevStop, lvl); // ratchet: só aperta a favor
+}
+// Robô 2.0 — stop de CATÁSTROFE largo (chandelier a k×ATR do pico, ratchet). A saída PRINCIPAL do 2.0 é por
+// CONFLUÊNCIA (fecha quando o apoio cai < 3 blocos); este stop fica LONGE e só cobre um tranco rápido que os
+// blocos (que atrasam o preço) não pegariam a tempo. Ratchet: acompanha o pico, nunca afrouxa. (dono 10/jul:
+// o trailing do 4º candle dava "muito stop" — trocado por confluência + rede larga.)
+function catastropheStop(side: "long" | "short", peak: number, atr: number, k: number, prevStop: number | null): number {
+  const raw = side === "long" ? peak - k * atr : peak + k * atr;
+  if (prevStop == null) return raw;
+  return side === "long" ? Math.max(prevStop, raw) : Math.min(prevStop, raw);
 }
 
 // ════════ Binance USDⓈ-M Futures DEMO (long+short; OKX bloqueia derivativos p/ BR) ════════
@@ -347,6 +365,45 @@ function dailyVwap(cs: Candle[]): number | null {
   for (const c of cs) { const v = c.volume ?? 0; if (c.time >= dayStart && v > 0) { pv += ((c.high + c.low + c.close) / 3) * v; vv += v; } }
   return vv > 0 ? pv / vv : null;
 }
+// ── MOMENTUM CLÁSSICO (bloco Técnico do Robô 2.0) — cópias FIÉIS de web/src/lib/indicators/ta.ts ──
+// RSI de Wilder (14) — último valor (0–100). >50 comprado, <50 vendido.
+function rsiLast(vals: number[], period = 14): number | null {
+  if (vals.length <= period) return null;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= period; i++) { const ch = vals[i] - vals[i - 1]; if (ch >= 0) gain += ch; else loss -= ch; }
+  gain /= period; loss /= period;
+  let r = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  for (let i = period + 1; i < vals.length; i++) {
+    const ch = vals[i] - vals[i - 1];
+    gain = (gain * (period - 1) + (ch > 0 ? ch : 0)) / period;
+    loss = (loss * (period - 1) + (ch < 0 ? -ch : 0)) / period;
+    r = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  }
+  return r;
+}
+// MACD (12/26/9) — histograma (linha − sinal) no último ponto. EMA com seed = 1º valor (igual ta.ts).
+function macdHist(vals: number[], fast = 12, slow = 26, signalP = 9): number | null {
+  if (vals.length < slow + signalP) return null;
+  const emaSeries = (src: number[], p: number) => { const k = 2 / (p + 1); const out = [src[0]]; for (let i = 1; i < src.length; i++) out.push(src[i] * k + out[i - 1] * (1 - k)); return out; };
+  const ef = emaSeries(vals, fast), es = emaSeries(vals, slow);
+  const line = vals.map((_, i) => ef[i] - es[i]);
+  const signal = emaSeries(line, signalP);
+  return line[line.length - 1] - signal[signal.length - 1];
+}
+// Squeeze Momentum (LazyBear) — linreg do desvio close−mid em n velas (>0 comprador). Mesma matemática do filtro sq_filter.
+function sqzMom(cs: { high: number; low: number; close: number }[], n = 20): number | null {
+  if (cs.length < n) return null;
+  const win = cs.slice(-n);
+  const clw = win.map((c) => c.close);
+  const smaV = clw.reduce((a, b) => a + b, 0) / n;
+  const hh = Math.max(...win.map((c) => c.high)), ll = Math.min(...win.map((c) => c.low));
+  const mid = ((hh + ll) / 2 + smaV) / 2;
+  const src = win.map((c) => c.close - mid);
+  const xm = (n - 1) / 2, ym = src.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  src.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
+  return ym + (den ? num / den : 0) * (n - 1 - xm);
+}
 
 // ════════ DECISÃO SMC PRICE-ACTION (15m) — o robô OPERA A ESTRUTURA ════════
 // Entra em zona de origem (Order Block / FVG) e o STOP + o ALVO vêm da própria estrutura:
@@ -587,10 +644,10 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
   const fr = N(der.funding_rate); // Coinalyze CEX = PERCENT (0,01 = 0,01%); normaliza por 0,05%.
   if (fr != null && fr !== 0) add("funding", "Fluxo", "Funding (contrário)", 0.02, -Math.sign(fr) * Math.min(Math.abs(fr) / 0.05, 1) * 55, `funding ${fr >= 0 ? "+" : ""}${fr.toFixed(4)}% — ${fr > 0 ? "longs pagam (aperto de longs)" : "shorts pagam (aperto de shorts)"}`); // 41% n832 (invertido) → fora de tudo, só medido
   const ls = N(der.long_short_ratio);
-  if (ls != null && ls > 0) add("ls_ratio", "Sentimento", "Long/Short (contrário)", 0.04, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`); // 53% n1958 → vota no grupo Sentimento
+  if (ls != null && ls > 0) add("ls_ratio", "Posicionamento", "Long/Short (contrário)", 0.04, -Math.sign(ls - 1) * Math.min(Math.abs(ls - 1) / 0.5, 1) * 50, `L/S ${ls.toFixed(2)} — ${ls > 1 ? "mais longs (multidão comprada)" : "mais shorts (multidão vendida)"}`); // 53% n1958 → vota no grupo Sentimento
   // Market-wide (igual p/ todas): Fear & Greed CONTRÁRIO — 56% n1958, o medido mais preditivo.
   const fng = N(p?.sentiment?.fng_value);
-  if (fng != null) add("feargreed", "Sentimento", "Fear & Greed (contrário)", 0.04, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
+  if (fng != null) add("feargreed", "Posicionamento", "Fear & Greed (contrário)", 0.04, ((50 - fng) / 50) * 55, `${fng}/100 ${p?.sentiment?.classification ?? ""}`.trim());
   // Diagnóstico SMC por moeda (já entram no voto via structuralBias; aqui é só p/ MEDIR cada peça).
   if (psmc) {
     const at = psmc.atr || psmc.price * 0.01;
@@ -630,6 +687,14 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
       if ((spread > 0 && spot < e20) || (spread < 0 && spot > e20)) sc *= 0.5; // preço já do lado contrário da 20 → tendência enfraquecendo
       add("ema2050", "Técnico", "EMA 20×50 (tendência curta)", 0.02, sc, `EMA20 ${spread >= 0 ? ">" : "<"} EMA50 (${Math.abs(spread).toFixed(1)} ATR) · preço ${spot >= e20 ? "acima" : "abaixo"} da EMA20`);
     }
+    // MOMENTUM (RSI · MACD · Squeeze/LazyBear) — completam o bloco Técnico do Robô 2.0 (tendência + momentum;
+    // o bloco só vota forte quando os dois lados concordam). Só medidos no v28; entram no VOTO do conf2 via CONF2_GROUPS.
+    const rsiV = rsiLast(closes15, 14);
+    if (rsiV != null) add("rsi", "Técnico", "RSI 14", 0.02, clamp((rsiV - 50) * 2.4), `RSI ${rsiV.toFixed(0)} — ${rsiV >= 50 ? "comprado" : "vendido"}${rsiV >= 70 ? " (sobrecomprado)" : rsiV <= 30 ? " (sobrevendido)" : ""}`);
+    const mh = macdHist(closes15);
+    if (mh != null && atrT > 0) { const h = mh / atrT; add("macd", "Técnico", "MACD 12/26/9", 0.02, clamp(Math.sign(mh) * (35 + 45 * Math.min(Math.abs(h) / 0.3, 1))), `histograma ${mh >= 0 ? "+" : ""}${mh.toFixed(2)} — ${mh >= 0 ? "linha acima do sinal (comprador)" : "linha abaixo do sinal (vendedor)"}`); }
+    const sq = sqzMom(cs15, 20);
+    if (sq != null && atrT > 0) { const s = sq / atrT; add("sqz", "Técnico", "Squeeze Momentum (LazyBear)", 0.03, clamp(Math.sign(sq) * (30 + 55 * Math.min(Math.abs(s) / 1, 1))), `momentum ${sq >= 0 ? "comprador" : "vendedor"} ${s.toFixed(2)} ATR${Math.abs(s) >= 0.5 ? " (forte)" : ""}`); }
   }
 
   // ── FLUXO / OPÇÕES / INSTITUCIONAL (estado atual) ──
@@ -650,9 +715,9 @@ function computeReading(tfReads: TfRead[], p: any, imb: any[], walls: any[], spo
     add("liqs", "Fluxo", "Liquidações", 0.06, liqScore, `${llq > lshq ? `longs liquidados $${(llq / 1e6).toFixed(1)}M — venda forçada` : `shorts liquidados $${(lshq / 1e6).toFixed(1)}M — compra forçada`}${liqTot < 250000 ? " (poeira <$250k — sem voto)" : ""}`);
   }
   const pw = N(g.put_wall), cw = N(g.call_wall);
-  if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Opções", "Posição vs Put/Call Wall", 0.02, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); } // INVERTIDO na régua forte (32% concordou × 56% discordou, n19+32) → fora do placar, só medido
+  if (pw != null && cw != null && cw > pw && spot > 0) { const posPct = (spot - pw) / (cw - pw); add("gamma", "Posicionamento", "Posição vs Put/Call Wall", 0.01, (0.5 - posPct) * 120, `${Math.round(posPct * 100)}% entre Put $${Math.round(pw / 1000)}k e Call $${Math.round(cw / 1000)}k`); } // INVERTIDO na régua forte (32% concordou × 56% discordou, n19+32) → fora do placar, só medido
   const gex = N(g.net_gex_spot);
-  if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Opções", "Fluxo de gamma (HIRO)", 0.05, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
+  if (gex != null && mom !== 0) { const amp = (g.regime === "negative" || gex < 0) ? Math.sign(mom) : -Math.sign(mom); add("gflow", "Posicionamento", "Fluxo de gamma (HIRO)", 0.05, amp * Math.min(Math.abs(gex) / 30e6, 1) * 55, `${g.regime === "negative" || gex < 0 ? "γ negativo amplifica" : "γ positivo amortece"} · GEX ${(gex / 1e6).toFixed(1)}M · ${amp >= 0 ? "a favor da alta" : "a favor da baixa"}`); }
   // (Prêmio Coinbase e Fluxo de ETF — institucional macro — REMOVIDOS do robô: não decidem trade de 15m.)
 
   // ── REGIME DE GAMMA (chave de modo): positivo = dealers amortecem (pinning/reversão) → estrutura
@@ -742,7 +807,8 @@ Deno.serve(async (req) => {
   const learnByAsset: Record<string, { perSignal?: { key: string; label?: string; hitRate: number; n: number }[] }> = ((learnRow?.data as any)?.byAsset) ?? {};
 
   const venue = String(cfg.venue ?? "binance");
-  const botEngine = String(cfg.bot_engine ?? "smc"); // 'smc' = v28 (SMC) | 'confluence2' = Robô 2.0 (3-de-4 dos 4 blocos)
+  const botEngine = String(cfg.bot_engine ?? "smc"); // 'smc' = v28 (SMC) | 'confluence2' = Robô 2.0 (3-de-5 dos 5 blocos, força igual)
+  const conf2StopK = Number(cfg.conf2_stop_atr ?? 4); // 2.0: largura (×ATR) do stop de catástrofe — saída principal é por confluência
   const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
   if (!bnbCreds.key || !bnbCreds.secret) { await log("error", "Sem chaves da Binance testnet."); return json(400, { error: "sem credenciais binance" }); }
 
@@ -806,8 +872,9 @@ Deno.serve(async (req) => {
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
     const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number) => {
       const conf2 = engine === "confluence2";
-      // stop inicial: 2.0 = 4º candle; v28 = estrutural do plano (fallback ATR).
-      const initStop = (side: "long" | "short") => conf2 ? candleTrailStop(candles, side, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
+      const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
+      // stop inicial: 2.0 = catástrofe largo (k×ATR do pico); v28 = estrutural do plano (fallback ATR).
+      const initStop = (side: "long" | "short") => conf2 ? catastropheStop(side, px, atr, kCat, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
       const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", engine).eq("asset", asset).maybeSingle();
       const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
       const now = new Date().toISOString();
@@ -821,21 +888,24 @@ Deno.serve(async (req) => {
       const prevStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
       const prevPeak = Number(sp!.peak_px) || entry;
       const peak = spos === "long" ? Math.max(prevPeak, px) : Math.min(prevPeak, px);
-      // trailing: 2.0 = 4º candle (ratchet); v28 = chandelier ATR do pico (ratchet), armado após kTrail×ATR de lucro.
+      // trailing: 2.0 = catástrofe largo do pico (ratchet); v28 = chandelier ATR do pico, armado após kTrail×ATR.
       let newStop = prevStop;
-      if (conf2) newStop = candleTrailStop(candles, spos, prevStop);
+      if (conf2) newStop = catastropheStop(spos, peak, atr, kCat, prevStop);
       else if (atr > 0) {
         const armed = spos === "long" ? peak - entry >= kTrail * atr : entry - peak >= kTrail * atr;
         if (armed) { const ts = spos === "long" ? peak - kTrail * atr : peak + kTrail * atr; newStop = prevStop == null ? ts : (spos === "long" ? Math.max(prevStop, ts) : Math.min(prevStop, ts)); }
       }
       const breached = newStop != null && (spos === "long" ? px <= newStop : px >= newStop);
       const flip = want !== "flat" && want !== spos;
-      if (breached || flip) {
+      // 2.0: SAÍDA POR CONFLUÊNCIA — apoio caiu abaixo de 3 blocos (want vira flat) OU virou (oposto) → fecha.
+      const confExit = conf2 && want !== spos;
+      if (breached || flip || confExit) {
         const exitPx = breached && newStop != null ? newStop : px;
         const dir = spos === "long" ? 1 : -1;
         const pnlPct = entry ? Math.round(((exitPx - entry) * dir / entry) * 1e4) / 1e2 : null;
-        await admin.from("bot_shadow_trades").insert({ engine, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason: breached ? "stop" : "reversão", opened_at: sp!.opened_at, closed_at: now });
-        if (flip) await open(want as "long" | "short");
+        const reason = breached ? "stop" : want === "flat" ? "confluência" : "reversão";
+        await admin.from("bot_shadow_trades").insert({ engine, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason, opened_at: sp!.opened_at, closed_at: now });
+        if (want !== "flat" && want !== spos) await open(want as "long" | "short");
         else await admin.from("bot_shadow").upsert({ engine, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
       } else if (newStop !== prevStop || peak !== prevPeak) {
         await admin.from("bot_shadow").update({ stop_px: newStop, peak_px: peak, updated_at: now }).eq("engine", engine).eq("asset", asset);
@@ -964,7 +1034,7 @@ Deno.serve(async (req) => {
         const peak = pos === "long" ? Math.max(prevPeak, lastPx) : Math.min(prevPeak, lastPx);
         let newStop = st.stop_px;
         if (botEngine === "confluence2") {
-          newStop = candleTrailStop(primary?.candles ?? [], pos, st.stop_px); // 2.0: trailing abaixo do 4º candle (ratchet)
+          newStop = catastropheStop(pos, peak, atrPx, conf2StopK, st.stop_px); // 2.0: stop de catástrofe largo (ratchet) — saída principal = confluência (< 3 blocos)
         } else {
         const kTrail = Number(cfg.trail_atr_mult ?? 3);
         if (cfg.trail_on && kTrail > 0 && atrPx > 0) {
@@ -991,7 +1061,7 @@ Deno.serve(async (req) => {
         if (peak !== prevPeak || newStop !== st.stop_px) {
           const stopMoved = newStop != null && newStop !== st.stop_px;
           await savePos(asset, instId, pos, st.pos_base_sz, st.entry_px, st.adds, newStop, st.ctrend, peak);
-          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing (${botEngine === "confluence2" ? "4º candle" : `${Number(cfg.trail_atr_mult ?? 3)}×ATR`}): stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)}).`, {});
+          if (newStop !== st.stop_px) await log("info", `[${asset}] trailing (${botEngine === "confluence2" ? `catástrofe ${conf2StopK}×ATR` : `${Number(cfg.trail_atr_mult ?? 3)}×ATR`}): stop → ${newStop?.toFixed(2)} (pico ${peak.toFixed(2)}).`, {});
           // stop residente acompanha o trailing: cancela o antigo e recoloca no novo nível (defensivo).
           if (stopMoved) { const oid = await syncStopOrder(asset, instId, pos, newStop!, st.stop_order_id); await admin.from("bot_positions").update({ stop_order_id: oid }).eq("asset", asset); st.stop_order_id = oid; }
           st.stop_px = newStop; st.peak_px = peak;
@@ -1145,20 +1215,8 @@ Deno.serve(async (req) => {
       //    contra a direção (≥0,5 ATR) segura a entrada — não se compra contra mola armada. ──
       const sqFilter = cfg.sq_filter !== false;
       if (want && sqFilter && primary?.candles && primary.candles.length >= 21) {
-        const n = 20;
-        const win = primary.candles.slice(-n);
-        const clw = win.map((c) => c.close);
-        const smaV = clw.reduce((a, b) => a + b, 0) / n;
-        const hh = Math.max(...win.map((c) => c.high));
-        const ll = Math.min(...win.map((c) => c.low));
-        const mid = ((hh + ll) / 2 + smaV) / 2;
-        const srcArr = win.map((c) => c.close - mid);
-        const xm = (n - 1) / 2;
-        const ym = srcArr.reduce((a, b) => a + b, 0) / n;
-        let num = 0, den = 0;
-        srcArr.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
-        const mom = ym + (den ? num / den : 0) * (n - 1 - xm);
-        if (atrPx > 0 && Math.abs(mom) >= 0.5 * atrPx && ((want === "long" && mom < 0) || (want === "short" && mom > 0))) {
+        const mom = sqzMom(primary.candles, 20);
+        if (mom != null && atrPx > 0 && Math.abs(mom) >= 0.5 * atrPx && ((want === "long" && mom < 0) || (want === "short" && mom > 0))) {
           gate = `squeeze momentum ${mom < 0 ? "vendedor" : "comprador"} forte contra (${(mom / atrPx).toFixed(2)} ATR) — segura`;
           want = null;
         }
@@ -1254,13 +1312,19 @@ Deno.serve(async (req) => {
 
       let target: "long" | "short" | "flat" = want ?? pos;
       if (!fut && pos === "long" && want === "short") target = "flat";
-      // ROBÔ 2.0 (motor confluence2): a decisão é o 3-de-4 dos 4 blocos — ignora o setup SMC e os gates do v28.
-      if (botEngine === "confluence2") target = conf2Target(conf2Groups(signals, signalToggles), fut);
+      // ROBÔ 2.0 (motor confluence2): 3-de-5 dos 5 blocos (cada 20%) — ignora o setup SMC e os gates do v28.
+      const conf2g = conf2Groups(signals, signalToggles);
+      const conf2dir = conf2Target(conf2g, fut);
+      const CONF2_LABELS: Record<string, string> = { estrutura: "Estrutura", micro: "Microestrutura", fluxo: "Fluxo", posicionamento: "Posicionamento", tecnico: "Técnico" };
+      const conf2Up = conf2g.filter((g) => g.vote === 1).length, conf2Dn = conf2g.filter((g) => g.vote === -1).length;
+      const conf2Force = Math.round((conf2g.reduce((s, g) => s + g.vote, 0) / conf2g.length) * 100); // força total −100..+100 (cada bloco 20%)
+      const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n })), up: conf2Up, dn: conf2Dn, need: 3, dir: conf2dir, force: conf2Force };
+      if (botEngine === "confluence2") target = conf2dir;
       // SOMBRA dos DOIS motores (paper) — ambos rodam TODO ciclo p/ comparação justa (mesma unidade %);
-      // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-4 dos 4 blocos.
+      // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-5 dos 5 blocos.
       if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
         const kTr = Number(cfg.trail_atr_mult ?? 3);
-        try { await runShadow("confluence2", asset, conf2Target(conf2Groups(signals, signalToggles), fut), lastPx, primary.candles, null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
+        try { await runShadow("confluence2", asset, conf2dir, lastPx, primary.candles, null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
@@ -1275,7 +1339,7 @@ Deno.serve(async (req) => {
       const decision = !cfg.enabled ? "preview" : pyramidAdd ? "add" : target === pos ? "hold" : target;
       const zone = primary?.smc ? (primary.smc.price < primary.smc.equilibrium.bottom ? "discount" : primary.smc.price > primary.smc.equilibrium.top ? "premium" : "equilíbrio") : null;
       const structure = { smcBias, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, flowBias: flowTilt, gammaRegime: gammaPos ? "positive" : gammaNeg ? "negative" : "neutral", zone, autoWeight: autoWeightOn ? { on: true, structWAdj: Math.round(tune.structWAdj * 100) / 100, top: tune.applied.slice(0, 6) } : { on: false } };
-      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, confluence, confMin, confVotes, overrides: Object.keys(ov).length ? ov : null, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
+      const reading = { asset, bias, conviction, signals, spot: lastPx, mom: primary?.mom ?? 0, flowTilt, setup: plan.setup || null, planStop: plan.stop, planTarget: plan.target, structure, confluence, confMin, confVotes, confluence2, engine: botEngine, overrides: Object.keys(ov).length ? ov : null, want: target, position: pos, adds: st.adds, leverage: Number(cfg.leverage), futures: fut, venue, gate: gate || null, ts: new Date().toISOString() };
       await saveReading(asset, { last_bias: bias, last_conviction: conviction, last_decision: decision, last_reading: reading, last_run: new Date().toISOString() });
 
       const top = signals.slice().sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight)).slice(0, 3).map((s) => `${s.label} ${s.score >= 0 ? "+" : ""}${s.score}`).join(", ");
@@ -1377,7 +1441,7 @@ Deno.serve(async (req) => {
           const kStopFb = Number(cfg.stop_atr_mult ?? 3);
           // ROBÔ 2.0: stop inicial = 4º último candle (trailing); o v28 usa o stop estrutural do plano.
           const conf2 = botEngine === "confluence2";
-          const conf2Stop = conf2 ? candleTrailStop(primary.candles ?? [], target as "long" | "short", null) : null;
+          const conf2Stop = conf2 ? catastropheStop(target as "long" | "short", lastPx, atrPx, conf2StopK, null) : null;
           const riskDist = ((conf2 && conf2Stop != null) ? Math.abs(lastPx - conf2Stop) : plan.stop != null ? Math.abs(lastPx - plan.stop) : kStopFb * atrPx) || (lastPx * 0.01);
           // ROBÔ 2.0 GUARD: o stop do 4º candle precisa ter distância PROTETORA real (≥0,1×ATR do lado
           // certo). Sem isso (candle colado/do lado errado) o sizing inflaria a posição — não abre.
@@ -1403,7 +1467,7 @@ Deno.serve(async (req) => {
           const stopPx = (conf2 && conf2Stop != null) ? conf2Stop : (plan.stop != null ? plan.stop : (target === "long" ? entryPx - riskDist : entryPx + riskDist));
           const targetPx = conf2 ? null : (cfg.target_on !== false ? plan.target : null); // 2.0 sai só por trailing (sem alvo fixo)
           const usedLev = equity > 0 ? realNot / equity : 0;
-          const stopBasis = conf2 ? "4º candle" : plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
+          const stopBasis = conf2 ? `catástrofe ${conf2StopK}×ATR` : plan.stop != null ? "estrutural" : `${kStopFb.toFixed(1)}×ATR`;
           await savePos(asset, instId, target, Number(filled.toFixed(qDec)), entryPx, 0, stopPx, isCounter, entryPx); // pico inicia na entrada (trailing parte daqui)
           await admin.from("bot_positions").update({ stopped_at: null, target_px: targetPx }).eq("asset", asset); // abriu → zera cooldown; grava alvo estrutural
           // STOP RESIDENTE na corretora (P0): dispara sozinho entre ciclos, não depende do robô rodar.
