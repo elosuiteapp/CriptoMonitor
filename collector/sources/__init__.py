@@ -25,7 +25,8 @@ from .macro_markets import MacroMarketsSource
 from .market_liquidity import MarketLiquiditySource
 from .okx import OkxSource
 from .options_flow import OptionsFlowSource
-from .orderbook_walls import OrderbookWallsSource
+# OrderbookWallsSource saiu do ciclo pesado: roda no ciclo RÁPIDO (1 min) do aggregator
+# (book/pressão do bloco Microestrutura). Importado direto lá.
 
 __all__ = ["BaseSource", "SourceResult", "TableRows", "build_sources"]
 
@@ -46,7 +47,6 @@ def build_sources() -> list[BaseSource]:
         DexScreenerSource(),
         CryptocurrencyCvSource(),
         MacroMarketsSource(),
-        OrderbookWallsSource(),
         OptionsFlowSource(),
         EtfFlowsSource(),          # ETFs spot BTC/ETH (Farside via relay) — institucional
         MarketLiquiditySource(),   # stablecoins + TVL + DEX + fees (DefiLlama) — liquidez/direção

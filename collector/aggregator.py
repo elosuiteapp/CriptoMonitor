@@ -35,6 +35,7 @@ from lib.supabase_client import get_supabase, upsert  # noqa: E402
 from lib.timeutil import now_utc, to_iso    # noqa: E402
 from sources import SourceResult, build_sources  # noqa: E402
 from sources.orderbook_depth import DEPTH_ASSETS, OrderbookDepthSource  # noqa: E402
+from sources.orderbook_walls import OrderbookWallsSource  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 log = get_logger("aggregator")
@@ -164,6 +165,11 @@ class Collector:
         self.sources = build_sources()
         # Escada do book (heatmap): cadência própria (1 min), fora do ciclo de 5 min.
         self.depth_source = OrderbookDepthSource()
+        # Book/pressão (paredes + imbalance): cadência própria (1 min), fora do ciclo pesado.
+        # Alimenta o bloco Microestrutura do robô (25%), lido DIRETO das tabelas (não do snapshot),
+        # por isso dá p/ atualizar a 1 min sem reconstruir o snapshot (gamma/funding não têm
+        # carry-forward em todo campo). Coinalyze/opções/DeFi seguem no ciclo pesado (5 min).
+        self.walls_source = OrderbookWallsSource()
         self.macro_interval = int(os.getenv("MACRO_INTERVAL_MINUTES", "15"))
         self._last_macro_minute: int | None = None
 
@@ -359,6 +365,32 @@ class Collector:
         except Exception as exc:  # noqa: BLE001
             log.warning("ciclo de depth falhou (ignorado): %s", exc)
 
+    async def run_fast_cycle(self) -> None:
+        """Ciclo RÁPIDO (1 min) do book: pressão + paredes (orderbook_imbalance + orderbook_walls).
+        Esses sinais alimentam o bloco Microestrutura do robô (25%) e são lidos DIRETO das tabelas
+        (não entram no market_snapshot) → dá p/ atualizá-los a 1 min sem reconstruir o snapshot,
+        que depende de fontes lentas (gamma/funding) sem carry-forward em todo campo. Fonte = orderbook
+        das exchanges (Binance/OKX/Coinbase), rate limit alto. ts na grade de 1 min (restart no mesmo
+        minuto colapsa na MESMA linha via o upsert). A Coinalyze NÃO entra aqui (429)."""
+        now = now_utc()
+        ts = to_iso(now.replace(second=0, microsecond=0))
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}) as http:
+                result = await self.walls_source.collect(http, self.assets)
+            if not result.ok:
+                return
+            for output in result.outputs:
+                for row in output.rows:
+                    if row.get("ts") is not None:
+                        row["ts"] = ts
+                try:
+                    upsert(output.table, output.rows, output.on_conflict)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("falha no upsert de %s (%d linhas): %s",
+                                output.table, len(output.rows), exc)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ciclo rápido (book) falhou (ignorado): %s", exc)
+
 
 async def _main_async(once: bool) -> None:
     collector = Collector()
@@ -374,9 +406,14 @@ async def _main_async(once: bool) -> None:
     depth_interval = int(os.getenv("DEPTH_INTERVAL_MINUTES", "1"))
     scheduler.add_job(collector.run_depth_cycle, CronTrigger(minute=f"*/{depth_interval}"),
                       max_instances=1, coalesce=True)
+    # Book/pressão (paredes + imbalance) em cadência própria (1 min) → bloco Microestrutura do robô
+    # em tempo quase real, sem tocar no ciclo pesado (Coinalyze/gamma seguem em 5 min, sem 429).
+    fast_interval = int(os.getenv("FAST_INTERVAL_MINUTES", "1"))
+    scheduler.add_job(collector.run_fast_cycle, CronTrigger(minute=f"*/{fast_interval}"),
+                      max_instances=1, coalesce=True)
     scheduler.start()
-    log.info("scheduler iniciado · ciclo a cada %d min · book a cada %d min · Ctrl+C para sair",
-             interval, depth_interval)
+    log.info("scheduler iniciado · ciclo %d min · book(depth) %d min · book(pressão) %d min · Ctrl+C p/ sair",
+             interval, depth_interval, fast_interval)
 
     # Desligamento LIMPO: em SIGTERM/SIGINT (deploy/scale/parada do host) saímos com
     # código 0, para a política ON_FAILURE do Railway não contar parada planejada como
