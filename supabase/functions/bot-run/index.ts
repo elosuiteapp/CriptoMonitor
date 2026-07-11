@@ -34,7 +34,8 @@ const N = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n :
 //   o bloco SEGUE A MAIORIA (mais forças de alta ou de baixa → o bloco vai pra esse lado). Força do bloco =
 //   saldo de indicadores (−100..+100). Os blocos têm PESO (cfg.conf2_weights); a decisão é a FORÇA PONDERADA (Σ peso×força).
 // Ignora o setup SMC/zona e os gates do v28 (é confluência pura, o método pedido pelo dono).
-// Bloco Técnico = EMA20×50+VWAP+ADX (tendência) + RSI+MACD+Squeeze/LazyBear (momentum).
+// Bloco Técnico = EMA20×50+ADX (tendência) + RSI+MACD+Squeeze/LazyBear (momentum). VWAP saiu do
+// Robô 2.0 (dono 10/jul: sujava a leitura do bloco); segue calculado só p/ o v28 (medido).
 // Posicionamento = L/S + Fear&Greed + gamma/HIRO. Put/Call Wall fica MEDIDO (não vota): é invertido na régua
 //   forte e, com voto igual, sujaria o bloco (dá p/ inverter o sinal e ligar depois, se o dono quiser).
 const CONF2_GROUPS: Record<string, string[]> = {
@@ -42,7 +43,7 @@ const CONF2_GROUPS: Record<string, string[]> = {
   micro:          ["book_inst", "book_retail", "absorb", "walls", "book_trend", "fvg"],
   fluxo:          ["funding", "cvd", "cvd_div", "liqs"],
   posicionamento: ["ls_ratio", "feargreed", "gflow"],
-  tecnico:        ["vwap", "adx", "ema2050", "rsi", "macd", "sqz"],
+  tecnico:        ["adx", "ema2050", "rsi", "macd", "sqz"],
 };
 // Peso IGUAL por indicador (pedido do dono: robô entende mais fácil). Cada um = 1 voto pela cor (verde >8 /
 // vermelho <−8; senão neutro). O bloco segue a maioria; a "força" (−100..+100) é o saldo de indicadores.

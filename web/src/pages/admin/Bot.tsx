@@ -184,8 +184,8 @@ const CONF2_BLOCK: Record<string, string> = {
   book_inst: "Microestrutura", book_retail: "Microestrutura", absorb: "Microestrutura", walls: "Microestrutura", book_trend: "Microestrutura", fvg: "Microestrutura",
   funding: "Fluxo", cvd: "Fluxo", cvd_div: "Fluxo", liqs: "Fluxo",
   ls_ratio: "Posicionamento", feargreed: "Posicionamento", gflow: "Posicionamento",
-  vwap: "Técnico", adx: "Técnico", ema2050: "Técnico", rsi: "Técnico", macd: "Técnico", sqz: "Técnico",
-};
+  adx: "Técnico", ema2050: "Técnico", rsi: "Técnico", macd: "Técnico", sqz: "Técnico",
+}; // VWAP saiu do bloco Técnico do Robô 2.0 (dono 10/jul) — não vota nem conta na força; segue no v28
 // INDICADORES por bloco no sub-painel do gráfico (Robô 2.0). idx = posição na tupla block_hist
 // [t, wforce, estrutura, micro, fluxo, posic, tecnico]. Cor casa com a bolinha do bloco no card.
 const BLOCK_LINES: { id: string; idx: number; label: string; color: string; width?: 1 | 2 }[] = [
@@ -1388,7 +1388,7 @@ export default function AdminBot() {
             )}
             <div className="mt-3 space-y-3">
               {SIG_GROUPS.map((grp) => {
-                const items = r.signals.filter((s) => s.group === grp);
+                const items = r.signals.filter((s) => s.group === grp && !(r.confluence2 && s.key === "vwap")); // VWAP fora do bloco Técnico do Robô 2.0 (segue visível no v28)
                 if (!items.length) return null;
                 const blk = r.confluence2?.groups.find((g) => g.label === grp); // força do bloco (Robô 2.0)
                 return (
@@ -1429,7 +1429,7 @@ export default function AdminBot() {
               })}
             </div>
             {r.confluence2 ? (
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o <strong>Robô 2.0</strong> decide (força ponderada dos 5 blocos): cada bloco — <strong>Estrutura · Microestrutura · Fluxo · Posicionamento · Técnico</strong> — tem um <strong>PESO</strong> (ajustável em Configuração; padrão 30·25·13·12·20). Dentro do bloco os indicadores têm força igual e o bloco vira um <strong>saldo</strong> (−100..+100). A <strong>força ponderada</strong> = Σ (peso × saldo) é quem decide: <strong>abre</strong> quando passa ±o limiar de entrada, <strong>segura</strong> enquanto a força se sustenta (histerese) e <strong>fecha</strong> perto de zero — e <strong>vira a mão</strong> se a força cruza o limiar do lado oposto. Bloco neutro contribui 0 (não trava). Stop de catástrofe largo só de proteção. O bloco Técnico junta <strong>tendência</strong> (EMA/VWAP/ADX) e <strong>momentum</strong> (RSI/MACD/Squeeze). Ignora o setup SMC e os gates do v28. Put/Call Wall fica medido (invertido, não vota). Vale pra todas as moedas. Educacional — não é recomendação.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Como o <strong>Robô 2.0</strong> decide (força ponderada dos 5 blocos): cada bloco — <strong>Estrutura · Microestrutura · Fluxo · Posicionamento · Técnico</strong> — tem um <strong>PESO</strong> (ajustável em Configuração; padrão 30·25·13·12·20). Dentro do bloco os indicadores têm força igual e o bloco vira um <strong>saldo</strong> (−100..+100). A <strong>força ponderada</strong> = Σ (peso × saldo) é quem decide: <strong>abre</strong> quando passa ±o limiar de entrada, <strong>segura</strong> enquanto a força se sustenta (histerese) e <strong>fecha</strong> perto de zero — e <strong>vira a mão</strong> se a força cruza o limiar do lado oposto. Bloco neutro contribui 0 (não trava). Stop de catástrofe largo só de proteção. O bloco Técnico junta <strong>tendência</strong> (EMA/ADX) e <strong>momentum</strong> (RSI/MACD/Squeeze). Ignora o setup SMC e os gates do v28. Put/Call Wall fica medido (invertido, não vota). Vale pra todas as moedas. Educacional — não é recomendação.</p>
             ) : (
             <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v21 · SMC + pressão): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — reteste de OB/FVG pós-BOS/CHoCH (prioritário) ou imbalance em reteste, sempre com a direção validada por <strong>maioria 2-de-3 das leituras de estrutura</strong>, stop na invalidação estrutural e alvo na liquidez/PDH-PDL. Antes de executar passa pelos gates: <strong>1 tiro por zona</strong>, sessão, <strong>bússola 4H</strong> (a estrutura do TF maior precisa concordar) e a confluência <strong>Estrutura + Fluxo</strong> (2 de 2 — os sinais <em>vota</em> são a pressão do book/fluxo). Os <em>estudo</em> (Técnico · Sentimento) e os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
             )}
