@@ -818,6 +818,7 @@ Deno.serve(async (req) => {
   const conf2W = (cfg.conf2_weights && typeof cfg.conf2_weights === "object" ? cfg.conf2_weights : { estrutura: 30, micro: 25, tecnico: 20, fluxo: 13, posicionamento: 12 }) as Conf2Weights; // pesos por bloco (%)
   const conf2Enter = Number(cfg.conf2_enter ?? 30); // força ponderada mínima p/ ABRIR (−100..+100)
   const conf2Hold = Number(cfg.conf2_hold ?? 10);   // histerese: segura enquanto |força| ≥ hold, sai perto de 0
+  const conf2BeAtr = Number(cfg.conf2_be_atr ?? 1); // trava de BREAKEVEN: ≥ N×ATR de lucro → stop nunca fica abaixo da entrada (0 = off)
   const bnbCreds: BnbCreds = { key: secrets.binance_test_key ?? "", secret: secrets.binance_test_secret ?? "" };
   if (!bnbCreds.key || !bnbCreds.secret) { await log("error", "Sem chaves da Binance testnet."); return json(400, { error: "sem credenciais binance" }); }
 
@@ -901,8 +902,14 @@ Deno.serve(async (req) => {
       const peak = spos === "long" ? Math.max(prevPeak, px) : Math.min(prevPeak, px);
       // trailing: 2.0 = catástrofe largo do pico (ratchet); v28 = chandelier ATR do pico, armado após kTrail×ATR.
       let newStop = prevStop;
-      if (conf2) newStop = catastropheStop(spos, peak, atr, kCat, prevStop);
-      else if (atr > 0) {
+      if (conf2) {
+        newStop = catastropheStop(spos, peak, atr, kCat, prevStop);
+        const beAtr = Number(cfg.conf2_be_atr ?? 1); // mesma trava de breakeven do live
+        if (beAtr > 0 && newStop != null) {
+          const armed = spos === "long" ? peak >= entry + beAtr * atr : peak <= entry - beAtr * atr;
+          if (armed) newStop = spos === "long" ? Math.max(newStop, entry) : Math.min(newStop, entry);
+        }
+      } else if (atr > 0) {
         const armed = spos === "long" ? peak - entry >= kTrail * atr : entry - peak >= kTrail * atr;
         if (armed) { const ts = spos === "long" ? peak - kTrail * atr : peak + kTrail * atr; newStop = prevStop == null ? ts : (spos === "long" ? Math.max(prevStop, ts) : Math.min(prevStop, ts)); }
       }
@@ -1046,6 +1053,12 @@ Deno.serve(async (req) => {
         let newStop = st.stop_px;
         if (botEngine === "confluence2") {
           newStop = catastropheStop(pos, peak, atrPx, conf2StopK, st.stop_px); // 2.0: stop de catástrofe largo (ratchet) — saída principal = confluência (< 3 blocos)
+          // TRAVA DE BREAKEVEN (re-add 10/jul): uma vez que o trade chegou a ≥ conf2BeAtr×ATR de lucro, o stop
+          // nunca fica abaixo da entrada (long)/acima (short) — winner não vira loser (o stop largo devolvia o lucro).
+          if (conf2BeAtr > 0 && st.entry_px != null && newStop != null) {
+            const armed = pos === "long" ? peak >= st.entry_px + conf2BeAtr * atrPx : peak <= st.entry_px - conf2BeAtr * atrPx;
+            if (armed) newStop = pos === "long" ? Math.max(newStop, st.entry_px) : Math.min(newStop, st.entry_px);
+          }
         } else {
         const kTrail = Number(cfg.trail_atr_mult ?? 3);
         if (cfg.trail_on && kTrail > 0 && atrPx > 0) {
