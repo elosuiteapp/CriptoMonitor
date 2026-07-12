@@ -881,11 +881,17 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean) => {
-      const conf2 = engine === "confluence2";
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { time: number; high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean) => {
+      const conf2 = engine === "confluence2" || engine === "confluence2_ct"; // ambos rodam a MESMA decisão (força ponderada + histerese) — só a saída/stop difere
+      const candleMode = engine === "confluence2_ct"; // EXPERIMENTO (10/jul, ideia do dono): trailing por VELA em vez de catástrofe 4×ATR
       const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
-      // stop inicial: 2.0 = catástrofe largo (k×ATR do pico); v28 = estrutural do plano (fallback ATR).
-      const initStop = (side: "long" | "short") => conf2 ? catastropheStop(side, px, atr, kCat, null) : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
+      const lastC = candles.length ? candles[candles.length - 1] : null; // última vela FECHADA (primary.candles já veio sem a em formação)
+      const ctBuf = 0.1 * atr; // respiro além do fundo/topo da vela (não ser wickado no tick exato do reteste)
+      // stop inicial: ct = FUNDO/TOPO da vela de entrada (∓ respiro); 2.0 = catástrofe largo; v28 = estrutural do plano (fallback ATR).
+      const initStop = (side: "long" | "short") =>
+        candleMode ? (lastC ? (side === "long" ? lastC.low - ctBuf : lastC.high + ctBuf) : null)
+        : conf2 ? catastropheStop(side, px, atr, kCat, null)
+        : (planStop != null ? planStop : (side === "long" ? px - kTrail * atr : px + kTrail * atr));
       const { data: sp } = await admin.from("bot_shadow").select("*").eq("engine", engine).eq("asset", asset).maybeSingle();
       const spos = sp?.position === "long" ? "long" : sp?.position === "short" ? "short" : "flat";
       // 2.0: a sombra aplica a MESMA força ponderada + histerese do live, relativa à posição DELA (spos). v28 usa `want` direto.
@@ -894,7 +900,7 @@ Deno.serve(async (req) => {
       const open = async (side: "long" | "short") => {
         const stop = initStop(side);
         if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop não-protetor → não abre no papel
-        await admin.from("bot_shadow").upsert({ engine, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
+        await admin.from("bot_shadow").upsert({ engine, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, entry_bar: candleMode && lastC ? lastC.time : null, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
       };
       if (spos === "flat") { if (w !== "flat") await open(w); return; }
       const entry = Number(sp!.entry_px) || px;
@@ -903,7 +909,20 @@ Deno.serve(async (req) => {
       const peak = spos === "long" ? Math.max(prevPeak, px) : Math.min(prevPeak, px);
       // trailing: 2.0 = catástrofe largo do pico (ratchet); v28 = chandelier ATR do pico, armado após kTrail×ATR.
       let newStop = prevStop;
-      if (conf2) {
+      if (candleMode) {
+        // TRAILING POR VELA (experimento): <2 velas = fundo/topo da vela de entrada; 2ª→6ª = zero a zero (só se no lucro);
+        // da 6ª em diante = segue o fundo (long)/topo (short) de cada nova vela fechada. Ratchet: só aperta.
+        const entryBar = sp!.entry_bar != null ? Number(sp!.entry_bar) : null;
+        const barsSince = entryBar != null ? candles.filter((c) => c.time > entryBar).length
+          : Math.floor((Date.parse(now) - Date.parse(sp!.opened_at)) / 9e5); // fallback: ~15m por vela
+        let target = prevStop; // <2 velas: mantém o fundo/topo da vela de entrada
+        if (barsSince >= 6 && lastC) {
+          target = spos === "long" ? lastC.low - ctBuf : lastC.high + ctBuf; // segue a vela
+        } else if (barsSince >= 2) {
+          if (spos === "long" ? px > entry : px < entry) target = entry; // zero a zero — só no lucro (nunca joga o stop além do preço)
+        }
+        if (target != null) newStop = prevStop == null ? target : (spos === "long" ? Math.max(prevStop, target) : Math.min(prevStop, target)); // ratchet
+      } else if (conf2) {
         newStop = catastropheStop(spos, peak, atr, kCat, prevStop);
         const beAtr = Number(cfg.conf2_be_atr ?? 1); // mesma trava de breakeven do live
         if (beAtr > 0 && newStop != null) {
@@ -1351,6 +1370,8 @@ Deno.serve(async (req) => {
       if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
         const kTr = Number(cfg.trail_atr_mult ?? 3);
         try { await runShadow("confluence2", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
+        // VARIANTE (experimento 12/jul): mesmas entradas do conf2, saída por TRAILING POR VELA (fundo-da-vela → zero a zero → segue a vela). A/B contra o catástrofe 4×ATR, só em papel.
+        try { await runShadow("confluence2_ct", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut); } catch (e) { await log("info", `[${asset}] sombra conf2_ct: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
