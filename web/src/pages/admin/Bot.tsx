@@ -10,6 +10,11 @@ import { BARS, FLOW_SIGNALS, SIG_GROUPS, BLOCK_LINES, LOG_TONE, FEE_RT } from ".
 import { num, decisionLabel, sigRole, conf2Role } from "../../lib/bot/format";
 import { invoke } from "../../lib/bot/api";
 
+// Colunas lidas do banco — compartilhadas entre a carga inicial (loadBase) e o polling (loadLive), DRY.
+const SEL_ORDERS = "id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine";
+const SEL_LOGS = "id, level, message, created_at";
+const SEL_POSITIONS = "asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist";
+
 /** Admin · Robô (Lab) — robô de trade PESSOAL no modo DEMO da OKX, isolado e admin-only.
  *  v2: estratégia automática (cruzamento de EMAs) compra/vende sozinha via cron, com
  *  gráfico (marcações de C/V), histórico de ordens e diário das decisões. */
@@ -28,7 +33,6 @@ export default function AdminBot() {
   const [chartOrders, setChartOrders] = useState<OrderRow[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
   const [shadowTrades, setShadowTrades] = useState<{ engine: string; asset: string; side: string; pnl_pct: number | null; closed_at: string }[]>([]);
-  const [shadowPos, setShadowPos] = useState<{ engine: string; asset: string; position: string; entry_px: number | null; stop_px: number | null }[]>([]);
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
   const [selMonth, setSelMonth] = useState(""); // mês escolhido no card "Saldo do mês" (vazio = mês vigente)
@@ -84,15 +88,14 @@ export default function AdminBot() {
   const [mPx, setMPx] = useState("");
 
   const loadBase = useCallback(async () => {
-    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }, { data: shp }] = await Promise.all([
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
-      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist").order("asset"),
+      supabase.from("bot_orders").select(SEL_ORDERS).order("created_at", { ascending: false }).limit(200),
+      supabase.from("bot_logs").select(SEL_LOGS).order("created_at", { ascending: false }).limit(60),
+      supabase.from("bot_positions").select(SEL_POSITIONS).order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
       supabase.from("bot_shadow_trades").select("engine, asset, side, pnl_pct, closed_at").order("closed_at", { ascending: false }).limit(1000),
-      supabase.from("bot_shadow").select("engine, asset, position, entry_px, stop_px"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -102,7 +105,6 @@ export default function AdminBot() {
     setPositions((pos as BotPosition[] | null) ?? []);
     setLearning((lrn as Learning | null) ?? null);
     setShadowTrades((sh as typeof shadowTrades | null) ?? []);
-    setShadowPos((shp as typeof shadowPos | null) ?? []);
   }, []);
 
   useEffect(() => {
@@ -144,9 +146,9 @@ export default function AdminBot() {
   const loadLive = useCallback(async () => {
     const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
       supabase.rpc("bot_get_config"),
-      supabase.from("bot_orders").select("id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine").order("created_at", { ascending: false }).limit(200),
-      supabase.from("bot_logs").select("id, level, message, created_at").order("created_at", { ascending: false }).limit(60),
-      supabase.from("bot_positions").select("asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist").order("asset"),
+      supabase.from("bot_orders").select(SEL_ORDERS).order("created_at", { ascending: false }).limit(200),
+      supabase.from("bot_logs").select(SEL_LOGS).order("created_at", { ascending: false }).limit(60),
+      supabase.from("bot_positions").select(SEL_POSITIONS).order("asset"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
