@@ -21,6 +21,13 @@ export default function ShadowTrades({ shadowTrades, pxDec }: {
     return BOT_ENGINES.filter((e) => set.has(e.eng));
   }, [shadowTrades]);
   const rows = useMemo(() => shadowTrades.filter((t) => robo === "all" || t.engine === robo).slice(0, 40), [shadowTrades, robo]);
+  // Resumo do robô filtrado (sobre TODOS os trades dele, não só os 40 exibidos): ganhos × perdas + líquido total.
+  const stats = useMemo(() => {
+    const list = shadowTrades.filter((t) => robo === "all" || t.engine === robo);
+    const nets = list.map((t) => (t.pnl_pct != null ? t.pnl_pct - FEE_RT : 0));
+    const wins = nets.filter((v) => v > 0).length;
+    return { n: list.length, wins, losses: list.length - wins, total: nets.reduce((s, v) => s + v, 0) };
+  }, [shadowTrades, robo]);
 
   return (
       <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
@@ -33,6 +40,15 @@ export default function ShadowTrades({ shadowTrades, pxDec }: {
             ))}
           </div>
         </div>
+        {stats.n > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/60 bg-background/40 px-3 py-2 text-[11px]">
+            <span className="text-muted-foreground">{stats.n} trade{stats.n === 1 ? "" : "s"}</span>
+            <span className="font-semibold text-emerald-500">{stats.wins} ganho{stats.wins === 1 ? "" : "s"}</span>
+            <span className="font-semibold text-rose-500">{stats.losses} perda{stats.losses === 1 ? "" : "s"}</span>
+            <span className="text-muted-foreground">acerto {stats.n ? Math.round((stats.wins / stats.n) * 100) : 0}%</span>
+            <span className="ml-auto font-semibold text-foreground">líquido total: <span className={stats.total > 0 ? "text-emerald-500" : stats.total < 0 ? "text-rose-500" : "text-muted-foreground"}>{stats.total >= 0 ? "+" : ""}{stats.total.toFixed(2)}%</span></span>
+          </div>
+        )}
         {rows.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border/60 bg-background/30 p-4 text-center text-[11px] text-muted-foreground">Nenhum trade fechado ainda {robo !== "all" ? `pelo ${ENGINE_NAME[robo] ?? robo}` : ""} — enche conforme os robôs abrem e fecham operações.</p>
         ) : (
