@@ -2,12 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { UTCTimestamp } from "lightweight-charts";
 
-import BotChart, { type BotCandle, type BotMarker, type BotPriceLine, type BotSub } from "../../components/admin/BotChart";
+import { type BotCandle, type BotMarker, type BotPriceLine, type BotSub } from "../../components/admin/BotChart";
+import BotReadingPanel from "../../components/admin/bot/BotReadingPanel";
+import BotChartSection from "../../components/admin/bot/BotChartSection";
+import RobotScoreboard from "../../components/admin/bot/RobotScoreboard";
+import BlockAccuracy from "../../components/admin/bot/BlockAccuracy";
+import AccountSummary from "../../components/admin/bot/AccountSummary";
+import OpenPositions from "../../components/admin/bot/OpenPositions";
 import Markdown from "../../components/Markdown";
 import { supabase } from "../../lib/supabase";
 import type { Config, Reading, OrderRow, LogRow, BotPosition, Learning, BtTrade } from "../../lib/bot/types";
-import { BARS, FLOW_SIGNALS, SIG_GROUPS, BLOCK_LINES, LOG_TONE, FEE_RT } from "../../lib/bot/constants";
-import { num, decisionLabel, sigRole, conf2Role } from "../../lib/bot/format";
+import { FLOW_SIGNALS, BLOCK_LINES, LOG_TONE } from "../../lib/bot/constants";
+import { num } from "../../lib/bot/format";
 import { invoke } from "../../lib/bot/api";
 
 // Colunas lidas do banco — compartilhadas entre a carga inicial (loadBase) e o polling (loadLive), DRY.
@@ -110,36 +116,6 @@ export default function AdminBot() {
   useEffect(() => {
     loadBase();
   }, [loadBase]);
-
-  // Desempenho por robô: REAL (conta demo, PnL em USDT, carimbado por engine) + PAPEL (sombra, % por trade).
-  // Só o motor VIVO opera real; o v28 carrega o histórico real de quando era o vivo. O papel roda p/ os dois
-  // sempre (comparação simultânea justa).
-  // Placar de TODAS as variantes (vivo + sombras) com a RÉGUA HONESTA: PnL LÍQUIDO DE TAXA.
-  // A auditoria (memória conf2-3day-verdict) provou que o bruto-% MENTE — a taxa taker/slippage
-  // come o edge. FEE_RT = 0,12%/round-trip (0,06%/lado, igual ao bot-backtest). Papel = comparação
-  // justa (mesma unidade %); o real em USDT (conta demo) entra só onde há ordens carimbadas por engine.
-  const engineBoard = useMemo(() => {
-    const ENGINES = [
-      { eng: "confluence2",     name: "Robô 2.0",              desc: "força ponderada dos 5 blocos" },
-      { eng: "confluence2_tec", name: "Robô 3.0",              desc: "gatilho Técnico + filtro SMC de zona" },
-      { eng: "smc",             name: "Robô v28",              desc: "SMC price-action + gates" },
-      { eng: "confluence2_ct",  name: "2.0 · trailing vela",   desc: "saída por vela" },
-      { eng: "confluence2_bg",  name: "2.0 · book-gate",       desc: "veta abrir contra o book varejo" },
-      { eng: "confluence2_cap", name: "2.0 · teto same-side",  desc: "máx 2 posições do mesmo lado" },
-      { eng: "confluence2_cd",  name: "2.0 · cooldown",        desc: "trava re-entrada por ~60min" },
-    ];
-    const liveEng = cfg?.bot_engine ?? "smc";
-    return ENGINES.map((e) => {
-      const tr = shadowTrades.filter((t) => t.engine === e.eng);
-      const wins = tr.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
-      const gross = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
-      const net = gross - tr.length * FEE_RT;                         // líquido = bruto − nº de trades × taxa RT
-      const realCloses = orders.filter((o) => o.action === "close" && o.pnl != null && (o.engine ?? "smc") === e.eng);
-      const realPnl = realCloses.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
-      const openNow = positions.filter((p) => p.position && p.position !== "flat" && (p.engine ?? "smc") === e.eng).length;
-      return { ...e, live: e.eng === liveEng, trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, gross, net, avgNet: tr.length ? net / tr.length : 0, realTrades: realCloses.length, realPnl, openNow };
-    }).sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0) || b.net - a.net);   // VIVO no topo, depois por líquido desc
-  }, [orders, positions, shadowTrades, cfg?.bot_engine]);
 
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
@@ -491,46 +467,6 @@ export default function AdminBot() {
     return { lines: shownLines, refs: [{ value: 0, color: "#64748b" }, { value: enter, color: "#475569", dashed: true }, { value: -enter, color: "#475569", dashed: true }] };
   }, [selPos?.block_hist, blockShow, cfg?.conf2_enter, candles]);
 
-  // ACERTO POR BLOCO (Robô 2.0): reconstrói dos trades fechados (bot_orders) + histórico de blocos (block_hist).
-  // Pra cada trade: no instante da ENTRADA, cada bloco CONCORDOU (saldo a favor) ou DISCORDOU da direção? E o
-  // trade GANHOU? Agrega: acerto quando concordou × quando discordou; o SPREAD é o edge real do bloco (régua p/
-  // calibrar os pesos com DADO). Janela = o que o block_hist cobre (~1 dia, cresce). Front-only, não toca no robô.
-  const blockPerf = useMemo(() => {
-    const histByAsset: Record<string, number[][]> = {};
-    for (const p of positions) if (Array.isArray(p.block_hist) && p.block_hist.length) histByAsset[p.asset] = (p.block_hist as number[][]).slice().sort((a, b) => a[0] - b[0]);
-    const BLK = BLOCK_LINES.filter((b) => b.id !== "wforce");
-    const acc: Record<string, { aN: number; aW: number; dN: number; dW: number }> = {};
-    for (const b of BLK) acc[b.id] = { aN: 0, aW: 0, dN: 0, dW: 0 };
-    const closes = orders.filter((o) => (o.engine ?? "smc") === "confluence2" && o.action === "close" && o.ok && o.pnl != null);
-    let matched = 0;
-    for (const cl of closes) {
-      const open = orders.filter((o) => o.inst_id === cl.inst_id && (o.engine ?? "smc") === "confluence2" && o.action === "open" && o.ok && new Date(o.created_at).getTime() < new Date(cl.created_at).getTime()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-      if (!open?.side || !cl.inst_id) continue;
-      const asset = cl.inst_id.replace(/USDT$|USD$|-SWAP$/i, "");
-      const hist = histByAsset[asset];
-      if (!hist) continue;
-      const et = Math.floor(new Date(open.created_at).getTime() / 1000);
-      let pt: number[] | null = null;
-      for (const p of hist) { if (p[0] <= et) pt = p; else break; }
-      if (!pt) continue;
-      matched++;
-      const won = (cl.pnl ?? 0) > 0;
-      const isLong = open.side === "buy";
-      for (const b of BLK) {
-        const saldo = Number(pt[b.idx]) || 0;
-        if ((isLong && saldo > 8) || (!isLong && saldo < -8)) { acc[b.id].aN++; if (won) acc[b.id].aW++; }
-        else if ((isLong && saldo < -8) || (!isLong && saldo > 8)) { acc[b.id].dN++; if (won) acc[b.id].dW++; }
-      }
-    }
-    const rows = BLK.map((b) => {
-      const a = acc[b.id];
-      const aw = a.aN ? Math.round((100 * a.aW) / a.aN) : null;
-      const dw = a.dN ? Math.round((100 * a.dW) / a.dN) : null;
-      return { id: b.id, label: b.label, color: b.color, aN: a.aN, aw, dN: a.dN, dw, spread: aw != null && dw != null ? aw - dw : null };
-    }).sort((x, y) => (y.spread ?? -999) - (x.spread ?? -999));
-    return { rows, matched };
-  }, [orders, positions]);
-
   // Linhas de nível: só a POSIÇÃO (Entrada/Pico/Stop) — os níveis SMC saíram do gráfico.
   const priceLines: BotPriceLine[] = [];
   if (selPos && selPos.position !== "flat") {
@@ -585,11 +521,6 @@ export default function AdminBot() {
       return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at, openAt, durMin, reason, estimated, note };
     });
   const durLabel = (m: number | null) => (m == null ? "—" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`);
-  // Saldo do dia/mês (RPC bot_pnl_summary, fuso BRT): mês vigente por padrão; seletor navega meses.
-  const MONTHS_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-  const monthLabel = (ym: string) => { const [y, m] = ym.split("-"); return `${MONTHS_PT[Number(m) - 1] ?? m}/${y.slice(2)}`; };
-  const curMonth = selMonth || pnlSummary?.months[0]?.month || "";
-  const monthData = pnlSummary?.months.find((m) => m.month === curMonth) ?? null;
 
   // ── FILTROS (moeda / status / período) aplicados às ordens e aos trades ──
   const assetOf = (o: OrderRow) => (o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "");
@@ -1036,379 +967,23 @@ export default function AdminBot() {
       {/* Gráfico, leitura e posições · aba Gráfico */}
       {tab === "grafico" && (<>
       {/* Leitura do robô (fluxo) — da moeda em foco (seletor no cabeçalho do gráfico) */}
-      {selReading && (() => {
-        const r = selReading;
-        const bias = r.bias;
-        // ±18 = limiar de regime do bot-run (up/down/range) — mesma régua do backend.
-        const bc = bias >= 18 ? "text-emerald-500" : bias <= -18 ? "text-rose-500" : "text-muted-foreground";
-        const flow = r.flowTilt ?? r.structure?.flowBias ?? 0;
-        const vetoAt = Math.max(1, Number(cfg?.flow_veto ?? 10));
-        const revMode = String(cfg?.rev_mode ?? "off");
-        const setup = r.setup ?? r.structure?.setup ?? null;
-        const planStop = r.planStop ?? r.structure?.planStop ?? null;
-        const planTarget = r.planTarget ?? r.structure?.planTarget ?? null;
-        const gate = r.gate ?? null;
-        const held = !!gate && /contra|bloqueada|segura|não faz short/i.test(gate);
-        const posNow = selPos?.position ?? r.position ?? "flat";
-        const setupUp = !!setup && setup.includes("↑");
-        const c2 = r.confluence2;
-        // FORÇA PONDERADA = Σ(peso × força do bloco) — a variável que decide (card 1). −100..+100.
-        const c2saldo = c2 && c2.wforce != null ? c2.wforce : null;
-        return (
-          <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · {selAsset} · {r.confluence2 ? "Robô 2.0 · confluência dos 5 blocos" : "SMC price-action"} 15m</h2>
-              <span className="text-[11px] text-muted-foreground">{cfg?.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
-            </div>
-            {/* Contexto — regime estrutural, zona, gamma, posição e auto-peso */}
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-[11px]">
-              <span className="font-semibold uppercase tracking-wide text-muted-foreground">Contexto</span>
-              <span className={`rounded px-1.5 py-0.5 font-bold ${bias >= 18 ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : bias <= -18 ? "bg-rose-500/20 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Regime pela estrutura SMC do 15m (BOS/CHoCH + swings): ±18 = tendência; entre eles = range.">estrutura 15m: {bias >= 18 ? "ALTA" : bias <= -18 ? "BAIXA" : "range"}</span>
-              {r.structure?.zone && (
-                <span className="text-muted-foreground" title="Zona do range entre swing low e swing high: discount = barato (favorece compra) · premium = caro (favorece venda) · equilíbrio = meio.">zona: <span className="text-foreground">{r.structure.zone}</span></span>
-              )}
-              {r.structure?.gammaRegime && r.structure.gammaRegime !== "neutral" && (
-                <span className={`rounded px-1.5 py-0.5 font-semibold ${r.structure.gammaRegime === "negative" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400"}`} title={r.structure.gammaRegime === "positive" ? "Gamma positivo: dealers amortecem o preço (pinning/reversão) — rompimento tende a falhar" : "Gamma negativo: dealers amplificam (tendência) — rompimento anda mais"}>γ {r.structure.gammaRegime === "positive" ? "positivo (reversão)" : "negativo (tendência)"}</span>
-              )}
-              <span className={`rounded px-1.5 py-0.5 font-semibold ${posNow === "long" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : posNow === "short" ? "bg-rose-500/15 text-rose-600 dark:text-rose-400" : "bg-muted text-muted-foreground"}`} title="Posição atual do robô nesta moeda (pirâmide = adições no lucro).">posição: {posNow === "long" ? "LONG" : posNow === "short" ? "SHORT" : "fora"}{posNow !== "flat" && (selPos?.adds ?? r.adds ?? 0) > 0 ? ` +${selPos?.adds ?? r.adds}` : ""}{posNow !== "flat" && r.leverage ? ` · ${r.leverage}x` : ""}</span>
-              {r.structure?.autoWeight?.on && (
-                <span className="rounded bg-violet-500/15 px-1.5 py-0.5 font-semibold text-violet-600 dark:text-violet-400" title="Auto-ponderação ligada: o aprendizado desta moeda ajusta o peso dos sinais (o que acerta pesa mais).">auto-peso on</span>
-              )}
-            </div>
-            {/* Pipeline de decisão: estrutura decide → gatilho arma → fluxo/técnico vetam → decisão */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                {c2 && c2saldo != null ? (<>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="FORÇA PONDERADA = Σ (peso do bloco × força do bloco), −100..+100. É a variável que DECIDE: abre quando passa ±o limiar de entrada. Blocos com mais peso puxam mais.">1 · Força ponderada</div>
-                  <div className={`num text-2xl font-bold ${c2saldo > 0 ? "text-emerald-500" : c2saldo < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{c2saldo >= 0 ? "+" : ""}{c2saldo}</div>
-                  <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
-                    <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                    <div className={`absolute top-0 h-full rounded-full ${c2saldo >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={c2saldo >= 0 ? { left: "50%", width: `${Math.abs(c2saldo) / 2}%` } : { right: "50%", width: `${Math.abs(c2saldo) / 2}%` }} />
-                  </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">abre em ±{c2.enter} · segura ±{c2.hold}</div>
-                </>) : (<>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Viés da estrutura SMC do 15m — a ÚNICA leitura que abre trade.">1 · Estrutura 15m</div>
-                  <div className={`num text-2xl font-bold ${bc}`}>{bias >= 0 ? "+" : ""}{bias}</div>
-                  <div className="relative mt-1 h-1.5 rounded-full bg-muted/50">
-                    <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                    <div className={`absolute top-0 h-full rounded-full ${bias >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={bias >= 0 ? { left: "50%", width: `${Math.abs(bias) / 2}%` } : { right: "50%", width: `${Math.abs(bias) / 2}%` }} />
-                  </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">decide entrada, stop e alvo</div>
-                </>)}
-              </div>
-              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Setup SMC armado agora: imbalance (FVG fresco) ou OB/FVG a favor de BOS/CHoCH após varrer liquidez ou em discount/premium.">2 · Gatilho (setup)</div>
-                <div className={`truncate text-lg font-bold leading-8 ${setup ? (setupUp ? "text-emerald-500" : "text-rose-500") : "text-muted-foreground"}`} title={setup ?? undefined}>{setup ?? "nenhum"}</div>
-                <div className="text-[10px] text-muted-foreground">{setup ? `stop ${num(planStop)} · alvo ${num(planTarget)}` : "aguarda OB/FVG ou imbalance"}</div>
-              </div>
-              <div className={`rounded-lg border p-3 text-center ${held && gate!.includes("confluência") ? "border-amber-500/40 bg-amber-500/5" : "border-border/70 bg-background/40"}`}>
-                {(() => {
-                  const c2 = r.confluence2;
-                  // ROBÔ 2.0 — os 5 blocos (força IGUAL por indicador): X/5 na direção + bolinha por bloco + força total.
-                  if (c2 && c2.groups?.length) {
-                    const dir = c2.dir;
-                    const dirLbl = dir === "long" ? "Compra" : dir === "short" ? "Venda" : "Neutro";
-                    return (<>
-                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Como os 5 blocos estão votando AGORA (uma bolinha por bloco). O PESO de cada bloco aparece no card do bloco lá embaixo. Quem decide é a força ponderada (card 1).">3 · Blocos</div>
-                      <div className={`text-2xl font-bold ${dir === "long" ? "text-emerald-500" : dir === "short" ? "text-rose-500" : "text-muted-foreground"}`}>{dirLbl}</div>
-                      <div className="mt-1 flex items-center justify-center gap-1.5">
-                        {c2.groups.map((g) => (
-                          <span key={g.key} title={`${g.label} (peso ${g.weight}%): ${g.up}↑ ${g.dn}↓ · saldo ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
-                        ))}
-                      </div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">abre em ±{c2.enter} de força</div>
-                    </>);
-                  }
-                  const scope = String((cfg as Record<string, unknown> | null)?.conf_scope ?? "smc_flow");
-                  const groups = (r.confluence ?? []).filter((g) => scope !== "smc_flow" || g.key === "estrutura" || g.key === "fluxo");
-                  const need = Math.min(groups.length || 2, Number(r.confMin ?? cfg?.conf_min ?? 2));
-                  return (<>
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Confluência v21 'SMC + pressão': só ESTRUTURA (SMC 15m) e FLUXO (book inst+varejo, liqs, gamma, CVD div) decidem — os dois precisam votar na direção do setup (2 de 2). Técnico e Sentimento viraram estudo (fora da decisão).">3 · Confluência (SMC + pressão)</div>
-                    {groups.length ? (<>
-                      <div className="num text-2xl font-bold text-foreground" title={r.confVotes ? `${r.confVotes.for} a favor × ${r.confVotes.against} contra` : undefined}>{r.confVotes ? `${r.confVotes.for}/${groups.length}` : "—"}</div>
-                      <div className="mt-1 flex items-center justify-center gap-1.5">
-                        {groups.map((g) => (
-                          <span key={g.key} title={`${g.label}: ${g.score >= 0 ? "+" : ""}${g.score} (${g.vote === 1 ? "compra" : g.vote === -1 ? "venda" : "neutro"})`} className={`h-2.5 w-2.5 rounded-full ${g.vote === 1 ? "bg-emerald-500" : g.vote === -1 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
-                        ))}
-                      </div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">precisa {need} de {groups.length} · fluxo {flow >= 0 ? "+" : ""}{flow}</div>
-                    </>) : (<>
-                      <div className={`num text-2xl font-bold ${flow >= vetoAt ? "text-emerald-500" : flow <= -vetoAt ? "text-rose-500" : "text-muted-foreground"}`}>{flow >= 0 ? "+" : ""}{flow}</div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">aguardando 1º ciclo…</div>
-                    </>)}
-                  </>);
-                })()}
-              </div>
-              <div className="rounded-lg border border-border/70 bg-background/40 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">4 · Decisão</div>
-                {(() => { const d = selPos?.last_decision ?? cfg?.last_decision; return <div className={`text-2xl font-bold ${d === "buy" || d === "long" || d === "add" ? "text-emerald-500" : d === "sell" || d === "short" ? "text-rose-500" : "text-foreground"}`}>{d === "add" ? "Pirâmide" : decisionLabel(d)}</div>; })()}
-                <div className="text-[10px] text-muted-foreground">{revMode === "off" ? "sai só por stop/alvo/trailing" : revMode === "imbalance" ? "reverte só com FVG fresco contra" : "reverte a cada sinal contrário"}</div>
-              </div>
-            </div>
-            {/* Motivo — o porquê da decisão deste ciclo (gate de veto ou nota do plano) */}
-            {gate && (
-              <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] ${held ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : gate.startsWith("sem") ? "border-border/70 bg-background/40 text-muted-foreground" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
-                {held ? <>⏸ <strong>Segurou:</strong> {gate}</> : gate.startsWith("sem") ? <>Sem gatilho neste ciclo: {gate} — o robô aguarda um setup SMC a favor da estrutura.</> : <>🎯 <strong>Gatilho armado:</strong> {gate}</>}
-              </div>
-            )}
-            <div className="mt-3 space-y-3">
-              {SIG_GROUPS.map((grp) => {
-                const items = r.signals.filter((s) => s.group === grp && !(r.confluence2 && s.key === "vwap")); // VWAP fora do bloco Técnico do Robô 2.0 (segue visível no v28)
-                if (!items.length) return null;
-                const blk = r.confluence2?.groups.find((g) => g.label === grp); // força do bloco (Robô 2.0)
-                return (
-                  <div key={grp} className={`rounded-lg border p-2.5 ${blk ? (blk.vote === 1 ? "border-emerald-500/30 bg-emerald-500/[0.04]" : blk.vote === -1 ? "border-rose-500/30 bg-rose-500/[0.04]" : "border-border/60 bg-background/30") : "border-border/60 bg-background/30"}`}>
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
-                        {grp}
-                        {blk && <span className="rounded bg-primary/15 px-1 py-px text-[9px] font-bold text-primary" title="Peso deste bloco na força ponderada (ajustável em Configuração).">{blk.weight}%</span>}
-                      </span>
-                      {blk && (
-                        <div className="flex items-center gap-1.5" title="SALDO DO BLOCO (−100..+100): indicadores com peso igual, o bloco segue a maioria. Entra na força ponderada com o peso do bloco.">
-                          <span className="text-[10px] tabular-nums text-muted-foreground">{blk.up}↑ {blk.dn}↓</span>
-                          <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
-                            <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                            <div className={`absolute top-0 h-full rounded-full ${blk.score >= 0 ? "bg-emerald-500/80" : "bg-rose-500/80"}`} style={blk.score >= 0 ? { left: "50%", width: `${Math.abs(blk.score) / 2}%` } : { right: "50%", width: `${Math.abs(blk.score) / 2}%` }} />
-                          </div>
-                          <span className={`num w-9 text-right text-xs font-bold ${blk.score > 0 ? "text-emerald-500" : blk.score < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{blk.score >= 0 ? "+" : ""}{blk.score}</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      {items.map((s) => { const role = r.confluence2 ? conf2Role(s.key) : sigRole(s.key); return (
-                        <div key={s.key} className="flex items-center gap-2 text-xs">
-                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.score > 8 ? "bg-emerald-500" : s.score < -8 ? "bg-rose-500" : "bg-muted-foreground/40"}`} />
-                          <span className="w-40 shrink-0 truncate text-foreground" title={s.label}>{s.label}</span>
-                          <span className={`hidden w-12 shrink-0 rounded px-1 py-px text-center text-[9px] font-semibold uppercase sm:inline-block ${role.cls}`} title={role.title}>{role.tag}</span>
-                          <span className="hidden min-w-0 flex-1 truncate text-muted-foreground sm:block" title={s.note}>{s.note}</span>
-                          <div className="relative h-1.5 w-16 shrink-0 rounded-full bg-muted/50">
-                            <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
-                            <div className={`absolute top-0 h-full rounded-full ${s.score >= 0 ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={s.score >= 0 ? { left: "50%", width: `${Math.abs(s.score) / 2}%` } : { right: "50%", width: `${Math.abs(s.score) / 2}%` }} />
-                          </div>
-                          <span className={`num w-8 shrink-0 text-right ${s.score >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{s.score >= 0 ? "+" : ""}{s.score}</span>
-                        </div>
-                      ); })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {r.confluence2 ? (
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o <strong>Robô 2.0</strong> decide (força ponderada dos 5 blocos): cada bloco — <strong>Estrutura · Microestrutura · Fluxo · Posicionamento · Técnico</strong> — tem um <strong>PESO</strong> (ajustável em Configuração; padrão 30·25·13·12·20). Dentro do bloco os indicadores têm força igual e o bloco vira um <strong>saldo</strong> (−100..+100). A <strong>força ponderada</strong> = Σ (peso × saldo) é quem decide: <strong>abre</strong> quando passa ±o limiar de entrada, <strong>segura</strong> enquanto a força se sustenta (histerese) e <strong>fecha</strong> perto de zero — e <strong>vira a mão</strong> se a força cruza o limiar do lado oposto. Bloco neutro contribui 0 (não trava). Stop de catástrofe largo só de proteção. O bloco Técnico junta <strong>tendência</strong> (EMA/ADX) e <strong>momentum</strong> (RSI/MACD/Squeeze). Ignora o setup SMC e os gates do v28. Put/Call Wall fica medido (invertido, não vota). Vale pra todas as moedas. Educacional — não é recomendação.</p>
-            ) : (
-            <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v21 · SMC + pressão): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — reteste de OB/FVG pós-BOS/CHoCH (prioritário) ou imbalance em reteste, sempre com a direção validada por <strong>maioria 2-de-3 das leituras de estrutura</strong>, stop na invalidação estrutural e alvo na liquidez/PDH-PDL. Antes de executar passa pelos gates: <strong>1 tiro por zona</strong>, sessão, <strong>bússola 4H</strong> (a estrutura do TF maior precisa concordar) e a confluência <strong>Estrutura + Fluxo</strong> (2 de 2 — os sinais <em>vota</em> são a pressão do book/fluxo). Os <em>estudo</em> (Técnico · Sentimento) e os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
-            )}
-          </div>
-        );
-      })()}
+      <BotReadingPanel selReading={selReading} cfg={cfg} selPos={selPos} selAsset={selAsset} />
 
       {/* Gráfico com marcações */}
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">Gráfico · {selInst} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
-            {/* Seletor de moeda: troca o gráfico + a leitura (viés/decisão/sinais) para o ativo escolhido. */}
-            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-0.5">
-              {ASSET_LIST.map((a) => (
-                <button key={a} onClick={() => setSelAsset(a)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${selAsset === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{a}</button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
-              {BARS.map((b) => <button key={b} onClick={() => cfg && setCfg({ ...cfg, bar: b })} className={`rounded-md px-2 py-0.5 transition-colors ${cfg?.bar === b ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>{b}</button>)}
-            </div>
-            <span className="flex items-center gap-1" title="Entrada de COMPRA (long)"><span className="text-emerald-500">▲</span> compra</span>
-            <span className="flex items-center gap-1" title="Entrada de VENDA (short)"><span className="text-rose-500">▼</span> venda</span>
-            <span className="flex items-center gap-1" title="Saída/fechamento da posição"><span className="text-slate-400">•</span> saída</span>
-            <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
-            <span className="hidden text-muted-foreground/80 sm:inline">indicadores:</span>
-            {BLOCK_LINES.map((b) => {
-              const on = blockShow[b.id] !== false;
-              const short = b.id === "wforce" ? "Força" : b.id === "micro" ? "Micro" : b.id === "posicionamento" ? "Posic" : b.label;
-              return (
-                <button key={b.id} onClick={() => setBlockShow((s) => ({ ...s, [b.id]: !on }))} title={`Mostrar/ocultar o indicador ${b.label} no sub-painel do gráfico`} className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium transition-colors ${on ? "border-border text-foreground hover:bg-muted" : "border-border/50 text-muted-foreground/50 line-through"}`}>
-                  <span className="inline-block h-2 w-2 rounded-full" style={on ? { backgroundColor: b.color } : { border: `1px solid ${b.color}` }} />{short}
-                </button>
-              );
-            })}
-            <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
-          </div>
-        </div>
-        {connected && candles.length > 0 ? (
-          <BotChart candles={candles} markers={markers} priceLines={priceLines} sub={sub} lines={[]} decimals={dec} height={sub ? 520 : 420} fitKey={`${selInst}-${cfg?.bar ?? ""}`} />
-        ) : (
-          <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
-        )}
-      </div>
+      <BotChartSection selInst={selInst} cfg={cfg} setCfg={setCfg} ASSET_LIST={ASSET_LIST} selAsset={selAsset} setSelAsset={setSelAsset} blockShow={blockShow} setBlockShow={setBlockShow} refresh={refresh} busy={busy} connected={connected} candles={candles} markers={markers} priceLines={priceLines} sub={sub} dec={dec} />
 
       {/* Desempenho de TODAS as variantes (vivo + sombras) — régua HONESTA: líquido de taxa (0,12%/RT) */}
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs <span className="font-normal text-muted-foreground">— líquido de taxa</span></h2>
-          <span className="text-[10px] text-muted-foreground">papel (%) · líquido = bruto − 0,12%/trade · o ● VIVO também opera real</span>
-        </div>
-        <p className="mb-2 text-[11px] text-muted-foreground">A régua da auditoria: o <b>líquido</b> é o que conta — a taxa comeu o edge do 2.0 no bruto. O <b>Robô 3.0</b> = gatilho do bloco Técnico + filtro SMC (nunca compra em resistência/premium nem vende em suporte/discount).</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                <th className="py-1 text-left font-semibold">Robô</th>
-                <th className="py-1 text-right font-semibold">trades</th>
-                <th className="py-1 text-right font-semibold">acerto</th>
-                <th className="py-1 text-right font-semibold" title="PnL bruto somado no papel, SEM taxa">bruto %</th>
-                <th className="py-1 text-right font-semibold" title="bruto − 0,12%/trade (a régua que vale)">líquido %</th>
-                <th className="py-1 text-right font-semibold" title="líquido médio por trade">méd/trade</th>
-                <th className="py-1 text-right font-semibold" title={`PnL real na conta demo (só engines com ordens carimbadas)`}>real {quote}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {engineBoard.map((e) => (
-                <tr key={e.eng} className={`border-t border-border/40 ${e.live ? "bg-emerald-500/[0.06]" : ""}`}>
-                  <td className="py-1.5">
-                    <span className="font-semibold text-foreground">{e.name}</span>
-                    {e.live && <span className="ml-1.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">● VIVO</span>}
-                    {e.openNow > 0 && <span className="ml-1 text-[9px] text-muted-foreground">· {e.openNow} aberta{e.openNow === 1 ? "" : "s"}</span>}
-                    <div className="text-[10px] font-normal text-muted-foreground">{e.desc}</div>
-                  </td>
-                  <td className="py-1.5 text-right tabular-nums text-muted-foreground">{e.trades}</td>
-                  <td className="py-1.5 text-right tabular-nums text-muted-foreground">{e.trades ? `${e.win}%` : "—"}</td>
-                  <td className={`py-1.5 text-right tabular-nums ${e.gross > 0 ? "text-emerald-500" : e.gross < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.gross >= 0 ? "+" : ""}${e.gross.toFixed(1)}` : "—"}</td>
-                  <td className={`py-1.5 text-right tabular-nums font-semibold ${e.net > 0 ? "text-emerald-500" : e.net < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.net >= 0 ? "+" : ""}${e.net.toFixed(1)}` : "—"}</td>
-                  <td className={`py-1.5 text-right tabular-nums ${e.avgNet > 0 ? "text-emerald-500" : e.avgNet < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.avgNet >= 0 ? "+" : ""}${e.avgNet.toFixed(2)}` : "—"}</td>
-                  <td className={`py-1.5 text-right tabular-nums ${e.realPnl > 0 ? "text-emerald-500" : e.realPnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.realTrades ? `${e.realPnl >= 0 ? "+" : ""}${num(e.realPnl)}` : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-[10px] text-muted-foreground"><b>Papel</b> = todas as variantes simuladas nas mesmas moedas (régua justa). <b>Líquido</b> desconta 0,12%/trade (taker 0,04% + slippage 0,02%, os dois lados). <b>Real {quote}</b> = conta demo, só onde há ordens carimbadas por engine (o ● VIVO + histórico do v28). Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
-      </div>
+      <RobotScoreboard shadowTrades={shadowTrades} orders={orders} positions={positions} liveEngine={cfg?.bot_engine} quote={quote} />
 
       {/* Acerto por bloco — régua honesta pra calibrar os pesos com DADO (não achismo) */}
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">🎯 Acerto por bloco <span className="font-normal text-muted-foreground">— Robô 2.0</span></h2>
-          <span className="text-[10px] text-muted-foreground">{blockPerf.matched} trade{blockPerf.matched === 1 ? "" : "s"} medido{blockPerf.matched === 1 ? "" : "s"} · janela ~1 dia, cresce</span>
-        </div>
-        <p className="mb-2 text-[11px] text-muted-foreground">Quando o bloco <b>concordou</b> com a direção do trade (na entrada), quantos % ganharam × quando <b>discordou</b>. O <b>spread</b> (concordou − discordou) é o edge real: alto = o bloco prevê e merece mais peso; ≈0 ou negativo = ruído, candidato a menos peso.</p>
-        {blockPerf.matched < 3 ? (
-          <div className="rounded-lg border border-dashed border-border/60 bg-background/30 p-4 text-center text-[11px] text-muted-foreground">Ainda coletando — precisa de trades fechados COM o histórico de blocos (que começou a gravar hoje). Enche ao longo do dia; volte em algumas horas.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <th className="py-1 text-left font-semibold">Bloco</th>
-                  <th className="py-1 text-right font-semibold" title="Nº de trades em que o bloco concordou com a direção">concordou (n)</th>
-                  <th className="py-1 text-right font-semibold" title="% de acerto dos trades quando o bloco concordou">acerto ✓</th>
-                  <th className="py-1 text-right font-semibold" title="% de acerto quando o bloco discordou">acerto ✗</th>
-                  <th className="py-1 text-right font-semibold" title="concordou − discordou (pontos %); o edge do bloco">spread</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blockPerf.rows.map((r) => (
-                  <tr key={r.id} className="border-t border-border/40">
-                    <td className="py-1.5"><span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: r.color }} />{r.label}</td>
-                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">{r.aN}</td>
-                    <td className="py-1.5 text-right tabular-nums text-foreground">{r.aw != null ? `${r.aw}%` : "—"}</td>
-                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">{r.dw != null ? `${r.dw}%` : "—"}</td>
-                    <td className={`py-1.5 text-right font-bold tabular-nums ${r.spread == null ? "text-muted-foreground" : r.spread >= 15 ? "text-emerald-500" : r.spread <= 0 ? "text-rose-500" : "text-foreground"}`}>{r.spread != null ? `${r.spread >= 0 ? "+" : ""}${r.spread}pp` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="mt-2 text-[10px] text-muted-foreground">Amostra pequena no começo — <b>não calibre peso ainda</b>; espere ~1 semana pra ter confiança (tipo o que fizemos com as paredes, n=65). Spread verde forte (≥15pp) = candidato a MAIS peso; ≤0 = candidato a MENOS. Janela limitada a ~1 dia (o histórico de blocos); dá pra tornar permanente depois se precisar de amostra maior.</p>
-      </div>
+      <BlockAccuracy orders={orders} positions={positions} />
 
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">Resumo da conta (demo)</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio total</div>
-            <div className="num text-2xl font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">PnL aberto agora</div>
-            <div className={`num text-2xl font-bold ${!hasLivePnl ? "text-muted-foreground" : openPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{hasLivePnl ? `${openPnl >= 0 ? "+" : ""}${num(openPnl)} ${quote}` : "—"}</div>
-            <div className="text-[10px] text-muted-foreground">soma das posições em aberto</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Saldo do dia</div>
-            <div className={`num text-2xl font-bold ${!pnlSummary || !pnlSummary.day.trades ? "text-muted-foreground" : pnlSummary.day.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{pnlSummary && pnlSummary.day.trades ? `${pnlSummary.day.pnl >= 0 ? "+" : ""}${num(pnlSummary.day.pnl)} ${quote}` : "—"}</div>
-            <div className="text-[10px] text-muted-foreground">{pnlSummary && pnlSummary.day.trades ? `${pnlSummary.day.wins}/${pnlSummary.day.trades} no verde · hoje` : "sem trades hoje"}</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="mb-0.5 flex items-center justify-between gap-1">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Saldo do mês</span>
-              {pnlSummary && pnlSummary.months.length > 0 && (
-                <select value={curMonth} onChange={(e) => setSelMonth(e.target.value)} className="rounded border border-border/70 bg-background/60 px-1 py-0.5 text-[10px] text-foreground focus:outline-none" title="escolher mês">
-                  {pnlSummary.months.map((m) => <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>)}
-                </select>
-              )}
-            </div>
-            <div className={`num text-2xl font-bold ${!monthData || !monthData.trades ? "text-muted-foreground" : monthData.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{monthData && monthData.trades ? `${monthData.pnl >= 0 ? "+" : ""}${num(monthData.pnl)} ${quote}` : "—"}</div>
-            <div className="text-[10px] text-muted-foreground">{monthData && monthData.trades ? `${monthData.wins}/${monthData.trades} no verde` : "sem trades no mês"}</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Situação</div>
-            <div className={`text-lg font-bold ${openPositions.length ? "text-foreground" : "text-muted-foreground"}`}>{openPositions.length ? `${openPositions.length} rodando` : "Fora do mercado"}</div>
-            <div className="text-[10px] text-muted-foreground">{cfg?.enabled ? "robô ligado" : "robô desligado"}</div>
-          </div>
-        </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">{isFut ? "Futuros: long e short com margem em " : "Opera com capital em "}{quote}; saldos pré-existentes ficam intocados.</p>
-      </div>
+      <AccountSummary totalEq={totalEq} hasLivePnl={hasLivePnl} openPnl={openPnl} quote={quote} pnlSummary={pnlSummary} selMonth={selMonth} setSelMonth={setSelMonth} openPositions={openPositions} cfg={cfg} isFut={isFut} />
 
       {/* Posições abertas — o que o robô tem em aberto AGORA, com PnL ao vivo e fechar por moeda. */}
       {positions.length > 0 && (
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-foreground">Posições abertas</h2>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${openPositions.length ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{openPositions.length ? `${openPositions.length} rodando` : "nenhuma aberta"}</span>
-          </div>
-          {openPositions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma posição aberta — o robô está <strong>fora do mercado</strong> em todas as moedas.</p>
-          ) : (
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-              {openPositions.map((p) => {
-                const live = p.inst_id ? livePos[p.inst_id] : undefined;
-                const long = p.position === "long";
-                const pdec = pxDec(p.entry_px);
-                const mark = live?.markPx ?? null;
-                const movePct = p.entry_px && mark ? ((mark - p.entry_px) / p.entry_px) * 100 * (long ? 1 : -1) : null;
-                return (
-                  <div key={p.asset} className={`rounded-lg border p-3 ${long ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-rose-500/30 bg-rose-500/[0.06]"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-foreground">{p.asset}</span>
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${p.engine === "confluence2" ? "bg-sky-500/15 text-sky-600 dark:text-sky-400" : "bg-violet-500/15 text-violet-600 dark:text-violet-400"}`} title="robô que abriu esta posição">{p.engine === "confluence2" ? "Robô 2.0" : "Robô v28"}</span>
-                      </span>
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${long ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/20 text-rose-600 dark:text-rose-400"}`}>{long ? "▲ LONG" : "▼ SHORT"}{isFut && cfg?.leverage ? ` ${cfg.leverage}x` : ""}</span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold"><span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />rodando</span>{p.ctrend && <span className="rounded bg-amber-500/15 px-1 py-0.5 text-amber-600 dark:text-amber-400" title="Aberta contra a tendência — stop curto e tamanho reduzido">contra-tend.</span>}</div>
-                    {live ? (
-                      <div className={`num mt-1 text-lg font-bold ${live.uPnl >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{live.uPnl >= 0 ? "+" : ""}{num(live.uPnl)} {quote}{movePct != null && <span className="ml-1 text-[11px] font-medium">({live.uPnl >= 0 ? "+" : ""}{movePct.toFixed(2)}%)</span>}</div>
-                    ) : (
-                      <div className="mt-1 text-[11px] text-muted-foreground">PnL ao vivo indisponível</div>
-                    )}
-                    <div className="mt-1 text-[10px] text-muted-foreground">entrada <span className="num">{p.entry_px != null ? num(p.entry_px, pdec) : "—"}</span>{mark ? <> · agora <span className="num">{num(mark, pdec)}</span></> : null}{p.adds != null && p.adds > 0 && <span className="ml-1 text-amber-500">· 🔺{p.adds}x</span>}{p.stop_px != null && <span className="ml-1 text-rose-500/80" title="Nível de stop de risco (fecha se furar)"> · stop <span className="num">{num(p.stop_px, pdec)}</span></span>}</div>
-                    {p.last_bias != null && (
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">viés atual <span className={`num font-semibold ${p.last_bias > 0 ? "text-emerald-600 dark:text-emerald-400" : p.last_bias < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>{p.last_bias >= 0 ? "+" : ""}{p.last_bias}</span></div>
-                    )}
-                    <button onClick={() => closeAsset(p.asset, p.inst_id)} disabled={busy !== null || !connected} className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-500/25 disabled:opacity-50 dark:text-rose-400">{busy === "close" + p.asset ? "Fechando…" : "✕ Fechar agora"}</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {flatAssets.length > 0 && (
-            <p className="mt-3 text-[11px] text-muted-foreground">Fora do mercado: <span className="font-medium text-foreground">{flatAssets.join(" · ")}</span></p>
-          )}
-          <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (consenso de 5 timeframes; a tendência 4H+1D manda no lado). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
-        </div>
+        <OpenPositions openPositions={openPositions} flatAssets={flatAssets} livePos={livePos} cfg={cfg} quote={quote} busy={busy} connected={connected} isFut={isFut} closeAsset={closeAsset} pxDec={pxDec} />
       )}
       </>)}
 
