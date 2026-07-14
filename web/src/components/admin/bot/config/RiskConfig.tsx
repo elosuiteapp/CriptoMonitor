@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import InfoTip from "../../../InfoTip";
 import type { Config } from "../../../../lib/bot/types";
 
 /** 1 · Execução & risco — quanto arrisca por trade e os freios de segurança. */
@@ -35,7 +36,7 @@ export default function RiskConfig({ cfg, setCfg, input, isBinance, isFut }: {
           </label>
         )}
         {isFut && (
-          <label className="text-xs text-muted-foreground">Perda diária máx (%) <span title="Circuit breaker: bateu a perda no dia, o robô para de abrir posição até o dia virar.">ⓘ</span>
+          <label className="text-xs text-muted-foreground">Perda diária máx (%) <InfoTip text="Circuit breaker: bateu a perda no dia, o robô para de abrir posição até o dia virar." />
             <input type="number" step="0.5" min="0" className={`${input} mt-1`} value={cfg.daily_loss_pct ?? 5} onChange={(e) => setCfg({ ...cfg, daily_loss_pct: Number(e.target.value) })} />
           </label>
         )}
@@ -45,7 +46,7 @@ export default function RiskConfig({ cfg, setCfg, input, isBinance, isFut }: {
           </label>
         )}
         {isFut && (
-          <label className="text-xs text-muted-foreground">Cooldown pós-stop (min) <span title="Depois de um stop, a moeda fica de castigo esse tempo antes de reabrir (evita revenge trade no mesmo ruído).">ⓘ</span>
+          <label className="text-xs text-muted-foreground">Cooldown pós-stop (min) <InfoTip text="Depois de um stop, a moeda fica de castigo esse tempo antes de reabrir (evita revenge trade no mesmo ruído)." />
             <input type="number" min="0" className={`${input} mt-1`} value={cfg.cooldown_min ?? 15} onChange={(e) => setCfg({ ...cfg, cooldown_min: Number(e.target.value) })} />
           </label>
         )}

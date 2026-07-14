@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import type { LogRow } from "../../../lib/bot/types";
 import { LOG_TONE } from "../../../lib/bot/constants";
 
@@ -15,7 +16,7 @@ export default function BotJournal({ logs, dLevel, setDLevel, dAssetF, setDAsset
   const dAssets = [...new Set(logs.map((l) => l.message.match(/^\[(\w+)\]/)?.[1]).filter(Boolean))].sort() as string[];
   const rows = logs.filter((l) => (dLevel === "all" || l.level === dLevel) && (dAssetF === "all" || l.message.startsWith(`[${dAssetF}]`)));
   return (
-          <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+          <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground">Diário do robô</h2>
               <div className="flex flex-wrap items-center gap-2">
@@ -48,6 +49,6 @@ export default function BotJournal({ logs, dLevel, setDLevel, dAssetF, setDAsset
                 ))}
               </div>
             )}
-          </div>
+          </Card>
   );
 }

@@ -1,8 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import BotChart, { type BotCandle, type BotMarker, type BotPriceLine, type BotSub } from "../BotChart";
+import Card from "../../ui/Card";
+import { TogglePill, PillRow } from "../../TogglePill";
 import { BARS, BLOCK_LINES } from "../../../lib/bot/constants";
 import type { Config } from "../../../lib/bot/types";
+
+// Cor da bolinha de cada bloco (casa com BLOCK_LINES em constants) → classe bg-* do TogglePill.
+const BLOCK_COLOR: Record<string, string> = { wforce: "bg-slate-200", estrutura: "bg-emerald-500", micro: "bg-sky-400", fluxo: "bg-violet-400", posicionamento: "bg-amber-400", tecnico: "bg-pink-400" };
 
 /** Gráfico com marcações — seletor de moeda/TF + toggles de indicador + <BotChart>. */
 export default function BotChartSection({ selInst, cfg, setCfg, ASSET_LIST, selAsset, setSelAsset, blockShow, setBlockShow, refresh, busy, connected, candles, markers, priceLines, sub, dec }: {
@@ -24,7 +29,7 @@ export default function BotChartSection({ selInst, cfg, setCfg, ASSET_LIST, selA
   dec: number;
 }) {
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold text-foreground">Gráfico · {selInst} <span className="text-xs font-normal text-muted-foreground">({cfg?.bar})</span></h2>
@@ -43,16 +48,15 @@ export default function BotChartSection({ selInst, cfg, setCfg, ASSET_LIST, selA
             <span className="flex items-center gap-1" title="Entrada de VENDA (short)"><span className="text-rose-500">▼</span> venda</span>
             <span className="flex items-center gap-1" title="Saída/fechamento da posição"><span className="text-slate-400">•</span> saída</span>
             <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
-            <span className="hidden text-muted-foreground/80 sm:inline">indicadores:</span>
-            {BLOCK_LINES.map((b) => {
-              const on = blockShow[b.id] !== false;
-              const short = b.id === "wforce" ? "Força" : b.id === "micro" ? "Micro" : b.id === "posicionamento" ? "Posic" : b.label;
-              return (
-                <button key={b.id} onClick={() => setBlockShow((s) => ({ ...s, [b.id]: !on }))} title={`Mostrar/ocultar o indicador ${b.label} no sub-painel do gráfico`} className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium transition-colors ${on ? "border-border text-foreground hover:bg-muted" : "border-border/50 text-muted-foreground/50 line-through"}`}>
-                  <span className="inline-block h-2 w-2 rounded-full" style={on ? { backgroundColor: b.color } : { border: `1px solid ${b.color}` }} />{short}
-                </button>
-              );
-            })}
+            <PillRow label="indicadores:">
+              {BLOCK_LINES.map((b) => {
+                const on = blockShow[b.id] !== false;
+                const short = b.id === "wforce" ? "Força" : b.id === "micro" ? "Micro" : b.id === "posicionamento" ? "Posic" : b.label;
+                return (
+                  <TogglePill key={b.id} label={short} active={on} color={BLOCK_COLOR[b.id]} onToggle={() => setBlockShow((s) => ({ ...s, [b.id]: !on }))} desc={`Mostrar/ocultar o indicador ${b.label} no sub-painel do gráfico`} />
+                );
+              })}
+            </PillRow>
             <button onClick={refresh} disabled={busy !== null || !connected} className="rounded-lg border border-border px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">{busy === "refresh" ? "…" : "Atualizar"}</button>
           </div>
         </div>
@@ -61,6 +65,6 @@ export default function BotChartSection({ selInst, cfg, setCfg, ASSET_LIST, selA
         ) : (
           <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">{connected ? "Carregando velas…" : "Conecte a OKX para ver o gráfico."}</div>
         )}
-      </div>
+      </Card>
   );
 }

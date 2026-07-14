@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import InfoTip from "../../../InfoTip";
 import type { Config } from "../../../../lib/bot/types";
 
 /** 2b · Exceções por moeda — o robô roda IGUAL nas moedas; use só como exceção consciente. */
@@ -22,10 +23,10 @@ export default function PerAssetConfig({ cfg, setCfg, input }: {
                 <span className="text-xs font-bold text-foreground">{a}</span>
                 <span className="text-[9px] text-muted-foreground">{(ov.block_hours ?? []).length ? "🛡 defensiva" : "🟢 livre"}{(ov.risk_mult ?? 1) < 1 ? ` · ${Math.round((ov.risk_mult ?? 1) * 100)}% risco` : ""}</span>
               </div>
-              <label className="block text-[10px] text-muted-foreground">Sessão bloqueada (h UTC) <span title="Horas UTC em que ESTA moeda não abre posição nem piramida (saídas normais). Vazio = livre 24h. Validado: BTC/BNB [9-11,18-23]; ETH/SOL livres.">ⓘ</span>
+              <label className="block text-[10px] text-muted-foreground">Sessão bloqueada (h UTC) <InfoTip text="Horas UTC em que ESTA moeda não abre posição nem piramida (saídas normais). Vazio = livre 24h. Validado: BTC/BNB [9-11,18-23]; ETH/SOL livres." />
                 <input type="text" className={`${input} mt-0.5`} value={(ov.block_hours ?? []).join(",")} onChange={(e) => setOv({ block_hours: e.target.value.split(",").map((s) => Number(s.trim())).filter((h) => Number.isInteger(h) && h >= 0 && h < 24) })} placeholder="vazio = livre 24h" />
               </label>
-              <label className="mt-1 block text-[10px] text-muted-foreground">Confluência mínima <span title="Grupos (de 4) votando na direção p/ ESTA moeda executar. Vazio = usa o global.">ⓘ</span>
+              <label className="mt-1 block text-[10px] text-muted-foreground">Confluência mínima <InfoTip text="Grupos (de 4) votando na direção p/ ESTA moeda executar. Vazio = usa o global." />
                 <select className={`${input} mt-0.5`} value={ov.conf_min ?? ""} onChange={(e) => setOv({ conf_min: e.target.value === "" ? undefined : Number(e.target.value) })}>
                   <option value="">global ({cfg.conf_min ?? 3} de 4)</option>
                   <option value={2}>2 de 4</option>
@@ -33,10 +34,10 @@ export default function PerAssetConfig({ cfg, setCfg, input }: {
                   <option value={4}>4 de 4</option>
                 </select>
               </label>
-              <label className="mt-1 block text-[10px] text-muted-foreground">Multiplicador de risco <span title="Fração do risco por trade (0.1–1) p/ ESTA moeda. BNB em 0.5 = meio risco enquanto for a pior do backtest (candidata a pausa).">ⓘ</span>
+              <label className="mt-1 block text-[10px] text-muted-foreground">Multiplicador de risco <InfoTip text="Fração do risco por trade (0.1–1) p/ ESTA moeda. BNB em 0.5 = meio risco enquanto for a pior do backtest (candidata a pausa)." />
                 <input type="number" step="0.1" min="0.1" max="1" className={`${input} mt-0.5`} value={ov.risk_mult ?? 1} onChange={(e) => setOv({ risk_mult: Number(e.target.value) })} />
               </label>
-              <label className="mt-1 block text-[10px] text-muted-foreground">Piso do trailing <span title="Âncora estrutural do stop móvel: largo = último swing grande (~5h; preserva runner — validado ETH/SOL) · interno = último swing de ~1h (stop acompanha a estrutura recente — validado SÓ no BNB, PF 0,97→1,15/0,73→1,06; reprovado global: corta winners do ETH).">ⓘ</span>
+              <label className="mt-1 block text-[10px] text-muted-foreground">Piso do trailing <InfoTip text="Âncora estrutural do stop móvel: largo = último swing grande (~5h; preserva runner — validado ETH/SOL) · interno = último swing de ~1h (stop acompanha a estrutura recente — validado SÓ no BNB, PF 0,97→1,15/0,73→1,06; reprovado global: corta winners do ETH)." />
                 <select className={`${input} mt-0.5`} value={ov.trail_floor ?? "structure"} onChange={(e) => setOv({ trail_floor: e.target.value })}>
                   <option value="structure">largo (swing ~5h)</option>
                   <option value="internal">interno (~1h, acompanha)</option>

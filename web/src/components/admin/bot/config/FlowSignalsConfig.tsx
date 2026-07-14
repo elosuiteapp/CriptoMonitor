@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import { TogglePill, PillRow } from "../../../TogglePill";
 import type { Config } from "../../../../lib/bot/types";
 import { FLOW_SIGNALS } from "../../../../lib/bot/constants";
 
@@ -20,14 +21,14 @@ export default function FlowSignalsConfig({ cfg, setCfg, isFut }: {
         {isFut && (
           <div className="text-xs text-muted-foreground">
             <p className="mb-2 text-[11px]">O núcleo <strong>SMC price-action</strong> (Order Blocks, Imbalance, Liquidez, EQH/EQL, Zonas, BOS/CHoCH no 15m) é <strong>sempre</strong> usado. Estes compõem os grupos do <strong>placar de confluência</strong> (Fluxo/Técnico/Sentimento) e o aprendizado — desligar um sinal tira ele do grupo dele. Absorção, paredes, pressão, CVD agregado e funding já estão fora do placar (acerto &lt;50% no aprendizado; seguem medidos).</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
-              {FLOW_SIGNALS.map((s) => (
-                <label key={s.key} className="flex items-center gap-1.5">
-                  <input type="checkbox" checked={cfg.signal_toggles?.[s.key] !== false} onChange={(e) => setCfg({ ...cfg, signal_toggles: { ...(cfg.signal_toggles ?? {}), [s.key]: e.target.checked } })} className="h-3.5 w-3.5 rounded border-border" />
-                  <span>{s.label}</span>
-                </label>
-              ))}
-            </div>
+            <PillRow label="">
+              {FLOW_SIGNALS.map((s) => {
+                const active = cfg.signal_toggles?.[s.key] !== false;
+                return (
+                  <TogglePill key={s.key} label={s.label} active={active} onToggle={() => setCfg({ ...cfg, signal_toggles: { ...(cfg.signal_toggles ?? {}), [s.key]: !active } })} />
+                );
+              })}
+            </PillRow>
           </div>
         )}
       </div>

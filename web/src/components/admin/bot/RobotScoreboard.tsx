@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 
+import Card from "../../ui/Card";
+import InfoTip from "../../InfoTip";
 import { FEE_RT } from "../../../lib/bot/constants";
 import { num } from "../../../lib/bot/format";
 import type { OrderRow, BotPosition } from "../../../lib/bot/types";
@@ -42,7 +44,7 @@ export default function RobotScoreboard({ shadowTrades, orders, positions, liveE
   }, [orders, positions, shadowTrades, liveEngine]);
 
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs <span className="font-normal text-muted-foreground">— líquido de taxa</span></h2>
           <span className="text-[10px] text-muted-foreground">papel (%) · líquido = bruto − 0,12%/trade · o ● VIVO também opera real</span>
@@ -55,10 +57,10 @@ export default function RobotScoreboard({ shadowTrades, orders, positions, liveE
                 <th className="py-1 text-left font-semibold">Robô</th>
                 <th className="py-1 text-right font-semibold">trades</th>
                 <th className="py-1 text-right font-semibold">acerto</th>
-                <th className="py-1 text-right font-semibold" title="PnL bruto somado no papel, SEM taxa">bruto %</th>
-                <th className="py-1 text-right font-semibold" title="bruto − 0,12%/trade (a régua que vale)">líquido %</th>
-                <th className="py-1 text-right font-semibold" title="líquido médio por trade">méd/trade</th>
-                <th className="py-1 text-right font-semibold" title={`PnL real na conta demo (só engines com ordens carimbadas)`}>real {quote}</th>
+                <th className="py-1 text-right font-semibold">bruto % <InfoTip text="PnL bruto somado no papel, SEM taxa" /></th>
+                <th className="py-1 text-right font-semibold">líquido % <InfoTip text="bruto − 0,12%/trade (a régua que vale)" /></th>
+                <th className="py-1 text-right font-semibold">méd/trade <InfoTip text="líquido médio por trade" /></th>
+                <th className="py-1 text-right font-semibold">real {quote} <InfoTip text="PnL real na conta demo (só engines com ordens carimbadas)" /></th>
               </tr>
             </thead>
             <tbody>
@@ -82,6 +84,6 @@ export default function RobotScoreboard({ shadowTrades, orders, positions, liveE
           </table>
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground"><b>Papel</b> = todas as variantes simuladas nas mesmas moedas (régua justa). <b>Líquido</b> desconta 0,12%/trade (taker 0,04% + slippage 0,02%, os dois lados). <b>Real {quote}</b> = conta demo, só onde há ordens carimbadas por engine (o ● VIVO + histórico do v28). Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
-      </div>
+      </Card>
   );
 }

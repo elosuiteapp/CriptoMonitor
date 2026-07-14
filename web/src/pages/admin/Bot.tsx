@@ -23,6 +23,8 @@ import PerAssetConfig from "../../components/admin/bot/config/PerAssetConfig";
 import ExitConfig from "../../components/admin/bot/config/ExitConfig";
 import FlowSignalsConfig from "../../components/admin/bot/config/FlowSignalsConfig";
 import ConnectionKeys from "../../components/admin/bot/config/ConnectionKeys";
+import Card from "../../components/ui/Card";
+import InfoTip from "../../components/InfoTip";
 import { supabase } from "../../lib/supabase";
 import type { Config, Reading, OrderRow, LogRow, BotPosition, Learning, BtTrade } from "../../lib/bot/types";
 import { BLOCK_LINES } from "../../lib/bot/constants";
@@ -555,23 +557,23 @@ export default function AdminBot() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Patrimônio (demo)</div>
           <div className="num text-lg font-bold text-foreground">{totalEq != null ? `US$ ${num(totalEq)}` : "—"}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
+        </Card>
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Par</div>
           <div className="text-lg font-bold text-foreground">{cfg?.inst_id ?? "—"}</div>
           <div className="text-[11px] text-muted-foreground">{cfg ? `${isFut ? `Futuros até ${cfg.leverage}x` : "Spot"} · risco ${cfg.risk_pct ?? 1}%/trade` : ""}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
+        </Card>
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Último preço</div>
           <div className="num text-lg font-bold text-foreground">{lastPx ? num(lastPx, dec) : "—"}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-3 dark:bg-card/60">
+        </Card>
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Ordens (auto/total)</div>
           <div className="num text-lg font-bold text-foreground">{orders.filter((o) => o.source === "auto").length}/{orders.length}</div>
-        </div>
+        </Card>
       </div>
 
       {/* Abas do módulo do robô — organiza a página em seções (menos rolagem) */}
@@ -596,7 +598,7 @@ export default function AdminBot() {
       {/* Robô automático · aba Configuração */}
       {tab === "config" && cfg && (
         <>
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-foreground">Robô automático</h2>
@@ -632,7 +634,7 @@ export default function AdminBot() {
             </button>
             <span className="text-[11px] text-muted-foreground">Estratégia (motor v28 — vela fechada): o <strong>SMC do 15m arma o setup em VELA FECHADA</strong> (reteste de Order Block/FVG a favor de BOS/CHoCH; <strong>stop = invalidação estrutural</strong>) e os grupos votam na direção — Estrutura SMC · Fluxo limpo (book inst+varejo, liquidações, gamma, divergência CVD) · Técnico (EMA20×50 + VWAP + ADX). Filtros de entrada validados: delta da vela a favor · squeeze momentum não-contra · disciplina de zona (premium/discount) · <strong>zona oposta do 1H</strong> (não compra colado em OB/FVG de venda do TF maior) · <strong>filtro de volatilidade</strong> (vela-spike &gt; 2×ATR não entra). <strong>Saída SÓ por stop estrutural + trailing 2,5×ATR</strong> (alvo de liquidez DESLIGADO por decisão do dono 07/jul; trava de breakeven com lucro ≥ 1×ATR). Sizing por risco, alavancagem como teto, circuit breaker diário, cooldown 60min pós-stop; pirâmide só no lucro e a favor. <strong>ROBÔ ÚNICO</strong>: config idêntica nas 5 moedas (BTC·ETH·SOL·BNB·AAVE) — exceções por moeda (2b) só com evidência nova.</span>
           </div>
-        </div>
+        </Card>
 
         {/* Conexão (chaves) · aba Configuração */}
         <ConnectionKeys showKeys={showKeys} setShowKeys={setShowKeys} isBinance={isBinance} connected={connected} input={input} apiKey={apiKey} setApiKey={setApiKey} apiSecret={apiSecret} setApiSecret={setApiSecret} passphrase={passphrase} setPassphrase={setPassphrase} saveKeys={saveKeys} busy={busy} />
@@ -669,26 +671,26 @@ export default function AdminBot() {
 
       {/* KPIs do período filtrado — desempenho REALIZADO (trades que já fecharam) */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado (período)</div>
           <div className={`num text-lg font-bold ${fRealized >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{fRealized >= 0 ? "+" : ""}{num(fRealized)} {quote}</div>
           <div className="text-[11px] text-muted-foreground">{fScored} trades com resultado</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        </Card>
+        <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Acerto</div>
           <div className="num text-lg font-bold text-foreground">{fScored > 0 ? `${Math.round((fWins / fScored) * 100)}%` : "—"}</div>
           <div className="text-[11px] text-muted-foreground">{fWins} verdes · {fScored - fWins} vermelhos</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Soma dos ganhos ÷ soma das perdas. Acima de 1 = estratégia lucrativa no período.">Profit factor</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit factor <InfoTip text="Soma dos ganhos ÷ soma das perdas. Acima de 1 = estratégia lucrativa no período." /></div>
           <div className={`num text-lg font-bold ${profitFactor == null ? "text-foreground" : profitFactor >= 1 ? "text-emerald-500" : "text-rose-500"}`}>{profitFactor != null ? profitFactor.toFixed(2) : fScored > 0 ? "∞" : "—"}</div>
           <div className="text-[11px] text-muted-foreground">{avgWin != null || avgLoss != null ? <>ganho médio {avgWin != null ? `+${num(avgWin)}` : "—"} · perda média {avgLoss != null ? `−${num(avgLoss)}` : "—"}</> : "sem trades no período"}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+        </Card>
+        <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Melhor · pior trade</div>
           <div className="num text-lg font-bold"><span className="text-emerald-500">{bestTrade?.pnl != null ? `+${num(bestTrade.pnl)}` : "—"}</span> <span className="text-muted-foreground">·</span> <span className="text-rose-500">{worstTrade?.pnl != null && worstTrade.pnl < 0 ? num(worstTrade.pnl) : "—"}</span></div>
           <div className="text-[11px] text-muted-foreground">{bestTrade ? `${bestTrade.asset} ${bestTrade.wasLong ? "long" : "short"}` : "—"} · {worstTrade && worstTrade.pnl != null && worstTrade.pnl < 0 ? `${worstTrade.asset} ${worstTrade.wasLong ? "long" : "short"}` : "—"}</div>
-        </div>
+        </Card>
       </div>
 
       {/* Trades encerrados — round-trips fechados (pelo robô ou por você), com resultado realizado. */}

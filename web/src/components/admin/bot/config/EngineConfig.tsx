@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import InfoTip from "../../../InfoTip";
 import type { Config } from "../../../../lib/bot/types";
 
 /** Motor do robô (qual OPERA a conta) + pesos do Robô 2.0 (força ponderada dos 5 blocos). */
@@ -33,16 +34,16 @@ export default function EngineConfig({ cfg, setCfg, input }: {
             ))}
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label className="text-[11px] text-muted-foreground" title="Força ponderada mínima (−100..+100) pra ABRIR. Maior = mais seletivo.">Abre em ±força
+            <label className="text-[11px] text-muted-foreground">Abre em ±força <InfoTip text="Força ponderada mínima (−100..+100) pra ABRIR. Maior = mais seletivo." />
               <input type="number" min={0} max={100} step={1} className={`${input} mt-0.5`} value={cfg.conf2_enter ?? 30} onChange={(e) => setCfg({ ...cfg, conf2_enter: Number(e.target.value) })} />
             </label>
-            <label className="text-[11px] text-muted-foreground" title="Histerese: mantém a posição enquanto a força ≥ este piso; abaixo, sai. Menor que 'Abre'.">Segura até ±força
+            <label className="text-[11px] text-muted-foreground">Segura até ±força <InfoTip text="Histerese: mantém a posição enquanto a força ≥ este piso; abaixo, sai. Menor que 'Abre'." />
               <input type="number" min={0} max={100} step={1} className={`${input} mt-0.5`} value={cfg.conf2_hold ?? 10} onChange={(e) => setCfg({ ...cfg, conf2_hold: Number(e.target.value) })} />
             </label>
-            <label className="text-[11px] text-muted-foreground" title="Largura do stop de proteção (chandelier ×ATR). A saída principal é por confluência; este stop fica longe.">Stop catástrofe ×ATR
+            <label className="text-[11px] text-muted-foreground">Stop catástrofe ×ATR <InfoTip text="Largura do stop de proteção (chandelier ×ATR). A saída principal é por confluência; este stop fica longe." />
               <input type="number" min={1} max={10} step={0.5} className={`${input} mt-0.5`} value={cfg.conf2_stop_atr ?? 4} onChange={(e) => setCfg({ ...cfg, conf2_stop_atr: Number(e.target.value) })} />
             </label>
-            <label className="text-[11px] text-muted-foreground" title="Trava de BREAKEVEN: uma vez que o trade fica ≥ N×ATR no lucro, o stop nunca desce da entrada — um winner não vira loser. 0 = desliga.">Breakeven (×ATR lucro)
+            <label className="text-[11px] text-muted-foreground">Breakeven (×ATR lucro) <InfoTip text="Trava de BREAKEVEN: uma vez que o trade fica ≥ N×ATR no lucro, o stop nunca desce da entrada — um winner não vira loser. 0 = desliga." />
               <input type="number" min={0} max={5} step={0.5} className={`${input} mt-0.5`} value={cfg.conf2_be_atr ?? 1} onChange={(e) => setCfg({ ...cfg, conf2_be_atr: Number(e.target.value) })} />
             </label>
           </div>

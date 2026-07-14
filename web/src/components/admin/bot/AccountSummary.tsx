@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import { num } from "../../../lib/bot/format";
 import type { Config, BotPosition } from "../../../lib/bot/types";
 
@@ -23,7 +24,7 @@ export default function AccountSummary({ totalEq, hasLivePnl, openPnl, quote, pn
   const monthData = pnlSummary?.months.find((m) => m.month === curMonth) ?? null;
 
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Resumo da conta (demo)</h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-lg border border-border/70 bg-background/40 p-3">
@@ -59,6 +60,6 @@ export default function AccountSummary({ totalEq, hasLivePnl, openPnl, quote, pn
           </div>
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground">{isFut ? "Futuros: long e short com margem em " : "Opera com capital em "}{quote}; saldos pré-existentes ficam intocados.</p>
-      </div>
+      </Card>
   );
 }

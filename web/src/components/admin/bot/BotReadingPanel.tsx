@@ -1,3 +1,4 @@
+import Card from "../../ui/Card";
 import { SIG_GROUPS } from "../../../lib/bot/constants";
 import { num, decisionLabel, sigRole, conf2Role } from "../../../lib/bot/format";
 import type { Config, Reading, BotPosition } from "../../../lib/bot/types";
@@ -28,7 +29,7 @@ export default function BotReadingPanel({ selReading, cfg, selPos, selAsset }: {
   // FORÇA PONDERADA = Σ(peso × força do bloco) — a variável que decide (card 1). −100..+100.
   const c2saldo = c2 && c2.wforce != null ? c2.wforce : null;
   return (
-          <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+          <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground">🧠 Leitura do robô · {selAsset} · {r.confluence2 ? "Robô 2.0 · confluência dos 5 blocos" : "SMC price-action"} 15m</h2>
               <span className="text-[11px] text-muted-foreground">{cfg?.last_run ? `atualizado ${new Date(cfg.last_run).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</span>
@@ -171,6 +172,6 @@ export default function BotReadingPanel({ selReading, cfg, selPos, selAsset }: {
             ) : (
             <p className="mt-2 text-[11px] text-muted-foreground">Como o robô decide (motor v21 · SMC + pressão): a <strong>estrutura SMC do 15m</strong> (badge <em>decide</em>) arma o setup — reteste de OB/FVG pós-BOS/CHoCH (prioritário) ou imbalance em reteste, sempre com a direção validada por <strong>maioria 2-de-3 das leituras de estrutura</strong>, stop na invalidação estrutural e alvo na liquidez/PDH-PDL. Antes de executar passa pelos gates: <strong>1 tiro por zona</strong>, sessão, <strong>bússola 4H</strong> (a estrutura do TF maior precisa concordar) e a confluência <strong>Estrutura + Fluxo</strong> (2 de 2 — os sinais <em>vota</em> são a pressão do book/fluxo). Os <em>estudo</em> (Técnico · Sentimento) e os <em>medido</em> não influenciam — alimentam o aprendizado por moeda. Atualizado a cada ~5 min. Educacional — não é recomendação.</p>
             )}
-          </div>
+          </Card>
   );
 }

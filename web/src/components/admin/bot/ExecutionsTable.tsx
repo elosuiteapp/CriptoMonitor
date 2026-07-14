@@ -1,3 +1,4 @@
+import Card from "../../ui/Card";
 import { num } from "../../../lib/bot/format";
 import { assetOf } from "../../../lib/bot/trades";
 import type { OrderRow, BotPosition } from "../../../lib/bot/types";
@@ -65,7 +66,7 @@ export default function ExecutionsTable({ filtered, botOrders, manualOrders, ord
   );
 
   return (
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
+      <Card className="overflow-hidden hover:border-foreground/15 hover:shadow-card-hover">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">Execuções <span className="text-xs font-normal text-muted-foreground">· toda ordem enviada à corretora</span></h2>
           <span className="text-[11px] text-muted-foreground">{botOrders.length} do robô · {manualOrders.length} manuais</span>
@@ -74,6 +75,6 @@ export default function ExecutionsTable({ filtered, botOrders, manualOrders, ord
           <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.length ? "Nenhuma ordem no filtro atual." : "Nenhuma ordem enviada ainda."}</p>
         ) : ordersTable(filtered)}
         <p className="px-4 py-2 text-[10px] text-muted-foreground"><strong>Resultado</strong> só aparece na <strong>Saída</strong> (o lucro/prejuízo é do trade inteiro, não de cada compra/venda) — o consolidado está em “Trades encerrados” acima. Passe o mouse no <strong>Tipo</strong> pra ver a nota da ordem. PnL ao vivo das posições abertas está em “Posições abertas”.</p>
-      </div>
+      </Card>
   );
 }

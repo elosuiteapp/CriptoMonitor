@@ -1,3 +1,4 @@
+import Card from "../../ui/Card";
 import { num } from "../../../lib/bot/format";
 import type { Config, BotPosition } from "../../../lib/bot/types";
 
@@ -15,7 +16,7 @@ export default function OpenPositions({ openPositions, flatAssets, livePos, cfg,
   pxDec: (v: number | null | undefined) => number;
 }) {
   return (
-        <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+        <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-foreground">Posições abertas</h2>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${openPositions.length ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{openPositions.length ? `${openPositions.length} rodando` : "nenhuma aberta"}</span>
@@ -59,6 +60,6 @@ export default function OpenPositions({ openPositions, flatAssets, livePos, cfg,
             <p className="mt-3 text-[11px] text-muted-foreground">Fora do mercado: <span className="font-medium text-foreground">{flatAssets.join(" · ")}</span></p>
           )}
           <p className="mt-1 text-[10px] text-muted-foreground">Cada moeda opera sozinha (consenso de 5 timeframes; a tendência 4H+1D manda no lado). PnL ao vivo da Binance demo; “rodando” = posição aberta agora.</p>
-        </div>
+        </Card>
   );
 }

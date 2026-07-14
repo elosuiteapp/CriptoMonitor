@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import type { OrderRow } from "../../../lib/bot/types";
 import type { ClosedTrade } from "../../../lib/bot/trades";
 
@@ -28,7 +29,7 @@ export default function OrdersFilters({ fAsset, setFAsset, fSource, setFSource, 
   const quickRange = (days: number) => { const to = new Date(); const from = new Date(); from.setDate(to.getDate() - (days - 1)); setFFrom(dstr(from)); setFTo(dstr(to)); };
 
   return (
-      <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
+      <Card className="p-3">
         <div className="flex flex-wrap items-end gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Filtros</span>
           <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Moeda
@@ -75,6 +76,6 @@ export default function OrdersFilters({ fAsset, setFAsset, fSource, setFSource, 
           )}
           <span className="ml-auto text-[11px] text-muted-foreground">{fClosedTrades.length} trades · {filtered.length} ordens{filtersOn ? " (filtradas)" : ""}</span>
         </div>
-      </div>
+      </Card>
   );
 }

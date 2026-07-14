@@ -1,3 +1,4 @@
+import Card from "../../ui/Card";
 import { num } from "../../../lib/bot/format";
 import type { ClosedTrade } from "../../../lib/bot/trades";
 
@@ -12,7 +13,7 @@ export default function ClosedTradesTable({ fClosedTrades, closedTrades, pnlByAs
   pxDec: (v: number | null | undefined) => number;
 }) {
   return (
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
+      <Card className="overflow-hidden hover:border-foreground/15 hover:shadow-card-hover">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">Trades encerrados <span className="text-xs font-normal text-muted-foreground">· receita realizada</span></h2>
           {pnlByAsset.length > 0 && (
@@ -53,6 +54,6 @@ export default function ClosedTradesTable({ fClosedTrades, closedTrades, pnlByAs
             <p className="px-4 py-2 text-[10px] text-muted-foreground">Cada linha é um trade que <strong>já fechou</strong> (abriu → fechou). Entrada = preço médio (reconstruído do PnL; com <strong>≈</strong> = recuperado da ordem de abertura quando a corretora não devolveu o fill). <strong>Motivo</strong>: 🎯 alvo na liquidez · 🛡️ trailing (lucro travado) · 🛑 stop · ↩ reversão do robô · ✋ manual.</p>
           </div>
         )}
-      </div>
+      </Card>
   );
 }

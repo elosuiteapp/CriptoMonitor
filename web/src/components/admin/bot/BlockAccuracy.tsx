@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 
+import Card from "../../ui/Card";
+import InfoTip from "../../InfoTip";
 import { BLOCK_LINES } from "../../../lib/bot/constants";
 import type { OrderRow, BotPosition } from "../../../lib/bot/types";
 
@@ -48,7 +50,7 @@ export default function BlockAccuracy({ orders, positions }: {
   }, [orders, positions]);
 
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">🎯 Acerto por bloco <span className="font-normal text-muted-foreground">— Robô 2.0</span></h2>
           <span className="text-[10px] text-muted-foreground">{blockPerf.matched} trade{blockPerf.matched === 1 ? "" : "s"} medido{blockPerf.matched === 1 ? "" : "s"} · janela ~1 dia, cresce</span>
@@ -62,10 +64,10 @@ export default function BlockAccuracy({ orders, positions }: {
               <thead>
                 <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-1 text-left font-semibold">Bloco</th>
-                  <th className="py-1 text-right font-semibold" title="Nº de trades em que o bloco concordou com a direção">concordou (n)</th>
-                  <th className="py-1 text-right font-semibold" title="% de acerto dos trades quando o bloco concordou">acerto ✓</th>
-                  <th className="py-1 text-right font-semibold" title="% de acerto quando o bloco discordou">acerto ✗</th>
-                  <th className="py-1 text-right font-semibold" title="concordou − discordou (pontos %); o edge do bloco">spread</th>
+                  <th className="py-1 text-right font-semibold">concordou (n) <InfoTip text="Nº de trades em que o bloco concordou com a direção" /></th>
+                  <th className="py-1 text-right font-semibold">acerto ✓ <InfoTip text="% de acerto dos trades quando o bloco concordou" /></th>
+                  <th className="py-1 text-right font-semibold">acerto ✗ <InfoTip text="% de acerto quando o bloco discordou" /></th>
+                  <th className="py-1 text-right font-semibold">spread <InfoTip text="concordou − discordou (pontos %); o edge do bloco" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -83,6 +85,6 @@ export default function BlockAccuracy({ orders, positions }: {
           </div>
         )}
         <p className="mt-2 text-[10px] text-muted-foreground">Amostra pequena no começo — <b>não calibre peso ainda</b>; espere ~1 semana pra ter confiança (tipo o que fizemos com as paredes, n=65). Spread verde forte (≥15pp) = candidato a MAIS peso; ≤0 = candidato a MENOS. Janela limitada a ~1 dia (o histórico de blocos); dá pra tornar permanente depois se precisar de amostra maior.</p>
-      </div>
+      </Card>
   );
 }

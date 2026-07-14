@@ -1,5 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../../ui/Card";
+
 /** Conexão (chaves) — API Key/Secret (+Passphrase na OKX) da corretora demo/testnet. */
 export default function ConnectionKeys({ showKeys, setShowKeys, isBinance, connected, input, apiKey, setApiKey, apiSecret, setApiSecret, passphrase, setPassphrase, saveKeys, busy }: {
   showKeys: boolean;
@@ -17,7 +19,7 @@ export default function ConnectionKeys({ showKeys, setShowKeys, isBinance, conne
   busy: string | null;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+    <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
       <button onClick={() => setShowKeys((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
         <span>{isBinance ? "Conexão Binance (Testnet)" : "Conexão OKX (Demo)"} {connected && <span className="ml-1 text-[11px] font-normal text-emerald-500">· conectada</span>}</span>
         <span className="text-muted-foreground">{showKeys ? "▲" : "▼"}</span>
@@ -35,6 +37,6 @@ export default function ConnectionKeys({ showKeys, setShowKeys, isBinance, conne
             : <p className="mt-2 text-[11px] text-muted-foreground">Chaves do <strong>Demo Trading</strong> da OKX (não as reais). Permissão de <strong>Trade</strong>; nunca saque; sem restrição de IP.</p>}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

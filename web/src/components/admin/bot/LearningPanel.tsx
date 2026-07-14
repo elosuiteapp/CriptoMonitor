@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import type { Learning } from "../../../lib/bot/types";
 import Markdown from "../../Markdown";
 
@@ -12,7 +13,7 @@ export default function LearningPanel({ learning, learnAsset, setLearnAsset, run
   busy: string | null;
 }) {
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">🧠 Aprendizado do robô</h2>
           <button onClick={runLearn} disabled={busy !== null} className="rounded-md bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-50">{busy === "learn" ? "Analisando…" : "Gerar diagnóstico"}</button>
@@ -69,6 +70,6 @@ export default function LearningPanel({ learning, learnAsset, setLearnAsset, run
         })() : (
           <p className="text-sm text-muted-foreground">Sem diagnóstico ainda. Clique em <strong>Gerar diagnóstico</strong> — o robô analisa o próprio histórico de leituras e mede o acerto de cada sinal, separado por moeda.</p>
         )}
-      </div>
+      </Card>
   );
 }

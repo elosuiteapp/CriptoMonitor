@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import type { Config } from "../../../lib/bot/types";
 
 /** Ordem manual (avançado) — formulário de envio manual à corretora (demo). */
@@ -22,7 +23,7 @@ export default function ManualOrder({ showManual, setShowManual, cfg, input, mSi
   connected: boolean;
 }) {
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <button onClick={() => setShowManual((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
           <span>Ordem manual (avançado)</span>
           <span className="text-muted-foreground">{showManual ? "▲" : "▼"}</span>
@@ -39,6 +40,6 @@ export default function ManualOrder({ showManual, setShowManual, cfg, input, mSi
             <p className="mt-2 text-[11px] text-muted-foreground">{isFut ? `Futuros demo (${cfg.inst_id}). Tamanho em USDT (nocional); Comprar = abrir/aumentar long, Vender = abrir/aumentar short.` : `Spot demo. Compra a mercado: tamanho em ${cfg.quote_ccy}; venda: na moeda base.`} Tudo fake.</p>
           </div>
         )}
-      </div>
+      </Card>
   );
 }

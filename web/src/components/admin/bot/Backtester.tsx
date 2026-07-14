@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import Card from "../../ui/Card";
 import type { BtTrade } from "../../../lib/bot/types";
 
 /** Backtester — mede a expectância da estratégia em candles reais (expectância em R, win rate, PF, drawdown). */
@@ -13,7 +14,7 @@ export default function Backtester({ btAsset, setBtAsset, btDays, setBtDays, btB
   btResult: { params: Record<string, string | number>; metrics: Record<string, number>; trades?: BtTrade[]; equity?: number[] } | null;
 }) {
   return (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
+      <Card className="hover:border-foreground/15 hover:shadow-card-hover p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">📈 Backtester · a estratégia dá lucro?</h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -93,6 +94,6 @@ export default function Backtester({ btAsset, setBtAsset, btDays, setBtDays, btB
         })() : (
           <p className="text-sm text-muted-foreground">Escolha a moeda e a janela e clique <strong>Rodar backtest</strong> — o MESMO motor do robô roda sobre candles reais e mede se a estratégia teria dado lucro: <strong>expectância em R</strong>, win rate, profit factor e drawdown. Leva ~5-15s.</p>
         )}
-      </div>
+      </Card>
   );
 }
