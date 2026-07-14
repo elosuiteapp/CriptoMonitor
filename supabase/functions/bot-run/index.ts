@@ -1385,7 +1385,11 @@ Deno.serve(async (req) => {
       const CONF2_LABELS: Record<string, string> = { estrutura: "Estrutura", micro: "Microestrutura", fluxo: "Fluxo", posicionamento: "Posicionamento", tecnico: "Técnico" };
       const conf2Up = conf2g.filter((g) => g.vote === 1).length, conf2Dn = conf2g.filter((g) => g.vote === -1).length;
       const conf2Wf = conf2Wforce(conf2g, conf2W);                                 // FORÇA PONDERADA −100..+100 (a variável que decide)
-      const tecWf = conf2g.find((g) => g.key === "tecnico")?.score ?? 0;           // ROBÔ 3.0: força ISOLADA do bloco Técnico (o gatilho de direção; SMC só filtra a zona)
+      const tecG = conf2g.find((g) => g.key === "tecnico");                        // ROBÔ 3.0: gatilho = bloco Técnico isolado (SMC só filtra a zona)
+      const tecN = tecG?.n ?? 5;
+      // MAIORIA dos indicadores do bloco (≥ metade+1 do MESMO lado — NÃO precisa todos alinhados): compra +100 / venda −100 / neutro 0.
+      // (Ex.: 3 de 5 altistas → +100 → tenta comprar; 3 de 5 baixistas → −100 → tenta vender. O filtro SMC decide se a zona permite.)
+      const tecWf = tecG ? (tecG.up * 2 > tecN ? 100 : tecG.dn * 2 > tecN ? -100 : 0) : 0;
       const conf2Signal = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, "flat");   // o que os blocos DIZEM (sem estado) — mostrado no painel
       const conf2dir = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, pos);         // o que o robô FAZ (histerese pela posição atual)
       const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n, weight: Number((conf2W as Record<string, number>)[g.key] ?? 0) })), up: conf2Up, dn: conf2Dn, wforce: conf2Wf, enter: conf2Enter, hold: conf2Hold, dir: conf2Signal, weights: conf2W };
@@ -1406,7 +1410,7 @@ Deno.serve(async (req) => {
         // Nunca compra em resistência (premium) nem vende em suporte (discount). Mesma saída/stop do conf2 (catástrofe 4×ATR + breakeven). Papel.
         const pSmc = primary.smc;
         const smcStruct = pSmc ? { eqTop: pSmc.equilibrium.top, eqBot: pSmc.equilibrium.bottom, hiStrong: pSmc.extremes?.high === "strong", loStrong: pSmc.extremes?.low === "strong", swingHi: pSmc.swingHighLevel, swingLo: pSmc.swingLowLevel, liq: pSmc.liquidity } : null;
-        try { await runShadow("confluence2_tec", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, tecWf, conf2Enter, conf2Hold, fut, null, smcStruct); } catch (e) { await log("info", `[${asset}] sombra conf2_tec: ${(e as Error).message}`, {}); }
+        try { await runShadow("confluence2_tec", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, tecWf, 50, 10, fut, null, smcStruct); } catch (e) { await log("info", `[${asset}] sombra conf2_tec: ${(e as Error).message}`, {}); }  // enter/hold 50/10: força binária ±100 (maioria) → abre na maioria, sai quando some
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
