@@ -256,6 +256,9 @@ async function invoke(action: string, extra: Record<string, unknown> = {}, fn = 
 }
 
 const num = (v: unknown, d = 2) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d }));
+// Taxa por ROUND-TRIP no papel (taker 0,04% + slippage 0,02%, os dois lados = 0,12%), igual ao bot-backtest.
+// A auditoria provou que a régua BRUTA mente — o líquido de taxa é o que decide qual robô presta.
+const FEE_RT = 0.12;
 
 /** Admin · Robô (Lab) — robô de trade PESSOAL no modo DEMO da OKX, isolado e admin-only.
  *  v2: estratégia automática (cruzamento de EMAs) compra/vende sozinha via cron, com
@@ -359,22 +362,32 @@ export default function AdminBot() {
   // Desempenho por robô: REAL (conta demo, PnL em USDT, carimbado por engine) + PAPEL (sombra, % por trade).
   // Só o motor VIVO opera real; o v28 carrega o histórico real de quando era o vivo. O papel roda p/ os dois
   // sempre (comparação simultânea justa).
-  const engineCompare = useMemo(() => {
-    const real = (eng: string) => {
-      const closes = orders.filter((o) => o.action === "close" && o.pnl != null && (o.engine ?? "smc") === eng);
-      const wins = closes.filter((o) => (Number(o.pnl) || 0) > 0).length;
-      const pnl = closes.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
-      const open = positions.filter((p) => p.position && p.position !== "flat" && (p.engine ?? "smc") === eng).length;
-      return { trades: closes.length, win: closes.length ? Math.round((wins / closes.length) * 100) : 0, pnl, open };
-    };
-    const paper = (eng: string) => {
-      const tr = shadowTrades.filter((t) => t.engine === eng);
+  // Placar de TODAS as variantes (vivo + sombras) com a RÉGUA HONESTA: PnL LÍQUIDO DE TAXA.
+  // A auditoria (memória conf2-3day-verdict) provou que o bruto-% MENTE — a taxa taker/slippage
+  // come o edge. FEE_RT = 0,12%/round-trip (0,06%/lado, igual ao bot-backtest). Papel = comparação
+  // justa (mesma unidade %); o real em USDT (conta demo) entra só onde há ordens carimbadas por engine.
+  const engineBoard = useMemo(() => {
+    const ENGINES = [
+      { eng: "confluence2",     name: "Robô 2.0",              desc: "força ponderada dos 5 blocos" },
+      { eng: "confluence2_tec", name: "Robô 3.0",              desc: "gatilho Técnico + filtro SMC de zona" },
+      { eng: "smc",             name: "Robô v28",              desc: "SMC price-action + gates" },
+      { eng: "confluence2_ct",  name: "2.0 · trailing vela",   desc: "saída por vela" },
+      { eng: "confluence2_bg",  name: "2.0 · book-gate",       desc: "veta abrir contra o book varejo" },
+      { eng: "confluence2_cap", name: "2.0 · teto same-side",  desc: "máx 2 posições do mesmo lado" },
+      { eng: "confluence2_cd",  name: "2.0 · cooldown",        desc: "trava re-entrada por ~60min" },
+    ];
+    const liveEng = cfg?.bot_engine ?? "smc";
+    return ENGINES.map((e) => {
+      const tr = shadowTrades.filter((t) => t.engine === e.eng);
       const wins = tr.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
-      const sum = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
-      return { trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, sum };
-    };
-    return { v28: { real: real("smc"), paper: paper("smc") }, c2: { real: real("confluence2"), paper: paper("confluence2") } };
-  }, [orders, positions, shadowTrades]);
+      const gross = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
+      const net = gross - tr.length * FEE_RT;                         // líquido = bruto − nº de trades × taxa RT
+      const realCloses = orders.filter((o) => o.action === "close" && o.pnl != null && (o.engine ?? "smc") === e.eng);
+      const realPnl = realCloses.reduce((s, o) => s + (Number(o.pnl) || 0), 0);
+      const openNow = positions.filter((p) => p.position && p.position !== "flat" && (p.engine ?? "smc") === e.eng).length;
+      return { ...e, live: e.eng === liveEng, trades: tr.length, win: tr.length ? Math.round((wins / tr.length) * 100) : 0, gross, net, avgNet: tr.length ? net / tr.length : 0, realTrades: realCloses.length, realPnl, openNow };
+    }).sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0) || b.net - a.net);   // VIVO no topo, depois por líquido desc
+  }, [orders, positions, shadowTrades, cfg?.bot_engine]);
 
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
@@ -1477,38 +1490,47 @@ export default function AdminBot() {
         )}
       </div>
 
-      {/* Desempenho comparado dos DOIS robôs (vivo × sombra) */}
+      {/* Desempenho de TODAS as variantes (vivo + sombras) — régua HONESTA: líquido de taxa (0,12%/RT) */}
       <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs</h2>
-          <span className="text-[10px] text-muted-foreground">os dois no papel (%) — régua justa · o ● VIVO também opera real</span>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs <span className="font-normal text-muted-foreground">— líquido de taxa</span></h2>
+          <span className="text-[10px] text-muted-foreground">papel (%) · líquido = bruto − 0,12%/trade · o ● VIVO também opera real</span>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[
-            { key: "smc", name: "Robô 1 · v28 (SMC)", desc: "reteste SMC + gates", live: (cfg?.bot_engine ?? "smc") === "smc", st: engineCompare.v28 },
-            { key: "confluence2", name: "Robô 2.0 · força ponderada", desc: "5 blocos com peso ajustável + saída por confluência", live: cfg?.bot_engine === "confluence2", st: engineCompare.c2 },
-          ].map((e) => (
-            <div key={e.key} className={`rounded-lg border p-3 ${e.live ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-border/70 bg-background/40"}`}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">{e.name}</div>
-                  <div className="text-[10px] text-muted-foreground">{e.desc}</div>
-                </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${e.live ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{e.live ? "● VIVO" : "sombra (papel)"}</span>
-              </div>
-              <div className="rounded-md border border-border/50 bg-background/40 p-2">
-                <div className="mb-1 flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Real · conta demo</span><span className="text-[9px] font-semibold text-muted-foreground">{e.st.real.open} aberta{e.st.real.open === 1 ? "" : "s"}</span></div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div><div className="num text-lg font-bold text-foreground">{e.st.real.trades}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">trades</div></div>
-                  <div><div className="num text-lg font-bold text-foreground">{e.st.real.trades ? `${e.st.real.win}%` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">acerto</div></div>
-                  <div><div className={`num text-lg font-bold ${e.st.real.pnl > 0 ? "text-emerald-500" : e.st.real.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.st.real.trades ? `${e.st.real.pnl >= 0 ? "+" : ""}${num(e.st.real.pnl)}` : "—"}</div><div className="text-[9px] uppercase tracking-wide text-muted-foreground">PnL {quote}</div></div>
-                </div>
-              </div>
-              <div className="mt-1.5 text-center text-[10px] text-muted-foreground">Papel (sombra): {e.st.paper.trades} trades · acerto {e.st.paper.trades ? `${e.st.paper.win}%` : "—"} · <span className={e.st.paper.sum > 0 ? "text-emerald-500" : e.st.paper.sum < 0 ? "text-rose-500" : ""}>{e.st.paper.trades ? `${e.st.paper.sum >= 0 ? "+" : ""}${e.st.paper.sum.toFixed(1)}%` : "—"}</span></div>
-            </div>
-          ))}
+        <p className="mb-2 text-[11px] text-muted-foreground">A régua da auditoria: o <b>líquido</b> é o que conta — a taxa comeu o edge do 2.0 no bruto. O <b>Robô 3.0</b> = gatilho do bloco Técnico + filtro SMC (nunca compra em resistência/premium nem vende em suporte/discount).</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <th className="py-1 text-left font-semibold">Robô</th>
+                <th className="py-1 text-right font-semibold">trades</th>
+                <th className="py-1 text-right font-semibold">acerto</th>
+                <th className="py-1 text-right font-semibold" title="PnL bruto somado no papel, SEM taxa">bruto %</th>
+                <th className="py-1 text-right font-semibold" title="bruto − 0,12%/trade (a régua que vale)">líquido %</th>
+                <th className="py-1 text-right font-semibold" title="líquido médio por trade">méd/trade</th>
+                <th className="py-1 text-right font-semibold" title={`PnL real na conta demo (só engines com ordens carimbadas)`}>real {quote}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {engineBoard.map((e) => (
+                <tr key={e.eng} className={`border-t border-border/40 ${e.live ? "bg-emerald-500/[0.06]" : ""}`}>
+                  <td className="py-1.5">
+                    <span className="font-semibold text-foreground">{e.name}</span>
+                    {e.live && <span className="ml-1.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">● VIVO</span>}
+                    {e.openNow > 0 && <span className="ml-1 text-[9px] text-muted-foreground">· {e.openNow} aberta{e.openNow === 1 ? "" : "s"}</span>}
+                    <div className="text-[10px] font-normal text-muted-foreground">{e.desc}</div>
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums text-muted-foreground">{e.trades}</td>
+                  <td className="py-1.5 text-right tabular-nums text-muted-foreground">{e.trades ? `${e.win}%` : "—"}</td>
+                  <td className={`py-1.5 text-right tabular-nums ${e.gross > 0 ? "text-emerald-500" : e.gross < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.gross >= 0 ? "+" : ""}${e.gross.toFixed(1)}` : "—"}</td>
+                  <td className={`py-1.5 text-right tabular-nums font-semibold ${e.net > 0 ? "text-emerald-500" : e.net < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.net >= 0 ? "+" : ""}${e.net.toFixed(1)}` : "—"}</td>
+                  <td className={`py-1.5 text-right tabular-nums ${e.avgNet > 0 ? "text-emerald-500" : e.avgNet < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.trades ? `${e.avgNet >= 0 ? "+" : ""}${e.avgNet.toFixed(2)}` : "—"}</td>
+                  <td className={`py-1.5 text-right tabular-nums ${e.realPnl > 0 ? "text-emerald-500" : e.realPnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>{e.realTrades ? `${e.realPnl >= 0 ? "+" : ""}${num(e.realPnl)}` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground"><b>Real</b> = o que cada robô fez de fato na conta demo (só o <b>● VIVO</b> opera real; o v28 carrega o histórico de quando era o vivo). <b>Papel</b> = os dois simulados agora nas mesmas moedas, pra comparar lado a lado. Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground"><b>Papel</b> = todas as variantes simuladas nas mesmas moedas (régua justa). <b>Líquido</b> desconta 0,12%/trade (taker 0,04% + slippage 0,02%, os dois lados). <b>Real {quote}</b> = conta demo, só onde há ordens carimbadas por engine (o ● VIVO + histórico do v28). Troque o vivo em <b>Configuração → Motor do robô</b>.</p>
       </div>
 
       {/* Acerto por bloco — régua honesta pra calibrar os pesos com DADO (não achismo) */}
