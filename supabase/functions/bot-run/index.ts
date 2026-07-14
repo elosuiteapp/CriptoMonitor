@@ -881,7 +881,7 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { time: number; high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean, bookRet?: number | null) => {
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { time: number; high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean, bookRet?: number | null, smcStruct?: { eqTop: number; eqBot: number; hiStrong: boolean; loStrong: boolean; swingHi: number; swingLo: number; liq: { side: string; price: number; sweptRecently?: boolean }[] } | null) => {
       const conf2 = engine.startsWith("confluence2"); // confluence2 + variantes-sombra (_ct/_bg/_cap/_cd): MESMA decisão (força ponderada + histerese); só o gate de abertura/saída difere
       const candleMode = engine === "confluence2_ct"; // EXPERIMENTO (10/jul, ideia do dono): trailing por VELA em vez de catástrofe 4×ATR
       const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
@@ -912,6 +912,17 @@ Deno.serve(async (req) => {
         } else if (engine === "confluence2_cd") {   // #4: cooldown — não reabre o MESMO ativo/lado por 4 velas (~60min) após a última saída
           const { data: lastT } = await admin.from("bot_shadow_trades").select("side, closed_at").eq("engine", engine).eq("asset", asset).order("closed_at", { ascending: false }).limit(1).maybeSingle();
           if (lastT && lastT.side === side && (Date.parse(now) - Date.parse(lastT.closed_at as string)) < 4 * 9e5) return false;
+        } else if (engine === "confluence2_tec" && smcStruct) {   // ROBÔ 3.0 (14/jul): gatilho do bloco Técnico MANDA, mas o SMC/Price-Action VETA a zona errada:
+          const k = 0.75 * atr;                                    // NUNCA compra em resistência (premium/topo forte/liquidez colada acima) nem vende em suporte (discount/fundo forte/liquidez colada abaixo). Vale por ativo (mesmo ritmo em todas as moedas).
+          if (side === "long") {
+            if (px > smcStruct.eqTop) return false;                                                                                          // Zonas: preço em PREMIUM = Supply/Sell Zone (resistência)
+            if (smcStruct.hiStrong && Number.isFinite(smcStruct.swingHi) && px <= smcStruct.swingHi && smcStruct.swingHi - px <= k) return false; // Máx/Mín D-S-M: topo FORTE (defendido) colado acima
+            if (smcStruct.liq?.some((l) => l.side === "buy" && !l.sweptRecently && l.price > px && l.price - px <= k)) return false;              // Liquidez: ímã (pool não varrido) colado acima
+          } else {
+            if (px < smcStruct.eqBot) return false;                                                                                          // Zonas: preço em DISCOUNT = Demand/Buy Zone (suporte)
+            if (smcStruct.loStrong && Number.isFinite(smcStruct.swingLo) && px >= smcStruct.swingLo && px - smcStruct.swingLo <= k) return false; // fundo FORTE (defendido) colado abaixo
+            if (smcStruct.liq?.some((l) => l.side === "sell" && !l.sweptRecently && l.price < px && px - l.price <= k)) return false;             // Liquidez colada abaixo
+          }
         }
         return true;
       };
@@ -1374,6 +1385,7 @@ Deno.serve(async (req) => {
       const CONF2_LABELS: Record<string, string> = { estrutura: "Estrutura", micro: "Microestrutura", fluxo: "Fluxo", posicionamento: "Posicionamento", tecnico: "Técnico" };
       const conf2Up = conf2g.filter((g) => g.vote === 1).length, conf2Dn = conf2g.filter((g) => g.vote === -1).length;
       const conf2Wf = conf2Wforce(conf2g, conf2W);                                 // FORÇA PONDERADA −100..+100 (a variável que decide)
+      const tecWf = conf2g.find((g) => g.key === "tecnico")?.score ?? 0;           // ROBÔ 3.0: força ISOLADA do bloco Técnico (o gatilho de direção; SMC só filtra a zona)
       const conf2Signal = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, "flat");   // o que os blocos DIZEM (sem estado) — mostrado no painel
       const conf2dir = wfDecide(conf2Wf, conf2Enter, conf2Hold, fut, pos);         // o que o robô FAZ (histerese pela posição atual)
       const confluence2 = { groups: conf2g.map((g) => ({ key: g.key, label: CONF2_LABELS[g.key] ?? g.key, score: g.score, vote: g.vote, up: g.up, dn: g.dn, n: g.n, weight: Number((conf2W as Record<string, number>)[g.key] ?? 0) })), up: conf2Up, dn: conf2Dn, wforce: conf2Wf, enter: conf2Enter, hold: conf2Hold, dir: conf2Signal, weights: conf2W };
@@ -1390,6 +1402,11 @@ Deno.serve(async (req) => {
         try { await runShadow("confluence2_bg", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_bg: ${(e as Error).message}`, {}); }   // gate de book
         try { await runShadow("confluence2_cap", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cap: ${(e as Error).message}`, {}); } // teto same-side
         try { await runShadow("confluence2_cd", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cd: ${(e as Error).message}`, {}); }   // cooldown re-entrada
+        // ROBÔ 3.0 (14/jul, pedido do dono): GATILHO = bloco Técnico isolado (maior relevância) + FILTRO SMC/Price-Action (Zonas premium/discount + Máx/Mín strong/weak + Liquidez).
+        // Nunca compra em resistência (premium) nem vende em suporte (discount). Mesma saída/stop do conf2 (catástrofe 4×ATR + breakeven). Papel.
+        const pSmc = primary.smc;
+        const smcStruct = pSmc ? { eqTop: pSmc.equilibrium.top, eqBot: pSmc.equilibrium.bottom, hiStrong: pSmc.extremes?.high === "strong", loStrong: pSmc.extremes?.low === "strong", swingHi: pSmc.swingHighLevel, swingLo: pSmc.swingLowLevel, liq: pSmc.liquidity } : null;
+        try { await runShadow("confluence2_tec", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, tecWf, conf2Enter, conf2Hold, fut, null, smcStruct); } catch (e) { await log("info", `[${asset}] sombra conf2_tec: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
