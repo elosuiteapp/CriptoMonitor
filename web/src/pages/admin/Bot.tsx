@@ -9,11 +9,16 @@ import RobotScoreboard from "../../components/admin/bot/RobotScoreboard";
 import BlockAccuracy from "../../components/admin/bot/BlockAccuracy";
 import AccountSummary from "../../components/admin/bot/AccountSummary";
 import OpenPositions from "../../components/admin/bot/OpenPositions";
+import OrdersFilters from "../../components/admin/bot/OrdersFilters";
+import ClosedTradesTable from "../../components/admin/bot/ClosedTradesTable";
+import ExecutionsTable from "../../components/admin/bot/ExecutionsTable";
+import ManualOrder from "../../components/admin/bot/ManualOrder";
 import Markdown from "../../components/Markdown";
 import { supabase } from "../../lib/supabase";
 import type { Config, Reading, OrderRow, LogRow, BotPosition, Learning, BtTrade } from "../../lib/bot/types";
 import { FLOW_SIGNALS, BLOCK_LINES, LOG_TONE } from "../../lib/bot/constants";
 import { num } from "../../lib/bot/format";
+import { buildClosedTrades, assetOf } from "../../lib/bot/trades";
 import { invoke } from "../../lib/bot/api";
 
 // Colunas lidas do banco — compartilhadas entre a carga inicial (loadBase) e o polling (loadLive), DRY.
@@ -488,42 +493,9 @@ export default function AdminBot() {
   // Quando o fill não voltou (demo atrasa e salva sem preço/PnL), PAREIA com as aberturas do CICLO
   // (mesma moeda, entre o fechamento anterior e este) → recupera entrada, duração e PnL estimado (≈).
   // O motivo do fechamento vem da nota da ordem (stop / alvo / trailing / manual / reversão).
-  const tms = (iso: string) => new Date(iso).getTime();
-  const closedTrades = orders
-    .filter((o) => o.action === "close" && o.ok)
-    .map((o) => {
-      const asset = o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "—";
-      const wasLong = o.side === "sell"; // fechou LONG vendendo; SHORT comprando
-      const dir = wasLong ? 1 : -1;
-      let exit = o.avg_px != null ? Number(o.avg_px) : null;
-      const sz = o.sz != null && o.sz !== "" ? Number(o.sz) : null;
-      let pnl = o.pnl != null ? Number(o.pnl) : null;
-      // Aberturas do ciclo: mesma moeda, depois do close anterior e antes deste, no lado da posição.
-      const prevCloseT = orders.reduce((m, x) => (x.inst_id === o.inst_id && x.action === "close" && x.ok && tms(x.created_at) < tms(o.created_at) && tms(x.created_at) > m ? tms(x.created_at) : m), 0);
-      const cycleOpens = orders
-        .filter((x) => x.inst_id === o.inst_id && x.ok && x.action !== "close" && x.side !== o.side && tms(x.created_at) < tms(o.created_at) && tms(x.created_at) > prevCloseT)
-        .sort((a, b) => tms(a.created_at) - tms(b.created_at));
-      const openAt = cycleOpens[0]?.created_at ?? null;
-      let entry = exit != null && sz && pnl != null && sz !== 0 ? exit - pnl / (sz * dir) : null;
-      let estimated = false;
-      if (entry == null && cycleOpens.length) {
-        // fallback: entrada = média ponderada das aberturas do ciclo (fill do close não voltou)
-        let q = 0, qv = 0;
-        for (const x of cycleOpens) { const p = x.avg_px != null ? Number(x.avg_px) : null; const xs = x.sz ? Number(x.sz) : null; if (p && xs) { q += xs; qv += p * xs; } }
-        if (q > 0) { entry = qv / q; estimated = true; }
-      }
-      if (exit == null && entry != null && pnl != null && sz) { exit = entry + pnl / (sz * dir); estimated = true; }
-      if (pnl == null && entry != null && exit != null && sz) { pnl = (exit - entry) * sz * dir; estimated = true; }
-      const pct = entry && entry !== 0 && exit != null ? ((exit - entry) / entry) * 100 * dir : null;
-      const durMin = openAt ? Math.max(0, Math.round((tms(o.created_at) - tms(openAt)) / 60000)) : null;
-      const note = o.note ?? "";
-      const reason = /ALVO/i.test(note) ? "🎯 alvo" : /STOP MÓVEL/i.test(note) ? "🛡️ trailing" : /STOP/i.test(note) ? "🛑 stop" : /manual/i.test(note) ? "✋ manual" : o.source === "auto" ? "↩ reversão" : "✋ manual";
-      return { id: o.id, asset, wasLong, entry, exit, sz, pnl, pct, source: o.source, at: o.created_at, openAt, durMin, reason, estimated, note };
-    });
-  const durLabel = (m: number | null) => (m == null ? "—" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`);
+  const closedTrades = buildClosedTrades(orders);
 
   // ── FILTROS (moeda / status / período) aplicados às ordens e aos trades ──
-  const assetOf = (o: OrderRow) => (o.inst_id ? o.inst_id.toUpperCase().replace(/USDT$/, "").replace(/-.*/, "") : "");
   const orderAssets = [...new Set(orders.map(assetOf).filter(Boolean))].sort();
   const inPeriod = (iso: string) => {
     const t = new Date(iso).getTime();
@@ -556,61 +528,6 @@ export default function AdminBot() {
   const bestTrade = scored.length ? scored.reduce((a, b) => ((a.pnl as number) >= (b.pnl as number) ? a : b)) : null;
   const worstTrade = scored.length ? scored.reduce((a, b) => ((a.pnl as number) <= (b.pnl as number) ? a : b)) : null;
   const pnlByAsset = [...scored.reduce((m, t) => m.set(t.asset, (m.get(t.asset) ?? 0) + (t.pnl as number)), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
-  const filtersOn = fAsset !== "all" || fStatus !== "all" || fSource !== "all" || fResult !== "all" || !!fFrom || !!fTo;
-  const clearFilters = () => { setFAsset("all"); setFStatus("all"); setFSource("all"); setFResult("all"); setFFrom(""); setFTo(""); };
-  // Períodos rápidos (hoje / 7d / 30d) — datas locais no formato do input date.
-  const dstr = (d: Date) => d.toLocaleDateString("en-CA");
-  const quickRange = (days: number) => { const to = new Date(); const from = new Date(); from.setDate(to.getDate() - (days - 1)); setFFrom(dstr(from)); setFTo(dstr(to)); };
-
-  // Tabela de execuções reusável (mesmo layout p/ robô e manual).
-  const ordersTable = (rows: OrderRow[]) => (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-          <tr><th className="px-4 py-2 font-medium">Quando</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Tipo</th><th className="px-4 py-2 font-medium">Lado</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Preço</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Situação</th><th className="px-4 py-2 font-medium">Por</th><th className="px-4 py-2 text-right font-medium">Ações</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((o) => {
-            const a = assetOf(o) || null;
-            const hasPos = positions.some((x) => x.asset === a && x.position !== "flat");
-            const tipo = o.action === "open" ? "Abertura" : o.action === "add" ? "Adição" : o.action === "close" ? "Saída" : "Manual";
-            return (
-              <tr key={o.id} className="border-b border-border last:border-0">
-                <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
-                <td className="px-4 py-2 font-semibold text-foreground">{a ?? "—"}</td>
-                <td className="px-4 py-2 text-[11px] text-muted-foreground" title={o.note ?? undefined}>{tipo}{o.note ? " ℹ️" : ""}</td>
-                <td className={`px-4 py-2 font-medium ${o.side === "buy" ? "text-emerald-500" : "text-rose-500"}`}>{o.side === "buy" ? "compra" : "venda"}</td>
-                <td className="num px-4 py-2 text-right text-foreground">{o.sz}</td>
-                <td className="num px-4 py-2 text-right text-foreground">{o.avg_px != null ? num(o.avg_px, pxDec(o.avg_px)) : "—"}</td>
-                <td className="num px-4 py-2 text-right">{o.pnl != null ? <span className={o.pnl >= 0 ? "text-emerald-500" : "text-rose-500"} title="resultado realizado no fechamento">{o.pnl >= 0 ? "+" : ""}{num(o.pnl)}</span> : <span className="text-muted-foreground">—</span>}</td>
-                <td className="px-4 py-2">
-                  {!o.ok ? (
-                    <span className="text-rose-500" title={o.result?.data?.[0]?.sMsg ?? o.result?.msg ?? ""}>erro</span>
-                  ) : o.action === "close" ? (
-                    <span className="text-[10px] text-muted-foreground">saída ok</span>
-                  ) : (() => {
-                    const closedAfter = orders.some((x) => x.inst_id === o.inst_id && x.action === "close" && x.ok && new Date(x.created_at) > new Date(o.created_at));
-                    return hasPos && !closedAfter
-                      ? <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />posição aberta</span>
-                      : <span className="text-[10px] text-muted-foreground">encerrada</span>;
-                  })()}
-                </td>
-                <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{o.source === "auto" ? "robô" : "manual"}</span></td>
-                <td className="whitespace-nowrap px-4 py-2 text-right">
-                  {o.ord_type === "limit" && o.ok && o.result?.data?.[0]?.ordId && (
-                    <button onClick={() => cancelOrder(o)} disabled={busy !== null} className="mr-3 text-[11px] text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">cancelar</button>
-                  )}
-                  <button onClick={() => deleteOrder(o)} disabled={busy !== null} className="text-[11px] text-muted-foreground hover:text-rose-500 hover:underline disabled:opacity-50" title={!o.ok ? "Remove a ordem com erro do histórico (não afeta a posição)" : hasPos ? `Fecha a posição de ${a} e remove a ordem` : "Remove do histórico"}>
-                    {o.ok && hasPos ? "cancelar" : "excluir"}
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
 
   return (
     <section className="space-y-5">
@@ -990,54 +907,7 @@ export default function AdminBot() {
       {/* Ordens (trades, execuções, diário) · aba Ordens */}
       {tab === "ordens" && (<>
       {/* Filtros — moeda / origem / resultado / status / período (valem p/ KPIs, trades e execuções). */}
-      <div className="rounded-xl border border-border bg-card p-3 dark:bg-card/60">
-        <div className="flex flex-wrap items-end gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Filtros</span>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Moeda
-            <select value={fAsset} onChange={(e) => setFAsset(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-              <option value="all">Todas</option>
-              {orderAssets.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </label>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Origem
-            <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-              <option value="all">Todas</option>
-              <option value="auto">Robô</option>
-              <option value="manual">Manual</option>
-            </select>
-          </label>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultado
-            <select value={fResult} onChange={(e) => setFResult(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-              <option value="all">Todos</option>
-              <option value="win">No verde</option>
-              <option value="loss">No vermelho</option>
-            </select>
-          </label>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Status
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-              <option value="all">Todos</option>
-              <option value="ok">OK</option>
-              <option value="erro">Erro</option>
-            </select>
-          </label>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">De
-            <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
-          </label>
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Até
-            <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="mt-1 block rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
-          </label>
-          <div className="flex gap-0.5 rounded-lg border border-border bg-background p-0.5">
-            <button onClick={() => quickRange(1)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">Hoje</button>
-            <button onClick={() => quickRange(7)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">7d</button>
-            <button onClick={() => quickRange(30)} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">30d</button>
-            <button onClick={() => { setFFrom(""); setFTo(""); }} className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">Tudo</button>
-          </div>
-          {filtersOn && (
-            <button onClick={clearFilters} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Limpar filtros</button>
-          )}
-          <span className="ml-auto text-[11px] text-muted-foreground">{fClosedTrades.length} trades · {filtered.length} ordens{filtersOn ? " (filtradas)" : ""}</span>
-        </div>
-      </div>
+      <OrdersFilters fAsset={fAsset} setFAsset={setFAsset} fSource={fSource} setFSource={setFSource} fResult={fResult} setFResult={setFResult} fStatus={fStatus} setFStatus={setFStatus} fFrom={fFrom} setFFrom={setFFrom} fTo={fTo} setFTo={setFTo} orderAssets={orderAssets} filtered={filtered} fClosedTrades={fClosedTrades} />
 
       {/* KPIs do período filtrado — desempenho REALIZADO (trades que já fecharam) */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1064,60 +934,13 @@ export default function AdminBot() {
       </div>
 
       {/* Trades encerrados — round-trips fechados (pelo robô ou por você), com resultado realizado. */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Trades encerrados <span className="text-xs font-normal text-muted-foreground">· receita realizada</span></h2>
-          {pnlByAsset.length > 0 && (
-            <span className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {pnlByAsset.map(([a, v]) => (
-                <span key={a} className={`num rounded px-1.5 py-0.5 font-semibold ${v >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400"}`}>{a} {v >= 0 ? "+" : ""}{num(v)}</span>
-              ))}
-            </span>
-          )}
-        </div>
-        {fClosedTrades.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">{closedTrades.length === 0 ? "Nenhum trade encerrado ainda. Quando o robô sair de uma posição (ou você fechar), o resultado aparece aqui." : "Nenhum trade encerrado no filtro atual."}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-2 font-medium">Fechado</th><th className="px-4 py-2 font-medium">Ativo</th><th className="px-4 py-2 font-medium">Direção</th><th className="px-4 py-2 text-right font-medium">Entrada → Saída</th><th className="px-4 py-2 text-right font-medium">Tam.</th><th className="px-4 py-2 text-right font-medium">Duração</th><th className="px-4 py-2 font-medium">Motivo</th><th className="px-4 py-2 text-right font-medium">Resultado</th><th className="px-4 py-2 font-medium">Por</th></tr>
-              </thead>
-              <tbody>
-                {fClosedTrades.map((t) => {
-                  const pdec = pxDec(t.exit ?? t.entry);
-                  return (
-                    <tr key={t.id} className="border-b border-border last:border-0">
-                      <td className="num whitespace-nowrap px-4 py-2 text-muted-foreground">{new Date(t.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
-                      <td className="px-4 py-2 font-semibold text-foreground">{t.asset}</td>
-                      <td className="px-4 py-2"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.wasLong ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{t.wasLong ? "long" : "short"}</span></td>
-                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground" title={t.estimated ? "≈ reconstruído da ordem de abertura (o fill do fechamento não retornou da corretora)" : undefined}>{t.estimated ? "≈ " : ""}{t.entry != null ? num(t.entry, pdec) : "—"} <span className="text-muted-foreground/50">→</span> <span className="text-foreground">{t.exit != null ? num(t.exit, pdec) : "—"}</span></td>
-                      <td className="num px-4 py-2 text-right text-foreground">{t.sz != null ? num(t.sz, 6) : "—"}</td>
-                      <td className="num whitespace-nowrap px-4 py-2 text-right text-muted-foreground" title={t.openAt ? `aberto ${new Date(t.openAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : undefined}>{durLabel(t.durMin)}</td>
-                      <td className="whitespace-nowrap px-4 py-2 text-[11px] text-muted-foreground" title={t.note || undefined}>{t.reason}</td>
-                      <td className="num whitespace-nowrap px-4 py-2 text-right">{t.pnl != null ? <span className={`font-semibold ${t.pnl >= 0 ? "text-emerald-500" : "text-rose-500"}`} title={t.estimated ? "≈ estimado (reconstruído da abertura)" : undefined}>{t.estimated ? "≈ " : ""}{t.pnl >= 0 ? "+" : ""}{num(t.pnl)} {quote}{t.pct != null && <span className="ml-1 text-[11px] font-normal">({t.pct >= 0 ? "+" : ""}{t.pct.toFixed(2)}%)</span>}</span> : <span className="text-muted-foreground" title="sem preço de entrada nem PnL salvos — não deu pra reconstruir">—</span>}</td>
-                      <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${t.source === "auto" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{t.source === "auto" ? "robô" : "manual"}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className="px-4 py-2 text-[10px] text-muted-foreground">Cada linha é um trade que <strong>já fechou</strong> (abriu → fechou). Entrada = preço médio (reconstruído do PnL; com <strong>≈</strong> = recuperado da ordem de abertura quando a corretora não devolveu o fill). <strong>Motivo</strong>: 🎯 alvo na liquidez · 🛡️ trailing (lucro travado) · 🛑 stop · ↩ reversão do robô · ✋ manual.</p>
-          </div>
-        )}
-      </div>
+      <ClosedTradesTable fClosedTrades={fClosedTrades} closedTrades={closedTrades} pnlByAsset={pnlByAsset} quote={quote} pxDec={pxDec} />
 
       {/* Execuções — TODAS as ordens enviadas (robô + manuais numa tabela só; use o filtro Origem). */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover dark:bg-card/60">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Execuções <span className="text-xs font-normal text-muted-foreground">· toda ordem enviada à corretora</span></h2>
-          <span className="text-[11px] text-muted-foreground">{botOrders.length} do robô · {manualOrders.length} manuais</span>
-        </div>
-        {filtered.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">{orders.length ? "Nenhuma ordem no filtro atual." : "Nenhuma ordem enviada ainda."}</p>
-        ) : ordersTable(filtered)}
-        <p className="px-4 py-2 text-[10px] text-muted-foreground"><strong>Resultado</strong> só aparece na <strong>Saída</strong> (o lucro/prejuízo é do trade inteiro, não de cada compra/venda) — o consolidado está em “Trades encerrados” acima. Passe o mouse no <strong>Tipo</strong> pra ver a nota da ordem. PnL ao vivo das posições abertas está em “Posições abertas”.</p>
-      </div>
+      <ExecutionsTable filtered={filtered} botOrders={botOrders} manualOrders={manualOrders} orders={orders} positions={positions} busy={busy} pxDec={pxDec} cancelOrder={cancelOrder} deleteOrder={deleteOrder} />
+
+      {/* Ordem manual (avançado) · aba Ordens */}
+      <ManualOrder showManual={showManual} setShowManual={setShowManual} cfg={cfg} input={input} mSide={mSide} setMSide={setMSide} mOrdType={mOrdType} setMOrdType={setMOrdType} mSz={mSz} setMSz={setMSz} mPx={mPx} setMPx={setMPx} isFut={isFut} placeManual={placeManual} busy={busy} connected={connected} />
 
       </>)}
 
@@ -1331,27 +1154,6 @@ export default function AdminBot() {
       </div>
       )}
 
-      {/* Ordem manual (avançado) · aba Ordens */}
-      {tab === "ordens" && (
-      <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-foreground/15 hover:shadow-card-hover p-4 dark:bg-card/60">
-        <button onClick={() => setShowManual((v) => !v)} className="flex w-full items-center justify-between text-sm font-semibold text-foreground">
-          <span>Ordem manual (avançado)</span>
-          <span className="text-muted-foreground">{showManual ? "▲" : "▼"}</span>
-        </button>
-        {showManual && cfg && (
-          <div className="mt-3">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <select className={input} value={mSide} onChange={(e) => setMSide(e.target.value as "buy" | "sell")}><option value="buy">Comprar</option><option value="sell">Vender</option></select>
-              <select className={input} value={mOrdType} onChange={(e) => setMOrdType(e.target.value as "market" | "limit")}><option value="market">A mercado</option><option value="limit">Limite</option></select>
-              <input className={input} placeholder={isFut ? "Tamanho em USDT (ex.: 50)" : mSide === "buy" ? `Tamanho em ${cfg.quote_ccy} (ex.: 50)` : `Tamanho em ${cfg.base_ccy} (ex.: 0.001)`} value={mSz} onChange={(e) => setMSz(e.target.value)} />
-              <input className={input} placeholder="Preço (limite)" value={mPx} onChange={(e) => setMPx(e.target.value)} disabled={mOrdType !== "limit"} />
-            </div>
-            <button onClick={placeManual} disabled={busy !== null || !connected} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busy === "manual" ? "Enviando…" : `Enviar ${mSide === "buy" ? "compra" : "venda"} de ${cfg.inst_id} (demo)`}</button>
-            <p className="mt-2 text-[11px] text-muted-foreground">{isFut ? `Futuros demo (${cfg.inst_id}). Tamanho em USDT (nocional); Comprar = abrir/aumentar long, Vender = abrir/aumentar short.` : `Spot demo. Compra a mercado: tamanho em ${cfg.quote_ccy}; venda: na moeda base.`} Tudo fake.</p>
-          </div>
-        )}
-      </div>
-      )}
     </section>
   );
 }
