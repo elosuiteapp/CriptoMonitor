@@ -912,18 +912,9 @@ Deno.serve(async (req) => {
         } else if (engine === "confluence2_cd") {   // #4: cooldown — não reabre o MESMO ativo/lado por 4 velas (~60min) após a última saída
           const { data: lastT } = await admin.from("bot_shadow_trades").select("side, closed_at").eq("engine", engine).eq("asset", asset).order("closed_at", { ascending: false }).limit(1).maybeSingle();
           if (lastT && lastT.side === side && (Date.parse(now) - Date.parse(lastT.closed_at as string)) < 4 * 9e5) return false;
-        } else if (engine === "confluence2_tec" && smcStruct) {   // ROBÔ 3.0 (14/jul): gatilho do bloco Técnico MANDA, mas o SMC/Price-Action VETA a zona errada:
-          const k = 0.75 * atr;                                    // NUNCA compra em resistência (premium/topo forte/liquidez colada acima) nem vende em suporte (discount/fundo forte/liquidez colada abaixo). Vale por ativo (mesmo ritmo em todas as moedas).
-          if (side === "long") {
-            if (px > smcStruct.eqTop) return false;                                                                                          // Zonas: preço em PREMIUM = Supply/Sell Zone (resistência)
-            if (smcStruct.hiStrong && Number.isFinite(smcStruct.swingHi) && px <= smcStruct.swingHi && smcStruct.swingHi - px <= k) return false; // Máx/Mín D-S-M: topo FORTE (defendido) colado acima
-            if (smcStruct.liq?.some((l) => l.side === "buy" && !l.sweptRecently && l.price > px && l.price - px <= k)) return false;              // Liquidez: ímã (pool não varrido) colado acima
-          } else {
-            if (px < smcStruct.eqBot) return false;                                                                                          // Zonas: preço em DISCOUNT = Demand/Buy Zone (suporte)
-            if (smcStruct.loStrong && Number.isFinite(smcStruct.swingLo) && px >= smcStruct.swingLo && px - smcStruct.swingLo <= k) return false; // fundo FORTE (defendido) colado abaixo
-            if (smcStruct.liq?.some((l) => l.side === "sell" && !l.sweptRecently && l.price < px && px - l.price <= k)) return false;             // Liquidez colada abaixo
-          }
         }
+        // ROBÔ 3.0 (confluence2_tec): SEM veto de zona (dono 14/jul) — segue a MAIORIA do bloco Técnico em QUALQUER região.
+        // Seguir a tendência é melhor; a reversão no topo/fundo vem naturalmente quando a maioria do técnico VIRA lá. Abre sempre.
         return true;
       };
       if (spos === "flat") { if (w !== "flat" && await allowOpen(w)) await open(w); return; }
@@ -1406,11 +1397,9 @@ Deno.serve(async (req) => {
         try { await runShadow("confluence2_bg", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_bg: ${(e as Error).message}`, {}); }   // gate de book
         try { await runShadow("confluence2_cap", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cap: ${(e as Error).message}`, {}); } // teto same-side
         try { await runShadow("confluence2_cd", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cd: ${(e as Error).message}`, {}); }   // cooldown re-entrada
-        // ROBÔ 3.0 (14/jul, pedido do dono): GATILHO = bloco Técnico isolado (maior relevância) + FILTRO SMC/Price-Action (Zonas premium/discount + Máx/Mín strong/weak + Liquidez).
-        // Nunca compra em resistência (premium) nem vende em suporte (discount). Mesma saída/stop do conf2 (catástrofe 4×ATR + breakeven). Papel.
-        const pSmc = primary.smc;
-        const smcStruct = pSmc ? { eqTop: pSmc.equilibrium.top, eqBot: pSmc.equilibrium.bottom, hiStrong: pSmc.extremes?.high === "strong", loStrong: pSmc.extremes?.low === "strong", swingHi: pSmc.swingHighLevel, swingLo: pSmc.swingLowLevel, liq: pSmc.liquidity } : null;
-        try { await runShadow("confluence2_tec", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, tecWf, 50, 10, fut, null, smcStruct); } catch (e) { await log("info", `[${asset}] sombra conf2_tec: ${(e as Error).message}`, {}); }  // enter/hold 50/10: força binária ±100 (maioria) → abre na maioria, sai quando some
+        // ROBÔ 3.0 (14/jul, dono): GATILHO = MAIORIA do bloco Técnico isolado (tecWf ±100), SEM veto de zona — segue a tendência
+        // em QUALQUER região; a reversão no topo/fundo vem quando a maioria do técnico VIRA lá. enter/hold 50/10. Mesma saída/stop do conf2. Papel.
+        try { await runShadow("confluence2_tec", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, tecWf, 50, 10, fut); } catch (e) { await log("info", `[${asset}] sombra conf2_tec: ${(e as Error).message}`, {}); }
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da

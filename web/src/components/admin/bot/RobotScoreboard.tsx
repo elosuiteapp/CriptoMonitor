@@ -40,7 +40,7 @@ export default function RobotScoreboard({ shadowTrades, orders, positions, liveE
           <h2 className="text-sm font-semibold text-foreground">Desempenho dos robôs <span className="font-normal text-muted-foreground">— líquido de taxa</span></h2>
           <span className="text-[10px] text-muted-foreground">papel (%) · líquido = bruto − 0,12%/trade · o ● VIVO também opera real</span>
         </div>
-        <p className="mb-2 text-[11px] text-muted-foreground">A régua da auditoria: o <b>líquido</b> é o que conta — a taxa comeu o edge do 2.0 no bruto. O <b>Robô 3.0</b> = gatilho do bloco Técnico + filtro SMC (nunca compra em resistência/premium nem vende em suporte/discount).</p>
+        <p className="mb-2 text-[11px] text-muted-foreground">A régua da auditoria: o <b>líquido</b> é o que conta — a taxa comeu o edge do 2.0 no bruto. O <b>Robô 3.0</b> = segue a MAIORIA do bloco Técnico (≥3 de 5 indicadores), sem veto de zona — trend-follower puro; a reversão no topo/fundo vem quando o técnico vira.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>

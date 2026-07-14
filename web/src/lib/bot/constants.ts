@@ -64,7 +64,7 @@ export const FEE_RT = 0.12;
 // Usado no placar de desempenho e na visão de posições/ordens por robô.
 export const BOT_ENGINES: { eng: string; name: string; desc: string }[] = [
   { eng: "confluence2",     name: "Robô 2.0",              desc: "força ponderada dos 5 blocos" },
-  { eng: "confluence2_tec", name: "Robô 3.0",              desc: "gatilho Técnico + filtro SMC de zona" },
+  { eng: "confluence2_tec", name: "Robô 3.0",              desc: "segue a maioria do bloco Técnico (≥3 de 5), sem veto de zona" },
   { eng: "smc",             name: "Robô v28",              desc: "SMC price-action + gates" },
   { eng: "confluence2_ct",  name: "2.0 · trailing vela",   desc: "saída por vela" },
   { eng: "confluence2_bg",  name: "2.0 · book-gate",       desc: "veta abrir contra o book varejo" },
