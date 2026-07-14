@@ -881,8 +881,8 @@ Deno.serve(async (req) => {
     // ── ROBÔ SOMBRA (paper): roda o Robô 2.0 SEM tocar na corretora quando ele NÃO é o vivo. Mantém
     //    posição de papel (bot_shadow) + trailing abaixo do 4º candle e grava trades fechados
     //    (bot_shadow_trades) p/ comparar os dois robôs na MESMA régua (mesmas moedas, mesmos ciclos). ──
-    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { time: number; high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean) => {
-      const conf2 = engine === "confluence2" || engine === "confluence2_ct"; // ambos rodam a MESMA decisão (força ponderada + histerese) — só a saída/stop difere
+    const runShadow = async (engine: string, asset: string, want: "long" | "short" | "flat", px: number, candles: { time: number; high: number; low: number }[], planStop: number | null, atr: number, kTrail: number, c2wf?: number, c2enter?: number, c2hold?: number, c2fut?: boolean, bookRet?: number | null) => {
+      const conf2 = engine.startsWith("confluence2"); // confluence2 + variantes-sombra (_ct/_bg/_cap/_cd): MESMA decisão (força ponderada + histerese); só o gate de abertura/saída difere
       const candleMode = engine === "confluence2_ct"; // EXPERIMENTO (10/jul, ideia do dono): trailing por VELA em vez de catástrofe 4×ATR
       const kCat = Number(cfg.conf2_stop_atr ?? 4); // 2.0: stop de catástrofe largo (espelha o live)
       const lastC = candles.length ? candles[candles.length - 1] : null; // última vela FECHADA (primary.candles já veio sem a em formação)
@@ -902,7 +902,20 @@ Deno.serve(async (req) => {
         if (stop == null || (side === "long" ? stop >= px : stop <= px)) return; // stop não-protetor → não abre no papel
         await admin.from("bot_shadow").upsert({ engine, asset, position: side, entry_px: px, stop_px: stop, peak_px: px, entry_bar: candleMode && lastC ? lastC.time : null, opened_at: now, updated_at: now }, { onConflict: "engine,asset" });
       };
-      if (spos === "flat") { if (w !== "flat") await open(w); return; }
+      // GATES DE ABERTURA das variantes-sombra (fee-positivas: reduzem nº de trades) — risco zero, só papel. As demais engines abrem sempre.
+      const allowOpen = async (side: "long" | "short"): Promise<boolean> => {
+        if (engine === "confluence2_bg") {          // #2: veta abrir quando o book varejo contraria o lado (deadzone ±8, igual ao voto dos blocos)
+          if (bookRet != null && (side === "long" ? bookRet <= -8 : bookRet >= 8)) return false;
+        } else if (engine === "confluence2_cap") {  // #3: teto de exposição — no máx 2 posições-sombra do MESMO lado (corta a "1 aposta" correlacionada)
+          const { count } = await admin.from("bot_shadow").select("engine", { count: "exact", head: true }).eq("engine", engine).eq("position", side);
+          if ((count ?? 0) >= 2) return false;
+        } else if (engine === "confluence2_cd") {   // #4: cooldown — não reabre o MESMO ativo/lado por 4 velas (~60min) após a última saída
+          const { data: lastT } = await admin.from("bot_shadow_trades").select("side, closed_at").eq("engine", engine).eq("asset", asset).order("closed_at", { ascending: false }).limit(1).maybeSingle();
+          if (lastT && lastT.side === side && (Date.parse(now) - Date.parse(lastT.closed_at as string)) < 4 * 9e5) return false;
+        }
+        return true;
+      };
+      if (spos === "flat") { if (w !== "flat" && await allowOpen(w)) await open(w); return; }
       const entry = Number(sp!.entry_px) || px;
       const prevStop = sp!.stop_px != null ? Number(sp!.stop_px) : null;
       const prevPeak = Number(sp!.peak_px) || entry;
@@ -943,7 +956,7 @@ Deno.serve(async (req) => {
         const pnlPct = entry ? Math.round(((exitPx - entry) * dir / entry) * 1e4) / 1e2 : null;
         const reason = breached ? "stop" : w === "flat" ? "confluência" : "reversão";
         await admin.from("bot_shadow_trades").insert({ engine, asset, side: spos, entry_px: entry, exit_px: exitPx, pnl_pct: pnlPct, reason, opened_at: sp!.opened_at, closed_at: now });
-        if (w !== "flat" && w !== spos) await open(w as "long" | "short");
+        if (w !== "flat" && w !== spos && await allowOpen(w as "long" | "short")) await open(w as "long" | "short");
         else await admin.from("bot_shadow").upsert({ engine, asset, position: "flat", entry_px: null, stop_px: null, peak_px: null, updated_at: now }, { onConflict: "engine,asset" });
       } else if (newStop !== prevStop || peak !== prevPeak) {
         await admin.from("bot_shadow").update({ stop_px: newStop, peak_px: peak, updated_at: now }).eq("engine", engine).eq("asset", asset);
@@ -1369,9 +1382,14 @@ Deno.serve(async (req) => {
       // o motor VIVO também opera a conta real à parte. want = sinal gated do v28; conf2 = 3-de-5 dos 5 blocos.
       if (primary?.candles && primary.candles.length >= 4 && lastPx > 0) {
         const kTr = Number(cfg.trail_atr_mult ?? 3);
+        const bookRet = signals.find((s) => s.key === "book_retail")?.score ?? null; // p/ o gate de book da variante-sombra _bg
         try { await runShadow("confluence2", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut); } catch (e) { await log("info", `[${asset}] sombra conf2: ${(e as Error).message}`, {}); }
         // VARIANTE (experimento 12/jul): mesmas entradas do conf2, saída por TRAILING POR VELA (fundo-da-vela → zero a zero → segue a vela). A/B contra o catástrofe 4×ATR, só em papel.
         try { await runShadow("confluence2_ct", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut); } catch (e) { await log("info", `[${asset}] sombra conf2_ct: ${(e as Error).message}`, {}); }
+        // VARIANTES fee-positivas (auditoria 13/jul): mesmas entradas+saída+stop do conf2 (catástrofe 4×ATR), só o GATE DE ABERTURA difere — cada uma corta churn de um jeito. A/B em papel.
+        try { await runShadow("confluence2_bg", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_bg: ${(e as Error).message}`, {}); }   // gate de book
+        try { await runShadow("confluence2_cap", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cap: ${(e as Error).message}`, {}); } // teto same-side
+        try { await runShadow("confluence2_cd", asset, "flat", lastPx, primary.candles, null, atrPx, kTr, conf2Wf, conf2Enter, conf2Hold, fut, bookRet); } catch (e) { await log("info", `[${asset}] sombra conf2_cd: ${(e as Error).message}`, {}); }   // cooldown re-entrada
         try { await runShadow("smc", asset, want ?? "flat", lastPx, primary.candles, plan.stop ?? null, atrPx, kTr); } catch (e) { await log("info", `[${asset}] sombra smc: ${(e as Error).message}`, {}); }
       }
       // Relação REAL da entrada com o regime (corrige o rótulo antigo, que dizia "a favor da
