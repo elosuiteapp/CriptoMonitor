@@ -150,3 +150,6 @@ export interface Learning {
   updated_at: string;
 }
 export interface BtTrade { side: string; at: number; r: number; reason: string; counter?: boolean; bars: number }
+// Posição/trade de PAPEL (sombra) de cada robô — bot_shadow / bot_shadow_trades, keyed por engine.
+export interface ShadowOpen { engine: string; asset: string; position: string; entry_px: number | null; stop_px: number | null; opened_at: string }
+export interface ShadowTrade { engine: string; asset: string; side: string; entry_px: number | null; exit_px: number | null; pnl_pct: number | null; reason: string | null; opened_at: string; closed_at: string }

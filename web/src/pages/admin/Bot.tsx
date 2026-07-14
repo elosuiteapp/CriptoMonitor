@@ -9,6 +9,7 @@ import RobotScoreboard from "../../components/admin/bot/RobotScoreboard";
 import BlockAccuracy from "../../components/admin/bot/BlockAccuracy";
 import AccountSummary from "../../components/admin/bot/AccountSummary";
 import OpenPositions from "../../components/admin/bot/OpenPositions";
+import ShadowTrades from "../../components/admin/bot/ShadowTrades";
 import OrdersFilters from "../../components/admin/bot/OrdersFilters";
 import ClosedTradesTable from "../../components/admin/bot/ClosedTradesTable";
 import ExecutionsTable from "../../components/admin/bot/ExecutionsTable";
@@ -26,7 +27,7 @@ import ConnectionKeys from "../../components/admin/bot/config/ConnectionKeys";
 import Card from "../../components/ui/Card";
 import InfoTip from "../../components/InfoTip";
 import { supabase } from "../../lib/supabase";
-import type { Config, Reading, OrderRow, LogRow, BotPosition, Learning, BtTrade } from "../../lib/bot/types";
+import type { Config, Reading, OrderRow, LogRow, BotPosition, Learning, BtTrade, ShadowOpen, ShadowTrade } from "../../lib/bot/types";
 import { num } from "../../lib/bot/format";
 import { buildClosedTrades, assetOf } from "../../lib/bot/trades";
 import { invoke } from "../../lib/bot/api";
@@ -35,6 +36,8 @@ import { invoke } from "../../lib/bot/api";
 const SEL_ORDERS = "id, source, action, inst_id, side, ord_type, sz, avg_px, pnl, ok, result, note, created_at, engine";
 const SEL_LOGS = "id, level, message, created_at";
 const SEL_POSITIONS = "asset, inst_id, position, pos_base_sz, entry_px, adds, stop_px, ctrend, peak_px, target_px, last_bias, last_conviction, last_decision, last_reading, engine, block_hist";
+const SEL_SHADOW_TRADES = "engine, asset, side, entry_px, exit_px, pnl_pct, reason, opened_at, closed_at";
+const SEL_SHADOW_OPEN = "engine, asset, position, entry_px, stop_px, opened_at";
 
 /** Admin · Robô (Lab) — robô de trade PESSOAL no modo DEMO da OKX, isolado e admin-only.
  *  v2: estratégia automática (cruzamento de EMAs) compra/vende sozinha via cron, com
@@ -53,7 +56,8 @@ export default function AdminBot() {
   // é limit(30) misturando as 4 moedas → a entrada da posição atual some dos markers).
   const [chartOrders, setChartOrders] = useState<OrderRow[]>([]);
   const [positions, setPositions] = useState<BotPosition[]>([]);
-  const [shadowTrades, setShadowTrades] = useState<{ engine: string; asset: string; side: string; pnl_pct: number | null; closed_at: string }[]>([]);
+  const [shadowTrades, setShadowTrades] = useState<ShadowTrade[]>([]);
+  const [shadowOpen, setShadowOpen] = useState<ShadowOpen[]>([]);   // posições de PAPEL abertas AGORA, por robô (bot_shadow)
   const [livePos, setLivePos] = useState<Record<string, { uPnl: number; markPx: number }>>({});
   const [pnlSummary, setPnlSummary] = useState<{ day: { pnl: number; trades: number; wins: number }; months: { month: string; pnl: number; trades: number; wins: number }[] } | null>(null);
   const [selMonth, setSelMonth] = useState(""); // mês escolhido no card "Saldo do mês" (vazio = mês vigente)
@@ -109,14 +113,15 @@ export default function AdminBot() {
   const [mPx, setMPx] = useState("");
 
   const loadBase = useCallback(async () => {
-    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }] = await Promise.all([
+    const [{ data: st }, { data: c }, { data: ord }, { data: lg }, { data: pos }, { data: lrn }, { data: sh }, { data: shp }] = await Promise.all([
       supabase.rpc("bot_config_status"),
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select(SEL_ORDERS).order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select(SEL_LOGS).order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select(SEL_POSITIONS).order("asset"),
       supabase.from("bot_learning").select("data, ai_report, updated_at").eq("id", 1).maybeSingle(),
-      supabase.from("bot_shadow_trades").select("engine, asset, side, pnl_pct, closed_at").order("closed_at", { ascending: false }).limit(1000),
+      supabase.from("bot_shadow_trades").select(SEL_SHADOW_TRADES).order("closed_at", { ascending: false }).limit(1000),
+      supabase.from("bot_shadow").select(SEL_SHADOW_OPEN).order("engine"),
     ]);
     const conf = (c as Config) ?? null;
     setConnected(conf?.venue === "binance" ? !!(st as { binance?: boolean })?.binance : !!(st as { okx?: boolean })?.okx);
@@ -125,7 +130,8 @@ export default function AdminBot() {
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
     setLearning((lrn as Learning | null) ?? null);
-    setShadowTrades((sh as typeof shadowTrades | null) ?? []);
+    setShadowTrades((sh as ShadowTrade[] | null) ?? []);
+    setShadowOpen((shp as ShadowOpen[] | null) ?? []);
   }, []);
 
   useEffect(() => {
@@ -135,16 +141,20 @@ export default function AdminBot() {
   // Atualização ao vivo: re-lê config (preservando os campos que o usuário edita), ordens e
   // diário — sem sobrescrever o que está sendo digitado na config.
   const loadLive = useCallback(async () => {
-    const [{ data: c }, { data: ord }, { data: lg }, { data: pos }] = await Promise.all([
+    const [{ data: c }, { data: ord }, { data: lg }, { data: pos }, { data: sh }, { data: shp }] = await Promise.all([
       supabase.rpc("bot_get_config"),
       supabase.from("bot_orders").select(SEL_ORDERS).order("created_at", { ascending: false }).limit(200),
       supabase.from("bot_logs").select(SEL_LOGS).order("created_at", { ascending: false }).limit(60),
       supabase.from("bot_positions").select(SEL_POSITIONS).order("asset"),
+      supabase.from("bot_shadow_trades").select(SEL_SHADOW_TRADES).order("closed_at", { ascending: false }).limit(1000),
+      supabase.from("bot_shadow").select(SEL_SHADOW_OPEN).order("engine"),
     ]);
     if (c) setCfg((prev) => (prev ? { ...(c as Config), inst_id: prev.inst_id, base_ccy: prev.base_ccy, quote_ccy: prev.quote_ccy, bar: prev.bar, order_quote_sz: prev.order_quote_sz, leverage: prev.leverage, buy_threshold: prev.buy_threshold, sell_threshold: prev.sell_threshold, pyramid: prev.pyramid, pyramid_max: prev.pyramid_max, min_votes: prev.min_votes, stop_pct: prev.stop_pct, ct_stop_pct: prev.ct_stop_pct, counter_trend: prev.counter_trend, auto_weight: prev.auto_weight, trail_on: prev.trail_on, trail_pct: prev.trail_pct, trail_atr_mult: prev.trail_atr_mult, rev_mode: prev.rev_mode, ta_gate: prev.ta_gate, flow_veto: prev.flow_veto } : (c as Config)));
     setOrders((ord as OrderRow[] | null) ?? []);
     setLogs((lg as LogRow[] | null) ?? []);
     setPositions((pos as BotPosition[] | null) ?? []);
+    setShadowTrades((sh as ShadowTrade[] | null) ?? []);
+    setShadowOpen((shp as ShadowOpen[] | null) ?? []);
   }, []);
 
   // Guarda contra respostas obsoletas: cada chamada ganha um token; só a MAIS RECENTE
@@ -470,6 +480,16 @@ export default function AdminBot() {
   // Posições ABERTAS agora (net por ativo) + as que estão fora do mercado.
   const openPositions = positions.filter((p) => p.position !== "flat");
   const flatAssets = positions.filter((p) => p.position === "flat").map((p) => p.asset);
+  // Preço atual por ativo (p/ o PnL ao vivo das posições-sombra): marca real da Binance quando há, senão o spot da leitura.
+  const spotByAsset = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const p of positions) {
+      const live = p.inst_id ? livePos[p.inst_id] : undefined;
+      const spot = live?.markPx || (typeof p.last_reading?.spot === "number" ? p.last_reading.spot : undefined);
+      if (spot) m[p.asset] = spot;
+    }
+    return m;
+  }, [positions, livePos]);
   // PnL ao vivo somado (só das posições que a Binance devolveu).
   const openPnl = openPositions.reduce((s, p) => { const l = p.inst_id ? livePos[p.inst_id] : undefined; return l ? s + l.uPnl : s; }, 0);
   const hasLivePnl = openPositions.some((p) => p.inst_id && livePos[p.inst_id]);
@@ -633,10 +653,13 @@ export default function AdminBot() {
       {/* Resumo da conta — quanto está rendendo agora e o que já foi realizado */}
       <AccountSummary totalEq={totalEq} hasLivePnl={hasLivePnl} openPnl={openPnl} quote={quote} pnlSummary={pnlSummary} selMonth={selMonth} setSelMonth={setSelMonth} openPositions={openPositions} cfg={cfg} isFut={isFut} />
 
-      {/* Posições abertas — o que o robô tem em aberto AGORA, com PnL ao vivo e fechar por moeda. */}
-      {positions.length > 0 && (
-        <OpenPositions openPositions={openPositions} flatAssets={flatAssets} livePos={livePos} cfg={cfg} quote={quote} busy={busy} connected={connected} isFut={isFut} closeAsset={closeAsset} pxDec={pxDec} />
+      {/* Posições abertas de TODOS os robôs (real + papel), identificadas por robô. */}
+      {(positions.length > 0 || shadowOpen.length > 0) && (
+        <OpenPositions openPositions={openPositions} flatAssets={flatAssets} livePos={livePos} shadowOpen={shadowOpen} spotByAsset={spotByAsset} cfg={cfg} quote={quote} busy={busy} connected={connected} isFut={isFut} closeAsset={closeAsset} pxDec={pxDec} />
       )}
+
+      {/* Ordens (trades de papel) de cada robô — histórico por robô */}
+      <ShadowTrades shadowTrades={shadowTrades} pxDec={pxDec} />
       </>)}
 
       {/* Ordens (trades, execuções, diário) · aba Ordens */}

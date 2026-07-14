@@ -59,3 +59,16 @@ export const LOG_TONE: Record<string, string> = {
 // Taxa por ROUND-TRIP no papel (taker 0,04% + slippage 0,02%, os dois lados = 0,12%), igual ao bot-backtest.
 // A auditoria provou que a régua BRUTA mente — o líquido de taxa é o que decide qual robô presta.
 export const FEE_RT = 0.12;
+
+// Catálogo dos robôs (vivo + sombras) — fonte única de nome/descrição por engine.
+// Usado no placar de desempenho e na visão de posições/ordens por robô.
+export const BOT_ENGINES: { eng: string; name: string; desc: string }[] = [
+  { eng: "confluence2",     name: "Robô 2.0",              desc: "força ponderada dos 5 blocos" },
+  { eng: "confluence2_tec", name: "Robô 3.0",              desc: "gatilho Técnico + filtro SMC de zona" },
+  { eng: "smc",             name: "Robô v28",              desc: "SMC price-action + gates" },
+  { eng: "confluence2_ct",  name: "2.0 · trailing vela",   desc: "saída por vela" },
+  { eng: "confluence2_bg",  name: "2.0 · book-gate",       desc: "veta abrir contra o book varejo" },
+  { eng: "confluence2_cap", name: "2.0 · teto same-side",  desc: "máx 2 posições do mesmo lado" },
+  { eng: "confluence2_cd",  name: "2.0 · cooldown",        desc: "trava re-entrada por ~60min" },
+];
+export const ENGINE_NAME: Record<string, string> = Object.fromEntries(BOT_ENGINES.map((e) => [e.eng, e.name]));

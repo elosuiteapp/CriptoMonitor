@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import Card from "../../ui/Card";
 import InfoTip from "../../InfoTip";
-import { FEE_RT } from "../../../lib/bot/constants";
+import { FEE_RT, BOT_ENGINES } from "../../../lib/bot/constants";
 import { num } from "../../../lib/bot/format";
 import type { OrderRow, BotPosition } from "../../../lib/bot/types";
 
@@ -21,17 +21,8 @@ export default function RobotScoreboard({ shadowTrades, orders, positions, liveE
   // come o edge. FEE_RT = 0,12%/round-trip (0,06%/lado, igual ao bot-backtest). Papel = comparação
   // justa (mesma unidade %); o real em USDT (conta demo) entra só onde há ordens carimbadas por engine.
   const engineBoard = useMemo(() => {
-    const ENGINES = [
-      { eng: "confluence2",     name: "Robô 2.0",              desc: "força ponderada dos 5 blocos" },
-      { eng: "confluence2_tec", name: "Robô 3.0",              desc: "gatilho Técnico + filtro SMC de zona" },
-      { eng: "smc",             name: "Robô v28",              desc: "SMC price-action + gates" },
-      { eng: "confluence2_ct",  name: "2.0 · trailing vela",   desc: "saída por vela" },
-      { eng: "confluence2_bg",  name: "2.0 · book-gate",       desc: "veta abrir contra o book varejo" },
-      { eng: "confluence2_cap", name: "2.0 · teto same-side",  desc: "máx 2 posições do mesmo lado" },
-      { eng: "confluence2_cd",  name: "2.0 · cooldown",        desc: "trava re-entrada por ~60min" },
-    ];
     const liveEng = liveEngine ?? "smc";
-    return ENGINES.map((e) => {
+    return BOT_ENGINES.map((e) => {
       const tr = shadowTrades.filter((t) => t.engine === e.eng);
       const wins = tr.filter((t) => (Number(t.pnl_pct) || 0) > 0).length;
       const gross = tr.reduce((s, t) => s + (Number(t.pnl_pct) || 0), 0);
