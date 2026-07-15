@@ -163,12 +163,12 @@ class Collector:
     def __init__(self) -> None:
         self.assets = _assets()
         self.sources = build_sources()
-        # Escada do book (heatmap): cadência própria (1 min), fora do ciclo de 5 min.
+        # Escada do book (heatmap): cadência própria, fora do ciclo pesado.
         self.depth_source = OrderbookDepthSource()
-        # Book/pressão (paredes + imbalance): cadência própria (1 min), fora do ciclo pesado.
-        # Alimenta o bloco Microestrutura do robô (25%), lido DIRETO das tabelas (não do snapshot),
-        # por isso dá p/ atualizar a 1 min sem reconstruir o snapshot (gamma/funding não têm
-        # carry-forward em todo campo). Coinalyze/opções/DeFi seguem no ciclo pesado (5 min).
+        # Book/pressão (paredes + imbalance): cadência própria, fora do ciclo pesado.
+        # Alimenta o card de Pressão do Book + heatmap, lido DIRETO das tabelas (não do
+        # snapshot), por isso dá p/ atualizar sem reconstruir o snapshot (gamma/funding não
+        # têm carry-forward em todo campo). Coinalyze/opções/DeFi seguem no ciclo pesado.
         self.walls_source = OrderbookWallsSource()
         self.macro_interval = int(os.getenv("MACRO_INTERVAL_MINUTES", "15"))
         self._last_macro_minute: int | None = None
@@ -366,11 +366,11 @@ class Collector:
             log.warning("ciclo de depth falhou (ignorado): %s", exc)
 
     async def run_fast_cycle(self) -> None:
-        """Ciclo RÁPIDO (1 min) do book: pressão + paredes (orderbook_imbalance + orderbook_walls).
-        Esses sinais alimentam o bloco Microestrutura do robô (25%) e são lidos DIRETO das tabelas
-        (não entram no market_snapshot) → dá p/ atualizá-los a 1 min sem reconstruir o snapshot,
+        """Ciclo do book: pressão + paredes (orderbook_imbalance + orderbook_walls).
+        Esses sinais alimentam o card de Pressão do Book + heatmap e são lidos DIRETO das tabelas
+        (não entram no market_snapshot) → dá p/ atualizá-los sem reconstruir o snapshot,
         que depende de fontes lentas (gamma/funding) sem carry-forward em todo campo. Fonte = orderbook
-        das exchanges (Binance/OKX/Coinbase), rate limit alto. ts na grade de 1 min (restart no mesmo
+        das exchanges (Binance/OKX/Coinbase), rate limit alto. ts na grade do minuto (restart no mesmo
         minuto colapsa na MESMA linha via o upsert). A Coinalyze NÃO entra aqui (429)."""
         now = now_utc()
         ts = to_iso(now.replace(second=0, microsecond=0))
@@ -402,13 +402,13 @@ async def _main_async(once: bool) -> None:
     interval = int(os.getenv("COLLECT_INTERVAL_MINUTES", "5"))
     scheduler.add_job(collector.run_cycle, CronTrigger(minute=f"*/{interval}"),
                       max_instances=1, coalesce=True)
-    # Escada do book em cadência própria (1 min) p/ o heatmap de liquidez parada.
-    depth_interval = int(os.getenv("DEPTH_INTERVAL_MINUTES", "1"))
+    # Escada do book (heatmap de liquidez parada) em cadência própria.
+    depth_interval = int(os.getenv("DEPTH_INTERVAL_MINUTES", "5"))
     scheduler.add_job(collector.run_depth_cycle, CronTrigger(minute=f"*/{depth_interval}"),
                       max_instances=1, coalesce=True)
-    # Book/pressão (paredes + imbalance) em cadência própria (1 min) → bloco Microestrutura do robô
-    # em tempo quase real, sem tocar no ciclo pesado (Coinalyze/gamma seguem em 5 min, sem 429).
-    fast_interval = int(os.getenv("FAST_INTERVAL_MINUTES", "1"))
+    # Book/pressão (paredes + imbalance) em cadência própria → card de Pressão do Book + heatmap,
+    # sem tocar no ciclo pesado (Coinalyze/gamma seguem no ciclo de 5 min, sem 429).
+    fast_interval = int(os.getenv("FAST_INTERVAL_MINUTES", "5"))
     scheduler.add_job(collector.run_fast_cycle, CronTrigger(minute=f"*/{fast_interval}"),
                       max_instances=1, coalesce=True)
     scheduler.start()

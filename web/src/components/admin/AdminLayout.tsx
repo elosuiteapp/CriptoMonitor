@@ -6,7 +6,6 @@ import {
   IconAffiliate,
   IconAudit,
   IconBack,
-  IconBot,
   IconLogout,
   IconNewsletter,
   IconOverview,
@@ -27,7 +26,6 @@ const NAV = [
   { to: "/admin/affiliates", label: "Afiliados", icon: IconAffiliate },
   { to: "/admin/newsletter", label: "Newsletter", icon: IconNewsletter },
   { to: "/admin/social", label: "Social", icon: IconSocial },
-  { to: "/admin/robo", label: "Robô · Lab", icon: IconBot },
   { to: "/admin/system", label: "Saúde do sistema", icon: IconSystem },
   { to: "/admin/audit", label: "Auditoria", icon: IconAudit },
 ];
